@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:3001/vendor/api-client-react/src/index.ts\")",
+      "Bash(curl -s \"http://localhost:3001/vendor/api-client-react/src/index.ts\")",
+      "Bash(npx --yes playwright --version)",
+      "Bash(curl -s -o /dev/null -w \"main.tsx: %{http_code}\\\\n\" http://localhost:3001/src/main.tsx)",
+      "Bash(curl -s -o /dev/null -w \"App.tsx: %{http_code}\\\\n\" http://localhost:3001/src/App.tsx)",
+      "Bash(curl -s -o /dev/null -w \"AppLayout.tsx: %{http_code}\\\\n\" http://localhost:3001/src/components/layout/AppLayout.tsx)",
+      "Bash(curl -s http://localhost:3001/src/App.tsx)",
+      "Bash(curl -s http://localhost:3001/dashboard)",
+      "Bash(npx playwright *)",
+      "Bash(node \"/c/Users/Nick/AppData/Local/Temp/claude/d--beebizy-b2b/380de59c-1675-42de-b1a3-799f8c7e4c6d/scratchpad/check.mjs\")",
+      "Bash(node check.mjs)",
+      "Bash(curl -s http://localhost:3001/api/events/upcoming)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3001/api/events/upcoming)"
+    ]
+  }
+}
