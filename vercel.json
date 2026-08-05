@@ -5,7 +5,11 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!api/|assets/).*)",
+      "source": "/api/(.*)",
+      "destination": "/api/router?__path=$1"
+    },
+    {
+      "source": "/((?!api/)(?!@)(?!.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ],
@@ -19,11 +23,5 @@
         }
       ]
     }
-  ],
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs22.x",
-      "maxDuration": 30
-    }
-  }
+  ]
 }

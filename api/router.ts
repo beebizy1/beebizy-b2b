@@ -16,6 +16,65 @@ import { eventByShareToken } from "../src/server/repos";
 
 export const config = { runtime: "nodejs" };
 
+/* ------------------------------------------------------------------- bridge */
+
+/**
+ * Vercel's Node runtime hands this file a Node `IncomingMessage`, not a Web `Request` —
+ * which is why an earlier version died on `new URL(request.url)`: `req.url` is a path
+ * (`/api/events`), and `URL` needs an origin.
+ *
+ * The router below is written against Web `Request`/`Response` so it stays portable and
+ * can be exercised with plain objects in a test. This converts at the edge of the file
+ * and nowhere else.
+ */
+interface NodeRequest {
+  url?: string;
+  method?: string;
+  headers: Record<string, string | string[] | undefined>;
+  body?: unknown;
+  on(event: string, listener: (chunk?: unknown) => void): void;
+}
+
+interface NodeResponse {
+  statusCode: number;
+  setHeader(name: string, value: string): void;
+  end(body?: string): void;
+}
+
+function toWebRequest(req: NodeRequest, rawBody: string): Request {
+  const host = (Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host) ?? "localhost";
+  const proto = (Array.isArray(req.headers["x-forwarded-proto"]) ? req.headers["x-forwarded-proto"][0] : req.headers["x-forwarded-proto"]) ?? "http";
+  const url = new URL(req.url ?? "/", `${proto}://${host}`);
+
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+  }
+
+  const method = (req.method ?? "GET").toUpperCase();
+  return new Request(url, {
+    method,
+    headers,
+    body: method === "GET" || method === "HEAD" ? undefined : rawBody,
+  });
+}
+
+async function readRawBody(req: NodeRequest): Promise<string> {
+  // Vercel may have parsed the body already; if so, don't try to read a consumed stream.
+  if (typeof req.body === "string") return req.body;
+  if (req.body && typeof req.body === "object") return JSON.stringify(req.body);
+
+  return new Promise<string>((resolve) => {
+    let data = "";
+    req.on("data", (chunk) => {
+      data += String(chunk);
+    });
+    req.on("end", () => resolve(data));
+    req.on("error", () => resolve(""));
+  });
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -294,9 +353,13 @@ const eventChildren: Record<
   raffle: repos.raffle,
 };
 
-export default async function handler(request: Request): Promise<Response> {
+/** The router. Web in, web out — the bridge above is the only Node-aware code here. */
+export async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const segments = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
+  // `__path` is set by the rewrite in vercel.json; the pathname fallback keeps direct hits
+  // and tests working.
+  const rawPath = url.searchParams.get("__path") ?? url.pathname.replace(/^\/api\/?/, "");
+  const segments = rawPath.split("/").filter(Boolean);
   const method = request.method.toUpperCase();
 
   try {
@@ -313,4 +376,13 @@ export default async function handler(request: Request): Promise<Response> {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return json({ error: message }, 500);
   }
+}
+
+export default async function handler(req: NodeRequest, res: NodeResponse): Promise<void> {
+  const rawBody = await readRawBody(req);
+  const response = await handleRequest(toWebRequest(req, rawBody));
+
+  res.statusCode = response.status;
+  response.headers.forEach((value, key) => res.setHeader(key, value));
+  res.end(await response.text());
 }

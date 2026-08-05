@@ -66,6 +66,7 @@ import type {
 /* ---------------------------------------------------------------- query keys */
 
 export const qk = {
+  me: ["me"] as const,
   portfolio: ["analytics", "portfolio"] as const,
   attention: ["analytics", "attention"] as const,
   openTasks: ["analytics", "openTasks"] as const,
@@ -150,6 +151,14 @@ function useAdapterMutation<TVars, TResult>(
       for (const key of invalidate(vars)) queryClient.invalidateQueries({ queryKey: key });
     },
   });
+}
+
+/**
+ * Who the server thinks you are, and what you may do. The role is authoritative on the
+ * server — it is re-checked on every write — so this copy only shapes the UI.
+ */
+export function useMe() {
+  return useAdapterQuery(qk.me, (a) => a.me(), { staleTime: 60_000 });
 }
 
 /* ------------------------------------------------------------------ analytics */

@@ -1221,6 +1221,9 @@ const analytics: AnalyticsRepository = {
 
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
+
+  // The demo has a single implicit workspace and no roles to speak of.
+  me: async () => ({ userId: DEMO_OWNER_ID, workspaceId: DEMO_OWNER_ID, role: "owner" }),
   events,
   locations,
   attendees,

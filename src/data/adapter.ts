@@ -2,10 +2,10 @@
  * The single seam between the UI and storage.
  *
  * Two implementations exist:
- *   - `memory`    — in-process store seeded with a realistic portfolio. Runs with no
- *                   credentials, which is what makes the app demoable and testable.
- *   - `firestore` — the real backend, selected automatically once Firebase env vars
- *                   are present (see `./provider`).
+ *   - `memory`   — in-process store seeded with a realistic portfolio. Runs with no
+ *                  credentials, which is what makes the app demoable and testable.
+ *   - `postgres` — the real backend: this interface over HTTP to the API, which resolves
+ *                  the caller's workspace and queries Neon (see `./http/adapter`).
  *
  * Both satisfy this interface, so no screen knows or cares which one is live. Every
  * method is a plain promise — react-query owns caching, retries and invalidation on
@@ -192,8 +192,17 @@ export interface AnalyticsRepository {
   openTasks(): Promise<OpenTask[]>;
 }
 
+/** Identity and authorization as the server sees them. */
+export interface Identity {
+  userId: string;
+  workspaceId: string;
+  role: "owner" | "admin" | "member";
+}
+
 export interface DataAdapter {
-  readonly kind: "memory" | "firestore";
+  readonly kind: "memory" | "postgres";
+  /** Who the caller is and what they may do. The API re-checks this on every write. */
+  me(): Promise<Identity>;
   events: EventsRepository;
   locations: OwnedRepository<Location, LocationDraft, LocationPatch>;
   attendees: OwnedRepository<Attendee, AttendeeDraft, AttendeePatch>;
