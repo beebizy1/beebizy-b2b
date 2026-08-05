@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/react";
 import { clerkPublishableKey, isClerkConfigured } from "@/lib/clerk";
 import { clerkAppearance } from "./clerkAppearance";
+import { clerkLocalization } from "./clerkLocalization";
 
 export function ClerkGate({ children }: { children: ReactNode }) {
   if (!isClerkConfigured) return <>{children}</>;
@@ -18,6 +19,7 @@ export function ClerkGate({ children }: { children: ReactNode }) {
     <ClerkProvider
       publishableKey={clerkPublishableKey!}
       appearance={clerkAppearance}
+      localization={clerkLocalization}
       // Wouter owns the URL; these keep Clerk's own redirects inside the app.
       signInUrl="/login"
       signUpUrl="/signup"
