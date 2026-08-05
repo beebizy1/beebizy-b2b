@@ -83,7 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(
       auth,
       async (nextUser) => {
-        console.log("[auth] onAuthStateChanged fired. user:", nextUser?.uid ?? null, nextUser?.email ?? "");
         setUser(nextUser);
         setUserProfile(nextUser ? await fetchUserProfile(nextUser.uid) : null);
         setLoading(false);
@@ -118,11 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    console.log("[auth] signInWithGoogle called. auth configured:", !!auth);
     if (!auth) throw new Error(NOT_CONFIGURED_MESSAGE);
     const result = await signInWithPopup(auth, googleProvider);
     const isNewUser = getAdditionalUserInfo(result)?.isNewUser ?? false;
-    console.log("[auth] signInWithPopup resolved. uid:", result.user.uid, "isNewUser:", isNewUser);
 
     if (isNewUser) {
       const profile: UserProfile = {

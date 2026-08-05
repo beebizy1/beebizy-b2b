@@ -13,7 +13,6 @@ import {
   BarChart3,
   Building2,
   Layers,
-  Flame,
   Trophy,
   Megaphone,
   PartyPopper,
@@ -121,70 +120,6 @@ function HexShape({ size, className, style }: { size: number; className?: string
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className={className} style={style}>
       <polygon points={pts} fill="currentColor" />
-    </svg>
-  );
-}
-
-function BumbleBee({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return (
-    <svg
-      viewBox="0 0 120 130"
-      className={className}
-      style={style}
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      {/* Left wing */}
-      <ellipse
-        cx="22" cy="52" rx="26" ry="13"
-        fill="rgba(219,234,254,0.82)" stroke="rgba(147,197,253,0.5)" strokeWidth="0.8"
-        className="wing-left"
-      />
-      {/* Right wing */}
-      <ellipse
-        cx="98" cy="52" rx="26" ry="13"
-        fill="rgba(219,234,254,0.82)" stroke="rgba(147,197,253,0.5)" strokeWidth="0.8"
-        className="wing-right"
-      />
-      {/* Body */}
-      <ellipse cx="60" cy="88" rx="26" ry="32" fill="#FCD34D" />
-      {/* Stripe 1 */}
-      <path d="M34 80 Q60 75 86 80 Q85 89 60 93 Q35 89 34 80Z" fill="#1C1917" opacity="0.88" />
-      {/* Stripe 2 */}
-      <path d="M35 93 Q60 89 85 93 Q84 102 60 105 Q36 102 35 93Z" fill="#1C1917" opacity="0.88" />
-      {/* Body shine */}
-      <ellipse cx="48" cy="74" rx="7" ry="3.5" fill="rgba(255,255,255,0.32)" transform="rotate(-20 48 74)" />
-      {/* Stinger */}
-      <path d="M60 119 L56 129 L60 126 L64 129 Z" fill="#D97706" />
-      {/* Head */}
-      <circle cx="60" cy="46" r="19" fill="#FCD34D" />
-      {/* Head fuzz */}
-      <path d="M41 40 C44 33 52 29 60 28 C68 29 76 33 79 40" stroke="#D97706" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.55" />
-      {/* Head shine */}
-      <ellipse cx="51" cy="38" rx="6" ry="3" fill="rgba(255,255,255,0.28)" transform="rotate(-20 51 38)" />
-      {/* Left eye white */}
-      <circle cx="51" cy="46" r="6.5" fill="white" />
-      {/* Right eye white */}
-      <circle cx="69" cy="46" r="6.5" fill="white" />
-      {/* Left pupil */}
-      <circle cx="52.5" cy="47" r="4" fill="#1C1917" />
-      {/* Right pupil */}
-      <circle cx="70.5" cy="47" r="4" fill="#1C1917" />
-      {/* Eye sparkles */}
-      <circle cx="54" cy="45" r="1.4" fill="white" />
-      <circle cx="72" cy="45" r="1.4" fill="white" />
-      {/* Smile */}
-      <path d="M50 56 Q60 63 70 56" stroke="#92400E" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-      {/* Blush left */}
-      <circle cx="42" cy="53" r="5" fill="#FCA5A5" opacity="0.45" />
-      {/* Blush right */}
-      <circle cx="78" cy="53" r="5" fill="#FCA5A5" opacity="0.45" />
-      {/* Left antenna */}
-      <path d="M52 29 C49 21 43 14 38 9" stroke="#1C1917" strokeWidth="2.8" fill="none" strokeLinecap="round" />
-      <circle cx="37" cy="8" r="4.5" fill="#FCD34D" stroke="#1C1917" strokeWidth="1.8" />
-      {/* Right antenna */}
-      <path d="M68 29 C71 21 77 14 82 9" stroke="#1C1917" strokeWidth="2.8" fill="none" strokeLinecap="round" />
-      <circle cx="83" cy="8" r="4.5" fill="#FCD34D" stroke="#1C1917" strokeWidth="1.8" />
     </svg>
   );
 }
