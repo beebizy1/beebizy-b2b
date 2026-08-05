@@ -147,7 +147,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
 
       <div className="space-y-6">
         <Panel>
-          <PanelHeader title="Money" description="Booked, not forecast" />
+          <PanelHeader title="Budget" description="Booked, not forecast" />
           <dl className="divide-y divide-hairline px-5 py-2">
             <KeyValue label="Planned spend">{formatMoney(plannedSpend)}</KeyValue>
             <KeyValue label="Actual spend">
@@ -162,7 +162,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
           </dl>
           <div className="border-t border-hairline p-3">
             <Button asChild variant="outline" size="sm" className="w-full">
-              <Link href={eventSectionHref(event.id, "money")}>
+              <Link href={eventSectionHref(event.id, "budget")}>
                 <Coins className="mr-1.5 size-3.5" />
                 Open money
               </Link>
@@ -193,7 +193,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
           <PanelHeader title="Jump to" />
           <div className="divide-y divide-hairline">
             <Link
-              href={eventSectionHref(event.id, "people")}
+              href={eventSectionHref(event.id, "guests")}
               className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-accent/60"
             >
               <Users className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -203,7 +203,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
               </span>
             </Link>
             <Link
-              href={eventSectionHref(event.id, "suppliers")}
+              href={eventSectionHref(event.id, "vendors")}
               className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-accent/60"
             >
               <Store className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -213,7 +213,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
               </span>
             </Link>
             <Link
-              href={eventSectionHref(event.id, "money")}
+              href={eventSectionHref(event.id, "budget")}
               className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-accent/60"
             >
               <Ticket className="size-4 text-muted-foreground" aria-hidden="true" />

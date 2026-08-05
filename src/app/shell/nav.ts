@@ -2,7 +2,7 @@
  * Navigation model.
  *
  * The old sidebar was fourteen flat items — Dashboard, Calendar, Events, Templates,
- * Locations, Vendors, Messages, Attendees, Registrations, Reporting, Financial Data,
+ * Locations, Vendors, Messages, Guests, Registrations, Reporting, Financial Data,
  * Checklists, Inspiration Card, Settings — with no hierarchy and no answer to "where
  * do I start?". Six destinations replace them, grouped by the question each answers.
  * Everything else moved inside the event it belongs to.
@@ -44,29 +44,29 @@ export const NAV_ITEMS: NavItem[] = [
     hint: "Every event, its readiness and its workspace",
   },
   {
-    label: "People",
-    href: "/app/people",
+    label: "Guests",
+    href: "/app/guests",
     icon: Users,
-    hint: "Attendees and their registrations",
+    hint: "Guests and their registrations",
   },
   {
     label: "Vendors",
     href: "/app/vendors",
     icon: Store,
-    hint: "Suppliers, bookings and conversations",
+    hint: "Vendors, bookings and conversations",
     badge: "unread",
   },
   {
-    label: "Money",
-    href: "/app/money",
+    label: "Budget",
+    href: "/app/budget",
     icon: Coins,
-    hint: "Ticket sales, budgets, fundraising and ROI",
+    hint: "Spend, ticket sales, fundraising and ROI",
   },
   {
     label: "Library",
     href: "/app/library",
     icon: BookMarked,
-    hint: "Templates, venues and inspiration",
+    hint: "Templates, venues and boards",
   },
 ];
 
@@ -79,16 +79,16 @@ export interface EventSection {
 }
 
 /**
- * Six sections instead of fourteen tabs. Menu, floorplan and inspiration live under
- * Suppliers and Plan rather than competing for top-level attention, and fundraising
+ * Six sections instead of fourteen tabs. Menu, floorplan and the mood board live under
+ * Vendors and Plan rather than competing for top-level attention, and fundraising
  * sits with the rest of the money.
  */
 export const EVENT_SECTIONS: EventSection[] = [
   { id: "overview", label: "Overview", slug: "", hint: "Readiness, risks and the shape of the day" },
-  { id: "plan", label: "Plan", slug: "plan", hint: "Checklist, run of show and inspiration" },
-  { id: "people", label: "People", slug: "people", hint: "Registrations and capacity" },
-  { id: "suppliers", label: "Suppliers", slug: "suppliers", hint: "Vendors and catering" },
-  { id: "money", label: "Money", slug: "money", hint: "Budget, tickets and fundraising" },
+  { id: "plan", label: "Plan", slug: "plan", hint: "Checklist, run of show and mood board" },
+  { id: "guests", label: "Guests", slug: "guests", hint: "Registrations and capacity" },
+  { id: "vendors", label: "Vendors", slug: "vendors", hint: "Bookings, catering and the floorplan" },
+  { id: "budget", label: "Budget", slug: "budget", hint: "Spend, tickets, fundraising and ROI" },
   { id: "share", label: "Share", slug: "share", hint: "Public event page and ticket link" },
 ];
 

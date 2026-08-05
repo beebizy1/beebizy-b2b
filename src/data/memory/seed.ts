@@ -12,12 +12,12 @@
  */
 
 import type {
-  Attendee,
+  Guest,
   AuctionItem,
   BudgetItem,
   ChecklistItem,
   Event,
-  EventInspiration,
+  MoodBoardImage,
   EventVendor,
   EventRoi,
   Canvas,
@@ -41,7 +41,7 @@ import { DEFAULT_USER_SETTINGS } from "../entities";
 export interface MemoryDb {
   events: Event[];
   locations: Location[];
-  attendees: Attendee[];
+  guests: Guest[];
   registrations: Registration[];
   vendors: Vendor[];
   vendorMessages: VendorMessage[];
@@ -50,7 +50,7 @@ export interface MemoryDb {
   runOfShow: RunOfShowItem[];
   budget: BudgetItem[];
   menu: MenuItem[];
-  inspirations: EventInspiration[];
+  moodBoard: MoodBoardImage[];
   tickets: TicketType[];
   auction: AuctionItem[];
   raffle: RaffleItem[];
@@ -286,9 +286,9 @@ export function buildSeed(): MemoryDb {
     };
   });
 
-  /* -------------------------------------------------------------- attendees */
+  /* -------------------------------------------------------------- guests */
 
-  const attendeeSeeds: Array<[string, string, string | null]> = [
+  const guestSeeds: Array<[string, string, string | null]> = [
     ["Priya Raghunathan", "priya.r@meridianhealth.com", "VP Ops — advisory board chair"],
     ["Daniel Okonkwo", "d.okonkwo@lattice-bio.com", null],
     ["Sofia Marchetti", "sofia@vellumdesign.studio", "Requested vegetarian"],
@@ -317,7 +317,7 @@ export function buildSeed(): MemoryDb {
     ["Elena Vasquez", "elena@puebloartsfund.org", "Nut allergy"],
   ];
 
-  const attendees: Attendee[] = attendeeSeeds.map(([name, contact, notes], i) => ({
+  const guests: Guest[] = guestSeeds.map(([name, contact, notes], i) => ({
     id: `att-${i + 1}`,
     ownerId: DEMO_OWNER_ID,
     name,
@@ -330,16 +330,16 @@ export function buildSeed(): MemoryDb {
 
   const registrations: Registration[] = [];
   let regSeq = 0;
-  const register = (eventId: string, attendeeIndexes: number[], status: Registration["status"], dayOffset: number) => {
+  const register = (eventId: string, guestIndexes: number[], status: Registration["status"], dayOffset: number) => {
     const event = events.find((e) => e.id === eventId)!;
-    for (const index of attendeeIndexes) {
+    for (const index of guestIndexes) {
       regSeq += 1;
       registrations.push({
         id: `reg-${regSeq}`,
         ownerId: DEMO_OWNER_ID,
         eventId,
         eventTitle: event.title,
-        attendeeId: attendees[index]!.id,
+        guestId: guests[index]!.id,
         status,
         registeredAt: at(dayOffset, 11, regSeq % 60),
         createdAt: at(dayOffset, 11, regSeq % 60),
@@ -537,7 +537,7 @@ export function buildSeed(): MemoryDb {
       senderName: "You",
       subject: "Sales Kickoff — catering brief",
       content:
-        "Hi team — attaching the brief for Sales Kickoff. Three days, roughly 450 attendees, awards dinner on night three. Can you hold the date?",
+        "Hi team — attaching the brief for Sales Kickoff. Three days, roughly 450 guests, awards dinner on night three. Can you hold the date?",
       isRead: true,
       createdAt: at(-16, 11, 5),
     },
@@ -699,14 +699,14 @@ export function buildSeed(): MemoryDb {
     check("evt-skickoff", "Confirm final headcount with catering", "Catering", false, -1, "Dana Whitfield", "Golden Gate needs this to lock the menu. Two messages unanswered."),
     check("evt-skickoff", "Approve badge proofs", "Print", false, 1, "Sam Ortiz"),
     check("evt-skickoff", "AV rig walkthrough", "AV", true, -3, "Sam Ortiz"),
-    check("evt-skickoff", "Publish agenda to attendees", "Marketing", true, -7, "Lena Park"),
+    check("evt-skickoff", "Publish agenda to guests", "Marketing", true, -7, "Lena Park"),
     check("evt-skickoff", "Brief awards dinner MC", "Programme", false, 3, "Lena Park"),
     check("evt-skickoff", "Confirm shuttle schedule from hotels", "Logistics", false, 2, "Dana Whitfield"),
     check("evt-skickoff", "Load speaker decks into stage machine", "AV", false, 4, "Sam Ortiz"),
     check("evt-skickoff", "Print run-of-show for stage managers", "Print", false, 4, null),
 
     // Customer Advisory Board — two days out, nearly ready.
-    check("evt-cab", "Send pre-read to all 24 attendees", "Marketing", true, -7, "Lena Park"),
+    check("evt-cab", "Send pre-read to all 24 guests", "Marketing", true, -7, "Lena Park"),
     check("evt-cab", "Confirm dietary requirements with catering", "Catering", true, -3, "Dana Whitfield"),
     check("evt-cab", "Set up room — U-shape, 24 seats", "Logistics", false, 1, "Dana Whitfield"),
     check("evt-cab", "Print name cards and agendas", "Print", false, 1, null),
@@ -830,14 +830,14 @@ export function buildSeed(): MemoryDb {
     line("evt-skickoff", "Photography", "Photography", "expense", 6800, 6800),
     line("evt-skickoff", "Staffing", "Staffing", "expense", 9400, 9400),
     line("evt-skickoff", "Print and signage", "Print", "expense", 3100, null),
-    line("evt-skickoff", "Travel subsidy — field org", "Travel", "expense", 74000, 68400, "Under: fewer international attendees than modelled."),
+    line("evt-skickoff", "Travel subsidy — field org", "Travel", "expense", 74000, 68400, "Under: fewer international guests than modelled."),
     line("evt-skickoff", "Internal budget allocation", "Funding", "revenue", 240000, 240000),
     line("evt-skickoff", "Partner showcase fees", "Sponsorship", "revenue", 45000, 38000),
 
     line("evt-cab", "Venue — Foundry Loft", "Venue", "expense", 8500, 8500),
     line("evt-cab", "Catering", "Catering", "expense", 4800, 4800),
     line("evt-cab", "AV", "AV", "expense", 2200, 2200),
-    line("evt-cab", "Attendee travel reimbursement", "Travel", "expense", 22000, 14600, "Six of 24 claimed so far."),
+    line("evt-cab", "Guest travel reimbursement", "Travel", "expense", 22000, 14600, "Six of 24 claimed so far."),
     line("evt-cab", "Product marketing budget", "Funding", "revenue", 40000, 40000),
 
     line("evt-atlas", "Venue", "Venue", "expense", 12000, 12000),
@@ -1155,14 +1155,14 @@ export function buildSeed(): MemoryDb {
     dish("evt-gala", "Braised short rib, celeriac", "Main", [], 210, 46),
     dish("evt-gala", "King oyster mushroom steak", "Main", ["vegan"], 60, 38, "Two dedicated vegan tables."),
     dish("evt-gala", "Dark chocolate crémeux", "Dessert", ["gluten-free"], 300, 16),
-    dish("evt-gala", "Petit fours", "Dessert", ["nut-free"], 300, 9, "Nut-free kitchen — one attendee with a nut allergy."),
+    dish("evt-gala", "Petit fours", "Dessert", ["nut-free"], 300, 9, "Nut-free kitchen — one guest with a nut allergy."),
     dish("evt-cab", "Breakfast pastries and fruit", "Breakfast", ["vegetarian"], 24, null),
     dish("evt-cab", "Grain bowls with three protein options", "Lunch", ["gluten-free", "vegan option"], 24, null, "One dairy-free, one gluten-free, one vegetarian flag."),
   ];
 
-  /* ----------------------------------------------------------- inspiration */
+  /* ------------------------------------------------------------ mood board */
 
-  const inspirations: EventInspiration[] = [
+  const moodBoard: MoodBoardImage[] = [
     { id: "insp-1", eventId: "evt-gala", url: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=1200", caption: "Table setting direction — low florals, warm brass", sortOrder: 1, createdAt: at(-22) },
     { id: "insp-2", eventId: "evt-gala", url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=1200", caption: "Entry installation reference", sortOrder: 2, createdAt: at(-22) },
     { id: "insp-3", eventId: "evt-gala", url: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1200", caption: "Lighting state for the live auction", sortOrder: 3, createdAt: at(-21) },
@@ -1189,7 +1189,7 @@ export function buildSeed(): MemoryDb {
       id: "tpl-summit",
       ownerId: DEMO_OWNER_ID,
       name: "Multi-day summit playbook",
-      description: "Everything a 300+ attendee, multi-day summit needs. Built from three years of kickoffs.",
+      description: "Everything a 300+ guest, multi-day summit needs. Built from three years of kickoffs.",
       category: "Summit",
       defaultCapacity: 400,
       checklistCount: 9,
@@ -1372,7 +1372,7 @@ export function buildSeed(): MemoryDb {
   return {
     events,
     locations,
-    attendees,
+    guests,
     registrations,
     vendors,
     vendorMessages,
@@ -1381,7 +1381,7 @@ export function buildSeed(): MemoryDb {
     runOfShow,
     budget,
     menu,
-    inspirations,
+    moodBoard,
     tickets,
     auction,
     raffle,

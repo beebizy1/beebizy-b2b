@@ -45,7 +45,7 @@ export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) =
  * Ranking that matches how people actually search.
  *
  * cmdk's default filter scores subsequences, so typing "atlas" ranked "Library ·
- * Templates, venues and inspiration" above the event literally called "Atlas Launch"
+ * Templates, venues and boards" above the event literally called "Atlas Launch"
  * — the letters a-t-l-a-s appear in order across that string. Substring and
  * word-prefix matches win here, and non-matches score 0 so they disappear entirely.
  */
@@ -112,9 +112,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 <Store className="mr-2 size-4" aria-hidden="true" />
                 New vendor
               </CommandItem>
-              <CommandItem value="new attendee person create" onSelect={() => go("/app/people/new")}>
+              <CommandItem value="new guest person create" onSelect={() => go("/app/guests/new")}>
                 <UserPlus className="mr-2 size-4" aria-hidden="true" />
-                New attendee
+                New guest
               </CommandItem>
             </CommandGroup>
 

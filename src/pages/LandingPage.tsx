@@ -102,13 +102,13 @@ const capabilities = [
     icon: LayoutDashboard,
     title: "One workspace per event",
     body:
-      "Overview, Plan, People, Suppliers, Money, Share. Readiness combines checklist progress, vendor confirmation and registrations, weighted by what actually applies.",
+      "Overview, Plan, Guests, Vendors, Budget, Share. Readiness combines checklist progress, vendor confirmation and registrations, weighted by what actually applies.",
   },
   {
     icon: Store,
     title: "Vendors and their replies together",
     body:
-      "Your directory, filterable by city for multi-location work, with each supplier's conversation on their own page. Unread replies sit on the sidebar until you deal with them.",
+      "Your directory, filterable by city for multi-location work, with each vendor's conversation on their own page. Unread replies sit on the sidebar until you deal with them.",
   },
   {
     icon: Ticket,
@@ -133,7 +133,7 @@ const capabilities = [
 const replaces = [
   { instead: "A spreadsheet per event, and a different one per business unit", now: "One registry, grouped by venue, category or status" },
   { instead: "Fourteen tabs on a single event page", now: "Six sections, in the order you actually work" },
-  { instead: "Chasing vendors through your inbox", now: "A thread per supplier, with unread counts that clear" },
+  { instead: "Chasing vendors through your inbox", now: "A thread per vendor, with unread counts that clear" },
   { instead: "Finding out you overspent after the event", now: "Estimate against actual per line, flagged while it matters" },
   { instead: "A separate ticketing tool and a manual guest list", now: "Checkout that writes straight into your registrations" },
   { instead: "Rebuilding the same plan from scratch", now: "Templates carrying checklist, run of show and budget" },
@@ -176,7 +176,7 @@ const packages = [
   {
     name: "Essential",
     price: "$2,000",
-    note: "starting at · 25–75 attendees",
+    note: "starting at · 25–75 guests",
     bestFor: "Lean teams and startups",
     description:
       "Everything needed to run a polished team offsite or a small corporate gathering, with vendors pre-matched and ready to go.",
@@ -197,7 +197,7 @@ const packages = [
   {
     name: "Professional",
     price: "$5,000",
-    note: "starting at · 75–200 attendees",
+    note: "starting at · 75–200 guests",
     bestFor: "Mid-size corporate teams",
     description:
       "Full service for corporate events that need to impress: every vendor category covered, plus a live Beebizy workspace with budget and floorplan tools.",
@@ -219,7 +219,7 @@ const packages = [
   {
     name: "Enterprise",
     price: "$12,000",
-    note: "starting at · 200+ attendees",
+    note: "starting at · 200+ guests",
     bestFor: "Distributed enterprise teams",
     description:
       "The full experience: a dedicated coordinator, multi-location vendor mapping, fundraising tools and every operations feature for a large-scale event.",
@@ -353,7 +353,7 @@ export function LandingPage() {
 
                 <p className="max-w-xl text-lg leading-relaxed text-primary-foreground/80 sm:text-xl">
                   Beebizy is the event operations layer for companies: the plan, the vendors, the
-                  attendee list, the ticketing, the fundraising and the money in one system — and it
+                  guest list, the ticketing, the fundraising and the money in one system — and it
                   tells your team what needs deciding before it becomes a problem.
                 </p>
 

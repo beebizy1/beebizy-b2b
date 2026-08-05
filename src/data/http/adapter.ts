@@ -13,7 +13,7 @@
 
 import { DataError, type DataAdapter, type EventScopedRepository, type Identity } from "../adapter";
 import type {
-  Attendee,
+  Guest,
   AttentionItem,
   AuctionItem,
   BudgetItem,
@@ -22,7 +22,7 @@ import type {
   ChecklistItem,
   Event,
   EventHealth,
-  EventInspiration,
+  MoodBoardImage,
   EventRoi,
   EventVendor,
   Floorplan,
@@ -34,7 +34,7 @@ import type {
   RaffleItem,
   RaffleTicket,
   Registration,
-  RegistrationWithAttendee,
+  RegistrationWithGuest,
   RunOfShowItem,
   Sponsorship,
   Template,
@@ -183,19 +183,19 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       },
     },
 
-    attendees: {
-      list: () => client.get<Attendee[]>("/attendees"),
-      get: async (id) => (await client.get<Attendee[]>("/attendees")).find((row) => row.id === id) ?? null,
-      create: (draft) => client.post<Attendee>("/attendees", draft),
-      update: (id, patch) => client.patch<Attendee>(`/attendees/${id}`, patch),
+    guests: {
+      list: () => client.get<Guest[]>("/guests"),
+      get: async (id) => (await client.get<Guest[]>("/guests")).find((row) => row.id === id) ?? null,
+      create: (draft) => client.post<Guest>("/guests", draft),
+      update: (id, patch) => client.patch<Guest>(`/guests/${id}`, patch),
       remove: async (id) => {
-        await client.del(`/attendees/${id}`);
+        await client.del(`/guests/${id}`);
       },
     },
 
     registrations: {
-      list: () => client.get<RegistrationWithAttendee[]>("/registrations"),
-      listForEvent: (eventId) => client.get<RegistrationWithAttendee[]>(`/events/${eventId}/registrations`),
+      list: () => client.get<RegistrationWithGuest[]>("/registrations"),
+      listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
       remove: async (id) => {
@@ -226,7 +226,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
     budget: eventScoped<BudgetItem, never, never>(client, "budget") as DataAdapter["budget"],
     menu: eventScoped<MenuItem, never, never>(client, "menu") as DataAdapter["menu"],
-    inspirations: eventScoped<EventInspiration, never, never>(client, "inspirations") as DataAdapter["inspirations"],
+    moodBoard: eventScoped<MoodBoardImage, never, never>(client, "mood-board") as DataAdapter["moodBoard"],
     auction: eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"],
     sponsorships: eventScoped<Sponsorship, never, never>(client, "sponsorships") as DataAdapter["sponsorships"],
 

@@ -155,8 +155,8 @@ export const events = pgTable(
 
 /* ---------------------------------------------------------------------- people */
 
-export const attendees = pgTable(
-  "attendees",
+export const guests = pgTable(
+  "guests",
   {
     id: id(),
     workspaceId: text("workspace_id")
@@ -169,9 +169,9 @@ export const attendees = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    index("attendees_workspace_idx").on(table.workspaceId),
+    index("guests_workspace_idx").on(table.workspaceId),
     // One person per email per workspace, so checkout can upsert instead of duplicating.
-    uniqueIndex("attendees_workspace_contact_idx").on(table.workspaceId, table.contact),
+    uniqueIndex("guests_workspace_contact_idx").on(table.workspaceId, table.contact),
   ],
 );
 
@@ -185,9 +185,9 @@ export const registrations = pgTable(
     eventId: text("event_id")
       .notNull()
       .references(() => events.id, { onDelete: "cascade" }),
-    attendeeId: text("attendee_id")
+    guestId: text("guest_id")
       .notNull()
-      .references(() => attendees.id, { onDelete: "cascade" }),
+      .references(() => guests.id, { onDelete: "cascade" }),
     status: registrationStatus("status").notNull().default("pending"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     /** Set when the seat was bought rather than added by an organizer. */
@@ -201,7 +201,7 @@ export const registrations = pgTable(
     index("registrations_workspace_idx").on(table.workspaceId),
     // The duplicate-registration rule the memory adapter enforced in JS, enforced by the
     // database instead so a concurrent request can't slip past it.
-    uniqueIndex("registrations_event_attendee_idx").on(table.eventId, table.attendeeId),
+    uniqueIndex("registrations_event_guest_idx").on(table.eventId, table.guestId),
   ],
 );
 
@@ -356,14 +356,14 @@ export const menuItems = pgTable(
   (table) => [index("menu_event_idx").on(table.eventId)],
 );
 
-export const eventInspirations = pgTable(
-  "event_inspirations",
+export const moodBoardImages = pgTable(
+  "mood_board_images",
   {
     ...eventChild,
     url: text("url").notNull(),
     caption: text("caption"),
   },
-  (table) => [index("inspirations_event_idx").on(table.eventId)],
+  (table) => [index("mood_board_images_event_idx").on(table.eventId)],
 );
 
 export const floorplans = pgTable("floorplans", {
@@ -570,7 +570,7 @@ export const workspaceRelations = relations(workspaces, ({ many }) => ({
   members: many(workspaceMembers),
   events: many(events),
   locations: many(locations),
-  attendees: many(attendees),
+  guests: many(guests),
   vendors: many(vendors),
 }));
 
@@ -586,7 +586,7 @@ export const eventRelations = relations(events, ({ one, many }) => ({
 
 export const registrationRelations = relations(registrations, ({ one }) => ({
   event: one(events, { fields: [registrations.eventId], references: [events.id] }),
-  attendee: one(attendees, { fields: [registrations.attendeeId], references: [attendees.id] }),
+  guest: one(guests, { fields: [registrations.guestId], references: [guests.id] }),
 }));
 
 export const eventVendorRelations = relations(eventVendors, ({ one }) => ({

@@ -129,7 +129,7 @@ export default function VendorsIndex() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Vendors"
-        title="Your supplier network"
+        title="Your vendor network"
         description="Filter by city when you're planning across locations. Booking a vendor onto an event happens in that event's Suppliers section."
         actions={
           <Button asChild>

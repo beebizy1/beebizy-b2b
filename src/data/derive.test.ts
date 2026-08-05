@@ -205,7 +205,7 @@ describe("computeEventHealth — risks", () => {
       },
       NOW,
     );
-    const vendorRisk = health.risks.find((risk) => risk.section === "suppliers");
+    const vendorRisk = health.risks.find((risk) => risk.section === "vendors");
     expect(vendorRisk?.level).toBe("urgent");
     expect(vendorRisk?.message).toBe("Catering and Print still unconfirmed, in 6 days");
   });
@@ -215,7 +215,7 @@ describe("computeEventHealth — risks", () => {
       { event: makeEvent({ date: iso(18) }), ...emptyFacts, vendors: [booking("pending", "Catering")] },
       NOW,
     );
-    expect(health.risks.find((risk) => risk.section === "suppliers")?.level).toBe("watch");
+    expect(health.risks.find((risk) => risk.section === "vendors")?.level).toBe("watch");
   });
 
   it("stays quiet about vendors on a distant event", () => {
@@ -223,7 +223,7 @@ describe("computeEventHealth — risks", () => {
       { event: makeEvent({ date: iso(60) }), ...emptyFacts, vendors: [booking("pending", "Catering")] },
       NOW,
     );
-    expect(health.risks.some((risk) => risk.section === "suppliers")).toBe(false);
+    expect(health.risks.some((risk) => risk.section === "vendors")).toBe(false);
   });
 
   it("flags a draft that is nearly here", () => {
@@ -236,7 +236,7 @@ describe("computeEventHealth — risks", () => {
       { event: makeEvent({ capacity: 100, registrationCount: 112 }), ...emptyFacts },
       NOW,
     );
-    const risk = health.risks.find((r) => r.section === "people");
+    const risk = health.risks.find((r) => r.section === "guests");
     expect(risk?.message).toContain("oversubscribed by 12");
   });
 
@@ -245,7 +245,7 @@ describe("computeEventHealth — risks", () => {
       { event: makeEvent(), ...emptyFacts, budget: [expense(100_000, 130_000)] },
       NOW,
     );
-    expect(health.risks.find((r) => r.section === "money")?.message).toBe("Spend is 30% over the plan");
+    expect(health.risks.find((r) => r.section === "budget")?.message).toBe("Spend is 30% over the plan");
   });
 
   it("says nothing about a completed or cancelled event", () => {

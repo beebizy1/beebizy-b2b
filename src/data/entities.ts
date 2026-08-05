@@ -116,19 +116,19 @@ export type LocationPatch = Partial<LocationDraft>;
 
 /* --------------------------------------------------------------------- people */
 
-export interface Attendee extends OwnedRecord {
+export interface Guest extends OwnedRecord {
   name: string;
   contact: string;
   notes: string | null;
 }
 
-export interface AttendeeDraft {
+export interface GuestDraft {
   name: string;
   contact: string;
   notes?: string | null;
 }
 
-export type AttendeePatch = Partial<AttendeeDraft>;
+export type GuestPatch = Partial<GuestDraft>;
 
 export const REGISTRATION_STATUSES = ["pending", "confirmed", "cancelled"] as const;
 export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
@@ -137,18 +137,18 @@ export interface Registration extends OwnedRecord {
   eventId: string;
   /** Denormalized so the registrations list renders without joining events. */
   eventTitle: string;
-  attendeeId: string;
+  guestId: string;
   status: RegistrationStatus;
   registeredAt: IsoDateTime;
 }
 
-export interface RegistrationWithAttendee extends Registration {
-  attendee: Attendee | null;
+export interface RegistrationWithGuest extends Registration {
+  guest: Guest | null;
 }
 
 export interface RegistrationDraft {
   eventId: string;
-  attendeeId: string;
+  guestId: string;
   status?: RegistrationStatus;
 }
 
@@ -355,7 +355,7 @@ export interface MenuItemDraft {
 
 export type MenuItemPatch = Partial<MenuItemDraft>;
 
-export interface EventInspiration {
+export interface MoodBoardImage {
   id: string;
   eventId: string;
   url: string;
@@ -370,8 +370,8 @@ export interface EventInspiration {
  * A board is a freeform space for working something out before it is an event —
  * concepting a gala's look, collecting references for a launch, agreeing a palette.
  *
- * Deliberately not the same thing as an event's Inspiration strip: that is a scoped list
- * of reference images attached to one event. A board is owner-scoped, holds mixed card
+ * Deliberately not the same thing as an event's mood board: that is a scoped strip of
+ * reference images attached to one event. A board is owner-scoped, holds mixed card
  * kinds, and can exist before any event does — then be linked to one when it becomes
  * real. The old build had both and never said which was which.
  */
@@ -699,7 +699,7 @@ export interface EventHealth {
   risks: EventRisk[];
 }
 
-export type EventSectionId = "overview" | "plan" | "people" | "suppliers" | "money" | "share";
+export type EventSectionId = "overview" | "plan" | "guests" | "vendors" | "budget" | "share";
 
 /** A single row in the home page's "needs you today" list. */
 export interface AttentionItem {
@@ -727,7 +727,7 @@ export interface PortfolioSummary {
   eventsTotal: number;
   eventsUpcoming: number;
   eventsThisWeek: number;
-  attendeesTotal: number;
+  guestsTotal: number;
   registrationsConfirmed: number;
   registrationsPending: number;
   locationsTotal: number;

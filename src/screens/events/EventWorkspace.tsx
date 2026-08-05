@@ -53,9 +53,9 @@ import { EVENT_SECTIONS, eventSectionHref, sectionFromSlug } from "@/app/shell/n
 import type { Event, EventHealth, EventSectionId } from "@/data/entities";
 import OverviewSection from "./sections/OverviewSection";
 import PlanSection from "./sections/PlanSection";
-import PeopleSection from "./sections/PeopleSection";
-import SuppliersSection from "./sections/SuppliersSection";
-import MoneySection from "./sections/MoneySection";
+import GuestsSection from "./sections/GuestsSection";
+import VendorsSection from "./sections/VendorsSection";
+import BudgetSection from "./sections/BudgetSection";
 import ShareSection from "./sections/ShareSection";
 
 /**
@@ -315,9 +315,9 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       <WorkspaceHeader event={event} health={health} active={active} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "plan" ? <PlanSection event={event} /> : null}
-      {active === "people" ? <PeopleSection event={event} /> : null}
-      {active === "suppliers" ? <SuppliersSection event={event} /> : null}
-      {active === "money" ? <MoneySection event={event} /> : null}
+      {active === "guests" ? <GuestsSection event={event} /> : null}
+      {active === "vendors" ? <VendorsSection event={event} /> : null}
+      {active === "budget" ? <BudgetSection event={event} /> : null}
       {active === "share" ? <ShareSection event={event} /> : null}
     </div>
   );

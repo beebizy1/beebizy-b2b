@@ -14,14 +14,14 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type * as s from "./schema.ts";
 import type {
-  Attendee,
+  Guest,
   AuctionItem,
   BudgetItem,
   Canvas,
   CanvasCard,
   ChecklistItem,
   Event,
-  EventInspiration,
+  MoodBoardImage,
   EventRoi,
   EventVendor,
   Floorplan,
@@ -90,7 +90,7 @@ export function toEvent(
   };
 }
 
-export function toAttendee(row: InferSelectModel<typeof s.attendees>): Attendee {
+export function toGuest(row: InferSelectModel<typeof s.guests>): Guest {
   return {
     id: row.id,
     ownerId: row.workspaceId,
@@ -111,7 +111,7 @@ export function toRegistration(
     ownerId: row.workspaceId,
     eventId: row.eventId,
     eventTitle,
-    attendeeId: row.attendeeId,
+    guestId: row.guestId,
     status: row.status,
     registeredAt: isoRequired(row.registeredAt),
     createdAt: isoRequired(row.createdAt),
@@ -242,7 +242,7 @@ export function toMenuItem(row: InferSelectModel<typeof s.menuItems>): MenuItem 
   };
 }
 
-export function toInspiration(row: InferSelectModel<typeof s.eventInspirations>): EventInspiration {
+export function toMoodBoardImage(row: InferSelectModel<typeof s.moodBoardImages>): MoodBoardImage {
   return {
     id: row.id,
     eventId: row.eventId,

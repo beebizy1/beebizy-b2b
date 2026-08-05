@@ -64,16 +64,16 @@ async function main() {
 
   /* Capacity and duplicates are enforced by the database, not by a check in memory. */
   const [a1, a2, a3] = await Promise.all([
-    repos.attendees.create(alice, { name: "One", contact: `one-${suffix}@example.com` }),
-    repos.attendees.create(alice, { name: "Two", contact: `two-${suffix}@example.com` }),
-    repos.attendees.create(alice, { name: "Three", contact: `three-${suffix}@example.com` }),
+    repos.guests.create(alice, { name: "One", contact: `one-${suffix}@example.com` }),
+    repos.guests.create(alice, { name: "Two", contact: `two-${suffix}@example.com` }),
+    repos.guests.create(alice, { name: "Three", contact: `three-${suffix}@example.com` }),
   ]);
-  await repos.registrations.create(alice, { eventId: event.id, attendeeId: a1!.id, status: "confirmed" });
-  await repos.registrations.create(alice, { eventId: event.id, attendeeId: a2!.id, status: "confirmed" });
+  await repos.registrations.create(alice, { eventId: event.id, guestId: a1!.id, status: "confirmed" });
+  await repos.registrations.create(alice, { eventId: event.id, guestId: a2!.id, status: "confirmed" });
 
   let overCapacity = false;
   try {
-    await repos.registrations.create(alice, { eventId: event.id, attendeeId: a3!.id, status: "confirmed" });
+    await repos.registrations.create(alice, { eventId: event.id, guestId: a3!.id, status: "confirmed" });
   } catch (error) {
     overCapacity = /capacity/i.test(String(error));
   }
@@ -81,7 +81,7 @@ async function main() {
 
   let duplicate = false;
   try {
-    await repos.registrations.create(alice, { eventId: event.id, attendeeId: a1!.id });
+    await repos.registrations.create(alice, { eventId: event.id, guestId: a1!.id });
   } catch (error) {
     duplicate = /already registered/i.test(String(error));
   }

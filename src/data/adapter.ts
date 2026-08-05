@@ -13,9 +13,9 @@
  */
 
 import type {
-  Attendee,
-  AttendeeDraft,
-  AttendeePatch,
+  Guest,
+  GuestDraft,
+  GuestPatch,
   AttentionItem,
   AuctionItem,
   AuctionItemDraft,
@@ -34,7 +34,7 @@ import type {
   EventDraft,
   EventFilter,
   EventHealth,
-  EventInspiration,
+  MoodBoardImage,
   EventPatch,
   EventRoi,
   EventVendor,
@@ -58,7 +58,7 @@ import type {
   Registration,
   RegistrationDraft,
   RegistrationStatus,
-  RegistrationWithAttendee,
+  RegistrationWithGuest,
   RunOfShowItem,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -113,8 +113,8 @@ export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft
 }
 
 export interface RegistrationsRepository {
-  list(): Promise<RegistrationWithAttendee[]>;
-  listForEvent(eventId: string): Promise<RegistrationWithAttendee[]>;
+  list(): Promise<RegistrationWithGuest[]>;
+  listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
   remove(id: string): Promise<void>;
@@ -210,7 +210,7 @@ export interface DataAdapter {
   me(): Promise<Identity>;
   events: EventsRepository;
   locations: OwnedRepository<Location, LocationDraft, LocationPatch>;
-  attendees: OwnedRepository<Attendee, AttendeeDraft, AttendeePatch>;
+  guests: OwnedRepository<Guest, GuestDraft, GuestPatch>;
   registrations: RegistrationsRepository;
   vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch>;
   vendorMessages: VendorMessagesRepository;
@@ -219,7 +219,7 @@ export interface DataAdapter {
   runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
   budget: EventScopedRepository<BudgetItem, BudgetItemDraft, BudgetItemPatch>;
   menu: EventScopedRepository<MenuItem, MenuItemDraft, MenuItemPatch>;
-  inspirations: EventScopedRepository<EventInspiration, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>;
+  moodBoard: EventScopedRepository<MoodBoardImage, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>;
   tickets: TicketsRepository;
   auction: EventScopedRepository<AuctionItem, AuctionItemDraft, AuctionItemPatch>;
   raffle: RaffleRepository;

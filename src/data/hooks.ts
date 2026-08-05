@@ -17,8 +17,8 @@ import {
 import { useData } from "./provider";
 import type { DataAdapter } from "./adapter";
 import type {
-  AttendeeDraft,
-  AttendeePatch,
+  GuestDraft,
+  GuestPatch,
   AttentionItem,
   AuctionItemDraft,
   AuctionItemPatch,
@@ -80,7 +80,7 @@ export const qk = {
   locations: ["locations"] as const,
   location: (id: string) => ["locations", "detail", id] as const,
 
-  attendees: ["attendees"] as const,
+  guests: ["guests"] as const,
 
   registrations: ["registrations"] as const,
   eventRegistrations: (eventId: string) => ["registrations", "byEvent", eventId] as const,
@@ -94,7 +94,7 @@ export const qk = {
   runOfShow: (eventId: string) => ["runOfShow", eventId] as const,
   budget: (eventId: string) => ["budget", eventId] as const,
   menu: (eventId: string) => ["menu", eventId] as const,
-  inspirations: (eventId: string) => ["inspirations", eventId] as const,
+  moodBoard: (eventId: string) => ["moodBoard", eventId] as const,
 
   tickets: (eventId: string) => ["tickets", eventId] as const,
   allTickets: ["tickets", "all"] as const,
@@ -265,27 +265,27 @@ export function useDeleteLocation() {
   return useAdapterMutation((a, vars: { id: string }) => a.locations.remove(vars.id), () => [qk.locations]);
 }
 
-/* ------------------------------------------------------------------ attendees */
+/* ------------------------------------------------------------------ guests */
 
-export function useAttendees() {
-  return useAdapterQuery(qk.attendees, (a) => a.attendees.list());
+export function useGuests() {
+  return useAdapterQuery(qk.guests, (a) => a.guests.list());
 }
 
-export function useCreateAttendee() {
-  return useAdapterMutation((a, draft: AttendeeDraft) => a.attendees.create(draft), () => [qk.attendees, qk.portfolio]);
+export function useCreateGuest() {
+  return useAdapterMutation((a, draft: GuestDraft) => a.guests.create(draft), () => [qk.guests, qk.portfolio]);
 }
 
-export function useUpdateAttendee() {
+export function useUpdateGuest() {
   return useAdapterMutation(
-    (a, vars: { id: string; patch: AttendeePatch }) => a.attendees.update(vars.id, vars.patch),
-    () => [qk.attendees, qk.registrations],
+    (a, vars: { id: string; patch: GuestPatch }) => a.guests.update(vars.id, vars.patch),
+    () => [qk.guests, qk.registrations],
   );
 }
 
-export function useDeleteAttendee() {
+export function useDeleteGuest() {
   return useAdapterMutation(
-    (a, vars: { id: string }) => a.attendees.remove(vars.id),
-    () => [qk.attendees, qk.registrations, ...eventDerivedKeys()],
+    (a, vars: { id: string }) => a.guests.remove(vars.id),
+    () => [qk.guests, qk.registrations, ...eventDerivedKeys()],
   );
 }
 
@@ -505,24 +505,24 @@ export function useRemoveMenuItem() {
   );
 }
 
-/* ---------------------------------------------------------------- inspiration */
+/* ----------------------------------------------------------------- mood board */
 
-export function useInspirations(eventId: string) {
-  return useAdapterQuery(qk.inspirations(eventId), (a) => a.inspirations.list(eventId), { enabled: !!eventId });
+export function useMoodBoard(eventId: string) {
+  return useAdapterQuery(qk.moodBoard(eventId), (a) => a.moodBoard.list(eventId), { enabled: !!eventId });
 }
 
-export function useAddInspiration() {
+export function useAddMoodBoardImage() {
   return useAdapterMutation(
     (a, vars: { eventId: string; url: string; caption?: string | null }) =>
-      a.inspirations.create(vars.eventId, { url: vars.url, caption: vars.caption }),
-    (vars) => [qk.inspirations(vars.eventId)],
+      a.moodBoard.create(vars.eventId, { url: vars.url, caption: vars.caption }),
+    (vars) => [qk.moodBoard(vars.eventId)],
   );
 }
 
-export function useRemoveInspiration() {
+export function useRemoveMoodBoardImage() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; id: string }) => a.inspirations.remove(vars.eventId, vars.id),
-    (vars) => [qk.inspirations(vars.eventId)],
+    (a, vars: { eventId: string; id: string }) => a.moodBoard.remove(vars.eventId, vars.id),
+    (vars) => [qk.moodBoard(vars.eventId)],
   );
 }
 
@@ -569,7 +569,7 @@ export function usePurchaseTickets() {
     // `["tickets"]` as a prefix, not `qk.allTickets`: the public page reads
     // `qk.tickets(eventId)`, so invalidating only the portfolio key left the buyer
     // looking at a stale "6 left" after their own purchase took it to 4.
-    (vars) => [qk.eventByToken(vars.shareToken), ["tickets"], qk.registrations, qk.attendees, ...eventDerivedKeys()],
+    (vars) => [qk.eventByToken(vars.shareToken), ["tickets"], qk.registrations, qk.guests, ...eventDerivedKeys()],
   );
 }
 

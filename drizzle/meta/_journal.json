@@ -15,6 +15,13 @@
       "when": 1785947339913,
       "tag": "0001_drop_theme_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785950000000,
+      "tag": "0002_industry_vocabulary",
+      "breakpoints": true
     }
   ]
 }

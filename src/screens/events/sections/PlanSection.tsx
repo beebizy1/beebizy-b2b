@@ -1,5 +1,5 @@
 /**
- * Plan: checklist, run of show and inspiration.
+ * Plan: checklist, run of show and mood board.
  *
  * The checklist groups by area and surfaces overdue items first, because "17 tasks"
  * is not a plan — "Catering: 2 overdue" is. Ticking an item writes immediately and
@@ -27,12 +27,12 @@ import {
 } from "@/components/primitives";
 import {
   useAddChecklistItem,
-  useAddInspiration,
+  useAddMoodBoardImage,
   useAddRunOfShowItem,
   useChecklist,
-  useInspirations,
+  useMoodBoard,
   useRemoveChecklistItem,
-  useRemoveInspiration,
+  useRemoveMoodBoardImage,
   useRemoveRunOfShowItem,
   useRunOfShow,
   useUpdateChecklistItem,
@@ -248,6 +248,7 @@ function ChecklistPanel({ event }: { event: Event }) {
 }
 
 function RunOfShowPanel({ event }: { event: Event }) {
+  const { timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const add = useAddRunOfShowItem();
   const remove = useRemoveRunOfShowItem();
@@ -280,7 +281,7 @@ function RunOfShowPanel({ event }: { event: Event }) {
 
   return (
     <Panel>
-      <PanelHeader title="Run of show" description="Times are local to the venue" />
+      <PanelHeader title="Run of show" description={`Cue times in ${timeZoneLabel}, the workspace\u2019s zone`} />
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
@@ -361,16 +362,16 @@ function RunOfShowPanel({ event }: { event: Event }) {
   );
 }
 
-function InspirationPanel({ event }: { event: Event }) {
-  const { data: images, isLoading } = useInspirations(event.id);
-  const add = useAddInspiration();
-  const remove = useRemoveInspiration();
+function MoodBoardPanel({ event }: { event: Event }) {
+  const { data: images, isLoading } = useMoodBoard(event.id);
+  const add = useAddMoodBoardImage();
+  const remove = useRemoveMoodBoardImage();
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
 
   return (
     <Panel>
-      <PanelHeader title="Inspiration" description="Reference images for decor, staging and lighting" />
+      <PanelHeader title="Mood board" description="Reference images for decor, staging and lighting" />
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
@@ -414,19 +415,21 @@ function InspirationPanel({ event }: { event: Event }) {
       {isLoading ? (
         <LoadingRows rows={2} className="p-4" />
       ) : (images ?? []).length === 0 ? (
-        <EmptyState icon={ImagePlus} title="No references yet" description="Paste an image URL to start a mood board." />
+        <EmptyState icon={ImagePlus} title="No references yet" description="Paste an image URL to start building the look." />
       ) : (
-        <ul className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3">
+        <ul className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
           {(images ?? []).map((image) => (
             <li key={image.id} className="group relative overflow-hidden rounded-lg border border-hairline">
               <img
                 src={image.url}
-                alt={image.caption ?? "Event inspiration"}
+                alt={image.caption ?? "Mood board reference"}
                 loading="lazy"
                 className="aspect-4/3 w-full object-cover"
               />
               {image.caption ? (
-                <p className="px-2.5 py-2 text-xs text-muted-foreground">{image.caption}</p>
+                <p className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-brand-ink/85 to-transparent px-2.5 pb-2 pt-6 text-xs font-medium text-white">
+                  {image.caption}
+                </p>
               ) : null}
               <button
                 type="button"
@@ -451,14 +454,14 @@ function InspirationPanel({ event }: { event: Event }) {
 
 export default function PlanSection({ event }: { event: Event }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-      <div className="space-y-6">
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <ChecklistPanel event={event} />
-      </div>
-      <div className="space-y-6">
         <RunOfShowPanel event={event} />
-        <InspirationPanel event={event} />
       </div>
+      {/* Full width, below the two working panels: reference images are for judging a look,
+          and at sidebar width they were too small to judge anything by. */}
+      <MoodBoardPanel event={event} />
     </div>
   );
 }

@@ -27,7 +27,7 @@ import { formatMoney, sumCents } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import { cn } from "@/lib/utils";
 
-export default function Money() {
+export default function Budget() {
   const { date: formatDate } = usePreferences();
   const { data: portfolio, isLoading: portfolioLoading } = usePortfolio();
   const { data: events, isLoading: eventsLoading, isError, error, refetch } = useEvents();
@@ -82,8 +82,8 @@ export default function Money() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Money"
-        title="Where the money is"
+        eyebrow="Budget"
+        title="What each event cost and what it brought in"
         description="Booked revenue and committed spend per event. Amounts are what has actually happened, not forecast."
       />
 
@@ -177,7 +177,7 @@ export default function Money() {
                     <tr key={row.event.id} className="border-b border-hairline last:border-0 hover:bg-accent/40">
                       <td className="px-5 py-3">
                         <Link
-                          href={eventSectionHref(row.event.id, "money")}
+                          href={eventSectionHref(row.event.id, "budget")}
                           className="text-sm font-medium text-foreground hover:underline"
                         >
                           {row.event.title}
@@ -242,7 +242,7 @@ export default function Money() {
                       {remaining === 0 ? <Pill tone="warning">sold out</Pill> : null}
                     </div>
                     <Link
-                      href={eventSectionHref(ticket.eventId, "money")}
+                      href={eventSectionHref(ticket.eventId, "budget")}
                       className="truncate text-xs text-muted-foreground hover:underline"
                     >
                       {ticket.eventTitle}

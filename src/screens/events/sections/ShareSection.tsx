@@ -164,7 +164,7 @@ export default function ShareSection({ event }: { event: Event }) {
           <div className="flex items-start gap-2.5">
             <Eye className="mt-0.5 size-4 shrink-0 text-danger-text" aria-hidden="true" />
             <p className="text-foreground">
-              <span className="font-medium">Never visible:</span> your budget, vendor fees, guest list, attendee contact
+              <span className="font-medium">Never visible:</span> your budget, vendor fees, guest list, guest contact
               details, sponsorship amounts and auction bids.
             </p>
           </div>

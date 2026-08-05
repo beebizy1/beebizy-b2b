@@ -3,9 +3,9 @@
  *
  * The old build shipped both a "Canvas / Inspiration Card" area and a per-event
  * Inspiration tab without ever saying which was for what, so they read as the same
- * feature twice. The line here: **Inspiration** is a scoped strip of reference images
- * belonging to one event; a **board** is owner-scoped, holds mixed cards, and exists
- * before there is an event to attach it to.
+ * feature twice. The line here: an event's **mood board** is a scoped strip of reference
+ * images belonging to that one event; a **board** is owner-scoped, holds mixed cards, and
+ * exists before there is an event to attach it to.
  *
  * Interaction matches the floorplan editor deliberately — drag to move, tab and arrow
  * keys to nudge, local edits until saved — because two different direct-manipulation

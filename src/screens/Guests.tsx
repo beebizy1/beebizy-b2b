@@ -1,7 +1,7 @@
 /**
  * People.
  *
- * Attendees and Registrations were two separate nav items in the old build, which meant
+ * Guests and Registrations were two separate nav items in the old build, which meant
  * "who is this person and what are they coming to?" needed two pages and a mental join.
  * One list, with each person's registrations inline.
  */
@@ -34,11 +34,11 @@ import {
   RegistrationStatusBadge,
   StatTile,
 } from "@/components/primitives";
-import { useAttendees, useCreateAttendee, useDeleteAttendee, useRegistrations } from "@/data/hooks";
-import type { RegistrationWithAttendee } from "@/data/entities";
+import { useGuests, useCreateGuest, useDeleteGuest, useRegistrations } from "@/data/hooks";
+import type { RegistrationWithGuest } from "@/data/entities";
 
 function AddPersonForm() {
-  const create = useCreateAttendee();
+  const create = useCreateGuest();
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
 
@@ -85,54 +85,54 @@ function AddPersonForm() {
   );
 }
 
-export default function People() {
-  const { data: attendees, isLoading, isError, error, refetch } = useAttendees();
+export default function Guests() {
+  const { data: guests, isLoading, isError, error, refetch } = useGuests();
   const { data: registrations } = useRegistrations();
-  const removePerson = useDeleteAttendee();
+  const removePerson = useDeleteGuest();
   const [search, setSearch] = useState("");
 
-  const byAttendee = useMemo(() => {
-    const map = new Map<string, RegistrationWithAttendee[]>();
+  const byGuest = useMemo(() => {
+    const map = new Map<string, RegistrationWithGuest[]>();
     for (const registration of registrations ?? []) {
-      const bucket = map.get(registration.attendeeId);
+      const bucket = map.get(registration.guestId);
       if (bucket) bucket.push(registration);
-      else map.set(registration.attendeeId, [registration]);
+      else map.set(registration.guestId, [registration]);
     }
     return map;
   }, [registrations]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return attendees ?? [];
-    return (attendees ?? []).filter((attendee) =>
-      [attendee.name, attendee.contact, attendee.notes ?? ""].some((field) => field.toLowerCase().includes(needle)),
+    if (!needle) return guests ?? [];
+    return (guests ?? []).filter((guest) =>
+      [guest.name, guest.contact, guest.notes ?? ""].some((field) => field.toLowerCase().includes(needle)),
     );
-  }, [attendees, search]);
+  }, [guests, search]);
 
   const confirmed = (registrations ?? []).filter((r) => r.status === "confirmed").length;
   const pending = (registrations ?? []).filter((r) => r.status === "pending").length;
-  const withNotes = (attendees ?? []).filter((a) => a.notes).length;
+  const withNotes = (guests ?? []).filter((a) => a.notes).length;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="People"
+        eyebrow="Guests"
         title="Everyone you invite"
         description="One record per person, with every event they're registered for. Notes carry dietary and access requirements through to the caterer."
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="People" value={attendees?.length ?? 0} icon={Users} loading={isLoading} />
+        <StatTile label="Guests" value={guests?.length ?? 0} icon={Users} loading={isLoading} />
         <StatTile label="Confirmed registrations" value={confirmed} tone="success" loading={isLoading} />
         <StatTile label="Pending" value={pending} tone="warning" loading={isLoading} />
         <StatTile label="With requirements" value={withNotes} tone="info" loading={isLoading} />
       </div>
 
-      {isError ? <ErrorNotice error={error} title="Couldn't load people" onRetry={() => void refetch()} /> : null}
+      {isError ? <ErrorNotice error={error} title="Couldn't load guests" onRetry={() => void refetch()} /> : null}
 
       <Panel>
         <PanelHeader
-          title={`${visible.length} ${visible.length === 1 ? "person" : "people"}`}
+          title={`${visible.length} ${visible.length === 1 ? "guest" : "guests"}`}
           actions={
             <div className="relative w-52">
               <Search
@@ -167,21 +167,21 @@ export default function People() {
           />
         ) : (
           <ul className="divide-y divide-hairline">
-            {visible.map((attendee) => {
-              const theirRegistrations = byAttendee.get(attendee.id) ?? [];
+            {visible.map((guest) => {
+              const theirRegistrations = byGuest.get(guest.id) ?? [];
               return (
-                <li key={attendee.id} className="flex flex-wrap items-start gap-3 px-5 py-3">
+                <li key={guest.id} className="flex flex-wrap items-start gap-3 px-5 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">{attendee.name}</span>
-                      {attendee.notes ? <Pill tone="info">{attendee.notes}</Pill> : null}
+                      <span className="truncate text-sm font-medium text-foreground">{guest.name}</span>
+                      {guest.notes ? <Pill tone="info">{guest.notes}</Pill> : null}
                     </div>
                     <a
-                      href={`mailto:${attendee.contact}`}
+                      href={`mailto:${guest.contact}`}
                       className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                     >
                       <Mail className="size-3" aria-hidden="true" />
-                      {attendee.contact}
+                      {guest.contact}
                     </a>
                     {theirRegistrations.length > 0 ? (
                       <ul className="mt-2 flex flex-wrap gap-2">
@@ -204,13 +204,13 @@ export default function People() {
 
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" aria-label={`Delete ${attendee.name}`}>
+                      <Button variant="outline" size="sm" aria-label={`Delete ${guest.name}`}>
                         <Trash2 className="size-3.5 text-danger-text" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Delete {attendee.name}?</AlertDialogTitle>
+                        <AlertDialogTitle>Delete {guest.name}?</AlertDialogTitle>
                         <AlertDialogDescription>
                           {theirRegistrations.length > 0
                             ? `This also removes ${theirRegistrations.length} registration${theirRegistrations.length === 1 ? "" : "s"} and updates those events' counts.`
@@ -222,9 +222,9 @@ export default function People() {
                         <AlertDialogAction
                           onClick={() =>
                             removePerson.mutate(
-                              { id: attendee.id },
+                              { id: guest.id },
                               {
-                                onSuccess: () => toast({ title: "Deleted", description: `${attendee.name} was removed.` }),
+                                onSuccess: () => toast({ title: "Deleted", description: `${guest.name} was removed.` }),
                                 onError: (mutationError) =>
                                   toast({ title: "Couldn't delete", description: mutationError.message }),
                               },

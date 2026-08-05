@@ -349,13 +349,13 @@ export default function Today() {
                 </span>
               </Link>
               <Link
-                href="/app/people"
+                href="/app/guests"
                 className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/60"
               >
                 <Users className="size-4 text-muted-foreground" aria-hidden="true" />
                 <span className="flex-1 text-sm font-medium text-foreground">People</span>
                 <span data-numeric className="text-sm text-muted-foreground">
-                  {portfolio?.attendeesTotal ?? 0}
+                  {portfolio?.guestsTotal ?? 0}
                 </span>
               </Link>
             </div>

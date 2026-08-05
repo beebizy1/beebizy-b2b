@@ -1,5 +1,5 @@
 /**
- * Suppliers: who is delivering what, and whether they've said yes.
+ * Vendors: who is delivering what, and whether they've said yes.
  *
  * Booking status is the single most load-bearing field in the product — an unconfirmed
  * caterer ten days out is the risk that shows up on Today — so it is editable inline
@@ -368,7 +368,7 @@ function MenuPanel({ event }: { event: Event }) {
   );
 }
 
-export default function SuppliersSection({ event }: { event: Event }) {
+export default function VendorsSection({ event }: { event: Event }) {
   const { data: bookings } = useEventVendors(event.id);
 
   const byCategory = useMemo(() => {

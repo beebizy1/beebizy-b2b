@@ -33,7 +33,7 @@ import type {
   OpenTask,
   PortfolioSummary,
   Registration,
-  RegistrationWithAttendee,
+  RegistrationWithGuest,
   TemplateContents,
   TicketTypeWithEvent,
   UserSettings,
@@ -414,22 +414,22 @@ export const locations = {
   },
 };
 
-/* -------------------------------------------------------------- attendees */
+/* -------------------------------------------------------------- guests */
 
-export const attendees = {
+export const guests = {
   async list(ctx: RequestContext) {
     const rows = await db
       .select()
-      .from(s.attendees)
-      .where(eq(s.attendees.workspaceId, ctx.workspaceId))
-      .orderBy(asc(s.attendees.name));
-    return rows.map(map.toAttendee);
+      .from(s.guests)
+      .where(eq(s.guests.workspaceId, ctx.workspaceId))
+      .orderBy(asc(s.guests.name));
+    return rows.map(map.toGuest);
   },
   async create(ctx: RequestContext, body: Body) {
     const id = newId("att");
     const contact = str(body, "contact");
     try {
-      await db.insert(s.attendees).values({
+      await db.insert(s.guests).values({
         id,
         workspaceId: ctx.workspaceId,
         name: str(body, "name"),
@@ -438,13 +438,13 @@ export const attendees = {
       });
     } catch (error) {
       // The unique index on (workspace, contact) is what makes this a real rule.
-      if (String(error).includes("attendees_workspace_contact_idx")) {
+      if (String(error).includes("guests_workspace_contact_idx")) {
         throw new HttpError(409, `Someone with the email ${contact} is already in your people list.`);
       }
       throw error;
     }
-    const [row] = await db.select().from(s.attendees).where(eq(s.attendees.id, id)).limit(1);
-    return map.toAttendee(row!);
+    const [row] = await db.select().from(s.guests).where(eq(s.guests.id, id)).limit(1);
+    return map.toGuest(row!);
   },
   async update(ctx: RequestContext, id: string, body: Body) {
     const patch = patchFrom<Record<string, unknown>>(body, {
@@ -453,32 +453,32 @@ export const attendees = {
       notes: (b) => optStr(b, "notes"),
     });
     const updated = await db
-      .update(s.attendees)
+      .update(s.guests)
       .set({ ...patch, updatedAt: new Date() })
-      .where(and(eq(s.attendees.id, id), eq(s.attendees.workspaceId, ctx.workspaceId)))
+      .where(and(eq(s.guests.id, id), eq(s.guests.workspaceId, ctx.workspaceId)))
       .returning();
     if (updated.length === 0) throw new HttpError(404, "That person no longer exists.");
-    return map.toAttendee(updated[0]!);
+    return map.toGuest(updated[0]!);
   },
   async remove(ctx: RequestContext, id: string): Promise<void> {
     requireRole(ctx, ["owner", "admin"]);
-    await db.delete(s.attendees).where(and(eq(s.attendees.id, id), eq(s.attendees.workspaceId, ctx.workspaceId)));
+    await db.delete(s.guests).where(and(eq(s.guests.id, id), eq(s.guests.workspaceId, ctx.workspaceId)));
   },
 };
 
 /* ---------------------------------------------------------- registrations */
 
-async function joinRegistrations(where: ReturnType<typeof and>): Promise<RegistrationWithAttendee[]> {
+async function joinRegistrations(where: ReturnType<typeof and>): Promise<RegistrationWithGuest[]> {
   const rows = await db
-    .select({ registration: s.registrations, attendee: s.attendees, eventTitle: s.events.title })
+    .select({ registration: s.registrations, guest: s.guests, eventTitle: s.events.title })
     .from(s.registrations)
     .innerJoin(s.events, eq(s.registrations.eventId, s.events.id))
-    .leftJoin(s.attendees, eq(s.registrations.attendeeId, s.attendees.id))
+    .leftJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
     .where(where)
     .orderBy(desc(s.registrations.registeredAt));
   return rows.map((row) => ({
     ...map.toRegistration(row.registration, row.eventTitle),
-    attendee: row.attendee ? map.toAttendee(row.attendee) : null,
+    guest: row.guest ? map.toGuest(row.guest) : null,
   }));
 }
 
@@ -489,7 +489,7 @@ export const registrations = {
 
   async create(ctx: RequestContext, body: Body): Promise<Registration> {
     const eventId = str(body, "eventId");
-    const attendeeId = str(body, "attendeeId");
+    const guestId = str(body, "guestId");
 
     const event = await events.get(ctx, eventId);
     if (!event) throw new HttpError(404, "That event no longer exists.");
@@ -500,9 +500,9 @@ export const registrations = {
     const [duplicate] = await db
       .select({ id: s.registrations.id })
       .from(s.registrations)
-      .where(and(eq(s.registrations.eventId, eventId), eq(s.registrations.attendeeId, attendeeId)))
+      .where(and(eq(s.registrations.eventId, eventId), eq(s.registrations.guestId, guestId)))
       .limit(1);
-    if (duplicate) throw new HttpError(409, "That attendee is already registered for this event.");
+    if (duplicate) throw new HttpError(409, "That guest is already registered for this event.");
 
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
@@ -514,12 +514,12 @@ export const registrations = {
         id,
         workspaceId: ctx.workspaceId,
         eventId,
-        attendeeId,
+        guestId,
         status: (optStr(body, "status") ?? "pending") as "pending",
       });
     } catch (error) {
-      if (String(error).includes("registrations_event_attendee_idx")) {
-        throw new HttpError(409, "That attendee is already registered for this event.");
+      if (String(error).includes("registrations_event_guest_idx")) {
+        throw new HttpError(409, "That guest is already registered for this event.");
       }
       throw error;
     }
@@ -846,9 +846,9 @@ export const menu = eventScoped({
   },
 });
 
-export const inspirations = eventScoped({
-  table: s.eventInspirations as never,
-  mapper: map.toInspiration as never,
+export const moodBoard = eventScoped({
+  table: s.moodBoardImages as never,
+  mapper: map.toMoodBoardImage as never,
   idPrefix: "insp",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
@@ -1466,10 +1466,10 @@ export const analytics = {
 
   async portfolio(ctx: RequestContext): Promise<PortfolioSummary> {
     const f = await facts(ctx);
-    const [{ attendeeCount } = { attendeeCount: 0 }] = await db
-      .select({ attendeeCount: count() })
-      .from(s.attendees)
-      .where(eq(s.attendees.workspaceId, ctx.workspaceId));
+    const [{ guestCount } = { guestCount: 0 }] = await db
+      .select({ guestCount: count() })
+      .from(s.guests)
+      .where(eq(s.guests.workspaceId, ctx.workspaceId));
     const [{ locationCount } = { locationCount: 0 }] = await db
       .select({ locationCount: count() })
       .from(s.locations)
@@ -1482,7 +1482,7 @@ export const analytics = {
     return computePortfolio({
       events: f.eventRows,
       registrations: f.registrations.map((row) => map.toRegistration(row, "")),
-      attendeeCount: Number(attendeeCount),
+      guestCount: Number(guestCount),
       locationCount: Number(locationCount),
       vendorCount: Number(vendorCount),
       budget: [...f.budget.values()].flat(),

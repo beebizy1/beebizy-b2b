@@ -138,7 +138,7 @@ function assessRisks(facts: EventFacts, now: Date, timeZone?: string): EventRisk
     risks.push({
       level: days <= 10 ? "urgent" : "watch",
       message: `${listPhrase(categories)} still unconfirmed, ${describeWhen(event.date, now)}`,
-      section: "suppliers",
+      section: "vendors",
     });
   }
 
@@ -154,7 +154,7 @@ function assessRisks(facts: EventFacts, now: Date, timeZone?: string): EventRisk
     risks.push({
       level: "urgent",
       message: `${event.registrationCount} registered against ${event.capacity} places — oversubscribed by ${event.registrationCount - event.capacity}`,
-      section: "people",
+      section: "guests",
     });
   }
 
@@ -166,7 +166,7 @@ function assessRisks(facts: EventFacts, now: Date, timeZone?: string): EventRisk
     risks.push({
       level: overBy >= 10 ? "urgent" : "watch",
       message: `Spend is ${overBy}% over the plan`,
-      section: "money",
+      section: "budget",
     });
   }
 
@@ -175,7 +175,7 @@ function assessRisks(facts: EventFacts, now: Date, timeZone?: string): EventRisk
     risks.push({
       level: "watch",
       message: soldOut.length === 1 ? `${soldOut[0]!.name} is sold out` : `${soldOut.length} ticket types sold out`,
-      section: "money",
+      section: "budget",
     });
   }
 
@@ -245,7 +245,7 @@ export function buildAttention(events: Event[], healths: EventHealth[]): Attenti
 export interface PortfolioFacts {
   events: Event[];
   registrations: Registration[];
-  attendeeCount: number;
+  guestCount: number;
   locationCount: number;
   vendorCount: number;
   budget: BudgetItem[];
@@ -271,7 +271,7 @@ export function computePortfolio(
     eventsTotal: facts.events.length,
     eventsUpcoming: upcoming.length,
     eventsThisWeek: upcoming.filter((e) => (daysUntil(e.date, now, timeZone) ?? 999) <= 7).length,
-    attendeesTotal: facts.attendeeCount,
+    guestsTotal: facts.guestCount,
     registrationsConfirmed: facts.registrations.filter((r) => r.status === "confirmed").length,
     registrationsPending: facts.registrations.filter((r) => r.status === "pending").length,
     locationsTotal: facts.locationCount,

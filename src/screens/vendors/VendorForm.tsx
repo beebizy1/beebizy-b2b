@@ -45,7 +45,7 @@ export default function VendorForm() {
 
       <PageHeader
         eyebrow="New vendor"
-        title="Add a supplier"
+        title="Add a vendor"
         description="They go into your directory, ready to book onto any event."
       />
 

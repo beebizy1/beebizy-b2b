@@ -31,11 +31,11 @@ import Today from "@/screens/Today";
 import EventsIndex from "@/screens/events/EventsIndex";
 import EventForm from "@/screens/events/EventForm";
 import EventWorkspace from "@/screens/events/EventWorkspace";
-import People from "@/screens/People";
+import Guests from "@/screens/Guests";
 import VendorsIndex from "@/screens/vendors/VendorsIndex";
 import VendorDetail from "@/screens/vendors/VendorDetail";
 import VendorForm from "@/screens/vendors/VendorForm";
-import Money from "@/screens/Money";
+import Budget from "@/screens/Budget";
 import Tasks from "@/screens/Tasks";
 import Library from "@/screens/Library";
 import TemplateDetail from "@/screens/library/TemplateDetail";
@@ -71,12 +71,12 @@ function AppRoutes() {
             {(params) => <EventWorkspace id={params.id} section={params.section} />}
           </Route>
           <Route path="/app/events/:id">{(params) => <EventWorkspace id={params.id} />}</Route>
-          <Route path="/app/people" component={People} />
-          <Route path="/app/people/new" component={People} />
+          <Route path="/app/guests" component={Guests} />
+          <Route path="/app/guests/new" component={Guests} />
           <Route path="/app/vendors" component={VendorsIndex} />
           <Route path="/app/vendors/new">{() => <VendorForm />}</Route>
           <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
-          <Route path="/app/money" component={Money} />
+          <Route path="/app/budget" component={Budget} />
           <Route path="/app/tasks" component={Tasks} />
           <Route path="/app/library" component={Library} />
           <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
@@ -102,16 +102,22 @@ function Routes() {
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>
 
-      {/* Legacy links from the previous route layout. */}
+      {/*
+        Legacy links from the previous route layout, plus the two this rebuild moved when
+        the vocabulary changed — /app/money and /app/people were live long enough to be
+        bookmarked, and a dead bookmark is a worse welcome than a redirect.
+      */}
+      <Route path="/app/money">{() => <Redirect to="/app/budget" replace />}</Route>
+      <Route path="/app/people">{() => <Redirect to="/app/guests" replace />}</Route>
       <Route path="/dashboard">{() => <Redirect to="/app" replace />}</Route>
       <Route path="/dashboard/events">{() => <Redirect to="/app/events" replace />}</Route>
       <Route path="/dashboard/events/:id">{(params) => <Redirect to={`/app/events/${params.id}`} replace />}</Route>
       <Route path="/dashboard/vendors">{() => <Redirect to="/app/vendors" replace />}</Route>
-      <Route path="/dashboard/attendees">{() => <Redirect to="/app/people" replace />}</Route>
-      <Route path="/dashboard/registrations">{() => <Redirect to="/app/people" replace />}</Route>
-      <Route path="/dashboard/tickets">{() => <Redirect to="/app/money" replace />}</Route>
-      <Route path="/dashboard/reporting">{() => <Redirect to="/app/money" replace />}</Route>
-      <Route path="/dashboard/history">{() => <Redirect to="/app/money" replace />}</Route>
+      <Route path="/dashboard/guests">{() => <Redirect to="/app/guests" replace />}</Route>
+      <Route path="/dashboard/registrations">{() => <Redirect to="/app/guests" replace />}</Route>
+      <Route path="/dashboard/tickets">{() => <Redirect to="/app/budget" replace />}</Route>
+      <Route path="/dashboard/reporting">{() => <Redirect to="/app/budget" replace />}</Route>
+      <Route path="/dashboard/history">{() => <Redirect to="/app/budget" replace />}</Route>
       <Route path="/dashboard/templates">{() => <Redirect to="/app/library" replace />}</Route>
       <Route path="/dashboard/locations">{() => <Redirect to="/app/library" replace />}</Route>
       <Route path="/dashboard/settings">{() => <Redirect to="/app/settings" replace />}</Route>

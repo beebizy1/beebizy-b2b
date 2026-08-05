@@ -28,9 +28,9 @@ import type {
 import { DataError } from "../adapter";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import type {
-  Attendee,
-  AttendeeDraft,
-  AttendeePatch,
+  Guest,
+  GuestDraft,
+  GuestPatch,
   AuctionItem,
   AuctionItemDraft,
   AuctionItemPatch,
@@ -47,7 +47,7 @@ import type {
   Event,
   EventFilter,
   EventHealth,
-  EventInspiration,
+  MoodBoardImage,
   EventRoi,
   EventVendor,
   EventVendorDraft,
@@ -66,7 +66,7 @@ import type {
   RaffleTicket,
   Registration,
   RegistrationStatus,
-  RegistrationWithAttendee,
+  RegistrationWithGuest,
   RunOfShowItem,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -225,7 +225,7 @@ const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "runOfShow",
   "budget",
   "menu",
-  "inspirations",
+  "moodBoard",
   "tickets",
   "auction",
   "raffle",
@@ -445,20 +445,20 @@ const locations: OwnedRepository<Location, LocationDraft, LocationPatch> = {
   },
 };
 
-/* ----------------------------------------------------------------- attendees */
+/* ----------------------------------------------------------------- guests */
 
-const attendees: OwnedRepository<Attendee, AttendeeDraft, AttendeePatch> = {
+const guests: OwnedRepository<Guest, GuestDraft, GuestPatch> = {
   async list() {
     await wait();
-    return copy(store().attendees.slice().sort((a, b) => a.name.localeCompare(b.name)));
+    return copy(store().guests.slice().sort((a, b) => a.name.localeCompare(b.name)));
   },
   async get(id) {
     await wait();
-    return copy(store().attendees.find((a) => a.id === id) ?? null);
+    return copy(store().guests.find((a) => a.id === id) ?? null);
   },
   async create(draft) {
     await wait();
-    const attendee: Attendee = {
+    const guest: Guest = {
       id: newId("att"),
       ownerId: DEMO_OWNER_ID,
       name: draft.name,
@@ -466,31 +466,31 @@ const attendees: OwnedRepository<Attendee, AttendeeDraft, AttendeePatch> = {
       notes: draft.notes ?? null,
       createdAt: nowIso(),
     };
-    store().attendees.push(attendee);
-    return copy(attendee);
+    store().guests.push(guest);
+    return copy(guest);
   },
   async update(id, patch) {
     await wait();
-    const attendee = required(store().attendees.find((a) => a.id === id), `Attendee ${id} no longer exists.`);
-    Object.assign(attendee, patch, { updatedAt: nowIso() });
-    return copy(attendee);
+    const guest = required(store().guests.find((a) => a.id === id), `Guest ${id} no longer exists.`);
+    Object.assign(guest, patch, { updatedAt: nowIso() });
+    return copy(guest);
   },
   async remove(id) {
     await wait();
     const state = store();
-    const index = state.attendees.findIndex((a) => a.id === id);
-    if (index === -1) throw new DataError("not-found", `Attendee ${id} no longer exists.`);
-    state.attendees.splice(index, 1);
-    const affected = new Set(state.registrations.filter((r) => r.attendeeId === id).map((r) => r.eventId));
-    state.registrations = state.registrations.filter((r) => r.attendeeId !== id);
+    const index = state.guests.findIndex((a) => a.id === id);
+    if (index === -1) throw new DataError("not-found", `Guest ${id} no longer exists.`);
+    state.guests.splice(index, 1);
+    const affected = new Set(state.registrations.filter((r) => r.guestId === id).map((r) => r.eventId));
+    state.registrations = state.registrations.filter((r) => r.guestId !== id);
     affected.forEach(syncRegistrationCount);
   },
 };
 
 /* ------------------------------------------------------------- registrations */
 
-function joinAttendee(registration: Registration): RegistrationWithAttendee {
-  return { ...registration, attendee: store().attendees.find((a) => a.id === registration.attendeeId) ?? null };
+function joinGuest(registration: Registration): RegistrationWithGuest {
+  return { ...registration, guest: store().guests.find((a) => a.id === registration.guestId) ?? null };
 }
 
 const registrations: RegistrationsRepository = {
@@ -500,7 +500,7 @@ const registrations: RegistrationsRepository = {
       store()
         .registrations.slice()
         .sort((a, b) => b.registeredAt.localeCompare(a.registeredAt))
-        .map(joinAttendee),
+        .map(joinGuest),
     );
   },
   async listForEvent(eventId) {
@@ -509,20 +509,20 @@ const registrations: RegistrationsRepository = {
       store()
         .registrations.filter((r) => r.eventId === eventId)
         .sort((a, b) => b.registeredAt.localeCompare(a.registeredAt))
-        .map(joinAttendee),
+        .map(joinGuest),
     );
   },
   async create(draft) {
     await wait();
     const event = requireEvent(draft.eventId);
     const state = store();
-    if (!state.attendees.some((a) => a.id === draft.attendeeId)) {
-      throw new DataError("not-found", "That attendee no longer exists.");
+    if (!state.guests.some((a) => a.id === draft.guestId)) {
+      throw new DataError("not-found", "That guest no longer exists.");
     }
     const duplicate = state.registrations.find(
-      (r) => r.eventId === draft.eventId && r.attendeeId === draft.attendeeId && r.status !== "cancelled",
+      (r) => r.eventId === draft.eventId && r.guestId === draft.guestId && r.status !== "cancelled",
     );
-    if (duplicate) throw new DataError("conflict", "That attendee is already registered for this event.");
+    if (duplicate) throw new DataError("conflict", "That guest is already registered for this event.");
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
     }
@@ -531,7 +531,7 @@ const registrations: RegistrationsRepository = {
       ownerId: DEMO_OWNER_ID,
       eventId: draft.eventId,
       eventTitle: event.title,
-      attendeeId: draft.attendeeId,
+      guestId: draft.guestId,
       status: draft.status ?? "pending",
       registeredAt: nowIso(),
       createdAt: nowIso(),
@@ -742,8 +742,8 @@ const menu = eventScoped<MenuItem, MenuItemDraft, MenuItemPatch>(
   }),
 );
 
-const inspirations = eventScoped<EventInspiration, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>(
-  () => store().inspirations,
+const moodBoard = eventScoped<MoodBoardImage, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>(
+  () => store().moodBoard,
   "insp",
   (eventId, draft, sortOrder) => ({
     id: "",
@@ -860,10 +860,10 @@ const tickets: TicketsRepository = {
     ticket.quantitySold += buyer.quantity;
     ticket.updatedAt = nowIso();
 
-    // Public checkout creates the attendee too, matching the Firestore adapter.
-    let attendee = state.attendees.find((a) => a.contact.toLowerCase() === buyer.contact.toLowerCase());
-    if (!attendee) {
-      attendee = {
+    // Public checkout creates the guest too, matching the Firestore adapter.
+    let guest = state.guests.find((a) => a.contact.toLowerCase() === buyer.contact.toLowerCase());
+    if (!guest) {
+      guest = {
         id: newId("att"),
         ownerId: event.ownerId,
         name: buyer.name,
@@ -871,14 +871,14 @@ const tickets: TicketsRepository = {
         notes: null,
         createdAt: nowIso(),
       };
-      state.attendees.push(attendee);
+      state.guests.push(guest);
     }
     state.registrations.push({
       id: newId("reg"),
       ownerId: event.ownerId,
       eventId: event.id,
       eventTitle: event.title,
-      attendeeId: attendee.id,
+      guestId: guest.id,
       status: "confirmed",
       registeredAt: nowIso(),
       createdAt: nowIso(),
@@ -1180,7 +1180,7 @@ const analytics: AnalyticsRepository = {
     return computePortfolio({
       events: state.events,
       registrations: state.registrations,
-      attendeeCount: state.attendees.length,
+      guestCount: state.guests.length,
       locationCount: state.locations.length,
       vendorCount: state.vendors.length,
       budget: state.budget,
@@ -1237,7 +1237,7 @@ export const memoryAdapter: DataAdapter = {
   me: async () => ({ userId: DEMO_OWNER_ID, workspaceId: DEMO_OWNER_ID, role: "owner" }),
   events,
   locations,
-  attendees,
+  guests,
   registrations,
   vendors,
   vendorMessages,
@@ -1246,7 +1246,7 @@ export const memoryAdapter: DataAdapter = {
   runOfShow,
   budget,
   menu,
-  inspirations,
+  moodBoard,
   tickets,
   auction,
   raffle,

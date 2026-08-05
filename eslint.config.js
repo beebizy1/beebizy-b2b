@@ -15,6 +15,9 @@ export default tseslint.config(
     ignores: [
       "dist",
       "node_modules",
+      // Build output. `vercel build` writes a compiled copy of the whole app here, and
+      // linting generated JavaScript reports two thousand problems about code nobody wrote.
+      ".vercel",
       // shadcn primitives are vendored, and .agents/ is reference material the Clerk
       // Marketplace installer wrote. Neither is ours to lint.
       "src/components/ui/**",

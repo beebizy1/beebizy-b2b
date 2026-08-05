@@ -1088,7 +1088,7 @@ function RoiPanel({ event }: { event: Event }) {
   );
 }
 
-export default function MoneySection({ event }: { event: Event }) {
+export default function BudgetSection({ event }: { event: Event }) {
   const { data: budget } = useBudget(event.id);
   const { data: tickets } = useTickets(event.id);
   const { data: sponsorships } = useSponsorships(event.id);

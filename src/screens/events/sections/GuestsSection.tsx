@@ -23,7 +23,7 @@ import {
   StatTile,
 } from "@/components/primitives";
 import {
-  useAttendees,
+  useGuests,
   useCreateRegistration,
   useDeleteRegistration,
   useEventRegistrations,
@@ -32,16 +32,16 @@ import {
 import { REGISTRATION_STATUSES, type Event, type RegistrationStatus } from "@/data/entities";
 
 function AddGuest({ event }: { event: Event }) {
-  const { data: attendees } = useAttendees();
+  const { data: guests } = useGuests();
   const { data: registrations } = useEventRegistrations(event.id);
   const createRegistration = useCreateRegistration();
-  const [attendeeId, setAttendeeId] = useState("");
+  const [guestId, setGuestId] = useState("");
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
   const available = useMemo(() => {
-    const taken = new Set((registrations ?? []).filter((r) => r.status !== "cancelled").map((r) => r.attendeeId));
-    return (attendees ?? []).filter((attendee) => !taken.has(attendee.id));
-  }, [attendees, registrations]);
+    const taken = new Set((registrations ?? []).filter((r) => r.status !== "cancelled").map((r) => r.guestId));
+    return (guests ?? []).filter((guest) => !taken.has(guest.id));
+  }, [guests, registrations]);
 
   const atCapacity = event.capacity !== null && event.registrationCount >= event.capacity;
 
@@ -50,29 +50,29 @@ function AddGuest({ event }: { event: Event }) {
       className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
       onSubmit={(formEvent) => {
         formEvent.preventDefault();
-        if (!attendeeId) return;
+        if (!guestId) return;
         createRegistration.mutate(
-          { eventId: event.id, attendeeId, status: "confirmed" },
+          { eventId: event.id, guestId, status: "confirmed" },
           {
-            onSuccess: () => setAttendeeId(""),
+            onSuccess: () => setGuestId(""),
             onError: (error) => toast({ title: "Couldn't register", description: error.message }),
           },
         );
       }}
     >
-      <Select value={attendeeId} onValueChange={setAttendeeId} disabled={available.length === 0}>
+      <Select value={guestId} onValueChange={setGuestId} disabled={available.length === 0}>
         <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to register">
           <SelectValue placeholder={available.length === 0 ? "Everyone is already registered" : "Register someone…"} />
         </SelectTrigger>
         <SelectContent>
-          {available.map((attendee) => (
-            <SelectItem key={attendee.id} value={attendee.id}>
-              {attendee.name} · {attendee.contact}
+          {available.map((guest) => (
+            <SelectItem key={guest.id} value={guest.id}>
+              {guest.name} · {guest.contact}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Button type="submit" size="sm" disabled={!attendeeId || createRegistration.isPending}>
+      <Button type="submit" size="sm" disabled={!guestId || createRegistration.isPending}>
         <UserPlus className="mr-1.5 size-3.5" />
         Register
       </Button>
@@ -85,7 +85,7 @@ function AddGuest({ event }: { event: Event }) {
   );
 }
 
-export default function PeopleSection({ event }: { event: Event }) {
+export default function GuestsSection({ event }: { event: Event }) {
   const { data: registrations, isLoading, isError, error, refetch } = useEventRegistrations(event.id);
   const setStatus = useSetRegistrationStatus();
   const removeRegistration = useDeleteRegistration();
@@ -104,7 +104,7 @@ export default function PeopleSection({ event }: { event: Event }) {
     const needle = search.trim().toLowerCase();
     if (!needle) return registrations ?? [];
     return (registrations ?? []).filter((row) =>
-      [row.attendee?.name ?? "", row.attendee?.contact ?? "", row.attendee?.notes ?? ""].some((field) =>
+      [row.guest?.name ?? "", row.guest?.contact ?? "", row.guest?.notes ?? ""].some((field) =>
         field.toLowerCase().includes(needle),
       ),
     );
@@ -178,10 +178,10 @@ export default function PeopleSection({ event }: { event: Event }) {
             {visible.map((row) => (
               <li key={row.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{row.attendee?.name ?? "Unknown guest"}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{row.guest?.name ?? "Unknown guest"}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {row.attendee?.contact ?? "No contact"}
-                    {row.attendee?.notes ? ` · ${row.attendee.notes}` : ""}
+                    {row.guest?.contact ?? "No contact"}
+                    {row.guest?.notes ? ` · ${row.guest.notes}` : ""}
                   </p>
                 </div>
 
@@ -196,7 +196,7 @@ export default function PeopleSection({ event }: { event: Event }) {
                     )
                   }
                 >
-                  <SelectTrigger className="h-8 w-[132px]" aria-label={`Status for ${row.attendee?.name ?? "guest"}`}>
+                  <SelectTrigger className="h-8 w-[132px]" aria-label={`Status for ${row.guest?.name ?? "guest"}`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

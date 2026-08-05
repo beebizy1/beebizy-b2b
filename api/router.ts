@@ -218,13 +218,13 @@ async function handleAuthed(
       return notFound();
     }
 
-    /* --------------------------------------------------------------- attendees */
-    case "attendees": {
-      if (!a && method === "GET") return json(await repos.attendees.list(ctx));
-      if (!a && method === "POST") return json(await repos.attendees.create(ctx, body), 201);
-      if (a && method === "PATCH") return json(await repos.attendees.update(ctx, a, body));
+    /* --------------------------------------------------------------- guests */
+    case "guests": {
+      if (!a && method === "GET") return json(await repos.guests.list(ctx));
+      if (!a && method === "POST") return json(await repos.guests.create(ctx, body), 201);
+      if (a && method === "PATCH") return json(await repos.guests.update(ctx, a, body));
       if (a && method === "DELETE") {
-        await repos.attendees.remove(ctx, a);
+        await repos.guests.remove(ctx, a);
         return json({ ok: true });
       }
       return notFound();
@@ -346,7 +346,7 @@ const eventChildren: Record<
   "run-of-show": repos.runOfShow,
   budget: repos.budget,
   menu: repos.menu,
-  inspirations: repos.inspirations,
+  "mood-board": repos.moodBoard,
   auction: repos.auction,
   sponsorships: repos.sponsorships,
   vendors: repos.eventVendors,

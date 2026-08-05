@@ -121,15 +121,15 @@ describe("events", () => {
 describe("registrations", () => {
   it("keeps the event's registration count in sync and excludes cancellations", async () => {
     const event = (await memoryAdapter.events.get("evt-atlas"))!;
-    const attendees = await memoryAdapter.attendees.list();
+    const guests = await memoryAdapter.guests.list();
     const existing = await memoryAdapter.registrations.listForEvent("evt-atlas");
-    const taken = new Set(existing.map((row) => row.attendeeId));
-    const unregistered = attendees.find((attendee) => !taken.has(attendee.id));
+    const taken = new Set(existing.map((row) => row.guestId));
+    const unregistered = guests.find((guest) => !taken.has(guest.id));
     expect(unregistered).toBeDefined();
 
     const created = await memoryAdapter.registrations.create({
       eventId: "evt-atlas",
-      attendeeId: unregistered!.id,
+      guestId: unregistered!.id,
       status: "confirmed",
     });
     expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(event.registrationCount + 1);
@@ -141,17 +141,17 @@ describe("registrations", () => {
   it("refuses a duplicate registration", async () => {
     const existing = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "confirmed")!;
     await expect(
-      memoryAdapter.registrations.create({ eventId: "evt-cab", attendeeId: existing.attendeeId }),
+      memoryAdapter.registrations.create({ eventId: "evt-cab", guestId: existing.guestId }),
     ).rejects.toThrow(/already registered/i);
   });
 
   it("refuses to exceed capacity", async () => {
     // The advisory board seats 24 and the seed fills 12; push it to the limit.
-    const attendees = await memoryAdapter.attendees.list();
+    const guests = await memoryAdapter.guests.list();
     let added = 0;
-    for (const attendee of attendees) {
+    for (const guest of guests) {
       try {
-        await memoryAdapter.registrations.create({ eventId: "evt-cab", attendeeId: attendee.id, status: "confirmed" });
+        await memoryAdapter.registrations.create({ eventId: "evt-cab", guestId: guest.id, status: "confirmed" });
         added += 1;
       } catch (error) {
         if (error instanceof DataError && error.code === "conflict" && /capacity/i.test(error.message)) {
@@ -164,17 +164,17 @@ describe("registrations", () => {
     throw new Error("capacity was never enforced");
   });
 
-  it("removes an attendee's registrations and fixes the counts", async () => {
+  it("removes an guest's registrations and fixes the counts", async () => {
     const rows = await memoryAdapter.registrations.listForEvent("evt-cab");
     const target = rows[0]!;
     const before = (await memoryAdapter.events.get("evt-cab"))!.registrationCount;
-    await memoryAdapter.attendees.remove(target.attendeeId);
+    await memoryAdapter.guests.remove(target.guestId);
     expect((await memoryAdapter.events.get("evt-cab"))!.registrationCount).toBe(before - 1);
   });
 });
 
 describe("tickets", () => {
-  it("sells against a share token and creates the buyer as an attendee", async () => {
+  it("sells against a share token and creates the buyer as an guest", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-gala");
     const [ticket] = await memoryAdapter.tickets.list("evt-gala");
     const soldBefore = ticket!.quantitySold;
@@ -189,21 +189,21 @@ describe("tickets", () => {
     const after = (await memoryAdapter.tickets.list("evt-gala")).find((t) => t.id === ticket!.id)!;
     expect(after.quantitySold).toBe(soldBefore + 2);
     expect((await memoryAdapter.registrations.listForEvent("evt-gala")).length).toBe(registrationsBefore + 1);
-    expect((await memoryAdapter.attendees.list()).some((a) => a.contact === "sam.buyer@example.com")).toBe(true);
+    expect((await memoryAdapter.guests.list()).some((a) => a.contact === "sam.buyer@example.com")).toBe(true);
   });
 
-  it("reuses an existing attendee rather than duplicating them", async () => {
+  it("reuses an existing guest rather than duplicating them", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-gala");
     const [ticket] = await memoryAdapter.tickets.list("evt-gala");
-    const known = (await memoryAdapter.attendees.list())[0]!;
-    const countBefore = (await memoryAdapter.attendees.list()).length;
+    const known = (await memoryAdapter.guests.list())[0]!;
+    const countBefore = (await memoryAdapter.guests.list()).length;
 
     await memoryAdapter.tickets.purchase(shareToken, ticket!.id, {
       name: known.name,
       contact: known.contact.toUpperCase(),
       quantity: 1,
     });
-    expect((await memoryAdapter.attendees.list()).length).toBe(countBefore);
+    expect((await memoryAdapter.guests.list()).length).toBe(countBefore);
   });
 
   it("refuses to sell more than the allocation, naming what is left", async () => {
