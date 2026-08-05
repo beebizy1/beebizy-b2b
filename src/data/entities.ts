@@ -634,14 +634,11 @@ export type TemplateDetail = Template & TemplateContents;
 
 /* -------------------------------------------------------------- user settings */
 
-export type ThemePreference = "light" | "dark" | "system";
-
 /**
  * Per-user preferences. Persisted server-side in `userSettings/{uid}` — never in
  * localStorage, so a preference set on a laptop follows the user to their phone.
  */
 export interface UserSettings {
-  theme: ThemePreference;
   /** Dimension the home page groups events by. */
   homeGrouping: "location" | "category" | "status";
   currency: string;
@@ -649,7 +646,6 @@ export interface UserSettings {
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
-  theme: "system",
   homeGrouping: "location",
   currency: "USD",
   timeZone: "America/Los_Angeles",

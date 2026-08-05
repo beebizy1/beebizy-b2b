@@ -481,9 +481,9 @@ describe("boards", () => {
 
 describe("settings", () => {
   it("round-trips a preference", async () => {
-    await memoryAdapter.settings.update({ theme: "dark", homeGrouping: "category" });
+    await memoryAdapter.settings.update({ homeGrouping: "category", currency: "GBP" });
     const settings = await memoryAdapter.settings.get();
-    expect(settings.theme).toBe("dark");
     expect(settings.homeGrouping).toBe("category");
+    expect(settings.currency).toBe("GBP");
   });
 });

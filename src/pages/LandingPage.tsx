@@ -25,9 +25,7 @@ import {
   FileStack,
   Heart,
   LayoutDashboard,
-  Moon,
   Store,
-  Sun,
   Ticket,
   X,
   Zap,
@@ -35,7 +33,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
 import { Pill } from "@/components/primitives";
-import { useTheme } from "@/app/theme";
 import { cn } from "@/lib/utils";
 
 /* --------------------------------------------------------------------- pieces */
@@ -285,21 +282,6 @@ function TodayPreview() {
   );
 }
 
-function ThemeToggle() {
-  const { resolved, cycle } = useTheme();
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={cycle}
-      aria-label="Switch appearance"
-      className="text-muted-foreground hover:text-foreground"
-    >
-      {resolved === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-    </Button>
-  );
-}
-
 /* ------------------------------------------------------------------------ page */
 
 export function LandingPage() {
@@ -330,7 +312,6 @@ export function LandingPage() {
             >
               Packages
             </a>
-            <ThemeToggle />
             <Link
               href="/login"
               className="hidden rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"

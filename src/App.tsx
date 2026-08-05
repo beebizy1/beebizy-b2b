@@ -20,7 +20,6 @@ import { DataProvider } from "@/data/provider";
 import { isDataError } from "@/data/adapter";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { RequireSession, SessionProvider } from "@/app/session";
-import { ThemeProvider } from "@/app/theme";
 import { AppShell } from "@/app/shell/AppShell";
 
 import LandingPage from "@/pages/LandingPage";
@@ -136,14 +135,12 @@ export default function App() {
         <ClerkGate>
           <DataProvider>
             <SessionProvider>
-              <ThemeProvider>
-                <TooltipProvider>
-                  <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                    <Routes />
-                  </WouterRouter>
-                  <Toaster />
-                </TooltipProvider>
-              </ThemeProvider>
+              <TooltipProvider>
+                <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                  <Routes />
+                </WouterRouter>
+                <Toaster />
+              </TooltipProvider>
             </SessionProvider>
           </DataProvider>
         </ClerkGate>

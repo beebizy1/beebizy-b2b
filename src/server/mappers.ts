@@ -398,7 +398,6 @@ export function toRoi(row: InferSelectModel<typeof s.eventRoi>): EventRoi {
 
 export function toUserSettings(row: InferSelectModel<typeof s.userSettings>): UserSettings {
   return {
-    theme: row.theme as UserSettings["theme"],
     homeGrouping: row.homeGrouping as UserSettings["homeGrouping"],
     currency: row.currency,
     timeZone: row.timeZone,

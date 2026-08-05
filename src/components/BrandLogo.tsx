@@ -27,13 +27,7 @@ export function BrandLogo({
   className?: string;
 }) {
   return (
-    /*
-      The wordmark is black on transparency, so on a dark surface it disappears and only
-      the bee's yellow survives. It sits on a white plate in dark mode instead of being
-      inverted — inverting would rotate the brand yellow to blue, which is worse than the
-      problem it solves.
-    */
-    <span className={cn("inline-flex shrink-0 items-center dark:rounded-md dark:bg-white dark:px-2 dark:py-1", className)}>
+    <span className={cn("inline-flex shrink-0 items-center", className)}>
       <img
         src="/beebizy-logo.png"
         alt="Beebizy"

@@ -1346,7 +1346,6 @@ export const settings = {
   },
   async update(ctx: RequestContext, body: Body): Promise<UserSettings> {
     const patch = patchFrom<Record<string, unknown>>(body, {
-      theme: (b) => str(b, "theme", "system"),
       homeGrouping: (b) => str(b, "homeGrouping", "location"),
       currency: (b) => str(b, "currency", "USD"),
       timeZone: (b) => str(b, "timeZone", "America/Los_Angeles"),

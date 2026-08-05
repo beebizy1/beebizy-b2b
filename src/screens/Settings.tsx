@@ -8,24 +8,16 @@
  */
 
 import { Link } from "wouter";
-import { Database, Monitor, Moon, Sun } from "lucide-react";
+import { Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
 import { KeyValue, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
 import { useMe, useSettings, useUpdateSettings } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
-import { useTheme } from "@/app/theme";
-import type { ThemePreference, UserSettings } from "@/data/entities";
-
-const THEME_OPTIONS: Array<{ id: ThemePreference; label: string; icon: typeof Sun }> = [
-  { id: "light", label: "Light", icon: Sun },
-  { id: "dark", label: "Dark", icon: Moon },
-  { id: "system", label: "System", icon: Monitor },
-];
+import type { UserSettings } from "@/data/entities";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
@@ -33,7 +25,6 @@ export default function Settings() {
   const { user, isDemo } = useSession();
   const { data: me } = useMe();
   const { mode, demoReason } = useDataMode();
-  const { preference, setPreference } = useTheme();
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
 
@@ -49,34 +40,8 @@ export default function Settings() {
       <PageHeader
         eyebrow="Settings"
         title="Preferences"
-        description="These are stored against your account, so they follow you to any device."
+        description="Stored against your account, so they follow you to any device."
       />
-
-      <Panel>
-        <PanelHeader title="Appearance" description="Dark mode is a first-class theme, not an afterthought" />
-        <div className="space-y-3 p-5">
-          <Label>Theme</Label>
-          <div className="inline-flex rounded-lg border border-hairline bg-surface p-0.5 shadow-xs">
-            {THEME_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={preference === option.id}
-                onClick={() => setPreference(option.id)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                  preference === option.id
-                    ? "bg-secondary text-secondary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <option.icon className="size-3.5" aria-hidden="true" />
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </Panel>
 
       <Panel>
         <PanelHeader title="Defaults" description="How lists and money are presented" />

@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { CalendarDays, ListChecks, Moon, Plus, Search, Store, Sun, UserPlus } from "lucide-react";
+import { CalendarDays, ListChecks, Plus, Search, Store, UserPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Command,
@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/command";
 import { useEvents } from "@/data/hooks";
 import { describeWhen } from "@/data/derive";
-import { useTheme } from "@/app/theme";
 import { NAV_ITEMS } from "./nav";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
@@ -73,7 +72,6 @@ function score(value: string, search: string): number {
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [, navigate] = useLocation();
   const { data: events } = useEvents();
-  const { resolved, cycle } = useTheme();
 
   const go = (href: string) => {
     onOpenChange(false);
@@ -153,20 +151,6 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             <CommandSeparator />
 
             <CommandGroup heading="Preferences">
-              <CommandItem
-                value="theme dark light appearance toggle"
-                onSelect={() => {
-                  cycle();
-                  onOpenChange(false);
-                }}
-              >
-                {resolved === "dark" ? (
-                  <Sun className="mr-2 size-4" aria-hidden="true" />
-                ) : (
-                  <Moon className="mr-2 size-4" aria-hidden="true" />
-                )}
-                Switch appearance
-              </CommandItem>
               <CommandItem value="tasks open checklist todo" onSelect={() => go("/app/tasks")}>
                 <ListChecks className="mr-2 size-4" aria-hidden="true" />
                 All open tasks

@@ -12,7 +12,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LogOut, Menu, Moon, PanelsTopLeft, Search, Settings, Sun, TriangleAlert } from "lucide-react";
+import { LogOut, Menu, PanelsTopLeft, Search, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -29,7 +29,6 @@ import { cn } from "@/lib/utils";
 import { useAttention, useVendors } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
-import { useTheme } from "@/app/theme";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { isNavActive, NAV_ITEMS, type NavItem } from "./nav";
 
@@ -149,7 +148,6 @@ function DemoBanner() {
 
 function UserMenu() {
   const { user, isDemo, signOut } = useSession();
-  const { preference, resolved, cycle } = useTheme();
   const name = user?.name ?? "Signed out";
 
   return (
@@ -169,11 +167,6 @@ function UserMenu() {
           {isDemo ? <p className="text-xs font-normal text-warning-text">Demo session</p> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => cycle()}>
-          {resolved === "dark" ? <Sun className="mr-2 size-4" /> : <Moon className="mr-2 size-4" />}
-          Appearance
-          <span className="ml-auto text-xs capitalize text-muted-foreground">{preference}</span>
-        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/app/settings">
             <Settings className="mr-2 size-4" />

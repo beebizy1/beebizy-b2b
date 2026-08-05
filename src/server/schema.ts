@@ -92,7 +92,6 @@ export const workspaceMembers = pgTable(
 export const userSettings = pgTable("user_settings", {
   /** Clerk user id. */
   userId: text("user_id").primaryKey(),
-  theme: text("theme").notNull().default("system"),
   homeGrouping: text("home_grouping").notNull().default("location"),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
