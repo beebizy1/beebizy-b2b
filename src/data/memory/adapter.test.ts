@@ -317,6 +317,58 @@ describe("analytics", () => {
   });
 });
 
+describe("floorplan", () => {
+  it("reads the seeded plan and totals its seats", async () => {
+    const plan = await memoryAdapter.floorplan.get("evt-gala");
+    expect(plan).not.toBeNull();
+    expect(plan!.items.length).toBeGreaterThan(10);
+    const seats = plan!.items.reduce((total, item) => total + (item.seats ?? 0), 0);
+    // Eleven ten-seat tables in the seed.
+    expect(seats).toBe(110);
+  });
+
+  it("returns null for an event with no plan", async () => {
+    expect(await memoryAdapter.floorplan.get("evt-cab")).toBeNull();
+  });
+
+  it("round-trips a saved plan", async () => {
+    const saved = await memoryAdapter.floorplan.save("evt-cab", {
+      name: "U-shape, 24 seats",
+      items: [
+        { id: "a", shape: "long-table", label: "Top", x: 50, y: 20, seats: 8 },
+        { id: "b", shape: "long-table", label: "Left", x: 20, y: 50, seats: 8 },
+        { id: "c", shape: "long-table", label: "Right", x: 80, y: 50, seats: 8 },
+      ],
+    });
+    expect(saved.name).toBe("U-shape, 24 seats");
+
+    const reread = await memoryAdapter.floorplan.get("evt-cab");
+    expect(reread!.items).toHaveLength(3);
+    expect(reread!.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(24);
+  });
+
+  it("overwrites rather than appending a second plan", async () => {
+    await memoryAdapter.floorplan.save("evt-cab", { name: "First", items: [] });
+    await memoryAdapter.floorplan.save("evt-cab", { name: "Second", items: [] });
+    expect((await memoryAdapter.floorplan.get("evt-cab"))!.name).toBe("Second");
+  });
+
+  it("hands back a detached copy", async () => {
+    const plan = await memoryAdapter.floorplan.get("evt-gala");
+    plan!.items[0]!.label = "Mutated";
+    expect((await memoryAdapter.floorplan.get("evt-gala"))!.items[0]!.label).not.toBe("Mutated");
+  });
+
+  it("goes away when the event is deleted", async () => {
+    await memoryAdapter.events.remove("evt-gala");
+    expect(await memoryAdapter.floorplan.get("evt-gala")).toBeNull();
+  });
+
+  it("refuses a plan for an event that does not exist", async () => {
+    await expect(memoryAdapter.floorplan.save("nope", { name: "x", items: [] })).rejects.toThrow(/no longer exists/i);
+  });
+});
+
 describe("settings", () => {
   it("round-trips a preference", async () => {
     await memoryAdapter.settings.update({ theme: "dark", homeGrouping: "category" });

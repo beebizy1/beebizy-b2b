@@ -35,6 +35,7 @@ import {
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { BOOKING_STATUSES, type BookingStatus, type Event } from "@/data/entities";
+import FloorplanPanel from "./FloorplanPanel";
 
 const COURSES = ["Breakfast", "Starter", "Main", "Dessert", "Lunch", "Canapés", "Drinks", "Other"];
 
@@ -60,15 +61,21 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   };
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-5 py-3">
-      <div className="min-w-0 flex-1">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3">
+      {/* The name used to share a line with a fee field, a status select and two buttons,
+          which rendered "Golden Gate Catering" as "Gol…" in this column. Its own row now. */}
+      <div className="min-w-0 basis-full">
         <div className="flex items-center gap-2">
-          <Link href={`/app/vendors/${props.vendorId}`} className="truncate text-sm font-medium text-foreground hover:underline">
+          <Link
+            href={`/app/vendors/${props.vendorId}`}
+            className="truncate text-sm font-medium text-foreground hover:underline"
+          >
             {props.name}
           </Link>
           <Pill>{props.category}</Pill>
+          <BookingStatusBadge status={props.status} />
         </div>
-        {props.notes ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{props.notes}</p> : null}
+        {props.notes ? <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{props.notes}</p> : null}
       </div>
 
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -86,8 +93,6 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
           aria-label={`Fee for ${props.name}`}
         />
       </label>
-
-      <BookingStatusBadge status={props.status} />
 
       <Select
         value={props.status}
@@ -379,10 +384,11 @@ export default function SuppliersSection({ event }: { event: Event }) {
   }, [bookings]);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-      <div className="space-y-6">
-        <VendorsPanel event={event} />
-      </div>
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+        <div className="space-y-6">
+          <VendorsPanel event={event} />
+        </div>
       <div className="space-y-6">
         {byCategory.length > 0 ? (
           <Panel>
@@ -399,7 +405,11 @@ export default function SuppliersSection({ event }: { event: Event }) {
           </Panel>
         ) : null}
         <MenuPanel event={event} />
+        </div>
       </div>
+
+      {/* Full width: a room plan squeezed into a 7fr column is unusable. */}
+      <FloorplanPanel event={event} />
     </div>
   );
 }

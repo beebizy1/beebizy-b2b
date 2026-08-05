@@ -34,6 +34,8 @@ import type {
   EventRoi,
   EventVendorDraft,
   EventVendorPatch,
+  Floorplan,
+  FloorplanDraft,
   LocationDraft,
   LocationPatch,
   MenuItemDraft,
@@ -98,6 +100,7 @@ export const qk = {
   template: (id: string) => ["templates", "detail", id] as const,
 
   settings: ["settings"] as const,
+  floorplan: (eventId: string) => ["floorplan", eventId] as const,
   roi: (eventId: string) => ["roi", eventId] as const,
 };
 
@@ -691,6 +694,17 @@ export function useSettings() {
 
 export function useUpdateSettings() {
   return useAdapterMutation((a, patch: Partial<UserSettings>) => a.settings.update(patch), () => [qk.settings]);
+}
+
+export function useFloorplan(eventId: string): UseQueryResult<Floorplan | null, Error> {
+  return useAdapterQuery(qk.floorplan(eventId), (a) => a.floorplan.get(eventId), { enabled: !!eventId });
+}
+
+export function useSaveFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.eventId, vars.draft),
+    (vars) => [qk.floorplan(vars.eventId)],
+  );
 }
 
 export function useEventRoi(eventId: string): UseQueryResult<EventRoi | null, Error> {

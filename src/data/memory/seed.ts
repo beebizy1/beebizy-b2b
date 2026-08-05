@@ -20,6 +20,7 @@ import type {
   EventInspiration,
   EventVendor,
   EventRoi,
+  Floorplan,
   Location,
   MenuItem,
   RaffleItem,
@@ -55,6 +56,7 @@ export interface MemoryDb {
   raffleTickets: RaffleTicket[];
   sponsorships: Sponsorship[];
   templates: (Template & TemplateContents)[];
+  floorplans: Floorplan[];
   roi: EventRoi[];
   settings: UserSettings;
 }
@@ -1278,6 +1280,35 @@ export function buildSeed(): MemoryDb {
     },
   ];
 
+  /* -------------------------------------------------------------- floorplan */
+
+  const floorplans: Floorplan[] = [
+    {
+      eventId: "evt-gala",
+      name: "Ballroom — 30 tables",
+      updatedAt: at(-14),
+      items: [
+        { id: "fp-stage", shape: "stage", label: "Stage", x: 50, y: 8, seats: null },
+        { id: "fp-av", shape: "av", label: "AV desk", x: 88, y: 20, seats: null },
+        { id: "fp-bar-l", shape: "bar", label: "Bar", x: 10, y: 34, seats: null },
+        { id: "fp-bar-r", shape: "bar", label: "Bar", x: 90, y: 62, seats: null },
+        { id: "fp-t1", shape: "round-table", label: "1", x: 26, y: 30, seats: 10 },
+        { id: "fp-t2", shape: "round-table", label: "2", x: 42, y: 30, seats: 10 },
+        { id: "fp-t3", shape: "round-table", label: "3", x: 58, y: 30, seats: 10 },
+        { id: "fp-t4", shape: "round-table", label: "4", x: 74, y: 30, seats: 10 },
+        { id: "fp-t5", shape: "round-table", label: "5", x: 26, y: 48, seats: 10 },
+        { id: "fp-t6", shape: "round-table", label: "6 (vegan)", x: 42, y: 48, seats: 10 },
+        { id: "fp-t7", shape: "round-table", label: "7 (vegan)", x: 58, y: 48, seats: 10 },
+        { id: "fp-t8", shape: "round-table", label: "8", x: 74, y: 48, seats: 10 },
+        { id: "fp-t9", shape: "round-table", label: "9", x: 34, y: 66, seats: 10 },
+        { id: "fp-t10", shape: "round-table", label: "10", x: 50, y: 66, seats: 10 },
+        { id: "fp-t11", shape: "round-table", label: "11", x: 66, y: 66, seats: 10 },
+        { id: "fp-auction", shape: "long-table", label: "Silent auction display", x: 50, y: 84, seats: null },
+        { id: "fp-entry", shape: "entrance", label: "Entrance", x: 12, y: 92, seats: null },
+      ],
+    },
+  ];
+
   /* -------------------------------------------------------------------- roi */
 
   const roi: EventRoi[] = [
@@ -1318,6 +1349,7 @@ export function buildSeed(): MemoryDb {
     raffleTickets,
     sponsorships,
     templates,
+    floorplans,
     roi,
     settings: { ...DEFAULT_USER_SETTINGS },
   };

@@ -364,6 +364,50 @@ export interface EventInspiration {
   createdAt: IsoDateTime;
 }
 
+/* ----------------------------------------------------------------- floorplan */
+
+/**
+ * Floorplan objects are typed, unlike the legacy `layout: { [key: string]: unknown }`
+ * blob, which meant nothing could read a plan back — not a seat count, not a validation.
+ * Positions are percentages of the room box so a plan drawn on a laptop still reads on
+ * a phone.
+ */
+export const FLOORPLAN_SHAPES = [
+  "round-table",
+  "long-table",
+  "stage",
+  "bar",
+  "entrance",
+  "dancefloor",
+  "booth",
+  "av",
+] as const;
+export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
+
+export interface FloorplanItem {
+  id: string;
+  shape: FloorplanShape;
+  label: string;
+  /** 0–100, percent of the room width. */
+  x: number;
+  /** 0–100, percent of the room height. */
+  y: number;
+  /** Null for objects nobody sits at. */
+  seats: number | null;
+}
+
+export interface Floorplan {
+  eventId: string;
+  name: string;
+  items: FloorplanItem[];
+  updatedAt: IsoDateTime;
+}
+
+export interface FloorplanDraft {
+  name: string;
+  items: FloorplanItem[];
+}
+
 /* -------------------------------------------------------------------- revenue */
 
 export interface TicketType {

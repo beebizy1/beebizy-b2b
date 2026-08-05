@@ -36,6 +36,8 @@ import type {
   EventVendor,
   EventVendorDraft,
   EventVendorPatch,
+  Floorplan,
+  FloorplanDraft,
   Location,
   LocationDraft,
   LocationPatch,
@@ -140,6 +142,11 @@ export interface SettingsRepository {
   update(patch: Partial<UserSettings>): Promise<UserSettings>;
 }
 
+export interface FloorplanRepository {
+  get(eventId: string): Promise<Floorplan | null>;
+  save(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
+}
+
 export interface RoiRepository {
   get(eventId: string): Promise<EventRoi | null>;
   save(eventId: string, roi: Omit<EventRoi, "eventId" | "updatedAt">): Promise<EventRoi>;
@@ -182,6 +189,7 @@ export interface DataAdapter {
   sponsorships: EventScopedRepository<Sponsorship, SponsorshipDraft, SponsorshipPatch>;
   templates: TemplatesRepository;
   settings: SettingsRepository;
+  floorplan: FloorplanRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;
 }

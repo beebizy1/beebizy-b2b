@@ -14,6 +14,7 @@ import type {
   DataAdapter,
   EventScopedRepository,
   EventsRepository,
+  FloorplanRepository,
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
@@ -46,6 +47,8 @@ import type {
   EventVendor,
   EventVendorDraft,
   EventVendorPatch,
+  Floorplan,
+  FloorplanDraft,
   Location,
   LocationDraft,
   LocationPatch,
@@ -307,6 +310,7 @@ const events: EventsRepository = {
       if (state.registrations[i]!.eventId === id) state.registrations.splice(i, 1);
     }
     state.roi = state.roi.filter((r) => r.eventId !== id);
+    state.floorplans = state.floorplans.filter((plan) => plan.eventId !== id);
     syncLocationCounts();
   },
 
@@ -1016,6 +1020,25 @@ const settings: SettingsRepository = {
 
 /* ----------------------------------------------------------------------- roi */
 
+/* --------------------------------------------------------------- floorplan */
+
+const floorplan: FloorplanRepository = {
+  async get(eventId) {
+    await wait();
+    return copy(store().floorplans.find((plan) => plan.eventId === eventId) ?? null);
+  },
+  async save(eventId, draft: FloorplanDraft) {
+    await wait();
+    requireEvent(eventId);
+    const state = store();
+    const record: Floorplan = { eventId, name: draft.name, items: copy(draft.items), updatedAt: nowIso() };
+    const existing = state.floorplans.find((plan) => plan.eventId === eventId);
+    if (existing) Object.assign(existing, record);
+    else state.floorplans.push(record);
+    return copy(record);
+  },
+};
+
 const roi: RoiRepository = {
   async get(eventId) {
     await wait();
@@ -1117,6 +1140,7 @@ export const memoryAdapter: DataAdapter = {
   sponsorships,
   templates,
   settings,
+  floorplan,
   roi,
   analytics,
 };
