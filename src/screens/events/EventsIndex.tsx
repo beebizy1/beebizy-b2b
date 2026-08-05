@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { CalendarPlus, CalendarSearch, Search } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarSearch, List, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +30,7 @@ import { useAllEventHealth, useEvents, useSettings, useUpdateSettings } from "@/
 import { describeWhen } from "@/data/derive";
 import { cn } from "@/lib/utils";
 import type { Event, EventHealth, UserSettings } from "@/data/entities";
+import EventsCalendar from "./EventsCalendar";
 
 type Lens = "upcoming" | "all" | "draft" | "past";
 
@@ -127,6 +128,7 @@ function EventRow({ event, health }: { event: Event; health: EventHealth | undef
 
 export default function EventsIndex() {
   const [lens, setLens] = useState<Lens>("upcoming");
+  const [view, setView] = useState<"list" | "calendar">("list");
   const [search, setSearch] = useState("");
 
   const { data: events, isLoading, isError, error, refetch } = useEvents();
@@ -218,26 +220,60 @@ export default function EventsIndex() {
               aria-label="Search events"
             />
           </div>
-          <Select
-            value={grouping}
-            onValueChange={(value) => updateSettings.mutate({ homeGrouping: value as UserSettings["homeGrouping"] })}
-          >
-            <SelectTrigger className="w-[176px] shrink-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {GROUPINGS.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {view === "list" ? (
+            <Select
+              value={grouping}
+              onValueChange={(value) => updateSettings.mutate({ homeGrouping: value as UserSettings["homeGrouping"] })}
+            >
+              <SelectTrigger className="w-[176px] shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GROUPINGS.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+
+          <div className="inline-flex shrink-0 rounded-lg border border-hairline bg-surface p-0.5 shadow-xs">
+            <button
+              type="button"
+              aria-label="List view"
+              aria-pressed={view === "list"}
+              onClick={() => setView("list")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 transition-colors",
+                view === "list" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <List className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Calendar view"
+              aria-pressed={view === "calendar"}
+              onClick={() => setView("calendar")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 transition-colors",
+                view === "calendar"
+                  ? "bg-secondary text-secondary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <CalendarDays className="size-4" />
+            </button>
+          </div>
         </div>
       </div>
 
       {isError ? <ErrorNotice error={error} title="Couldn't load events" onRetry={() => void refetch()} /> : null}
 
+      {view === "calendar" ? (
+        <EventsCalendar events={visible} />
+      ) : (
       <Panel>
         <PanelHeader
           title={`${visible.length} ${visible.length === 1 ? "event" : "events"}`}
@@ -286,6 +322,7 @@ export default function EventsIndex() {
           </div>
         )}
       </Panel>
+      )}
     </div>
   );
 }
