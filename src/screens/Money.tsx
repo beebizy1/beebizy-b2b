@@ -21,6 +21,7 @@ import {
   StatTile,
 } from "@/components/primitives";
 import { useAllEventHealth, useAllTickets, useEvents, usePortfolio } from "@/data/hooks";
+import { BarComparison, type BarComparisonRow } from "@/components/BarComparison";
 import { formatMoney, sumCents } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,20 @@ export default function Money() {
       .filter((row) => row.planned > 0 || row.spent > 0 || row.ticketRevenue > 0 || row.fundraising > 0)
       .sort((a, b) => b.ticketRevenue + b.fundraising - (a.ticketRevenue + a.fundraising));
   }, [events, healthById]);
+
+  const chartRows: BarComparisonRow[] = useMemo(
+    () =>
+      rows
+        .map((row) => ({
+          key: row.event.id,
+          label: row.event.title,
+          sublabel: new Date(row.event.date).toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+          values: { spend: row.spent, in: row.ticketRevenue + row.fundraising },
+        }))
+        .sort((a, b) => Math.max(b.values.spend, b.values.in) - Math.max(a.values.spend, a.values.in))
+        .slice(0, 10),
+    [rows],
+  );
 
   const overPlan = rows.filter((row) => row.planned > 0 && row.spent > row.planned);
   const ticketRevenue = sumCents((tickets ?? []).map((ticket) => ticket.priceCents * ticket.quantitySold));
@@ -103,6 +118,28 @@ export default function Money() {
       </div>
 
       {isError ? <ErrorNotice error={error} title="Couldn't load financials" onRetry={() => void refetch()} /> : null}
+
+      <Panel>
+        <PanelHeader
+          title="Spend against money in, by event"
+          description="Same scale for both — exact figures are in the table below"
+        />
+        <div className="p-5">
+          {eventsLoading ? (
+            <LoadingRows rows={4} />
+          ) : (
+            <BarComparison
+              series={[
+                { key: "spend", label: "Committed spend", slot: 1 },
+                { key: "in", label: "Tickets and fundraising", slot: 2 },
+              ]}
+              rows={chartRows}
+              format={(value) => formatMoney(value, { compact: true })}
+              emptyMessage="No event has money recorded against it yet."
+            />
+          )}
+        </div>
+      </Panel>
 
       <Panel>
         <PanelHeader title="By event" description="Spend against plan, and what came back in" />

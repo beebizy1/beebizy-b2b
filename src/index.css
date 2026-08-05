@@ -214,14 +214,22 @@
   --input: 220 16% 87%;
   --ring: 43 96% 44%;
 
-  /* Categorical series: distinguishable in both themes and for the common forms of
-     colour-vision deficiency. Brand amber leads, then hue-separated partners. */
-  --chart-1: 43 96% 48%;
-  --chart-2: 212 84% 44%;
-  --chart-3: 152 56% 36%;
-  --chart-4: 280 58% 52%;
-  --chart-5: 12 78% 52%;
-  --chart-6: 190 70% 38%;
+  /*
+    Categorical series, in fixed order — never cycled, never reassigned by rank.
+
+    These are not eyeballed. Each step is snapped so the whole ramp passes an OKLCH
+    lightness band, a chroma floor, adjacent-pair separation under protanopia,
+    deuteranopia and tritanopia, a normal-vision separation floor, and 3:1 contrast
+    against the chart surface. The previous slot 1 was the brand fill yellow, which
+    measures 1.9:1 on white — a bar nobody could see on a bright screen.
+    Light and dark are separately stepped, not one flipped into the other.
+  */
+  --chart-1: 40 92% 37%;
+  --chart-2: 214 80% 58%;
+  --chart-3: 152 58% 40%;
+  --chart-4: 281 58% 60.5%;
+  --chart-5: 12 78% 53%;
+  --chart-6: 191 72% 41%;
 
   --app-font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --app-font-serif: Georgia, 'Times New Roman', serif;
@@ -340,12 +348,13 @@
   --input: 220 18% 24%;
   --ring: 43 96% 54%;
 
-  --chart-1: 43 96% 56%;
-  --chart-2: 210 88% 62%;
-  --chart-3: 152 52% 50%;
-  --chart-4: 280 70% 68%;
-  --chart-5: 12 84% 62%;
-  --chart-6: 188 72% 52%;
+  /* Separately validated against the dark chart surface. */
+  --chart-1: 40 92% 33.5%;
+  --chart-2: 214 80% 52%;
+  --chart-3: 152 58% 36%;
+  --chart-4: 281 58% 55%;
+  --chart-5: 12 78% 47%;
+  --chart-6: 193 88% 36%;
 
   --shadow-2xs: 0 1px 2px 0 hsl(0 0% 0% / 0.30);
   --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.34);
