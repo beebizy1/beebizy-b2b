@@ -369,6 +369,35 @@ describe("floorplan", () => {
   });
 });
 
+describe("templates", () => {
+  it("replaces contents atomically and keeps the counts in step", async () => {
+    const before = (await memoryAdapter.templates.get("tpl-offsite"))!;
+    expect(before.checklistCount).toBe(before.checklistItems.length);
+
+    const updated = await memoryAdapter.templates.replaceContents("tpl-offsite", {
+      checklistItems: before.checklistItems.slice(0, 2),
+      runOfShowItems: [],
+      budgetItems: before.budgetItems,
+    });
+
+    expect(updated.checklistCount).toBe(2);
+    expect(updated.checklistItems).toHaveLength(2);
+    expect(updated.runOfShowCount).toBe(0);
+    expect(updated.budgetCount).toBe(before.budgetItems.length);
+
+    // The summary the library lists must agree with the document.
+    const listed = (await memoryAdapter.templates.list()).find((t) => t.id === "tpl-offsite")!;
+    expect(listed.checklistCount).toBe(2);
+    expect(listed.runOfShowCount).toBe(0);
+  });
+
+  it("refuses to replace contents on a template that does not exist", async () => {
+    await expect(
+      memoryAdapter.templates.replaceContents("nope", { checklistItems: [], runOfShowItems: [], budgetItems: [] }),
+    ).rejects.toThrow(/no longer exists/i);
+  });
+});
+
 describe("settings", () => {
   it("round-trips a preference", async () => {
     await memoryAdapter.settings.update({ theme: "dark", homeGrouping: "category" });

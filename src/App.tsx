@@ -39,6 +39,7 @@ import VendorDetail from "@/screens/vendors/VendorDetail";
 import VendorForm from "@/screens/vendors/VendorForm";
 import Money from "@/screens/Money";
 import Library from "@/screens/Library";
+import TemplateDetail from "@/screens/library/TemplateDetail";
 import Settings from "@/screens/Settings";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
 
@@ -77,6 +78,7 @@ function AppRoutes() {
           <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
           <Route path="/app/money" component={Money} />
           <Route path="/app/library" component={Library} />
+          <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
           <Route component={NotFound} />
         </Switch>

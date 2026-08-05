@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { Link } from "wouter";
-import { Building2, CalendarPlus, FileStack, MapPin, Plus, Trash2 } from "lucide-react";
+import { Building2, CalendarPlus, FileStack, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,7 +38,11 @@ import {
   useDeleteTemplate,
   useLocations,
   useTemplates,
+  useUpdateLocation,
 } from "@/data/hooks";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import type { Location } from "@/data/entities";
 
 function TemplatesPanel() {
   const { data: templates, isLoading, isError, error, refetch } = useTemplates();
@@ -66,7 +70,12 @@ function TemplatesPanel() {
             <li key={template.id} className="flex flex-wrap items-start gap-3 px-5 py-4">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-foreground">{template.name}</span>
+                  <Link
+                    href={`/app/library/templates/${template.id}`}
+                    className="truncate text-sm font-semibold text-foreground hover:underline"
+                  >
+                    {template.name}
+                  </Link>
                   <Pill>{template.category}</Pill>
                 </div>
                 {template.description ? (
@@ -79,6 +88,12 @@ function TemplatesPanel() {
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/app/library/templates/${template.id}`}>
+                    <Pencil className="mr-1.5 size-3.5" />
+                    Edit
+                  </Link>
+                </Button>
                 <Button asChild size="sm" variant="outline">
                   <Link href="/app/events/new">
                     <CalendarPlus className="mr-1.5 size-3.5" />
@@ -123,6 +138,101 @@ function TemplatesPanel() {
         </ul>
       )}
     </Panel>
+  );
+}
+
+function EditVenueDialog({ location }: { location: Location }) {
+  const updateLocation = useUpdateLocation();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: location.name,
+    corporationName: location.corporationName,
+    address: location.address ?? "",
+    city: location.city ?? "",
+    state: location.state ?? "",
+    country: location.country,
+    phone: location.phone ?? "",
+  });
+
+  const set = (key: keyof typeof form, value: string) => setForm((previous) => ({ ...previous, [key]: value }));
+
+  const fields: Array<[keyof typeof form, string, string]> = [
+    ["name", "Name", "Moscone Center West"],
+    ["corporationName", "Organisation", "Northwind Systems"],
+    ["address", "Address", "800 Howard St"],
+    ["city", "City", "San Francisco"],
+    ["state", "State", "CA"],
+    ["country", "Country", "USA"],
+    ["phone", "Phone", "+1 415 555 0100"],
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" aria-label={`Edit ${location.name}`}>
+          <Pencil className="size-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit venue</DialogTitle>
+        </DialogHeader>
+        <form
+          className="space-y-3"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            if (!form.name.trim()) return;
+            updateLocation.mutate(
+              {
+                id: location.id,
+                patch: {
+                  name: form.name.trim(),
+                  corporationName: form.corporationName.trim(),
+                  address: form.address.trim() || null,
+                  city: form.city.trim() || null,
+                  state: form.state.trim() || null,
+                  country: form.country.trim() || "USA",
+                  phone: form.phone.trim() || null,
+                },
+              },
+              {
+                onSuccess: () => {
+                  setOpen(false);
+                  // Events embed a venue snapshot, so a rename shows up on them too.
+                  toast({ title: "Venue updated", description: "Events at this venue now show the new details." });
+                },
+                onError: (error) => toast({ title: "Couldn't update", description: error.message }),
+              },
+            );
+          }}
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            {fields.map(([key, label, placeholder]) => (
+              <div key={key} className={key === "name" || key === "address" ? "sm:col-span-2" : undefined}>
+                <Label htmlFor={`venue-${key}`} className="text-xs">
+                  {label}
+                </Label>
+                <Input
+                  id={`venue-${key}`}
+                  value={form[key]}
+                  placeholder={placeholder}
+                  onChange={(inputEvent) => set(key, inputEvent.target.value)}
+                  className="mt-1"
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!form.name.trim() || updateLocation.isPending}>
+              Save venue
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -198,6 +308,7 @@ function VenuesPanel() {
               <span data-numeric className="shrink-0 text-xs text-muted-foreground">
                 {location.eventCount} {location.eventCount === 1 ? "event" : "events"}
               </span>
+              <EditVenueDialog location={location} />
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" size="sm" aria-label={`Delete ${location.name}`}>

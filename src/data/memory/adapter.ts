@@ -995,6 +995,18 @@ const templates: TemplatesRepository = {
     Object.assign(template, patch, { updatedAt: nowIso() });
     return copy(template);
   },
+  async replaceContents(id, contents: TemplateContents) {
+    await wait();
+    const template = required(store().templates.find((t) => t.id === id), `Template ${id} no longer exists.`);
+    template.checklistItems = copy(contents.checklistItems);
+    template.runOfShowItems = copy(contents.runOfShowItems);
+    template.budgetItems = copy(contents.budgetItems);
+    template.checklistCount = template.checklistItems.length;
+    template.runOfShowCount = template.runOfShowItems.length;
+    template.budgetCount = template.budgetItems.length;
+    template.updatedAt = nowIso();
+    return copy(template) as TemplateDetail;
+  },
   async remove(id) {
     await wait();
     const state = store();

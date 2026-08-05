@@ -60,6 +60,7 @@ import type {
   SponsorshipDraft,
   SponsorshipPatch,
   Template,
+  TemplateContents,
   TemplateDetail,
   TemplateDraft,
   TicketType,
@@ -134,6 +135,12 @@ export interface TemplatesRepository {
   get(id: string): Promise<TemplateDetail | null>;
   create(draft: TemplateDraft): Promise<Template>;
   update(id: string, patch: Partial<TemplateDraft>): Promise<Template>;
+  /**
+   * Replaces the template's contents wholesale. A template is edited as a document
+   * rather than row by row, so one atomic write keeps the counts and the items from
+   * ever disagreeing.
+   */
+  replaceContents(id: string, contents: TemplateContents): Promise<TemplateDetail>;
   remove(id: string): Promise<void>;
 }
 

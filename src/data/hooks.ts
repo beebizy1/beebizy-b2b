@@ -48,6 +48,7 @@ import type {
   RunOfShowItemPatch,
   SponsorshipDraft,
   SponsorshipPatch,
+  TemplateContents,
   TemplateDraft,
   TicketTypeDraft,
   TicketTypePatch,
@@ -678,6 +679,13 @@ export function useCreateTemplate() {
 export function useUpdateTemplate() {
   return useAdapterMutation(
     (a, vars: { id: string; patch: Partial<TemplateDraft> }) => a.templates.update(vars.id, vars.patch),
+    (vars) => [qk.templates, qk.template(vars.id)],
+  );
+}
+
+export function useReplaceTemplateContents() {
+  return useAdapterMutation(
+    (a, vars: { id: string; contents: TemplateContents }) => a.templates.replaceContents(vars.id, vars.contents),
     (vars) => [qk.templates, qk.template(vars.id)],
   );
 }
