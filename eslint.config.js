@@ -11,7 +11,16 @@ import reactRefresh from "eslint-plugin-react-refresh";
  * catch real defects; style is left to formatting.
  */
 export default tseslint.config(
-  { ignores: ["dist", "node_modules", "src/components/ui/**"] },
+  {
+    ignores: [
+      "dist",
+      "node_modules",
+      // shadcn primitives are vendored, and .agents/ is reference material the Clerk
+      // Marketplace installer wrote. Neither is ours to lint.
+      "src/components/ui/**",
+      ".agents/**",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
