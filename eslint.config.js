@@ -61,4 +61,10 @@ export default tseslint.config(
     files: ["**/*.test.ts"],
     rules: { "@typescript-eslint/no-non-null-assertion": "off" },
   },
+  {
+    // Verification scripts and the API run on Node and report to stdout.
+    files: ["scripts/**/*.ts", "api/**/*.ts", "drizzle.config.ts"],
+    languageOptions: { globals: globals.node },
+    rules: { "no-console": "off" },
+  },
 );
