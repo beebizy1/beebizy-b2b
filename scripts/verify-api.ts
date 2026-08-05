@@ -144,7 +144,7 @@ async function main() {
     check("share link resolves with no session", guest.status === 200);
     check(
       "the guest payload carries only what Share promises",
-      Object.keys(guestBody).sort().join(",") === "agenda,event,tickets",
+      Object.keys(guestBody).sort().join(",") === "agenda,event,tickets,timeZone",
       Object.keys(guestBody).join(","),
     );
     check(

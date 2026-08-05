@@ -50,6 +50,7 @@ import type {
   MenuItemPatch,
   OpenTask,
   PortfolioSummary,
+  PublicEventPayload,
   RaffleItem,
   RaffleItemDraft,
   RaffleItemPatch,
@@ -101,8 +102,12 @@ export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft
   list(filter?: EventFilter): Promise<Event[]>;
   /** Idempotent: returns the existing token if the event already has one. */
   share(id: string): Promise<{ shareToken: string }>;
-  /** Public lookup used by the `/e/:token` page — no auth required. */
-  getByShareToken(token: string): Promise<Event | null>;
+  /**
+   * Public lookup used by the `/e/:token` page — no auth required, and therefore the
+   * only read that returns the agenda and tickets alongside the event: a guest has no
+   * session to fetch them with.
+   */
+  getByShareToken(token: string): Promise<PublicEventPayload | null>;
   createFromTemplate(templateId: string, draft: EventDraft): Promise<Event>;
   saveAsTemplate(eventId: string, draft: Pick<TemplateDraft, "name" | "description">): Promise<Template>;
 }

@@ -50,6 +50,7 @@ import {
   useUpdateTicketType,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
+import { usePreferences } from "@/app/preferences";
 import {
   BOOKING_STATUSES,
   SPONSORSHIP_TIERS,
@@ -974,6 +975,7 @@ function SponsorsPanel({ event }: { event: Event }) {
  * alongside the event they describe.
  */
 function RoiPanel({ event }: { event: Event }) {
+  const { date: formatDate } = usePreferences();
   const { data: roi, isLoading } = useEventRoi(event.id);
   const save = useSaveEventRoi();
 
@@ -998,7 +1000,7 @@ function RoiPanel({ event }: { event: Event }) {
     <Panel>
       <PanelHeader
         title="Return"
-        description={roi ? `Last updated ${new Date(roi.updatedAt).toLocaleDateString()}` : "Record what it cost and what it returned"}
+        description={roi ? `Last updated ${formatDate(roi.updatedAt, "dayMonthYear")}` : "Record what it cost and what it returned"}
       />
       {isLoading ? (
         <LoadingRows rows={2} className="p-4" />

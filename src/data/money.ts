@@ -52,6 +52,28 @@ export function centsToInput(cents: Cents | null | undefined): string {
   return (cents / CENTS_PER_UNIT).toFixed(2);
 }
 
+/**
+ * The currency `formatMoney` uses when a caller doesn't name one.
+ *
+ * A module-level default rather than a threaded argument, because the alternative was
+ * passing the workspace currency through forty-four call sites and every row component
+ * between them — and a single missed one silently renders a GBP workspace's numbers with
+ * a dollar sign, which is the exact bug this is fixing.
+ *
+ * Two things make it safe here, and both are worth stating because neither would survive
+ * a change of context: this module is client-only (nothing on the server formats money),
+ * so one browser means one workspace at a time; and this affects *display* only — every
+ * amount is still an integer in cents, and no arithmetic reads it. If money formatting
+ * ever moves server-side, this has to become an argument again: a process shared between
+ * tenants cannot have an ambient currency.
+ */
+let displayCurrency = "USD";
+
+/** Called once when the workspace's settings arrive. See `usePreferences`. */
+export function setDisplayCurrency(currency: string): void {
+  displayCurrency = currency || "USD";
+}
+
 export interface FormatMoneyOptions {
   /** Drop `.00` on whole amounts — `$1,500` instead of `$1,500.00`. Default true. */
   trimWholeCents?: boolean;
@@ -63,7 +85,7 @@ export interface FormatMoneyOptions {
 
 /** Human-facing currency string. Never use this for anything but display. */
 export function formatMoney(cents: Cents | null | undefined, options: FormatMoneyOptions = {}): string {
-  const { trimWholeCents = true, compact = false, currency = "USD", locale = "en-US" } = options;
+  const { trimWholeCents = true, compact = false, currency = displayCurrency, locale = "en-US" } = options;
   if (cents === null || cents === undefined) return "—";
 
   const units = cents / CENTS_PER_UNIT;

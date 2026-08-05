@@ -17,9 +17,40 @@ import { KeyValue, Panel, PanelHeader, PageHeader, Pill } from "@/components/pri
 import { useMe, useSettings, useUpdateSettings } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
+import { usePreferences } from "@/app/preferences";
 import type { UserSettings } from "@/data/entities";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
+
+/**
+ * A short list rather than the full IANA set, because the full set is 400-odd names and
+ * a searchable combobox to make it usable. These cover the zones a lean team is likely to
+ * be running events in; a zone already stored outside the list still displays, because
+ * the trigger renders the stored value rather than only what it can find here.
+ */
+const TIME_ZONES = [
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Toronto",
+  "America/Mexico_City",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Dublin",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Madrid",
+  "Africa/Lagos",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
+];
 
 export default function Settings() {
   const { user, isDemo } = useSession();
@@ -27,6 +58,7 @@ export default function Settings() {
   const { mode, demoReason } = useDataMode();
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
+  const prefs = usePreferences();
 
   const save = (patch: Partial<UserSettings>, message: string) => {
     updateSettings.mutate(patch, {
@@ -44,7 +76,7 @@ export default function Settings() {
       />
 
       <Panel>
-        <PanelHeader title="Defaults" description="How lists and money are presented" />
+        <PanelHeader title="Defaults" description="How lists, dates and money are presented" />
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="grouping">Group events by</Label>
@@ -82,6 +114,34 @@ export default function Settings() {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Every amount in the app, e.g. {prefs.money(150_000)}.
+            </p>
+          </div>
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="timezone">Time zone</Label>
+            <Select
+              value={settings?.timeZone ?? "America/Los_Angeles"}
+              onValueChange={(value) => save({ timeZone: value }, "Time zone saved")}
+            >
+              <SelectTrigger id="timezone">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIME_ZONES.map((zone) => (
+                  <SelectItem key={zone} value={zone}>
+                    {zone.replace(/_/g, " ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Stating the consequence, because this is the setting people get wrong: a
+                shared event page shows the venue's zone to a guest, not the guest's. */}
+            <p className="text-xs text-muted-foreground">
+              Every date and time, for everyone on the team and on shared event pages. Right now that
+              reads {prefs.date(new Date(), "full")} ({prefs.timeZoneLabel}).
+            </p>
           </div>
         </div>
       </Panel>

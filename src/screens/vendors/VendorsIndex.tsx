@@ -24,7 +24,7 @@ import {
   StatTile,
 } from "@/components/primitives";
 import { useVendors } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { usePreferences } from "@/app/preferences";
 import type { Vendor } from "@/data/entities";
 
 const ALL = "__all__";
@@ -40,6 +40,7 @@ function Rating({ value }: { value: number | null }) {
 }
 
 function VendorRow({ vendor }: { vendor: Vendor }) {
+  const { when } = usePreferences();
   return (
     <li>
       <Link
@@ -65,7 +66,7 @@ function VendorRow({ vendor }: { vendor: Vendor }) {
               </span>{" "}
               {vendor.lastMessage}
               {vendor.lastMessageAt ? (
-                <span className="text-muted-foreground/70"> · {describeWhen(vendor.lastMessageAt)}</span>
+                <span className="text-muted-foreground/70"> · {when(vendor.lastMessageAt)}</span>
               ) : null}
             </p>
           ) : null}

@@ -16,9 +16,9 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { BrandLogo } from "@/components/BrandLogo";
-import { useEventByShareToken, usePurchaseTickets, useRunOfShow, useTickets } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { useEventByShareToken, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
+import { describeWhenInZone, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import type { Event } from "@/data/entities";
 
 function PublicFrame({ children }: { children: React.ReactNode }) {
@@ -53,13 +53,12 @@ function EventNotFound() {
   );
 }
 
-function EventHeading({ event }: { event: Event }) {
-  const start = new Date(event.date);
+function EventHeading({ event, timeZone }: { event: Event; timeZone: string }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Pill tone="brand">{event.category}</Pill>
-        <span className="text-xs font-medium text-muted-foreground">{describeWhen(event.date)}</span>
+        <span className="text-xs font-medium text-muted-foreground">{describeWhenInZone(event.date, timeZone)}</span>
       </div>
       <h1 className="text-3xl font-bold tracking-tight text-foreground">{event.title}</h1>
       {event.description ? (
@@ -70,13 +69,8 @@ function EventHeading({ event }: { event: Event }) {
           <CalendarDays className="size-4" aria-hidden="true" />
           <dt className="sr-only">When</dt>
           <dd>
-            {start.toLocaleString(undefined, {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              hour: "numeric",
-              minute: "2-digit",
-            })}
+            {formatInZone(event.date, timeZone, "full")}{" "}
+            <span className="text-muted-foreground/70">{timeZoneLabel(timeZone, new Date(event.date))}</span>
           </dd>
         </div>
         {event.locationRecord || event.location ? (
@@ -103,9 +97,14 @@ function EventHeading({ event }: { event: Event }) {
 }
 
 export function PublicEventPage({ token }: { token: string }) {
-  const { data: event, isLoading, isError, error } = useEventByShareToken(token);
-  const { data: agenda } = useRunOfShow(event?.id ?? "");
-  const { data: tickets } = useTickets(event?.id ?? "");
+  // One request, and it needs no session: the agenda and the ticket types arrive with the
+  // event. Fetching them through the ordinary hooks would have asked a guest for a token
+  // they don't have.
+  const { data: shared, isLoading, isError, error } = useEventByShareToken(token);
+  const event = shared?.event ?? null;
+  const agenda = shared?.agenda;
+  const tickets = shared?.tickets;
+  const timeZone = shared?.timeZone ?? "UTC";
 
   if (isLoading) {
     return (
@@ -130,7 +129,7 @@ export function PublicEventPage({ token }: { token: string }) {
   return (
     <PublicFrame>
       <div className="space-y-6">
-        <EventHeading event={event} />
+        <EventHeading event={event} timeZone={timeZone} />
 
         {onSale.length > 0 ? (
           <Panel className="p-5">
@@ -153,7 +152,7 @@ export function PublicEventPage({ token }: { token: string }) {
 
         {(agenda ?? []).length > 0 ? (
           <Panel>
-            <PanelHeader title="Agenda" description="Times are local to the venue" />
+            <PanelHeader title="Agenda" description={`Times shown in ${timeZoneLabel(timeZone, new Date(event.date))}, the venue\u2019s zone`} />
             <ol className="divide-y divide-hairline">
               {(agenda ?? []).map((cue) => (
                 <li key={cue.id} className="flex items-baseline gap-4 px-5 py-3">
@@ -182,8 +181,9 @@ export function PublicEventPage({ token }: { token: string }) {
 }
 
 export function PublicTicketsPage({ token }: { token: string }) {
-  const { data: event, isLoading } = useEventByShareToken(token);
-  const { data: tickets } = useTickets(event?.id ?? "");
+  const { data: shared, isLoading } = useEventByShareToken(token);
+  const event = shared?.event ?? null;
+  const tickets = shared?.tickets;
   const purchase = usePurchaseTickets();
 
   const [selected, setSelected] = useState<string | null>(null);

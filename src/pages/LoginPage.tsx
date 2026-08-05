@@ -42,11 +42,6 @@ export default function LoginPage() {
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          <Link href="/app" className="underline hover:text-foreground">
-            Or skip sign-in and open the demo
-          </Link>
-        </p>
       </div>
     </div>
   );

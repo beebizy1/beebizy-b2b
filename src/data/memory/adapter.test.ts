@@ -1,12 +1,13 @@
 /**
  * These test the invariants the real backend also has to hold. They are the reason a
- * screen that works against the in-memory adapter can be trusted against Firestore:
+ * screen that works against the in-memory adapter can be trusted against Postgres:
  * denormalized counters stay in sync, deletes cascade, and allocations are exhaustible.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { memoryAdapter, resetMemoryStore } from "./adapter";
 import { DataError } from "../adapter";
+import { DEFAULT_USER_SETTINGS } from "../entities";
 
 beforeEach(() => {
   resetMemoryStore();
@@ -80,7 +81,13 @@ describe("events", () => {
     const first = await memoryAdapter.events.share("evt-cab");
     const second = await memoryAdapter.events.share("evt-cab");
     expect(first.shareToken).toBe(second.shareToken);
-    expect((await memoryAdapter.events.getByShareToken(first.shareToken))!.id).toBe("evt-cab");
+    // The guest payload carries the agenda and tickets because a guest has no session to
+    // fetch them with, and the workspace's zone because their own is the wrong answer.
+    const shared = (await memoryAdapter.events.getByShareToken(first.shareToken))!;
+    expect(shared.event.id).toBe("evt-cab");
+    expect(shared.agenda.every((cue) => cue.eventId === "evt-cab")).toBe(true);
+    expect(shared.tickets.every((ticket) => ticket.eventId === "evt-cab" && ticket.isActive)).toBe(true);
+    expect(shared.timeZone).toBe(DEFAULT_USER_SETTINGS.timeZone);
   });
 
   it("copies a template's contents into a new event", async () => {

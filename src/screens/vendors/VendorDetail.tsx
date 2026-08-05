@@ -23,16 +23,8 @@ import {
 } from "@/components/primitives";
 import { useMarkThreadRead, useSendVendorMessage, useVendor, useVendorThread } from "@/data/hooks";
 import { useSession } from "@/app/session";
+import { usePreferences } from "@/app/preferences";
 import { MessageSquare } from "lucide-react";
-
-function timestamp(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export default function VendorDetail({ id }: { id: string }) {
   const { data: vendor, isLoading, isError, error, refetch } = useVendor(id);
@@ -40,6 +32,7 @@ export default function VendorDetail({ id }: { id: string }) {
   const send = useSendVendorMessage();
   const markRead = useMarkThreadRead();
   const { user } = useSession();
+  const { date: formatDate } = usePreferences();
   const [draft, setDraft] = useState("");
   const markedFor = useRef<string | null>(null);
 
@@ -130,7 +123,7 @@ export default function VendorDetail({ id }: { id: string }) {
                       ) : null}
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {outbound ? "You" : vendor.name} · {timestamp(message.createdAt)}
+                        {outbound ? "You" : vendor.name} · {formatDate(message.createdAt, "dayMonthTime")}
                       </p>
                     </div>
                   </div>

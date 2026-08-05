@@ -48,7 +48,7 @@ import {
   RiskPill,
 } from "@/components/primitives";
 import { useDeleteEvent, useEvent, useEventHealth, useSaveEventAsTemplate } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { usePreferences, type Preferences } from "@/app/preferences";
 import { EVENT_SECTIONS, eventSectionHref, sectionFromSlug } from "@/app/shell/nav";
 import type { Event, EventHealth, EventSectionId } from "@/data/entities";
 import OverviewSection from "./sections/OverviewSection";
@@ -58,22 +58,16 @@ import SuppliersSection from "./sections/SuppliersSection";
 import MoneySection from "./sections/MoneySection";
 import ShareSection from "./sections/ShareSection";
 
-function formatRange(event: Event): string {
-  const start = new Date(event.date);
-  const startText = start.toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+/**
+ * "12 Mar 2026, 6:00 PM – 11:00 PM" for a single day, "– 13 Mar, 2:00 AM" when it runs
+ * over. Whether it runs over is itself a question about the zone: an event ending at
+ * 1am Portland is the next day there and the same day in Honolulu.
+ */
+function formatRange(event: Event, prefs: Preferences): string {
+  const startText = prefs.date(event.date, "dayMonthYearTime");
   if (!event.endDate) return startText;
-  const end = new Date(event.endDate);
-  const sameDay = start.toDateString() === end.toDateString();
-  const endText = end.toLocaleString(
-    undefined,
-    sameDay ? { hour: "numeric", minute: "2-digit" } : { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" },
-  );
+  const sameDay = prefs.daysUntil(event.endDate) === prefs.daysUntil(event.date);
+  const endText = prefs.date(event.endDate, sameDay ? "time" : "dayMonthTime");
   return `${startText} – ${endText}`;
 }
 
@@ -134,6 +128,7 @@ function WorkspaceHeader({
   active: EventSectionId;
 }) {
   const [, navigate] = useLocation();
+  const prefs = usePreferences();
   const deleteEvent = useDeleteEvent();
   const saveAsTemplate = useSaveEventAsTemplate();
 
@@ -159,7 +154,7 @@ function WorkspaceHeader({
               <CalendarClock className="size-4" aria-hidden="true" />
               <dt className="sr-only">When</dt>
               <dd>
-                {formatRange(event)} <span className="text-muted-foreground/70">· {describeWhen(event.date)}</span>
+                {formatRange(event, prefs)} <span className="text-muted-foreground/70">· {prefs.when(event.date)}</span>
               </dd>
             </div>
             <div className="flex items-center gap-1.5">

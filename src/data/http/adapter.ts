@@ -30,6 +30,7 @@ import type {
   MenuItem,
   OpenTask,
   PortfolioSummary,
+  PublicEventPayload,
   RaffleItem,
   RaffleTicket,
   Registration,
@@ -166,8 +167,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
         const response = await fetch(`${options.baseUrl ?? "/api"}/public/events/${token}`);
         if (response.status === 404) return null;
         if (!response.ok) throw new DataError("unavailable", "Couldn't load this event.");
-        const payload = (await response.json()) as { event: Event };
-        return payload.event;
+        return (await response.json()) as PublicEventPayload;
       },
       createFromTemplate: (templateId, draft) => client.post<Event>(`/templates/${templateId}/events`, draft),
       saveAsTemplate: (eventId, draft) => client.post<Template>(`/events/${eventId}/save-as-template`, draft),

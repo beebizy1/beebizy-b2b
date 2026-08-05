@@ -101,7 +101,16 @@ async function main() {
   /* Share tokens resolve with no session, and are not guessable. */
   const { shareToken } = await repos.events.share(alice, event.id);
   check("share token is long and random", shareToken.length >= 32, `${shareToken.length} chars`);
-  check("share token resolves publicly", (await repos.eventByShareToken(shareToken))?.id === event.id);
+  const shared = await repos.eventByShareToken(shareToken);
+  check("share token resolves publicly", shared?.event.id === event.id);
+  // The guest has no settings of their own, so the zone has to come from the workspace —
+  // otherwise a shared event page tells a guest in Berlin the wrong start time.
+  const [aliceWorkspace] = await db.select().from(s.workspaces).where(eq(s.workspaces.id, alice.workspaceId));
+  check(
+    "the guest payload carries the workspace's time zone",
+    Boolean(shared?.timeZone) && shared?.timeZone === aliceWorkspace?.timeZone,
+    `${shared?.timeZone} vs ${aliceWorkspace?.timeZone}`,
+  );
   check("an unknown token resolves to nothing", (await repos.eventByShareToken("nope")) === null);
 
   /* Cascade comes from the foreign keys, not from hand-written deletes. */

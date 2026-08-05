@@ -333,7 +333,18 @@ const events: EventsRepository = {
 
   async getByShareToken(token) {
     await wait();
-    return copy(store().events.find((e) => e.shareToken === token) ?? null);
+    const event = store().events.find((e) => e.shareToken === token);
+    if (!event) return null;
+    // Assembled exactly like the server's public payload, so the guest page is exercised
+    // by the demo rather than only in production.
+    return copy({
+      event,
+      agenda: store()
+        .runOfShow.filter((item) => item.eventId === event.id)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
+      timeZone: store().settings.timeZone,
+    });
   },
 
   async createFromTemplate(templateId, draft) {

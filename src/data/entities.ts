@@ -638,6 +638,21 @@ export type TemplateDetail = Template & TemplateContents;
  * Per-user preferences. Persisted server-side in `userSettings/{uid}` — never in
  * localStorage, so a preference set on a laptop follows the user to their phone.
  */
+/**
+ * Everything a guest on a share link is allowed to see, and nothing else.
+ *
+ * It is one object because a guest has no session: the page cannot fetch the agenda or
+ * the ticket types through the authenticated repositories, so the single public read has
+ * to carry them. `timeZone` is the workspace's, not the reader's — an event page that
+ * showed a guest in Berlin "6:00 PM" for a 6pm-Portland gala would be lying to them.
+ */
+export interface PublicEventPayload {
+  event: Event;
+  agenda: RunOfShowItem[];
+  tickets: TicketType[];
+  timeZone: string;
+}
+
 export interface UserSettings {
   /** Dimension the home page groups events by. */
   homeGrouping: "location" | "category" | "status";

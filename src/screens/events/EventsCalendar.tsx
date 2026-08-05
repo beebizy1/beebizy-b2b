@@ -13,6 +13,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/primitives";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/app/preferences";
+import { dayNumberInZone, dayNumberOf } from "@/lib/datetime";
 import type { Event, EventStatus } from "@/data/entities";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -31,11 +33,21 @@ const STATUS_SWATCH: Record<EventStatus, string> = {
   cancelled: "bg-danger",
 };
 
-/** Local midnight, so day comparisons don't drift across time zones. */
+/**
+ * The grid is made of *civil* days — "the cell for 12 March" — so these `Date`s are
+ * carriers for a y/m/d and never compared against an instant. Which day an event lands
+ * on is decided by `dayNumberInZone` in the workspace's zone: an 11pm event belongs to
+ * the day the team is running it, not to tomorrow because the reader is in Berlin.
+ */
 function startOfDay(date: Date): Date {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
   return copy;
+}
+
+/** The cell's own civil-day number, comparable with `dayNumberInZone`. */
+function cellDay(day: Date): number {
+  return dayNumberOf(day.getFullYear(), day.getMonth() + 1, day.getDate());
 }
 
 function addDays(date: Date, days: number): Date {
@@ -56,17 +68,14 @@ function buildGrid(monthAnchor: Date): Date[] {
   return Array.from({ length: 42 }, (_, index) => startOfDay(addDays(gridStart, index)));
 }
 
-function occupiesDay(event: Event, day: Date): boolean {
-  const start = startOfDay(new Date(event.date));
-  const end = event.endDate ? startOfDay(new Date(event.endDate)) : start;
+function occupiesDay(event: Event, day: number, timeZone: string): boolean {
+  const start = dayNumberInZone(new Date(event.date), timeZone);
+  const end = event.endDate ? dayNumberInZone(new Date(event.endDate), timeZone) : start;
   return day >= start && day <= end;
 }
 
-function timeLabel(event: Event): string {
-  return new Date(event.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
 export default function EventsCalendar({ events }: { events: Event[] }) {
+  const { timeZone, date: formatDate } = usePreferences();
   const today = startOfDay(new Date());
   const [anchor, setAnchor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
 
@@ -75,15 +84,16 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
   const byDay = useMemo(() => {
     const map = new Map<number, Event[]>();
     for (const day of grid) {
+      const dayNumber = cellDay(day);
       const onDay = events
-        .filter((event) => occupiesDay(event, day))
+        .filter((event) => occupiesDay(event, dayNumber, timeZone))
         .sort((a, b) => a.date.localeCompare(b.date));
-      if (onDay.length > 0) map.set(day.getTime(), onDay);
+      if (onDay.length > 0) map.set(dayNumber, onDay);
     }
     return map;
-  }, [grid, events]);
+  }, [grid, events, timeZone]);
 
-  const monthLabel = anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const monthLabel = formatDate(anchor, "monthYearLong");
   const inMonth = (day: Date) => day.getMonth() === anchor.getMonth();
 
   return (
@@ -132,7 +142,7 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
 
           <div className="grid grid-cols-7">
             {grid.map((day) => {
-              const dayEvents = byDay.get(day.getTime()) ?? [];
+              const dayEvents = byDay.get(cellDay(day)) ?? [];
               const isToday = day.getTime() === today.getTime();
               return (
                 <div
@@ -165,12 +175,12 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
 
                   <ul className="space-y-1">
                     {dayEvents.slice(0, 3).map((event) => {
-                      const isStart = startOfDay(new Date(event.date)).getTime() === day.getTime();
+                      const isStart = dayNumberInZone(new Date(event.date), timeZone) === cellDay(day);
                       return (
                         <li key={event.id}>
                           <Link
                             href={`/app/events/${event.id}`}
-                            title={`${event.title} · ${timeLabel(event)}`}
+                            title={`${event.title} · ${formatDate(event.date, "time")}`}
                             className={cn(
                               "block truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
                               STATUS_CHIP[event.status],
@@ -178,7 +188,7 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
                           >
                             {isStart ? (
                               <span data-numeric className="mr-1 font-semibold">
-                                {timeLabel(event)}
+                                {formatDate(event.date, "time")}
                               </span>
                             ) : (
                               <span className="mr-1" aria-hidden="true">

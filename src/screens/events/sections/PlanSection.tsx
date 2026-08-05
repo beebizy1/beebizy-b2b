@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/app/preferences";
 import {
   EmptyState,
   ErrorNotice,
@@ -57,9 +58,10 @@ function isOverdue(item: ChecklistItem): boolean {
   return !item.completed && item.dueDate !== null && new Date(item.dueDate) < new Date();
 }
 
-function dueLabel(item: ChecklistItem): string | null {
+function DueLabel({ item }: { item: ChecklistItem }) {
+  const { date } = usePreferences();
   if (!item.dueDate) return null;
-  return new Date(item.dueDate).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return <>{date(item.dueDate, "dayMonth")}</>;
 }
 
 function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem }) {
@@ -87,7 +89,10 @@ function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem 
         {item.description ? <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p> : null}
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {item.dueDate ? (
-            <Pill tone={overdue ? "danger" : "neutral"}>{overdue ? `Overdue ${dueLabel(item)}` : `Due ${dueLabel(item)}`}</Pill>
+            <Pill tone={overdue ? "danger" : "neutral"}>
+              {overdue ? "Overdue " : "Due "}
+              <DueLabel item={item} />
+            </Pill>
           ) : null}
           {item.assignedTo ? <span className="text-xs text-muted-foreground">{item.assignedTo}</span> : null}
         </div>

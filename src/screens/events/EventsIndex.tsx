@@ -27,7 +27,7 @@ import {
   RiskPill,
 } from "@/components/primitives";
 import { useAllEventHealth, useEvents, useSettings, useUpdateSettings } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { usePreferences } from "@/app/preferences";
 import { cn } from "@/lib/utils";
 import type { Event, EventHealth, UserSettings } from "@/data/entities";
 import EventsCalendar from "./EventsCalendar";
@@ -71,6 +71,7 @@ function groupKeyFor(event: Event, grouping: UserSettings["homeGrouping"]): stri
 }
 
 function EventRow({ event, health }: { event: Event; health: EventHealth | undefined }) {
+  const { date: formatDate, when } = usePreferences();
   const filled = health?.capacityFilled ?? null;
   const topRisk = health?.risks[0];
 
@@ -88,9 +89,9 @@ function EventRow({ event, health }: { event: Event; health: EventHealth | undef
             <EventStatusBadge status={event.status} />
           </div>
           <p className="truncate text-xs text-muted-foreground">
-            {new Date(event.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+            {formatDate(event.date, "dayMonthYear")}
             {" · "}
-            {describeWhen(event.date)}
+            {when(event.date)}
             {" · "}
             {event.category}
           </p>

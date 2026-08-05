@@ -29,7 +29,7 @@ import {
   StatTile,
 } from "@/components/primitives";
 import { useOpenTasks, useUpdateChecklistItem } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { usePreferences } from "@/app/preferences";
 import { eventSectionHref } from "@/app/shell/nav";
 import type { OpenTask } from "@/data/entities";
 
@@ -49,6 +49,7 @@ function groupKey(task: OpenTask, grouping: Grouping): string {
 
 function TaskRow({ task }: { task: OpenTask }) {
   const update = useUpdateChecklistItem();
+  const { date: formatDate, when } = usePreferences();
 
   return (
     <li className="flex items-start gap-3 px-5 py-2.5">
@@ -73,11 +74,11 @@ function TaskRow({ task }: { task: OpenTask }) {
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {task.overdue ? (
             <Pill tone="danger">
-              Overdue {task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : ""}
+              Overdue {task.dueDate ? formatDate(task.dueDate, "dayMonth") : ""}
             </Pill>
           ) : task.dueDate ? (
             <Pill>
-              Due {new Date(task.dueDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+              Due {formatDate(task.dueDate, "dayMonth")}
             </Pill>
           ) : null}
           <Pill>{task.category}</Pill>
@@ -86,7 +87,7 @@ function TaskRow({ task }: { task: OpenTask }) {
             href={eventSectionHref(task.eventId, "plan")}
             className="truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
           >
-            {task.eventTitle} · {describeWhen(task.eventDate)}
+            {task.eventTitle} · {when(task.eventDate)}
           </Link>
         </div>
       </div>

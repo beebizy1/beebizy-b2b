@@ -21,7 +21,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useEvents } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { usePreferences } from "@/app/preferences";
 import { NAV_ITEMS } from "./nav";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
@@ -70,6 +70,7 @@ function score(value: string, search: string): number {
 }
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { when } = usePreferences();
   const [, navigate] = useLocation();
   const { data: events } = useEvents();
 
@@ -141,7 +142,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                     >
                       <CalendarDays className="mr-2 size-4" aria-hidden="true" />
                       <span className="truncate">{event.title}</span>
-                      <span className="ml-2 shrink-0 text-xs text-muted-foreground">{describeWhen(event.date)}</span>
+                      <span className="ml-2 shrink-0 text-xs text-muted-foreground">{when(event.date)}</span>
                     </CommandItem>
                   ))}
                 </CommandGroup>

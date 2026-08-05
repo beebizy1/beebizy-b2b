@@ -35,7 +35,7 @@ import {
   StatTile,
 } from "@/components/primitives";
 import { useAllEventHealth, useAttention, useEvents, usePortfolio, useVendors } from "@/data/hooks";
-import { describeWhen } from "@/data/derive";
+import { usePreferences } from "@/app/preferences";
 import { formatMoney } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import { useSession } from "@/app/session";
@@ -48,18 +48,14 @@ function greeting(now: Date = new Date()): string {
   return "Good evening";
 }
 
-function longDate(now: Date = new Date()): string {
-  return now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
-}
-
 /** Events still ahead of us, soonest first — cancelled and completed excluded. */
-function upcoming(events: Event[] | undefined): Event[] {
+function upcoming(events: Event[] | undefined, daysUntil: (iso: string) => number | null): Event[] {
   if (!events) return [];
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
   return events
     .filter((event) => event.status !== "cancelled" && event.status !== "completed")
-    .filter((event) => new Date(event.date).getTime() >= startOfToday.getTime())
+    // Counted in civil days in the workspace zone, so an event later tonight is still
+    // "ahead of us" rather than dropping off the list at UTC midnight.
+    .filter((event) => (daysUntil(event.date) ?? -1) >= 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -122,6 +118,7 @@ function AttentionPanel() {
 }
 
 function NextUpRow({ event, health }: { event: Event; health: EventHealth | undefined }) {
+  const { when } = usePreferences();
   const filled = health?.capacityFilled ?? null;
   return (
     <li className="flex items-center gap-4 px-5 py-4">
@@ -137,7 +134,7 @@ function NextUpRow({ event, health }: { event: Event; health: EventHealth | unde
           <EventStatusBadge status={event.status} />
         </div>
         <p className="truncate text-xs text-muted-foreground">
-          {describeWhen(event.date)} · {event.locationRecord?.name ?? event.location ?? "No venue"}
+          {when(event.date)} · {event.locationRecord?.name ?? event.location ?? "No venue"}
         </p>
         {event.capacity ? (
           <Meter
@@ -166,9 +163,10 @@ function NextUpRow({ event, health }: { event: Event; health: EventHealth | unde
 function NextUpPanel() {
   const { data: events, isLoading, isError, error, refetch } = useEvents();
   const { data: healths } = useAllEventHealth();
+  const { daysUntil } = usePreferences();
 
   const healthById = useMemo(() => new Map((healths ?? []).map((h) => [h.eventId, h])), [healths]);
-  const next = upcoming(events).slice(0, 4);
+  const next = upcoming(events, daysUntil).slice(0, 4);
 
   return (
     <Panel>
@@ -254,6 +252,7 @@ function InboxPanel() {
 
 export default function Today() {
   const { user } = useSession();
+  const prefs = usePreferences();
   const { data: portfolio, isLoading: portfolioLoading, isError, error, refetch } = usePortfolio();
 
   const firstName = user?.name.split(" ")[0] ?? "there";
@@ -265,7 +264,7 @@ export default function Today() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={longDate()}
+        eyebrow={prefs.date(new Date(), "weekdayDayMonth")}
         title={`${greeting()}, ${firstName}`}
         description="Everything that needs a decision today, then the events it belongs to."
         actions={

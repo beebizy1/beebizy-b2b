@@ -22,37 +22,23 @@ import type {
   Sponsorship,
   TicketType,
 } from "./entities";
+import { daysBetweenInZone, describeWhenInZone, localTimeZone } from "@/lib/datetime";
 import { sumCents } from "./money";
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/** Whole days from now until `iso`. Negative once it's in the past, null if unparseable. */
-export function daysUntil(iso: string, now: Date = new Date()): number | null {
-  const target = new Date(iso).getTime();
-  if (!Number.isFinite(target)) return null;
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfTarget = new Date(target);
-  startOfTarget.setHours(0, 0, 0, 0);
-  return Math.round((startOfTarget.getTime() - startOfToday.getTime()) / MS_PER_DAY);
+/**
+ * Every risk rule below turns on a *day count*, so the zone that count is taken in is
+ * part of the answer, not a display detail. A task due tonight is overdue tomorrow in
+ * Portland and already overdue now in UTC — and these functions run in both places
+ * (the browser, and a Vercel function that thinks it lives in UTC). So the zone is
+ * threaded through; absent, it degrades to the caller's own zone.
+ */
+export function daysUntil(iso: string, now: Date = new Date(), timeZone?: string): number | null {
+  return daysBetweenInZone(iso, timeZone ?? localTimeZone(), now);
 }
 
-/** "in 6 days", "tomorrow", "today", "3 weeks ago" — never a bare date when relative is clearer. */
-export function describeWhen(iso: string, now: Date = new Date()): string {
-  const days = daysUntil(iso, now);
-  if (days === null) return "date unknown";
-  if (days === 0) return "today";
-  if (days === 1) return "tomorrow";
-  if (days === -1) return "yesterday";
-  if (days > 0) {
-    if (days < 14) return `in ${days} days`;
-    if (days < 60) return `in ${Math.round(days / 7)} weeks`;
-    return `in ${Math.round(days / 30)} months`;
-  }
-  const past = Math.abs(days);
-  if (past < 14) return `${past} days ago`;
-  if (past < 60) return `${Math.round(past / 7)} weeks ago`;
-  return `${Math.round(past / 30)} months ago`;
+/** "in 6 days", "tomorrow", "3 weeks ago". Prefer the workspace zone over the browser's. */
+export function describeWhen(iso: string, now: Date = new Date(), timeZone?: string): string {
+  return describeWhenInZone(iso, timeZone ?? localTimeZone(), now);
 }
 
 export interface EventFacts {
@@ -125,10 +111,10 @@ function listPhrase(items: string[]): string {
  * The risks worth interrupting someone for. Ordered most to least severe, and
  * deliberately few — a list of nine warnings is a list nobody reads.
  */
-function assessRisks(facts: EventFacts, now: Date): EventRisk[] {
+function assessRisks(facts: EventFacts, now: Date, timeZone?: string): EventRisk[] {
   const { event } = facts;
   const risks: EventRisk[] = [];
-  const days = daysUntil(event.date, now);
+  const days = daysUntil(event.date, now, timeZone);
   const isLive = event.status === "published" || event.status === "draft";
   const upcoming = isLive && days !== null && days >= 0;
 
@@ -197,7 +183,11 @@ function assessRisks(facts: EventFacts, now: Date): EventRisk[] {
   return risks.sort((a, b) => order[a.level] - order[b.level]);
 }
 
-export function computeEventHealth(facts: EventFacts, now: Date = new Date()): EventHealth {
+export function computeEventHealth(
+  facts: EventFacts,
+  now: Date = new Date(),
+  timeZone?: string,
+): EventHealth {
   const { event } = facts;
   const checklistTotal = facts.checklist.length;
   const checklistDone = facts.checklist.filter((item) => item.completed).length;
@@ -209,7 +199,7 @@ export function computeEventHealth(facts: EventFacts, now: Date = new Date()): E
 
   return {
     eventId: event.id,
-    daysUntil: daysUntil(event.date, now),
+    daysUntil: daysUntil(event.date, now, timeZone),
     readiness: readinessScore({ checklistDone, checklistTotal, vendorsConfirmed, vendorsTotal, capacityFilled }),
     checklistDone,
     checklistTotal,
@@ -220,7 +210,7 @@ export function computeEventHealth(facts: EventFacts, now: Date = new Date()): E
     budgetSpentCents: sumCents(expenses.map((item) => item.actualCents)),
     ticketRevenueCents: ticketRevenueCents(facts.tickets),
     fundraisingCents: fundraisingCents(facts.sponsorships, facts.auction, facts.raffle),
-    risks: assessRisks(facts, now),
+    risks: assessRisks(facts, now, timeZone),
   };
 }
 
@@ -265,10 +255,14 @@ export interface PortfolioFacts {
   raffle: RaffleItem[];
 }
 
-export function computePortfolio(facts: PortfolioFacts, now: Date = new Date()): PortfolioSummary {
+export function computePortfolio(
+  facts: PortfolioFacts,
+  now: Date = new Date(),
+  timeZone?: string,
+): PortfolioSummary {
   const live = facts.events.filter((e) => e.status !== "cancelled");
   const upcoming = live.filter((e) => {
-    const days = daysUntil(e.date, now);
+    const days = daysUntil(e.date, now, timeZone);
     return days !== null && days >= 0 && e.status !== "completed";
   });
   const expenses = facts.budget.filter((item) => item.type === "expense");
@@ -276,7 +270,7 @@ export function computePortfolio(facts: PortfolioFacts, now: Date = new Date()):
   return {
     eventsTotal: facts.events.length,
     eventsUpcoming: upcoming.length,
-    eventsThisWeek: upcoming.filter((e) => (daysUntil(e.date, now) ?? 999) <= 7).length,
+    eventsThisWeek: upcoming.filter((e) => (daysUntil(e.date, now, timeZone) ?? 999) <= 7).length,
     attendeesTotal: facts.attendeeCount,
     registrationsConfirmed: facts.registrations.filter((r) => r.status === "confirmed").length,
     registrationsPending: facts.registrations.filter((r) => r.status === "pending").length,

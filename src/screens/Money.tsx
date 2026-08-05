@@ -22,11 +22,13 @@ import {
 } from "@/components/primitives";
 import { useAllEventHealth, useAllTickets, useEvents, usePortfolio } from "@/data/hooks";
 import { BarComparison, type BarComparisonRow } from "@/components/BarComparison";
+import { usePreferences } from "@/app/preferences";
 import { formatMoney, sumCents } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import { cn } from "@/lib/utils";
 
 export default function Money() {
+  const { date: formatDate } = usePreferences();
   const { data: portfolio, isLoading: portfolioLoading } = usePortfolio();
   const { data: events, isLoading: eventsLoading, isError, error, refetch } = useEvents();
   const { data: healths } = useAllEventHealth();
@@ -57,12 +59,12 @@ export default function Money() {
         .map((row) => ({
           key: row.event.id,
           label: row.event.title,
-          sublabel: new Date(row.event.date).toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+          sublabel: formatDate(row.event.date, "monthYear"),
           values: { spend: row.spent, in: row.ticketRevenue + row.fundraising },
         }))
         .sort((a, b) => Math.max(b.values.spend, b.values.in) - Math.max(a.values.spend, a.values.in))
         .slice(0, 10),
-    [rows],
+    [rows, formatDate],
   );
 
   const overPlan = rows.filter((row) => row.planned > 0 && row.spent > row.planned);
@@ -181,7 +183,7 @@ export default function Money() {
                           {row.event.title}
                         </Link>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(row.event.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                          {formatDate(row.event.date, "dayMonthYear")}
                           {" · "}
                           {row.event.status}
                         </p>

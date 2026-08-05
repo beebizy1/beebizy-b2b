@@ -109,16 +109,17 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 async function handlePublic(segments: string[], method: string): Promise<Response | null> {
   // GET /api/public/events/:token
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET") {
-    const event = await eventByShareToken(segments[2]);
-    if (!event) return json({ error: "This link is no longer active." }, 404);
+    const shared = await eventByShareToken(segments[2]);
+    if (!shared) return json({ error: "This link is no longer active." }, 404);
 
     const [agenda, tickets] = await Promise.all([
-      repos.publicAgenda(event.id),
-      repos.publicTickets(event.id),
+      repos.publicAgenda(shared.event.id),
+      repos.publicTickets(shared.event.id),
     ]);
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
-    // bids are not in this payload at all, rather than filtered out in the client.
-    return json({ event, agenda, tickets });
+    // bids are not in this payload at all, rather than filtered out in the client. The
+    // agenda and tickets ride along because the guest has no session to fetch them with.
+    return json({ event: shared.event, agenda, tickets, timeZone: shared.timeZone });
   }
 
   /*

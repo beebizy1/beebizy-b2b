@@ -40,6 +40,7 @@ import type {
   Vendor,
 } from "@/data/entities";
 import { buildAttention, computeEventHealth, computePortfolio } from "@/data/derive";
+import { daysBetweenInZone } from "@/lib/datetime";
 
 type Body = Record<string, unknown>;
 
@@ -293,17 +294,31 @@ export const events = {
   },
 };
 
-/** Public: resolves a share token with no session at all. */
-export async function eventByShareToken(token: string): Promise<Event | null> {
+/**
+ * Public: resolves a share token with no session at all.
+ *
+ * The workspace joins in for one reason — its time zone. The guest has no settings of
+ * their own, so the event has to arrive already knowing which zone its times are in.
+ */
+export async function eventByShareToken(
+  token: string,
+): Promise<{ event: Event; timeZone: string } | null> {
   const [row] = await db
-    .select({ event: s.events, location: s.locations })
+    .select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone })
     .from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
+    .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(eq(s.events.shareToken, token))
     .limit(1);
   if (!row) return null;
   const counts = await registrationCounts([row.event.id]);
-  return map.toEvent(row.event, { location: row.location, registrationCount: counts.get(row.event.id) ?? 0 });
+  return {
+    event: map.toEvent(row.event, {
+      location: row.location,
+      registrationCount: counts.get(row.event.id) ?? 0,
+    }),
+    timeZone: row.timeZone,
+  };
 }
 
 /**
@@ -1362,14 +1377,31 @@ export const settings = {
 /* --------------------------------------------------------------- analytics */
 
 /**
+ * The zone every derived day-count is measured in.
+ *
+ * This matters more on the server than in the browser: a Vercel function runs in UTC, so
+ * without it "overdue" and "3 days out" are computed against a midnight the customer
+ * never experiences — off by up to a day for every workspace west of Greenwich.
+ */
+async function workspaceTimeZone(ctx: RequestContext): Promise<string> {
+  const [row] = await db
+    .select({ timeZone: s.workspaces.timeZone })
+    .from(s.workspaces)
+    .where(eq(s.workspaces.id, ctx.workspaceId))
+    .limit(1);
+  return row?.timeZone ?? "UTC";
+}
+
+/**
  * Everything derived, computed from four queries rather than one per event.
  *
  * The risk rules themselves stay in `@/data/derive` — the same pure functions the
  * in-memory adapter used and the unit tests cover. Only the fetching changes.
  */
 async function facts(ctx: RequestContext) {
-  const [eventRows, checklistRows, vendorRows, budgetRows, ticketRows, sponsorRows, auctionRows, raffleRows, registrationRows] =
+  const [timeZone, eventRows, checklistRows, vendorRows, budgetRows, ticketRows, sponsorRows, auctionRows, raffleRows, registrationRows] =
     await Promise.all([
+      workspaceTimeZone(ctx),
       events.list(ctx),
       db.select().from(s.checklistItems).where(eq(s.checklistItems.workspaceId, ctx.workspaceId)),
       db
@@ -1396,6 +1428,7 @@ async function facts(ctx: RequestContext) {
   };
 
   return {
+    timeZone,
     eventRows,
     checklist: byEvent(checklistRows.map(map.toChecklistItem)),
     vendors: byEvent(vendorRows.map((row) => map.toEventVendor(row.booking, row.vendor))),
@@ -1422,7 +1455,7 @@ export const analytics = {
         sponsorships: f.sponsorships.get(event.id) ?? [],
         auction: f.auction.get(event.id) ?? [],
         raffle: f.raffle.get(event.id) ?? [],
-      }),
+      }, new Date(), f.timeZone),
     );
   },
 
@@ -1457,7 +1490,7 @@ export const analytics = {
       sponsorships: [...f.sponsorships.values()].flat(),
       auction: [...f.auction.values()].flat(),
       raffle: [...f.raffle.values()].flat(),
-    });
+    }, new Date(), f.timeZone);
   },
 
   async openTasks(ctx: RequestContext): Promise<OpenTask[]> {
@@ -1476,19 +1509,15 @@ export const analytics = {
       .orderBy(asc(s.events.startsAt), asc(s.checklistItems.sortOrder));
 
     const now = new Date();
-    const day = 24 * 60 * 60 * 1000;
+    const timeZone = await workspaceTimeZone(ctx);
     return rows
       .map(({ item, event }) => {
-        const startOfToday = new Date(now);
-        startOfToday.setHours(0, 0, 0, 0);
-        const startOfEvent = new Date(event.startsAt);
-        startOfEvent.setHours(0, 0, 0, 0);
         return {
           ...map.toChecklistItem(item),
           eventTitle: event.title,
           eventDate: event.startsAt.toISOString(),
           eventStatus: event.status,
-          daysUntilEvent: Math.round((startOfEvent.getTime() - startOfToday.getTime()) / day),
+          daysUntilEvent: daysBetweenInZone(event.startsAt, timeZone, now),
           overdue: item.dueDate !== null && item.dueDate < now,
         };
       })
