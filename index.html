@@ -2,20 +2,41 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Beebizy</title>
-    <meta name="description" content="Beebizy — built on Replit. Update this description to reflect the app." />
+    <!-- No maximum-scale: pinch-zoom is an accessibility requirement, not a layout bug. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Beebizy — event management software for lean teams</title>
+    <meta
+      name="description"
+      content="Beebizy is event management software built for lean teams. Giving teams of 2 the manpower of 10: one worklist that tells you what needs deciding, an event workspace instead of fourteen tabs, and vendors, tickets and fundraising in one place."
+    />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Beebizy" />
-    <meta property="og:description" content="Beebizy — built on Replit. Update this description to reflect the app." />
+
+    <meta property="og:title" content="Beebizy — event management software for lean teams" />
+    <meta
+      property="og:description"
+      content="Giving teams of 2 the manpower of 10. Plan the event, staff it with vendors, sell tickets, fundraise, and see what it actually cost."
+    />
     <meta property="og:type" content="website" />
+    <meta property="og:image" content="/opengraph.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Beebizy" />
-    <meta name="twitter:description" content="Beebizy — built on Replit. Update this description to reflect the app." />
+    <meta name="twitter:title" content="Beebizy — event management software for lean teams" />
+    <meta
+      name="twitter:description"
+      content="Giving teams of 2 the manpower of 10. Plan the event, staff it with vendors, sell tickets, fundraise, and see what it actually cost."
+    />
+    <meta name="twitter:image" content="/opengraph.jpg" />
+
+    <!-- Matches the app's own surfaces so mobile browser chrome doesn't clash. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8f6f1" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0f1a" />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- The stylesheet imports Plus Jakarta Sans and JetBrains Mono; warm those
+         connections early. The previous build preloaded Inter, which is never used. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   </head>
   <body>
     <div id="root"></div>

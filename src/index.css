@@ -44,6 +44,19 @@
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-primary-border: var(--primary-border);
   --color-primary-muted: hsl(var(--primary-muted));
+  --color-primary-hover: hsl(var(--primary-hover));
+  /* Yellow is a fill, not a text colour. Amber at fill brightness measures ~2.3:1 on
+     white, so anything set in the brand colour uses this darker tone instead. */
+  --color-primary-text: hsl(var(--primary-text));
+
+  /* Brand ink: the second half of the two-colour identity. Marketing surfaces sit on
+     this near-black navy in both themes — the way Binance keeps its marketing dark and
+     flips only transactional screens — with yellow carrying the voltage on top. */
+  --color-brand-ink: hsl(var(--brand-ink));
+  --color-brand-surface: hsl(var(--brand-surface));
+  --color-brand-hairline: hsl(var(--brand-hairline));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-muted: hsl(var(--brand-muted));
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -150,9 +163,20 @@
   --popover-foreground: 222 47% 11%;
   --popover-border: 220 16% 89%;
 
-  --primary: 43 96% 48%;
-  --primary-foreground: 40 45% 8%;
-  --primary-muted: 43 92% 94%;
+  /* Two-step yellow: the bright honey fills, the deeper one takes hover and active.
+     Same relationship as Binance's #fcd535 / #f0b90b pair. */
+  --primary: 45 96% 55%;
+  --primary-hover: 43 96% 47%;
+  --primary-foreground: 224 42% 10%;
+  --primary-muted: 45 92% 93%;
+  /* 5.3:1 on --surface. */
+  --primary-text: 33 84% 30%;
+
+  --brand-ink: 224 44% 6%;
+  --brand-surface: 223 36% 11%;
+  --brand-hairline: 220 18% 18%;
+  --brand-foreground: 210 20% 97%;
+  --brand-muted: 216 14% 68%;
 
   --secondary: 222 44% 14%;
   --secondary-foreground: 0 0% 100%;
@@ -267,9 +291,18 @@
   --popover-foreground: 210 20% 96%;
   --popover-border: 220 18% 24%;
 
-  --primary: 43 96% 54%;
-  --primary-foreground: 40 45% 8%;
-  --primary-muted: 40 40% 16%;
+  --primary: 45 96% 57%;
+  --primary-hover: 43 96% 50%;
+  --primary-foreground: 224 42% 10%;
+  --primary-muted: 42 38% 17%;
+  /* On dark surfaces the fill yellow is already legible as text. */
+  --primary-text: 45 96% 64%;
+
+  --brand-ink: 224 46% 5%;
+  --brand-surface: 223 36% 10%;
+  --brand-hairline: 220 18% 17%;
+  --brand-foreground: 210 20% 97%;
+  --brand-muted: 216 14% 70%;
 
   --secondary: 210 20% 96%;
   --secondary-foreground: 224 42% 9%;
@@ -368,6 +401,60 @@
 }
 
 @layer components {
+  /*
+    Display type scale.
+
+    Weights stop at 700 and tracking goes negative as size goes up. The previous build
+    reached for font-extrabold (800) at every heading level, which is the difference
+    between type that looks designed and type that looks shouted. Sizes are fluid so
+    headings don't need a breakpoint each.
+  */
+  .display-xl {
+    font-size: clamp(2.5rem, 5.4vw, 4rem);
+    font-weight: 700;
+    line-height: 1.03;
+    letter-spacing: -0.035em;
+  }
+  .display-lg {
+    font-size: clamp(2rem, 3.8vw, 2.75rem);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+  }
+  .display-md {
+    font-size: clamp(1.5rem, 2.4vw, 1.875rem);
+    font-weight: 600;
+    line-height: 1.16;
+    letter-spacing: -0.024em;
+  }
+  .headline {
+    font-size: 1.375rem;
+    font-weight: 600;
+    line-height: 1.26;
+    letter-spacing: -0.018em;
+  }
+  .title-sm {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.012em;
+  }
+  /* Section kicker. Uses --primary-text, never the fill yellow. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: hsl(var(--primary-text));
+  }
+
+  /* Marketing surface: brand ink in both themes, with yellow doing the talking. */
+  .brand-canvas {
+    background-color: hsl(var(--brand-ink));
+    color: hsl(var(--brand-foreground));
+  }
+
   /* Skip link: first tab stop on every page, visible only when focused. */
   .skip-link {
     @apply absolute left-4 z-100 rounded-md bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground shadow-lg;
@@ -384,7 +471,9 @@
       radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.10), transparent 60%),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3C/svg%3E");
   }
-  .dark .honeycomb {
+  /* Brand-ink sections keep the dark pattern regardless of the viewer's theme. */
+  .dark .honeycomb,
+  .brand-canvas.honeycomb {
     background-image:
       radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.12), transparent 60%),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%23fff' stroke-opacity='0.05'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%23fff' stroke-opacity='0.05'/%3E%3C/svg%3E");

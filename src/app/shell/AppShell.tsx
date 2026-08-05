@@ -47,7 +47,7 @@ function BrandMark() {
           <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" fill="currentColor" />
         </svg>
       </span>
-      <span className="text-[15px] font-extrabold tracking-tight text-foreground">Beebizy</span>
+      <span className="text-[15px] font-bold tracking-tight text-foreground">Beebizy</span>
     </Link>
   );
 }

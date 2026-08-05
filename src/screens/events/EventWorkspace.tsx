@@ -150,7 +150,7 @@ function WorkspaceHeader({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[28px]">{event.title}</h1>
+            <h1 className="display-md text-foreground">{event.title}</h1>
             <EventStatusBadge status={event.status} />
           </div>
 

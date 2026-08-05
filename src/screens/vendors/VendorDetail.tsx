@@ -79,7 +79,7 @@ export default function VendorDetail({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{vendor.name}</h1>
+            <h1 className="display-md text-foreground">{vendor.name}</h1>
             <Pill>{vendor.category}</Pill>
             {vendor.rating !== null ? (
               <span className="inline-flex items-center gap-1 text-sm font-medium text-foreground">
