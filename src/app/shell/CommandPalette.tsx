@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { CalendarDays, Moon, Plus, Search, Store, Sun, UserPlus } from "lucide-react";
+import { CalendarDays, ListChecks, Moon, Plus, Search, Store, Sun, UserPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Command,
@@ -166,6 +166,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   <Moon className="mr-2 size-4" aria-hidden="true" />
                 )}
                 Switch appearance
+              </CommandItem>
+              <CommandItem value="tasks open checklist todo" onSelect={() => go("/app/tasks")}>
+                <ListChecks className="mr-2 size-4" aria-hidden="true" />
+                All open tasks
               </CommandItem>
               <CommandItem value="settings preferences" onSelect={() => go("/app/settings")}>
                 <Search className="mr-2 size-4" aria-hidden="true" />

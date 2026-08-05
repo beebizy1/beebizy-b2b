@@ -78,6 +78,11 @@ function AttentionPanel() {
             ? `${urgentCount} urgent ${urgentCount === 1 ? "item" : "items"} across your events`
             : "Ranked by urgency, then by how soon the event starts"
         }
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app/tasks">All open tasks</Link>
+          </Button>
+        }
       />
       <div className="p-2">
         {isError ? (

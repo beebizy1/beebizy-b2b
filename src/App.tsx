@@ -38,6 +38,7 @@ import VendorsIndex from "@/screens/vendors/VendorsIndex";
 import VendorDetail from "@/screens/vendors/VendorDetail";
 import VendorForm from "@/screens/vendors/VendorForm";
 import Money from "@/screens/Money";
+import Tasks from "@/screens/Tasks";
 import Library from "@/screens/Library";
 import TemplateDetail from "@/screens/library/TemplateDetail";
 import Settings from "@/screens/Settings";
@@ -77,6 +78,7 @@ function AppRoutes() {
           <Route path="/app/vendors/new">{() => <VendorForm />}</Route>
           <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
           <Route path="/app/money" component={Money} />
+          <Route path="/app/tasks" component={Tasks} />
           <Route path="/app/library" component={Library} />
           <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />

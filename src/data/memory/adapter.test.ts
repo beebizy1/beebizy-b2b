@@ -398,6 +398,40 @@ describe("templates", () => {
   });
 });
 
+describe("open tasks", () => {
+  it("lists only incomplete tasks on live events", async () => {
+    const tasks = await memoryAdapter.analytics.openTasks();
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.every((task) => !task.completed)).toBe(true);
+    // The seed's completed and cancelled events both carry checklist items.
+    expect(tasks.some((task) => task.eventId === "evt-townhall")).toBe(false);
+    expect(tasks.some((task) => task.eventId === "evt-roadshow")).toBe(false);
+  });
+
+  it("carries enough of the event to be shown outside it", async () => {
+    const task = (await memoryAdapter.analytics.openTasks())[0]!;
+    expect(task.eventTitle).toBeTruthy();
+    expect(task.eventDate).toBeTruthy();
+    expect(typeof task.overdue).toBe("boolean");
+  });
+
+  it("puts overdue work first", async () => {
+    const tasks = await memoryAdapter.analytics.openTasks();
+    const lastOverdue = tasks.map((task) => task.overdue).lastIndexOf(true);
+    const firstClear = tasks.map((task) => task.overdue).indexOf(false);
+    if (lastOverdue !== -1 && firstClear !== -1) expect(lastOverdue).toBeLessThan(firstClear);
+  });
+
+  it("drops a task once it is completed", async () => {
+    const before = await memoryAdapter.analytics.openTasks();
+    const target = before[0]!;
+    await memoryAdapter.checklist.update(target.eventId, target.id, { completed: true });
+    const after = await memoryAdapter.analytics.openTasks();
+    expect(after.some((task) => task.id === target.id)).toBe(false);
+    expect(after).toHaveLength(before.length - 1);
+  });
+});
+
 describe("settings", () => {
   it("round-trips a preference", async () => {
     await memoryAdapter.settings.update({ theme: "dark", homeGrouping: "category" });

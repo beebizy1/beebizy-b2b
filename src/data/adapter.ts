@@ -44,6 +44,7 @@ import type {
   MenuItem,
   MenuItemDraft,
   MenuItemPatch,
+  OpenTask,
   PortfolioSummary,
   RaffleItem,
   RaffleItemDraft,
@@ -174,6 +175,12 @@ export interface AnalyticsRepository {
   health(eventIds?: string[]): Promise<EventHealth[]>;
   /** Ranked "what needs me today" worklist across the whole portfolio. */
   attention(): Promise<AttentionItem[]>;
+  /**
+   * Every incomplete checklist item across live events, overdue first. Aggregated here
+   * rather than by looping `checklist.list(eventId)` — that loop is the N+1 the old
+   * dashboard shipped.
+   */
+  openTasks(): Promise<OpenTask[]>;
 }
 
 export interface DataAdapter {

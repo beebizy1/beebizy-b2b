@@ -25,7 +25,7 @@ import type {
   VendorMessagesRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
-import { buildAttention, computeEventHealth, computePortfolio } from "../derive";
+import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import type {
   Attendee,
   AttendeeDraft,
@@ -1129,6 +1129,36 @@ const analytics: AnalyticsRepository = {
   async attention() {
     await wait();
     return buildAttention(store().events, healthFor());
+  },
+  async openTasks() {
+    await wait();
+    const state = store();
+    const now = new Date();
+    const eventById = new Map(state.events.map((event) => [event.id, event]));
+
+    return state.checklist
+      .filter((item) => !item.completed)
+      .flatMap((item) => {
+        const event = eventById.get(item.eventId);
+        // Completed and cancelled events aren't work any more.
+        if (!event || event.status === "completed" || event.status === "cancelled") return [];
+        return [
+          {
+            ...copy(item),
+            eventTitle: event.title,
+            eventDate: event.date,
+            eventStatus: event.status,
+            daysUntilEvent: daysUntil(event.date, now),
+            overdue: item.dueDate !== null && new Date(item.dueDate) < now,
+          },
+        ];
+      })
+      .sort(
+        (a, b) =>
+          Number(b.overdue) - Number(a.overdue) ||
+          (a.daysUntilEvent ?? 9999) - (b.daysUntilEvent ?? 9999) ||
+          a.sortOrder - b.sortOrder,
+      );
   },
 };
 

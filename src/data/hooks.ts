@@ -35,6 +35,7 @@ import type {
   EventVendorDraft,
   EventVendorPatch,
   Floorplan,
+  OpenTask,
   FloorplanDraft,
   LocationDraft,
   LocationPatch,
@@ -63,6 +64,7 @@ import type {
 export const qk = {
   portfolio: ["analytics", "portfolio"] as const,
   attention: ["analytics", "attention"] as const,
+  openTasks: ["analytics", "openTasks"] as const,
   health: (eventIds?: string[]) => ["analytics", "health", eventIds ?? "all"] as const,
 
   events: ["events"] as const,
@@ -107,7 +109,7 @@ export const qk = {
 
 /** Every key whose contents can change when one event's records change. */
 function eventDerivedKeys(eventId?: string): QueryKey[] {
-  const keys: QueryKey[] = [qk.portfolio, qk.attention, ["analytics", "health"]];
+  const keys: QueryKey[] = [qk.portfolio, qk.attention, qk.openTasks, ["analytics", "health"]];
   if (eventId) keys.push(qk.event(eventId));
   keys.push(qk.events);
   return keys;
@@ -151,6 +153,10 @@ export function usePortfolio() {
 
 export function useAttention(): UseQueryResult<AttentionItem[], Error> {
   return useAdapterQuery(qk.attention, (a) => a.analytics.attention());
+}
+
+export function useOpenTasks(): UseQueryResult<OpenTask[], Error> {
+  return useAdapterQuery(qk.openTasks, (a) => a.analytics.openTasks());
 }
 
 export function useEventHealth(eventId: string): UseQueryResult<EventHealth | null, Error> {

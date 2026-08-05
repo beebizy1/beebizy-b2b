@@ -657,6 +657,16 @@ export interface AttentionItem {
   weight: number;
 }
 
+/** A checklist item carrying enough of its event to be shown outside that event. */
+export interface OpenTask extends ChecklistItem {
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  eventStatus: EventStatus;
+  /** Whole days until the event; negative once it has passed. */
+  daysUntilEvent: number | null;
+  overdue: boolean;
+}
+
 export interface PortfolioSummary {
   eventsTotal: number;
   eventsUpcoming: number;
