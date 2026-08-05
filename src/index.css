@@ -44,6 +44,7 @@
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-primary-border: var(--primary-border);
   --color-primary-muted: hsl(var(--primary-muted));
+  --color-primary-wash: hsl(var(--primary-wash));
   --color-primary-hover: hsl(var(--primary-hover));
   /* Yellow is a fill, not a text colour. Amber at fill brightness measures ~2.3:1 on
      white, so anything set in the brand colour uses this darker tone instead. */
@@ -134,13 +135,13 @@
   --elevate-1: rgba(0, 0, 0, 0.03);
   --elevate-2: rgba(0, 0, 0, 0.07);
 
-  /* Warm, paper-like ground so the amber accent reads as honey rather than hazard. */
-  --background: 40 30% 97%;
+  /* Near-white with the faintest honey cast: the base of the yellow-and-white pairing. */
+  --background: 48 33% 98%;
   --foreground: 222 47% 11%;
   --surface: 0 0% 100%;
   --surface-foreground: 222 47% 11%;
   --surface-raised: 0 0% 100%;
-  --surface-sunken: 40 24% 94%;
+  --surface-sunken: 48 30% 95%;
 
   --border: 220 16% 88%;
   /* One-pixel dividers need to be lighter than component borders or tables look caged. */
@@ -153,39 +154,46 @@
   --sidebar: 0 0% 100%;
   --sidebar-foreground: 222 24% 24%;
   --sidebar-border: 220 16% 90%;
-  --sidebar-primary: 43 96% 48%;
-  --sidebar-primary-foreground: 40 40% 8%;
-  --sidebar-accent: 40 40% 95%;
+  --sidebar-primary: 52 94% 52%;
+  --sidebar-primary-foreground: 0 0% 4%;
+  --sidebar-accent: 50 70% 94%;
   --sidebar-accent-foreground: 222 47% 11%;
-  --sidebar-ring: 43 96% 48%;
+  --sidebar-ring: 48 92% 42%;
 
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
   --popover-border: 220 16% 89%;
 
-  /* Two-step yellow: the bright honey fills, the deeper one takes hover and active.
-     Same relationship as Binance's #fcd535 / #f0b90b pair. */
-  --primary: 45 96% 55%;
-  --primary-hover: 43 96% 47%;
-  --primary-foreground: 224 42% 10%;
-  --primary-muted: 45 92% 93%;
-  /* 5.3:1 on --surface. */
-  --primary-text: 33 84% 30%;
+  /*
+    Brand yellow, sampled from the logo itself (#f8d810), with a deeper step for hover
+    and active. The logo is yellow and black on white, so those are the two colours the
+    product uses — an invented navy would have been a third brand nobody asked for.
+  */
+  --primary: 52 94% 52%;
+  --primary-hover: 48 92% 45%;
+  /* Black on brand yellow measures 12.6:1. */
+  --primary-foreground: 0 0% 4%;
+  /* Soft honey wash for tinted surfaces and section bands. */
+  --primary-muted: 51 94% 92%;
+  --primary-wash: 51 96% 96%;
+  /* Yellow as small text is unreadable at fill brightness; this is 5.4:1 on white. */
+  --primary-text: 36 88% 29%;
 
-  --brand-ink: 224 44% 6%;
-  --brand-surface: 223 36% 11%;
-  --brand-hairline: 220 18% 18%;
-  --brand-foreground: 210 20% 97%;
-  --brand-muted: 216 14% 68%;
+  /* The logo's black, used for grounding bands and the secondary button. */
+  --brand-ink: 0 0% 4%;
+  --brand-surface: 0 0% 9%;
+  --brand-hairline: 0 0% 18%;
+  --brand-foreground: 0 0% 100%;
+  --brand-muted: 0 0% 72%;
 
-  --secondary: 222 44% 14%;
+  --secondary: 0 0% 6%;
   --secondary-foreground: 0 0% 100%;
 
   --muted: 220 20% 95%;
   /* 4.7:1 on --surface. The old value paired body copy at 3.1:1 and failed AA. */
   --muted-foreground: 220 12% 42%;
 
-  --accent: 40 36% 94%;
+  --accent: 50 60% 94%;
   --accent-foreground: 222 47% 11%;
 
   --destructive: 0 72% 48%;
@@ -212,7 +220,7 @@
   --info-text: 214 78% 34%;
 
   --input: 220 16% 87%;
-  --ring: 43 96% 44%;
+  --ring: 48 92% 40%;
 
   /*
     Categorical series, in fixed order — never cycled, never reassigned by rank.
@@ -289,28 +297,29 @@
   --sidebar: 224 40% 8%;
   --sidebar-foreground: 214 16% 78%;
   --sidebar-border: 220 18% 19%;
-  --sidebar-primary: 43 96% 54%;
-  --sidebar-primary-foreground: 40 45% 8%;
+  --sidebar-primary: 52 94% 55%;
+  --sidebar-primary-foreground: 0 0% 4%;
   --sidebar-accent: 222 32% 16%;
   --sidebar-accent-foreground: 210 20% 96%;
-  --sidebar-ring: 43 96% 54%;
+  --sidebar-ring: 52 94% 55%;
 
   --popover: 222 34% 13%;
   --popover-foreground: 210 20% 96%;
   --popover-border: 220 18% 24%;
 
-  --primary: 45 96% 57%;
-  --primary-hover: 43 96% 50%;
-  --primary-foreground: 224 42% 10%;
-  --primary-muted: 42 38% 17%;
-  /* On dark surfaces the fill yellow is already legible as text. */
-  --primary-text: 45 96% 64%;
+  --primary: 52 94% 55%;
+  --primary-hover: 50 92% 48%;
+  --primary-foreground: 0 0% 4%;
+  --primary-muted: 48 40% 16%;
+  --primary-wash: 48 30% 12%;
+  /* On a dark ground the fill yellow is already legible as text. */
+  --primary-text: 51 94% 62%;
 
-  --brand-ink: 224 46% 5%;
-  --brand-surface: 223 36% 10%;
-  --brand-hairline: 220 18% 17%;
-  --brand-foreground: 210 20% 97%;
-  --brand-muted: 216 14% 70%;
+  --brand-ink: 0 0% 3%;
+  --brand-surface: 0 0% 8%;
+  --brand-hairline: 0 0% 16%;
+  --brand-foreground: 0 0% 100%;
+  --brand-muted: 0 0% 70%;
 
   --secondary: 210 20% 96%;
   --secondary-foreground: 224 42% 9%;
@@ -346,7 +355,7 @@
   --info-text: 208 90% 76%;
 
   --input: 220 18% 24%;
-  --ring: 43 96% 54%;
+  --ring: 52 94% 55%;
 
   /* Separately validated against the dark chart surface. */
   --chart-1: 40 92% 33.5%;
@@ -480,6 +489,11 @@
       radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.10), transparent 60%),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3C/svg%3E");
   }
+  /* A yellow band with the comb pattern, for section grounds. */
+  .honey-band {
+    background-color: hsl(var(--primary-wash));
+  }
+
   /* Brand-ink sections keep the dark pattern regardless of the viewer's theme. */
   .dark .honeycomb,
   .brand-canvas.honeycomb {
