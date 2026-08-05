@@ -20,6 +20,7 @@ import type {
   EventInspiration,
   EventVendor,
   EventRoi,
+  Canvas,
   Floorplan,
   Location,
   MenuItem,
@@ -56,6 +57,7 @@ export interface MemoryDb {
   raffleTickets: RaffleTicket[];
   sponsorships: Sponsorship[];
   templates: (Template & TemplateContents)[];
+  canvases: Canvas[];
   floorplans: Floorplan[];
   roi: EventRoi[];
   settings: UserSettings;
@@ -1280,6 +1282,43 @@ export function buildSeed(): MemoryDb {
     },
   ];
 
+  /* ----------------------------------------------------------------- boards */
+
+  const canvases: Canvas[] = [
+    {
+      id: "cvs-gala-look",
+      ownerId: DEMO_OWNER_ID,
+      name: "Gala look and feel",
+      description: "Agreed direction with Bloom & Birch before the florals were ordered.",
+      eventId: "evt-gala",
+      createdAt: at(-40),
+      updatedAt: at(-12),
+      cards: [
+        { id: "cc-1", kind: "note", content: "Warm brass, low florals, nothing that blocks sightlines to the stage.", caption: null, x: 8, y: 10, width: 24, color: "#fde68a" },
+        { id: "cc-2", kind: "swatch", content: "#1c2a44", caption: "Table linen", x: 40, y: 10, width: 12, color: "#1c2a44" },
+        { id: "cc-3", kind: "swatch", content: "#c9a227", caption: "Brass accents", x: 55, y: 10, width: 12, color: "#c9a227" },
+        { id: "cc-4", kind: "swatch", content: "#f4ede3", caption: "Napkins", x: 70, y: 10, width: 12, color: "#f4ede3" },
+        { id: "cc-5", kind: "image", content: "https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?w=800", caption: "Table setting reference", x: 8, y: 44, width: 26, color: null },
+        { id: "cc-6", kind: "image", content: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800", caption: "Auction lighting state", x: 40, y: 44, width: 26, color: null },
+        { id: "cc-7", kind: "note", content: "Two vegan tables need the same centrepiece — no seafood props.", caption: null, x: 74, y: 44, width: 22, color: "#bbf7d0" },
+        { id: "cc-8", kind: "link", content: "https://bloomandbirch.example.com/portfolio/winter", caption: "Bloom & Birch winter portfolio", x: 74, y: 70, width: 22, color: null },
+      ],
+    },
+    {
+      id: "cvs-offsite",
+      ownerId: DEMO_OWNER_ID,
+      name: "Offsite format ideas",
+      description: "Still deciding the shape of the engineering offsite. Not attached to an event yet.",
+      eventId: null,
+      createdAt: at(-8),
+      cards: [
+        { id: "cc-9", kind: "note", content: "Day one: one architecture decision, decided. No parallel tracks.", caption: null, x: 10, y: 14, width: 26, color: "#fde68a" },
+        { id: "cc-10", kind: "note", content: "Movable walls so the room can go from 60 to 3×20 in five minutes.", caption: null, x: 42, y: 14, width: 26, color: "#dbeafe" },
+        { id: "cc-11", kind: "image", content: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800", caption: "Breakout layout", x: 12, y: 50, width: 30, color: null },
+      ],
+    },
+  ];
+
   /* -------------------------------------------------------------- floorplan */
 
   const floorplans: Floorplan[] = [
@@ -1349,6 +1388,7 @@ export function buildSeed(): MemoryDb {
     raffleTickets,
     sponsorships,
     templates,
+    canvases,
     floorplans,
     roi,
     settings: { ...DEFAULT_USER_SETTINGS },

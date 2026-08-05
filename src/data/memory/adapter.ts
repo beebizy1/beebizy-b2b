@@ -11,6 +11,7 @@
 
 import type {
   AnalyticsRepository,
+  CanvasesRepository,
   DataAdapter,
   EventScopedRepository,
   EventsRepository,
@@ -36,6 +37,10 @@ import type {
   BudgetItem,
   BudgetItemDraft,
   BudgetItemPatch,
+  Canvas,
+  CanvasCard,
+  CanvasDraft,
+  CanvasPatch,
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
@@ -311,6 +316,11 @@ const events: EventsRepository = {
     }
     state.roi = state.roi.filter((r) => r.eventId !== id);
     state.floorplans = state.floorplans.filter((plan) => plan.eventId !== id);
+    // Boards outlive their event — they were concepting work before it existed — so
+    // detach rather than delete.
+    for (const board of state.canvases) {
+      if (board.eventId === id) board.eventId = null;
+    }
     syncLocationCounts();
   },
 
@@ -1032,6 +1042,53 @@ const settings: SettingsRepository = {
 
 /* ----------------------------------------------------------------------- roi */
 
+/* ------------------------------------------------------------------ boards */
+
+const canvases: CanvasesRepository = {
+  async list() {
+    await wait();
+    return copy(store().canvases.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  },
+  async get(id) {
+    await wait();
+    return copy(store().canvases.find((board) => board.id === id) ?? null);
+  },
+  async create(draft: CanvasDraft) {
+    await wait();
+    const board: Canvas = {
+      id: newId("cvs"),
+      ownerId: DEMO_OWNER_ID,
+      name: draft.name,
+      description: draft.description ?? null,
+      eventId: draft.eventId ?? null,
+      cards: [],
+      createdAt: nowIso(),
+    };
+    store().canvases.push(board);
+    return copy(board);
+  },
+  async update(id, patch: CanvasPatch) {
+    await wait();
+    const board = required(store().canvases.find((row) => row.id === id), `Board ${id} no longer exists.`);
+    Object.assign(board, patch, { updatedAt: nowIso() });
+    return copy(board);
+  },
+  async replaceCards(id, cards: CanvasCard[]) {
+    await wait();
+    const board = required(store().canvases.find((row) => row.id === id), `Board ${id} no longer exists.`);
+    board.cards = copy(cards);
+    board.updatedAt = nowIso();
+    return copy(board);
+  },
+  async remove(id) {
+    await wait();
+    const state = store();
+    const index = state.canvases.findIndex((row) => row.id === id);
+    if (index === -1) throw new DataError("not-found", `Board ${id} no longer exists.`);
+    state.canvases.splice(index, 1);
+  },
+};
+
 /* --------------------------------------------------------------- floorplan */
 
 const floorplan: FloorplanRepository = {
@@ -1181,6 +1238,7 @@ export const memoryAdapter: DataAdapter = {
   raffle,
   sponsorships,
   templates,
+  canvases,
   settings,
   floorplan,
   roi,

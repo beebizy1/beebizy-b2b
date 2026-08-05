@@ -24,6 +24,10 @@ import type {
   AuctionItemPatch,
   BudgetItemDraft,
   BudgetItemPatch,
+  Canvas,
+  CanvasCard,
+  CanvasDraft,
+  CanvasPatch,
   ChecklistItemDraft,
   ChecklistItemPatch,
   Event,
@@ -101,6 +105,9 @@ export const qk = {
 
   templates: ["templates"] as const,
   template: (id: string) => ["templates", "detail", id] as const,
+
+  canvases: ["canvases"] as const,
+  canvas: (id: string) => ["canvases", "detail", id] as const,
 
   settings: ["settings"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
@@ -698,6 +705,38 @@ export function useReplaceTemplateContents() {
 
 export function useDeleteTemplate() {
   return useAdapterMutation((a, vars: { id: string }) => a.templates.remove(vars.id), () => [qk.templates]);
+}
+
+/* -------------------------------------------------------------------- boards */
+
+export function useCanvases(): UseQueryResult<Canvas[], Error> {
+  return useAdapterQuery(qk.canvases, (a) => a.canvases.list());
+}
+
+export function useCanvas(id: string): UseQueryResult<Canvas | null, Error> {
+  return useAdapterQuery(qk.canvas(id), (a) => a.canvases.get(id), { enabled: !!id });
+}
+
+export function useCreateCanvas() {
+  return useAdapterMutation((a, draft: CanvasDraft) => a.canvases.create(draft), () => [qk.canvases]);
+}
+
+export function useUpdateCanvas() {
+  return useAdapterMutation(
+    (a, vars: { id: string; patch: CanvasPatch }) => a.canvases.update(vars.id, vars.patch),
+    (vars) => [qk.canvases, qk.canvas(vars.id)],
+  );
+}
+
+export function useReplaceCanvasCards() {
+  return useAdapterMutation(
+    (a, vars: { id: string; cards: CanvasCard[] }) => a.canvases.replaceCards(vars.id, vars.cards),
+    (vars) => [qk.canvases, qk.canvas(vars.id)],
+  );
+}
+
+export function useDeleteCanvas() {
+  return useAdapterMutation((a, vars: { id: string }) => a.canvases.remove(vars.id), () => [qk.canvases]);
 }
 
 /* ------------------------------------------------------------ settings & roi */

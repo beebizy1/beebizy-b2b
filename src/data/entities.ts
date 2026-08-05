@@ -364,6 +364,51 @@ export interface EventInspiration {
   createdAt: IsoDateTime;
 }
 
+/* -------------------------------------------------------------------- boards */
+
+/**
+ * A board is a freeform space for working something out before it is an event —
+ * concepting a gala's look, collecting references for a launch, agreeing a palette.
+ *
+ * Deliberately not the same thing as an event's Inspiration strip: that is a scoped list
+ * of reference images attached to one event. A board is owner-scoped, holds mixed card
+ * kinds, and can exist before any event does — then be linked to one when it becomes
+ * real. The old build had both and never said which was which.
+ */
+export const CANVAS_CARD_KINDS = ["note", "image", "swatch", "link"] as const;
+export type CanvasCardKind = (typeof CANVAS_CARD_KINDS)[number];
+
+export interface CanvasCard {
+  id: string;
+  kind: CanvasCardKind;
+  /** Note text, image URL, link URL, or a hex value for a swatch. */
+  content: string;
+  caption: string | null;
+  /** 0–100, percent of the board. */
+  x: number;
+  y: number;
+  /** Percent of the board width. */
+  width: number;
+  /** Note tint or swatch colour; null uses the default. */
+  color: string | null;
+}
+
+export interface Canvas extends OwnedRecord {
+  name: string;
+  description: string | null;
+  /** Optional: a board can be attached to the event it ends up serving. */
+  eventId: string | null;
+  cards: CanvasCard[];
+}
+
+export interface CanvasDraft {
+  name: string;
+  description?: string | null;
+  eventId?: string | null;
+}
+
+export type CanvasPatch = Partial<CanvasDraft>;
+
 /* ----------------------------------------------------------------- floorplan */
 
 /**

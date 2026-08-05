@@ -23,6 +23,10 @@ import type {
   BudgetItem,
   BudgetItemDraft,
   BudgetItemPatch,
+  Canvas,
+  CanvasCard,
+  CanvasDraft,
+  CanvasPatch,
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
@@ -150,6 +154,11 @@ export interface SettingsRepository {
   update(patch: Partial<UserSettings>): Promise<UserSettings>;
 }
 
+export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft, CanvasPatch> {
+  /** Replaces a board's cards wholesale — a board is edited as one document. */
+  replaceCards(id: string, cards: CanvasCard[]): Promise<Canvas>;
+}
+
 export interface FloorplanRepository {
   get(eventId: string): Promise<Floorplan | null>;
   save(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
@@ -202,6 +211,7 @@ export interface DataAdapter {
   raffle: RaffleRepository;
   sponsorships: EventScopedRepository<Sponsorship, SponsorshipDraft, SponsorshipPatch>;
   templates: TemplatesRepository;
+  canvases: CanvasesRepository;
   settings: SettingsRepository;
   floorplan: FloorplanRepository;
   roi: RoiRepository;

@@ -432,6 +432,53 @@ describe("open tasks", () => {
   });
 });
 
+describe("boards", () => {
+  it("lists the seeded boards, newest first", async () => {
+    const boards = await memoryAdapter.canvases.list();
+    expect(boards.length).toBe(2);
+    expect(boards[0]!.createdAt >= boards[1]!.createdAt).toBe(true);
+  });
+
+  it("keeps a board that is not attached to any event", async () => {
+    const boards = await memoryAdapter.canvases.list();
+    expect(boards.some((board) => board.eventId === null)).toBe(true);
+  });
+
+  it("round-trips cards", async () => {
+    const created = await memoryAdapter.canvases.create({ name: "Palette study" });
+    expect(created.cards).toEqual([]);
+
+    const saved = await memoryAdapter.canvases.replaceCards(created.id, [
+      { id: "a", kind: "swatch", content: "#123456", caption: "Ink", x: 10, y: 10, width: 12, color: "#123456" },
+      { id: "b", kind: "note", content: "Colder than the gala.", caption: null, x: 40, y: 20, width: 24, color: "#dbeafe" },
+    ]);
+    expect(saved.cards).toHaveLength(2);
+
+    const reread = await memoryAdapter.canvases.get(created.id);
+    expect(reread!.cards.map((card) => card.kind)).toEqual(["swatch", "note"]);
+  });
+
+  it("hands back a detached copy", async () => {
+    const board = await memoryAdapter.canvases.get("cvs-gala-look");
+    board!.cards[0]!.content = "Mutated";
+    expect((await memoryAdapter.canvases.get("cvs-gala-look"))!.cards[0]!.content).not.toBe("Mutated");
+  });
+
+  it("detaches rather than deletes when its event goes", async () => {
+    expect((await memoryAdapter.canvases.get("cvs-gala-look"))!.eventId).toBe("evt-gala");
+    await memoryAdapter.events.remove("evt-gala");
+    const board = await memoryAdapter.canvases.get("cvs-gala-look");
+    // The concepting work outlives the event it was for.
+    expect(board).not.toBeNull();
+    expect(board!.eventId).toBeNull();
+    expect(board!.cards.length).toBeGreaterThan(0);
+  });
+
+  it("throws for a board that does not exist", async () => {
+    await expect(memoryAdapter.canvases.replaceCards("nope", [])).rejects.toThrow(/no longer exists/i);
+  });
+});
+
 describe("settings", () => {
   it("round-trips a preference", async () => {
     await memoryAdapter.settings.update({ theme: "dark", homeGrouping: "category" });
