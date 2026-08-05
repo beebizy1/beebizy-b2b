@@ -21,9 +21,9 @@ import type {
   Registration,
   Sponsorship,
   TicketType,
-} from "./entities";
-import { daysBetweenInZone, describeWhenInZone, localTimeZone } from "@/lib/datetime";
-import { sumCents } from "./money";
+} from "./entities.ts";
+import { daysBetweenInZone, describeWhenInZone, localTimeZone } from "../lib/datetime.ts";
+import { sumCents } from "./money.ts";
 
 /**
  * Every risk rule below turns on a *day count*, so the zone that count is taken in is

@@ -17,11 +17,11 @@
  */
 
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
-import { db } from "./db";
-import * as s from "./schema";
-import { HttpError, newId, requireRole, type RequestContext } from "./auth";
-import * as map from "./mappers";
-import { parseDate, parseOptionalDate } from "./mappers";
+import { db } from "./db.ts";
+import * as s from "./schema.ts";
+import { HttpError, newId, requireRole, type RequestContext } from "./auth.ts";
+import * as map from "./mappers.ts";
+import { parseDate, parseOptionalDate } from "./mappers.ts";
 import type {
   Canvas,
   CanvasCard,
@@ -38,9 +38,9 @@ import type {
   TicketTypeWithEvent,
   UserSettings,
   Vendor,
-} from "@/data/entities";
-import { buildAttention, computeEventHealth, computePortfolio } from "@/data/derive";
-import { daysBetweenInZone } from "@/lib/datetime";
+} from "../data/entities.ts";
+import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
+import { daysBetweenInZone } from "../lib/datetime.ts";
 
 type Body = Record<string, unknown>;
 

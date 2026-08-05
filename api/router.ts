@@ -10,9 +10,9 @@
  * it, and because 300s is plenty for a request that should take 50ms.
  */
 
-import { authorize, HttpError, type RequestContext } from "../src/server/auth";
-import * as repos from "../src/server/repos";
-import { eventByShareToken } from "../src/server/repos";
+import { authorize, HttpError, type RequestContext } from "../src/server/auth.ts";
+import * as repos from "../src/server/repos.ts";
+import { eventByShareToken } from "../src/server/repos.ts";
 
 export const config = { runtime: "nodejs" };
 

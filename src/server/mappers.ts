@@ -12,7 +12,7 @@
  */
 
 import type { InferSelectModel } from "drizzle-orm";
-import type * as s from "./schema";
+import type * as s from "./schema.ts";
 import type {
   Attendee,
   AuctionItem,
@@ -39,7 +39,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
-} from "@/data/entities";
+} from "../data/entities.ts";
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
 const isoRequired = (value: Date): string => value.toISOString();

@@ -11,7 +11,7 @@
  * is *derived*, lives at the bottom of this file, and is computed in `./derive`.
  */
 
-import type { Cents } from "./money";
+import type { Cents } from "./money.ts";
 
 /* ------------------------------------------------------------------ primitives */
 

@@ -14,8 +14,8 @@
 
 import { verifyToken } from "@clerk/backend";
 import { and, eq } from "drizzle-orm";
-import { db } from "./db";
-import { workspaceMembers, workspaces } from "./schema";
+import { db } from "./db.ts";
+import { workspaceMembers, workspaces } from "./schema.ts";
 
 export type Role = "owner" | "admin" | "member";
 
