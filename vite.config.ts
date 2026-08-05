@@ -4,6 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig({
+  // Vite exposes only prefixed vars to the browser. The Clerk publishable key arrives
+  // from the Vercel Marketplace as NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY — a publishable key
+  // is public by design, so exposing it is correct. CLERK_SECRET_KEY matches neither
+  // prefix and therefore never reaches the bundle.
+  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

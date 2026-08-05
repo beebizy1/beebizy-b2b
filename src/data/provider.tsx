@@ -8,6 +8,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { isFirebaseConfigured } from "@/lib/firebase";
+import { isClerkConfigured } from "@/lib/clerk";
 import type { DataAdapter } from "./adapter";
 import { memoryAdapter } from "./memory/adapter";
 
@@ -44,9 +45,14 @@ function resolveBackend(override?: DataAdapter): DataContextValue {
   return {
     adapter: memoryAdapter,
     mode: "demo",
+    // Auth and persistence are separate questions now that Clerk owns sign-in: you can be
+    // genuinely signed in and still be reading seed data, so the banner has to say which
+    // half is missing rather than blaming "credentials".
     demoReason: isFirebaseConfigured
-      ? "Firebase credentials are present, but the Firestore adapter is not connected yet — you are looking at demo data."
-      : "No Firebase credentials found, so the app is running on demo data. Everything works; nothing is saved.",
+      ? "Firestore credentials are present but the Firestore adapter is not connected yet, so this is demo data. Sign-in is real."
+      : isClerkConfigured
+        ? "Sign-in is live, but no database is connected yet — this is demo data. Everything works; nothing is saved."
+        : "No database or sign-in is configured, so the app is running on demo data. Everything works; nothing is saved.",
   };
 }
 

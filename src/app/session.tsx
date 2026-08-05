@@ -1,19 +1,24 @@
 /**
- * Who is using the app, expressed in a way that survives having no backend.
+ * Who is using the app.
  *
- * Three states matter:
- *   `authenticated` — real Firebase user.
- *   `demo`          — no credentials configured, so the app runs on seed data and is
- *                     openly labelled as such. The landing page promises a working
- *                     demo with no sign-up; this is what makes that true instead of a
- *                     redirect straight back to /login.
- *   `anonymous`     — Firebase is configured but nobody is signed in. Gated.
+ * Auth is Clerk. The previous implementation was Firebase Auth, which never worked in
+ * practice: with no `.env` it threw "Firebase isn't configured yet" the moment anyone
+ * pressed *Sign up with Google*, and configuring it meant hand-managing a project's
+ * credentials. Clerk is provisioned through the Vercel Marketplace, so the keys arrive
+ * with the environment.
+ *
+ * Three states still matter, and the demo one is deliberate:
+ *   `authenticated` — a real Clerk session.
+ *   `demo`          — no Clerk instance configured, so the app runs on seed data and says
+ *                     so. The landing page promises a working demo with no sign-up; this
+ *                     is what keeps that true.
+ *   `anonymous`     — Clerk is configured and nobody is signed in. Gated.
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
-import { useDataMode } from "@/data/provider";
+import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
+import { isClerkConfigured } from "@/lib/clerk";
 
 export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous";
 
@@ -38,33 +43,54 @@ const DEMO_USER: SessionUser = {
 
 const SessionContext = createContext<SessionValue | null>(null);
 
-export function SessionProvider({ children }: { children: ReactNode }) {
-  const { user, userProfile, loading, signOutUser } = useAuth();
-  const { mode } = useDataMode();
+/** Reads a Clerk session. Only mounted when Clerk is configured. */
+function ClerkSessionProvider({ children }: { children: ReactNode }) {
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  const { user } = useUser();
+  const clerk = useClerk();
 
   const value = useMemo<SessionValue>(() => {
-    if (mode === "demo") {
-      return { status: "demo", user: DEMO_USER, isDemo: true, signOut: async () => {} };
-    }
-    if (loading) {
-      return { status: "loading", user: null, isDemo: false, signOut: signOutUser };
-    }
-    if (!user) {
-      return { status: "anonymous", user: null, isDemo: false, signOut: signOutUser };
-    }
+    const signOut = async () => {
+      await clerk.signOut();
+    };
+
+    if (!isLoaded) return { status: "loading", user: null, isDemo: false, signOut };
+    if (!isSignedIn || !user) return { status: "anonymous", user: null, isDemo: false, signOut };
+
     return {
       status: "authenticated",
       isDemo: false,
-      signOut: signOutUser,
+      signOut,
       user: {
-        name: userProfile?.name || user.displayName || user.email || "Signed in",
-        email: user.email,
-        photoURL: userProfile?.photoURL || user.photoURL || null,
+        // Clerk users can sign up with a social account and have no name set, so fall
+        // back through the identifiers that definitely exist.
+        name: user.fullName || user.username || user.primaryEmailAddress?.emailAddress || "Signed in",
+        email: user.primaryEmailAddress?.emailAddress ?? null,
+        photoURL: user.imageUrl || null,
       },
     };
-  }, [mode, loading, user, userProfile, signOutUser]);
+  }, [isLoaded, isSignedIn, user, clerk]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+/** No Clerk instance: everyone is the demo organiser and nothing is gated. */
+function DemoSessionProvider({ children }: { children: ReactNode }) {
+  const value = useMemo<SessionValue>(
+    () => ({ status: "demo", user: DEMO_USER, isDemo: true, signOut: async () => {} }),
+    [],
+  );
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+export function SessionProvider({ children }: { children: ReactNode }) {
+  // Chosen once at module scope, so the two providers never swap and take hook order
+  // with them.
+  return isClerkConfigured ? (
+    <ClerkSessionProvider>{children}</ClerkSessionProvider>
+  ) : (
+    <DemoSessionProvider>{children}</DemoSessionProvider>
+  );
 }
 
 export function useSession(): SessionValue {
@@ -74,8 +100,8 @@ export function useSession(): SessionValue {
 }
 
 /**
- * Gate for app routes. Redirects during render rather than in an effect, so nobody
- * ever sees a frame of the dashboard before being bounced to sign-in.
+ * Gate for app routes. Redirects during render rather than in an effect, so nobody ever
+ * sees a frame of the dashboard before being bounced to sign-in.
  */
 export function RequireSession({ children }: { children: ReactNode }) {
   const { status } = useSession();

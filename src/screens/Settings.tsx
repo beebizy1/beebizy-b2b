@@ -21,7 +21,7 @@ import { useSession } from "@/app/session";
 import { useTheme } from "@/app/theme";
 import type { ThemePreference, UserSettings } from "@/data/entities";
 
-/** The variables `src/lib/firebase.ts` reads. Listed so nobody has to go find them. */
+/** The variables `src/lib/firebase.ts` reads, for the database half. */
 const REQUIRED_ENV = [
   "VITE_FIREBASE_API_KEY",
   "VITE_FIREBASE_AUTH_DOMAIN",
@@ -155,7 +155,11 @@ export default function Settings() {
 
           {mode === "demo" ? (
             <div className="space-y-2 rounded-lg border border-hairline bg-surface-sunken p-4">
-              <p className="text-sm font-semibold text-foreground">To run against your own Firebase project</p>
+              <p className="text-sm font-semibold text-foreground">To connect a database</p>
+              <p className="text-xs text-muted-foreground">
+                Sign-in is handled by Clerk and provisioned through the Vercel Marketplace, so it needs
+                nothing here. Persistence is the separate half.
+              </p>
               <p className="text-xs text-muted-foreground">
                 Create a <code className="font-mono">.env</code> in the project root with these, then restart the dev
                 server. See <code className="font-mono">.env.example</code>.

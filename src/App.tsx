@@ -3,7 +3,7 @@
  *
  * Three route families:
  *   public marketing  — `/`
- *   public guest      — `/e/:token`, `/e/:token/tickets`, sign-in
+ *   public guest      — `/e/:token`, `/e/:token/tickets`, and Clerk's sign-in / sign-up
  *   the product       — `/app/*`, behind `RequireSession` and inside `AppShell`
  *
  * The old build put the product under `/dashboard` with thirty flat routes and no
@@ -15,7 +15,7 @@ import { Redirect, Route, Router as WouterRouter, Switch } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
-import { AuthProvider } from "@/hooks/use-auth";
+import { ClerkGate } from "@/app/ClerkGate";
 import { DataProvider } from "@/data/provider";
 import { isDataError } from "@/data/adapter";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
@@ -26,7 +26,6 @@ import { AppShell } from "@/app/shell/AppShell";
 import LandingPage from "@/pages/LandingPage";
 import LoginPage from "@/pages/LoginPage";
 import SignupPage from "@/pages/SignupPage";
-import CompleteProfilePage from "@/pages/CompleteProfilePage";
 import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
@@ -96,8 +95,9 @@ function Routes() {
     <Switch>
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
+      <Route path="/login/*" component={LoginPage} />
       <Route path="/signup" component={SignupPage} />
-      <Route path="/complete-profile" component={CompleteProfilePage} />
+      <Route path="/signup/*" component={SignupPage} />
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>
@@ -134,7 +134,7 @@ export default function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <DataProvider>
-          <AuthProvider>
+          <ClerkGate>
             <SessionProvider>
               <ThemeProvider>
                 <TooltipProvider>
@@ -145,7 +145,7 @@ export default function App() {
                 </TooltipProvider>
               </ThemeProvider>
             </SessionProvider>
-          </AuthProvider>
+          </ClerkGate>
         </DataProvider>
       </QueryClientProvider>
     </ErrorBoundary>

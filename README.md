@@ -16,7 +16,18 @@ store seeded with a realistic portfolio — an event six days out with unconfirm
 catering, a gala with live fundraising, two completed events, a cancelled roadshow.
 Every screen and every write works; nothing is persisted, and a banner says so.
 
-To point it at a real Firebase project, copy `.env.example` to `.env` and fill it in.
+**Sign-in is Clerk**, provisioned through the Vercel Marketplace:
+
+```bash
+vercel integration add clerk    # writes the keys into every environment
+vercel env pull --yes           # and into .env.local for local dev
+```
+
+With a Clerk publishable key present, `/app` requires a session and `/login` renders
+Clerk's own widget (Google, email, MFA, password reset). Without one, the app falls back
+to the demo session so the credential-free demo keeps working.
+
+Persistence is the separate half and is **not** wired yet — see *Firebase* below.
 
 ```bash
 npm run verify       # typecheck + lint + test + build, the same as CI
@@ -42,7 +53,7 @@ src/
   components/
     primitives.tsx shared vocabulary: PageHeader, StatTile, Meter, Pill, EmptyState…
     ui/            shadcn primitives
-  pages/         marketing and auth pages
+  pages/         marketing pages, plus Clerk's sign-in and sign-up
 ```
 
 **Screens never import a backend.** They call `useData()` and get whatever adapter the
@@ -97,8 +108,13 @@ the link.
 
 ## Firebase
 
-`firestore.rules` and `storage.rules` are deployed with the Firebase CLI. Two things to
-know before running against a real project:
+Firebase is now **database only** — Clerk replaced Firebase Auth, so `src/lib/firebase.ts`
+exists for a future Firestore adapter and nothing else. `firestore.rules` and
+`storage.rules` are deployed with the Firebase CLI. Three things to know before running
+against a real project:
+
+- **The Firestore adapter is not written.** Setting the env vars does not switch the app
+  off demo data by itself; `DataProvider` still resolves to the in-memory adapter.
 
 - **`firestore.indexes.json` is empty.** Composite indexes need to be added for the
   filtered-and-ordered queries a Firestore adapter will issue, or those reads fail at
