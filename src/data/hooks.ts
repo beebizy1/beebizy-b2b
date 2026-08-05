@@ -149,10 +149,12 @@ export function useAttention(): UseQueryResult<AttentionItem[], Error> {
   return useAdapterQuery(qk.attention, (a) => a.analytics.attention());
 }
 
-export function useEventHealth(eventId: string): UseQueryResult<EventHealth | undefined, Error> {
+export function useEventHealth(eventId: string): UseQueryResult<EventHealth | null, Error> {
   return useAdapterQuery(
     qk.health([eventId]),
-    async (a) => (await a.analytics.health([eventId]))[0],
+    // `?? null` matters: react-query throws "Query data cannot be undefined" if the
+    // event has been deleted between the list read and this one.
+    async (a) => (await a.analytics.health([eventId]))[0] ?? null,
     { enabled: !!eventId },
   );
 }
@@ -538,7 +540,10 @@ export function usePurchaseTickets() {
         contact: vars.contact,
         quantity: vars.quantity,
       }),
-    (vars) => [qk.eventByToken(vars.shareToken), qk.allTickets, qk.registrations, ...eventDerivedKeys()],
+    // `["tickets"]` as a prefix, not `qk.allTickets`: the public page reads
+    // `qk.tickets(eventId)`, so invalidating only the portfolio key left the buyer
+    // looking at a stale "6 left" after their own purchase took it to 4.
+    (vars) => [qk.eventByToken(vars.shareToken), ["tickets"], qk.registrations, qk.attendees, ...eventDerivedKeys()],
   );
 }
 

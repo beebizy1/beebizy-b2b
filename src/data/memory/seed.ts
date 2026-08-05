@@ -161,7 +161,7 @@ export function buildSeed(): MemoryDb {
     },
     {
       id: "evt-skickoff",
-      title: "Global Sales Kickoff 2027",
+      title: "Global Sales Kickoff",
       description:
         "Full field org, three days. Day one strategy, day two enablement tracks, day three partner showcase and awards dinner.",
       dayOffset: 6,
@@ -225,7 +225,7 @@ export function buildSeed(): MemoryDb {
     },
     {
       id: "evt-townhall",
-      title: "Winter All-Hands Town Hall",
+      title: "All-Hands Town Hall",
       description: "Company-wide, hybrid. In-room capacity 800, remote unlimited.",
       dayOffset: -35,
       hour: 10,
