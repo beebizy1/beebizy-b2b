@@ -41,6 +41,7 @@ import Money from "@/screens/Money";
 import Tasks from "@/screens/Tasks";
 import Library from "@/screens/Library";
 import TemplateDetail from "@/screens/library/TemplateDetail";
+import BoardDetail from "@/screens/library/BoardDetail";
 import Settings from "@/screens/Settings";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
 
@@ -81,6 +82,7 @@ function AppRoutes() {
           <Route path="/app/tasks" component={Tasks} />
           <Route path="/app/library" component={Library} />
           <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
+          <Route path="/app/library/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
           <Route component={NotFound} />
         </Switch>
