@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useEventByShareToken, usePurchaseTickets, useRunOfShow, useTickets } from "@/data/hooks";
 import { describeWhen } from "@/data/derive";
 import { formatMoney } from "@/data/money";
@@ -24,13 +25,8 @@ function PublicFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background">
       <header className="honeycomb border-b border-hairline">
-        <div className="mx-auto flex max-w-3xl items-center gap-2.5 px-6 py-5">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-              <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" fill="currentColor" />
-            </svg>
-          </span>
-          <span className="text-[15px] font-extrabold tracking-tight text-foreground">Beebizy</span>
+        <div className="mx-auto flex max-w-3xl items-center px-6 py-5">
+          <BrandLogo size="sm" />
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>

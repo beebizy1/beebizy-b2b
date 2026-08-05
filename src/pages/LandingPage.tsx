@@ -33,6 +33,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
 import { Pill } from "@/components/primitives";
 import { useTheme } from "@/app/theme";
 import { cn } from "@/lib/utils";
@@ -66,50 +67,26 @@ function HexShape({ size, className, style }: { size: number; className?: string
   );
 }
 
-function BrandMark() {
-  return (
-    <Link href="/" className="flex items-center gap-2.5">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-          <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" fill="currentColor" />
-        </svg>
-      </span>
-      <span className="text-[15px] font-bold tracking-tight text-foreground">Beebizy</span>
-    </Link>
-  );
-}
-
-function BrandMarkOnInk() {
-  return (
-    <Link href="/" className="flex items-center gap-2.5">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-          <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" fill="currentColor" />
-        </svg>
-      </span>
-      <span className="text-[15px] font-bold tracking-tight text-brand-foreground">Beebizy</span>
-    </Link>
-  );
-}
-
 function SectionHeading({
   eyebrow,
   title,
   lede,
-  onInk = false,
+  onYellow = false,
 }: {
   eyebrow: string;
   title: ReactNode;
   lede?: ReactNode;
-  /** True inside a brand-ink section, where the palette inverts. */
-  onInk?: boolean;
+  /** True inside a brand-yellow section, where the ink goes black. */
+  onYellow?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-2xl space-y-3 text-center">
-      <p className={cn("eyebrow", onInk && "text-primary")}>{eyebrow}</p>
-      <h2 className={cn("display-lg", onInk ? "text-brand-foreground" : "text-foreground")}>{title}</h2>
+      <p className={cn("eyebrow", onYellow && "text-primary-foreground/70")}>{eyebrow}</p>
+      <h2 className={cn("display-lg", onYellow ? "text-primary-foreground" : "text-foreground")}>{title}</h2>
       {lede ? (
-        <p className={cn("text-lg leading-relaxed", onInk ? "text-brand-muted" : "text-muted-foreground")}>{lede}</p>
+        <p className={cn("text-lg leading-relaxed", onYellow ? "text-primary-foreground/80" : "text-muted-foreground")}>
+          {lede}
+        </p>
       ) : null}
     </div>
   );
@@ -157,7 +134,7 @@ const capabilities = [
 ] as const;
 
 const replaces = [
-  { instead: "A spreadsheet per event, and a different one per team", now: "One registry, grouped by venue, category or status" },
+  { instead: "A spreadsheet per event, and a different one per business unit", now: "One registry, grouped by venue, category or status" },
   { instead: "Fourteen tabs on a single event page", now: "Six sections, in the order you actually work" },
   { instead: "Chasing vendors through your inbox", now: "A thread per supplier, with unread counts that clear" },
   { instead: "Finding out you overspent after the event", now: "Estimate against actual per line, flagged while it matters" },
@@ -171,33 +148,30 @@ const audiences = [
     tag: "Lean operating teams",
     headline: "Two people running what looks like a ten-person operation",
     points: [
-      "An event live in minutes from a template",
-      "Nothing to configure before it is useful",
+      "An event live in minutes from a company template",
+      "No implementation project before it is useful",
       "One screen that says what is at risk today",
     ],
-    tone: "brand" as const,
   },
   {
     icon: Building2,
-    tag: "Distributed and franchise teams",
-    headline: "Every region's events in one registry",
+    tag: "Distributed and franchise operators",
+    headline: "Every business unit's events in one registry",
     points: [
       "Group the portfolio by venue, category or status",
       "Saved venues keep their own event history",
-      "Filter vendors by city when planning across locations",
+      "Filter the vendor network by city across locations",
     ],
-    tone: "info" as const,
   },
   {
     icon: Heart,
-    tag: "Mission-driven organizations",
+    tag: "Nonprofits and associations",
     headline: "Fundraising built in, not bolted on",
     points: [
       "Silent and live auction lots with current bids",
       "Raffles drawn fairly, weighted by tickets bought",
       "Sponsorship tiers, confirmed against pipeline",
     ],
-    tone: "success" as const,
   },
 ] as const;
 
@@ -319,7 +293,7 @@ function ThemeToggle() {
       size="icon"
       onClick={cycle}
       aria-label="Switch appearance"
-      className="text-brand-muted hover:text-brand-foreground"
+      className="text-muted-foreground hover:text-foreground"
     >
       {resolved === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </Button>
@@ -334,32 +308,32 @@ export function LandingPage() {
 
   return (
     <div className="min-h-dvh bg-background font-sans">
-      <header className="brand-canvas sticky top-0 z-50 border-b border-brand-hairline bg-brand-ink/90 backdrop-blur">
+      <header className="sticky top-0 z-50 border-b border-hairline bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <BrandMarkOnInk />
+          <BrandLogoLink size="lg" />
           <nav className="flex items-center gap-1 sm:gap-3">
             <a
               href="#capabilities"
-              className="hidden rounded-md px-2 py-1 text-sm font-medium text-brand-muted transition-colors hover:text-brand-foreground md:block"
+              className="hidden rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
             >
               What it does
             </a>
             <a
               href="#who"
-              className="hidden rounded-md px-2 py-1 text-sm font-medium text-brand-muted transition-colors hover:text-brand-foreground md:block"
+              className="hidden rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
             >
               Who it's for
             </a>
             <a
               href="#packages"
-              className="hidden rounded-md px-2 py-1 text-sm font-medium text-brand-muted transition-colors hover:text-brand-foreground md:block"
+              className="hidden rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
             >
               Packages
             </a>
             <ThemeToggle />
             <Link
               href="/login"
-              className="hidden rounded-md px-2 py-1 text-sm font-medium text-brand-muted transition-colors hover:text-brand-foreground sm:block"
+              className="hidden rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
             >
               Log in
             </Link>
@@ -372,38 +346,38 @@ export function LandingPage() {
 
       <main>
         {/* Hero */}
-        <section className="brand-canvas honeycomb relative overflow-hidden">
+        <section className="honeycomb relative overflow-hidden bg-primary text-primary-foreground">
           {/*
             Decoration is confined to the right half and sits behind everything. Scattered
             across the whole hero, the drifting hexagons landed on top of the headline.
           */}
-          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 opacity-70 md:block" aria-hidden="true">
-            <HexShape size={104} className="hex-drift absolute right-[6%] top-10 text-primary" style={{ animationDelay: "0s" }} />
-            <HexShape size={62} className="hex-drift-slow absolute right-[38%] top-28 text-primary" style={{ animationDelay: "1.2s" }} />
-            <HexShape size={78} className="hex-drift absolute bottom-14 right-[24%] text-primary" style={{ animationDelay: "0.8s" }} />
-            <HexShape size={44} className="hex-drift-slow absolute bottom-28 right-[4%] text-primary" style={{ animationDelay: "1.9s" }} />
+          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 opacity-40 md:block" aria-hidden="true">
+            <HexShape size={104} className="hex-drift absolute right-[6%] top-10 text-primary-foreground" style={{ animationDelay: "0s" }} />
+            <HexShape size={62} className="hex-drift-slow absolute right-[38%] top-28 text-primary-foreground" style={{ animationDelay: "1.2s" }} />
+            <HexShape size={78} className="hex-drift absolute bottom-14 right-[24%] text-primary-foreground" style={{ animationDelay: "0.8s" }} />
+            <HexShape size={44} className="hex-drift-slow absolute bottom-28 right-[4%] text-primary-foreground" style={{ animationDelay: "1.9s" }} />
           </div>
 
-          <div className="relative mx-auto max-w-6xl px-6 py-20 lg:py-28">
+          <div className="relative mx-auto max-w-6xl px-6 pb-14 pt-16 lg:pb-16 lg:pt-24">
             <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
               <div className="space-y-7">
-                <p className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1.5 text-sm font-semibold text-brand-foreground">
-                  <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-                  Event management software built for lean teams
+                <p className="inline-flex items-center gap-2 rounded-full border border-primary-foreground/20 bg-primary-foreground/10 px-3.5 py-1.5 text-sm font-semibold text-primary-foreground">
+                  <span className="size-2 rounded-full bg-primary-foreground" aria-hidden="true" />
+                  B2B event management software
                 </p>
 
-                <h1 className="display-xl max-w-2xl text-brand-foreground">
-                  Giving teams of 2 the <span className="text-primary">manpower of 10.</span>
+                <h1 className="display-xl max-w-2xl text-primary-foreground">
+                  Giving teams of 2 the manpower of 10
                 </h1>
 
-                <p className="max-w-xl text-lg leading-relaxed text-brand-muted sm:text-xl">
-                  Beebizy runs the parts of an event that usually need a department: the plan, the
-                  vendors, the guest list, the tickets, the fundraising and the money. One place — and
-                  it tells you what needs deciding before it becomes a problem.
+                <p className="max-w-xl text-lg leading-relaxed text-primary-foreground/80 sm:text-xl">
+                  Beebizy is the event operations layer for companies: the plan, the vendors, the
+                  attendee list, the ticketing, the fundraising and the money in one system — and it
+                  tells your team what needs deciding before it becomes a problem.
                 </p>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Button asChild size="lg" className="h-12 px-7 text-base font-bold">
+                  <Button asChild size="lg" variant="secondary" className="h-12 px-7 text-base font-bold">
                     <Link href="/app">
                       Open the demo
                       <ArrowRight className="ml-2 size-4" />
@@ -413,13 +387,13 @@ export function LandingPage() {
                     asChild
                     size="lg"
                     variant="outline"
-                    className="h-12 border-brand-hairline bg-transparent px-7 text-base font-bold text-brand-foreground"
+                    className="h-12 border-2 border-primary-foreground/25 bg-transparent px-7 text-base font-bold text-primary-foreground"
                   >
                     <a href="#capabilities">See what it does</a>
                   </Button>
                 </div>
 
-                <p className="text-sm text-brand-muted">
+                <p className="text-sm text-primary-foreground/75">
                   No sign-up, no credit card. The demo is the real product loaded with a sample
                   portfolio — create, edit and delete anything in it.
                 </p>
@@ -441,7 +415,7 @@ export function LandingPage() {
             <div className="mt-14 grid gap-x-10 gap-y-11 sm:grid-cols-2 lg:grid-cols-3">
               {capabilities.map((capability) => (
                 <div key={capability.title} className="space-y-3">
-                  <span className="grid size-11 place-items-center rounded-xl bg-primary-muted text-foreground">
+                  <span className="grid size-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
                     <capability.icon className="size-5" aria-hidden="true" />
                   </span>
                   <h3 className="title-sm text-foreground">{capability.title}</h3>
@@ -453,7 +427,7 @@ export function LandingPage() {
         </section>
 
         {/* What it replaces */}
-        <section className="border-b border-hairline bg-surface-sunken py-20 lg:py-24">
+        <section className="honey-band border-b border-hairline py-20 lg:py-24">
           <div className="mx-auto max-w-4xl px-6">
             <SectionHeading
               eyebrow="Why teams switch"
@@ -485,7 +459,7 @@ export function LandingPage() {
           <div className="mx-auto max-w-6xl px-6">
             <SectionHeading
               eyebrow="Who it's for"
-              title="Three very different teams. One product that gets out of the way."
+              title="Three kinds of organization. One system that gets out of the way."
             />
             <div className="mt-14 grid gap-6 lg:grid-cols-3">
               {audiences.map((audience) => (
@@ -493,14 +467,7 @@ export function LandingPage() {
                   key={audience.tag}
                   className="flex flex-col gap-5 rounded-2xl border border-card-border bg-card p-7 shadow-xs transition-shadow hover:shadow-md"
                 >
-                  <span
-                    className={cn(
-                      "grid size-12 place-items-center rounded-xl",
-                      audience.tone === "brand" && "bg-primary-muted text-foreground",
-                      audience.tone === "info" && "bg-info-tint text-info-text",
-                      audience.tone === "success" && "bg-success-tint text-success-text",
-                    )}
-                  >
+                  <span className="grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
                     <audience.icon className="size-5" aria-hidden="true" />
                   </span>
                   <div className="space-y-1.5">
@@ -512,15 +479,7 @@ export function LandingPage() {
                   <ul className="flex-1 space-y-2.5">
                     {audience.points.map((point) => (
                       <li key={point} className="flex items-start gap-2.5">
-                        <CheckCircle2
-                          className={cn(
-                            "mt-0.5 size-4 shrink-0",
-                            audience.tone === "brand" && "text-primary",
-                            audience.tone === "info" && "text-info-text",
-                            audience.tone === "success" && "text-success-text",
-                          )}
-                          aria-hidden="true"
-                        />
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
                         <span className="text-sm text-muted-foreground">{point}</span>
                       </li>
                     ))}
@@ -538,11 +497,11 @@ export function LandingPage() {
         </section>
 
         {/* Event types */}
-        <section className="border-b border-hairline bg-surface-sunken py-20 lg:py-24">
+        <section className="honey-band border-b border-hairline py-20 lg:py-24">
           <div className="mx-auto max-w-5xl px-6">
             <SectionHeading
               eyebrow="Event types"
-              title="What are you planning?"
+              title="Built for the events companies actually run"
               lede="The same tools run a 20-person offsite and a 2,000-person summit."
             />
             <div className="mt-12 flex flex-wrap justify-center gap-2.5">
@@ -554,7 +513,7 @@ export function LandingPage() {
                 "Customer conference",
                 "Town hall",
                 "Fundraising gala",
-                "Holiday party",
+                "Company party",
                 "Sales kickoff",
                 "Training day",
                 "Investor day",
@@ -577,7 +536,7 @@ export function LandingPage() {
             <SectionHeading
               eyebrow="Corp packages"
               title="Or hand the whole thing over"
-              lede="Pick a package and we match you with vendors, then run it in Beebizy with you."
+              lede="For teams who would rather buy the outcome: we match the vendors and run it in Beebizy alongside you."
             />
             <div className="mt-14 grid gap-6 lg:grid-cols-3">
               {packages.map((pkg, index) => (
@@ -607,7 +566,7 @@ export function LandingPage() {
                   <ul className="flex-1 space-y-2.5">
                     {pkg.includes.map((item) => (
                       <li key={item} className="flex items-start gap-2.5">
-                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
                         <span className="text-sm text-muted-foreground">{item}</span>
                       </li>
                     ))}
@@ -639,16 +598,16 @@ export function LandingPage() {
         </section>
 
         {/* CTA */}
-        <section className="brand-canvas honeycomb py-20 lg:py-24">
+        <section className="honeycomb bg-primary py-20 lg:py-24 text-primary-foreground">
           <div className="mx-auto max-w-2xl px-6 text-center">
             <SectionHeading
-              onInk
+              onYellow
               eyebrow="Try it"
               title="Open it and look at the worklist."
-              lede="The demo loads a sample portfolio: an event six days out with a caterer who never confirmed, a gala mid-fundraise, and two events that already happened. Nothing to set up."
+              lede="A sample company portfolio: an event six days out with a caterer who never confirmed, a gala mid-fundraise, and two that already happened. Nothing to set up."
             />
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button asChild size="lg" className="h-12 px-8 text-base font-bold">
+              <Button asChild size="lg" variant="secondary" className="h-12 px-8 text-base font-bold">
                 <Link href="/app">
                   Open the demo
                   <ArrowRight className="ml-2 size-4" />
@@ -658,9 +617,9 @@ export function LandingPage() {
                 asChild
                 size="lg"
                 variant="outline"
-                className="h-12 border-brand-hairline bg-transparent px-8 text-base font-bold text-brand-foreground"
+                className="h-12 border-2 border-primary-foreground/25 bg-transparent px-8 text-base font-bold text-primary-foreground"
               >
-                <Link href="/signup">Create an account</Link>
+                <Link href="/signup">Talk to us</Link>
               </Button>
             </div>
           </div>
@@ -710,7 +669,7 @@ export function LandingPage() {
                 <ul className="space-y-2">
                   {active.includes.map((item) => (
                     <li key={item} className="flex items-start gap-2.5">
-                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
                       <span className="text-sm text-muted-foreground">{item}</span>
                     </li>
                   ))}
@@ -751,7 +710,7 @@ export function LandingPage() {
 
       <footer className="py-12">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 px-6 sm:flex-row">
-          <BrandMark />
+          <BrandLogo size="sm" />
           <nav className="flex flex-wrap items-center justify-center gap-5 text-sm font-medium text-muted-foreground">
             <a href="#capabilities" className="transition-colors hover:text-foreground">
               What it does

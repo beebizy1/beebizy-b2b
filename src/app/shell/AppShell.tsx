@@ -24,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { BrandLogoLink } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 import { useAttention, useVendors } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
@@ -36,20 +37,6 @@ function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
   return parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
-}
-
-function BrandMark() {
-  return (
-    <Link href="/app" className="flex items-center gap-2.5 rounded-md px-1 py-1">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-        {/* Hexagon: the honeycomb in the brand, without shipping a raster logo into the chrome. */}
-        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-          <path d="M12 2.5l8 4.6v9.8l-8 4.6-8-4.6V7.1z" fill="currentColor" />
-        </svg>
-      </span>
-      <span className="text-[15px] font-bold tracking-tight text-foreground">Beebizy</span>
-    </Link>
-  );
 }
 
 function NavRow({
@@ -109,7 +96,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-        <BrandMark />
+        <BrandLogoLink to="/app" size="md" />
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -237,7 +224,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Sheet>
 
             <div className="lg:hidden">
-              <BrandMark />
+              <BrandLogoLink to="/app" size="md" />
             </div>
 
             <button
