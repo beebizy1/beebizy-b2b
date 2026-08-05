@@ -133,8 +133,8 @@ export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <DataProvider>
-          <ClerkGate>
+        <ClerkGate>
+          <DataProvider>
             <SessionProvider>
               <ThemeProvider>
                 <TooltipProvider>
@@ -145,8 +145,8 @@ export default function App() {
                 </TooltipProvider>
               </ThemeProvider>
             </SessionProvider>
-          </ClerkGate>
-        </DataProvider>
+          </DataProvider>
+        </ClerkGate>
       </QueryClientProvider>
     </ErrorBoundary>
   );

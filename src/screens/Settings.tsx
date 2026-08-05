@@ -15,21 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { KeyValue, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
-import { useSettings, useUpdateSettings } from "@/data/hooks";
+import { useMe, useSettings, useUpdateSettings } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
 import { useTheme } from "@/app/theme";
 import type { ThemePreference, UserSettings } from "@/data/entities";
-
-/** The variables `src/lib/firebase.ts` reads, for the database half. */
-const REQUIRED_ENV = [
-  "VITE_FIREBASE_API_KEY",
-  "VITE_FIREBASE_AUTH_DOMAIN",
-  "VITE_FIREBASE_PROJECT_ID",
-  "VITE_FIREBASE_STORAGE_BUCKET",
-  "VITE_FIREBASE_MESSAGING_SENDER_ID",
-  "VITE_FIREBASE_APP_ID",
-];
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string; icon: typeof Sun }> = [
   { id: "light", label: "Light", icon: Sun },
@@ -41,6 +31,7 @@ const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
 export default function Settings() {
   const { user, isDemo } = useSession();
+  const { data: me } = useMe();
   const { mode, demoReason } = useDataMode();
   const { preference, setPreference } = useTheme();
   const { data: settings } = useSettings();
@@ -144,45 +135,45 @@ export default function Settings() {
       <Panel>
         <PanelHeader
           title="Backend"
-          description="Which store the app is reading and writing"
+          description="Where your data lives and who authorizes it"
           actions={mode === "live" ? <Pill tone="success">Live</Pill> : <Pill tone="warning">Demo</Pill>}
         />
         <div className="space-y-4 p-5">
           <div className="flex items-start gap-3">
             <Database className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <p className="text-sm text-muted-foreground">{demoReason ?? "Connected to Firestore."}</p>
+            <p className="text-sm text-muted-foreground">
+              {demoReason ??
+                "Signed in with Clerk, reading and writing Postgres through the API. Everything is scoped to your workspace."}
+            </p>
           </div>
 
-          {mode === "demo" ? (
+          {mode === "live" ? (
+            <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-surface-sunken px-4 py-1">
+              <KeyValue label="Sign-in">Clerk</KeyValue>
+              <KeyValue label="Database">Neon Postgres</KeyValue>
+              <KeyValue label="Your role">{me?.role ?? "—"}</KeyValue>
+            </dl>
+          ) : (
             <div className="space-y-2 rounded-lg border border-hairline bg-surface-sunken p-4">
-              <p className="text-sm font-semibold text-foreground">To connect a database</p>
+              <p className="text-sm font-semibold text-foreground">To run against real data</p>
               <p className="text-xs text-muted-foreground">
-                Sign-in is handled by Clerk and provisioned through the Vercel Marketplace, so it needs
-                nothing here. Persistence is the separate half.
+                Both halves are Vercel Marketplace integrations, so there are no credentials to copy by
+                hand:
               </p>
-              <p className="text-xs text-muted-foreground">
-                Create a <code className="font-mono">.env</code> in the project root with these, then restart the dev
-                server. See <code className="font-mono">.env.example</code>.
-              </p>
-              <ul className="space-y-0.5 pt-1">
-                {REQUIRED_ENV.map((variable) => (
-                  <li key={variable} className="font-mono text-xs text-foreground">
-                    {variable}
-                  </li>
-                ))}
+              <ul className="space-y-1 pt-1 font-mono text-xs text-foreground">
+                <li>vercel integration add clerk</li>
+                <li>vercel integration add neon</li>
+                <li>vercel env pull</li>
               </ul>
-              <p className="pt-1 text-xs text-muted-foreground">
-                Optional: <code className="font-mono">VITE_FIRESTORE_DATABASE_ID</code> if your Firestore database isn't
-                the default one.
-              </p>
             </div>
-          ) : null}
+          )}
 
           <Button asChild variant="outline" size="sm">
             <Link href="/app">Back to Today</Link>
           </Button>
         </div>
       </Panel>
+
     </div>
   );
 }

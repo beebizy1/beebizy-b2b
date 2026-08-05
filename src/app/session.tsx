@@ -28,6 +28,8 @@ export interface SessionUser {
   photoURL: string | null;
 }
 
+export type WorkspaceRole = "owner" | "admin" | "member";
+
 interface SessionValue {
   status: SessionStatus;
   user: SessionUser | null;
