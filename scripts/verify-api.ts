@@ -114,6 +114,37 @@ async function main() {
     const tasks = await api(alice, `/events/${event.body.id}/checklist`);
     check("checklist item persists", Array.isArray(tasks.body) && tasks.body.length === 1);
 
+    await post(alice, `/events/${event.body.id}/run-of-show`, {
+      startTime: "09:00",
+      duration: 30,
+      title: "Doors open",
+    });
+    await post(alice, `/events/${event.body.id}/budget`, {
+      name: "Catering",
+      category: "Catering",
+      type: "expense",
+      estimatedCents: 100_000,
+    });
+    const vendor = await post(alice, "/vendors", { name: "API Catering", category: "Catering" });
+    await post(alice, `/events/${event.body.id}/vendors`, {
+      vendorId: vendor.body.id,
+      status: "confirmed",
+      feeCents: 95_000,
+    });
+    await api(alice, `/events/${event.body.id}/floorplan`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: "API test room",
+        items: [{ id: "table-1", shape: "long-table", label: "Table 1", x: 50, y: 50, seats: 40 }],
+      }),
+    });
+    const history = await api(alice, `/events/${event.body.id}/history`);
+    const historyResources = new Set(history.body.map((entry: { resource: string }) => entry.resource));
+    check(
+      "API exposes structured planning history",
+      ["event", "run-of-show", "budget", "vendor-booking", "floorplan"].every((resource) => historyResources.has(resource)),
+    );
+
     /* --- Derived reads come back computed, not stored. */
     const portfolio = await api(alice, "/analytics/portfolio");
     check("portfolio counts the new event", portfolio.body?.eventsTotal === 1, JSON.stringify(portfolio.body?.eventsTotal));
@@ -123,6 +154,7 @@ async function main() {
     /* --- Tenancy, over HTTP this time. */
     check("Bob's event list is empty", (await api(bob, "/events")).body.length === 0);
     check("Bob cannot read Alice's event", (await api(bob, `/events/${event.body.id}`)).body === null);
+    check("Bob cannot read Alice's history", (await api(bob, `/events/${event.body.id}/history`)).body.length === 0);
     check(
       "Bob cannot patch Alice's event",
       (await api(bob, `/events/${event.body.id}`, { method: "PATCH", body: JSON.stringify({ title: "Hijacked" }) })).status === 404,

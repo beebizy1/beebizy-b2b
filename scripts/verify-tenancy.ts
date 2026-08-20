@@ -42,6 +42,15 @@ async function main() {
   });
   check("event persists with its venue joined", event.locationRecord?.name === "Alice Hall", event.locationRecord?.name);
   await repos.checklist.create(alice, event.id, { title: "Confirm catering", category: "Catering" });
+  await repos.runOfShow.create(alice, event.id, { startTime: "09:00", title: "Doors open", duration: 30 });
+  await repos.budget.create(alice, event.id, {
+    name: "Catering",
+    category: "Catering",
+    type: "expense",
+    estimatedCents: 100_000,
+  });
+  const vendor = await repos.vendors.create(alice, { name: "Alice Catering", category: "Catering" });
+  await repos.eventVendors.create(alice, event.id, { vendorId: vendor.id, status: "confirmed", feeCents: 95_000 });
 
   /* Tenancy: Bob must see none of it. */
   check("Bob sees no events of Alice's", (await repos.events.list(bob)).length === 0);
@@ -70,6 +79,19 @@ async function main() {
   ]);
   await repos.registrations.create(alice, { eventId: event.id, guestId: a1!.id, status: "confirmed" });
   await repos.registrations.create(alice, { eventId: event.id, guestId: a2!.id, status: "confirmed" });
+  await repos.floorplan.save(alice, event.id, "Two-seat test room", [
+    { id: "table-1", shape: "long-table", label: "Table 1", x: 50, y: 50, seats: 2 },
+  ]);
+
+  const history = await repos.history.list(alice, event.id);
+  const resources = new Set(history.map((entry) => entry.resource));
+  check(
+    "planning writes create structured history",
+    ["event", "run-of-show", "budget", "vendor-booking", "floorplan"].every((resource) => resources.has(resource as never)),
+  );
+  const floorplanHistory = history.find((entry) => entry.resource === "floorplan");
+  check("floorplan history captures point-in-time guest count", floorplanHistory?.after?.guestCount === 2);
+  check("Bob sees no history of Alice's event", (await repos.history.list(bob, event.id)).length === 0);
 
   let overCapacity = false;
   try {
@@ -123,6 +145,8 @@ async function main() {
     "registrations cascade away",
     (await db.select().from(s.registrations).where(eq(s.registrations.eventId, event.id))).length === 0,
   );
+  const retainedHistory = await db.select().from(s.eventHistory).where(eq(s.eventHistory.eventId, event.id));
+  check("event deletion retains its planning history", retainedHistory.some((entry) => entry.action === "deleted"));
   const [survivingVenue] = await db.select().from(s.locations).where(eq(s.locations.id, venue.id));
   check("the venue survives its event", Boolean(survivingVenue));
 

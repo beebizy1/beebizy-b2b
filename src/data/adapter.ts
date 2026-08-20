@@ -34,6 +34,7 @@ import type {
   EventDraft,
   EventFilter,
   EventHealth,
+  EventHistoryEntry,
   MoodBoardImage,
   EventPatch,
   EventRoi,
@@ -169,6 +170,11 @@ export interface FloorplanRepository {
   save(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
 }
 
+export interface EventHistoryRepository {
+  /** Newest first. History is append-only and never writable from the browser. */
+  list(eventId: string): Promise<EventHistoryEntry[]>;
+}
+
 export interface RoiRepository {
   get(eventId: string): Promise<EventRoi | null>;
   save(eventId: string, roi: Omit<EventRoi, "eventId" | "updatedAt">): Promise<EventRoi>;
@@ -228,6 +234,7 @@ export interface DataAdapter {
   canvases: CanvasesRepository;
   settings: SettingsRepository;
   floorplan: FloorplanRepository;
+  history: EventHistoryRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;
 }

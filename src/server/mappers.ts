@@ -21,6 +21,7 @@ import type {
   CanvasCard,
   ChecklistItem,
   Event,
+  EventHistoryEntry,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -382,6 +383,21 @@ export function toFloorplan(row: InferSelectModel<typeof s.floorplans>): Floorpl
     name: row.name,
     items: row.items as FloorplanItem[],
     updatedAt: isoRequired(row.updatedAt),
+  };
+}
+
+export function toEventHistory(row: InferSelectModel<typeof s.eventHistory>): EventHistoryEntry {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    actorId: row.actorId,
+    resource: row.resource as EventHistoryEntry["resource"],
+    resourceId: row.resourceId,
+    action: row.action as EventHistoryEntry["action"],
+    summary: row.summary,
+    before: row.before,
+    after: row.after,
+    createdAt: isoRequired(row.createdAt),
   };
 }
 

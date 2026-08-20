@@ -453,6 +453,48 @@ export interface FloorplanDraft {
   items: FloorplanItem[];
 }
 
+/* ------------------------------------------------------------ event history */
+
+export const HISTORY_RESOURCES = [
+  "event",
+  "vendor-booking",
+  "checklist",
+  "run-of-show",
+  "budget",
+  "menu",
+  "mood-board",
+  "ticket-type",
+  "auction",
+  "sponsorship",
+  "raffle",
+  "floorplan",
+] as const;
+export type HistoryResource = (typeof HISTORY_RESOURCES)[number];
+export type HistoryAction = "created" | "updated" | "deleted";
+
+/**
+ * An immutable, structured record of one planning decision. `before` and `after` are
+ * snapshots rather than display strings so estimates, timings and layouts remain useful
+ * to reporting and future recommendation models.
+ */
+export interface EventHistoryEntry {
+  id: string;
+  eventId: string;
+  actorId: string;
+  resource: HistoryResource;
+  resourceId: string | null;
+  action: HistoryAction;
+  summary: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: IsoDateTime;
+}
+
+export type EventHistoryChange = Pick<
+  EventHistoryEntry,
+  "eventId" | "resource" | "resourceId" | "action" | "before" | "after"
+>;
+
 /* -------------------------------------------------------------------- revenue */
 
 export interface TicketType {

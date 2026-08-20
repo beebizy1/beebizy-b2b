@@ -379,6 +379,33 @@ export const floorplans = pgTable("floorplans", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Append-only planning history. `eventId` deliberately has no event foreign key: when
+ * an event is deleted, its decision history remains available for aggregate learning.
+ */
+export const eventHistory = pgTable(
+  "event_history",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    resource: text("resource").notNull(),
+    resourceId: text("resource_id"),
+    action: text("action").notNull(),
+    summary: text("summary").notNull(),
+    before: jsonb("before").$type<Record<string, unknown> | null>(),
+    after: jsonb("after").$type<Record<string, unknown> | null>(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("event_history_event_created_idx").on(table.workspaceId, table.eventId, table.createdAt),
+    index("event_history_learning_idx").on(table.workspaceId, table.resource, table.createdAt),
+  ],
+);
+
 /* -------------------------------------------------------------------- revenue */
 
 export const ticketTypes = pgTable(
@@ -572,6 +599,7 @@ export const workspaceRelations = relations(workspaces, ({ many }) => ({
   locations: many(locations),
   guests: many(guests),
   vendors: many(vendors),
+  eventHistory: many(eventHistory),
 }));
 
 export const eventRelations = relations(events, ({ one, many }) => ({

@@ -22,6 +22,7 @@ import type {
   ChecklistItem,
   Event,
   EventHealth,
+  EventHistoryEntry,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -275,6 +276,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     floorplan: {
       get: (eventId) => client.get<Floorplan | null>(`/events/${eventId}/floorplan`),
       save: (eventId, draft) => client.put<Floorplan>(`/events/${eventId}/floorplan`, draft),
+    },
+
+    history: {
+      list: (eventId) => client.get<EventHistoryEntry[]>(`/events/${eventId}/history`),
     },
 
     roi: {

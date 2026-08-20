@@ -17,6 +17,7 @@ import type {
   BudgetItem,
   ChecklistItem,
   Event,
+  EventHistoryEntry,
   MoodBoardImage,
   EventVendor,
   EventRoi,
@@ -59,6 +60,7 @@ export interface MemoryDb {
   templates: (Template & TemplateContents)[];
   canvases: Canvas[];
   floorplans: Floorplan[];
+  history: EventHistoryEntry[];
   roi: EventRoi[];
   settings: UserSettings;
 }
@@ -1348,6 +1350,47 @@ export function buildSeed(): MemoryDb {
     },
   ];
 
+  /* ----------------------------------------------------------- event history */
+
+  const history: EventHistoryEntry[] = [
+    {
+      id: "hist-gala-created",
+      eventId: "evt-gala",
+      actorId: DEMO_OWNER_ID,
+      resource: "event",
+      resourceId: "evt-gala",
+      action: "created",
+      summary: "Event created",
+      before: null,
+      after: { title: "Annual Partner Gala & Fundraiser", category: "Gala", capacity: 300 },
+      createdAt: at(-120),
+    },
+    {
+      id: "hist-gala-budget",
+      eventId: "evt-gala",
+      actorId: DEMO_OWNER_ID,
+      resource: "budget",
+      resourceId: "bud-gala-catering",
+      action: "updated",
+      summary: "Updated budget line: Catering",
+      before: { estimatedCents: usd(58000), actualCents: null },
+      after: { estimatedCents: usd(60000), actualCents: usd(59800) },
+      createdAt: at(-21),
+    },
+    {
+      id: "hist-gala-floorplan",
+      eventId: "evt-gala",
+      actorId: DEMO_OWNER_ID,
+      resource: "floorplan",
+      resourceId: "evt-gala",
+      action: "updated",
+      summary: "Saved floorplan: Ballroom - 30 tables",
+      before: null,
+      after: { name: "Ballroom - 30 tables", itemCount: 16, seatCount: 110 },
+      createdAt: at(-14),
+    },
+  ];
+
   /* -------------------------------------------------------------------- roi */
 
   const roi: EventRoi[] = [
@@ -1390,6 +1433,7 @@ export function buildSeed(): MemoryDb {
     templates,
     canvases,
     floorplans,
+    history,
     roi,
     settings: { ...DEFAULT_USER_SETTINGS },
   };

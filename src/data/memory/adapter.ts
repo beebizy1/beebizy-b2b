@@ -16,6 +16,7 @@ import type {
   EventScopedRepository,
   EventsRepository,
   FloorplanRepository,
+  EventHistoryRepository,
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
@@ -47,6 +48,7 @@ import type {
   Event,
   EventFilter,
   EventHealth,
+  EventHistoryChange,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -81,12 +83,14 @@ import type {
   TicketTypePatch,
   TicketTypeWithEvent,
   UserSettings,
+  HistoryResource,
   Vendor,
   VendorDraft,
   VendorMessage,
   VendorPatch,
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
+import { describeHistoryChange } from "../history";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -119,6 +123,16 @@ function newId(prefix: string): string {
 }
 
 const nowIso = () => new Date().toISOString();
+
+function appendHistory(input: EventHistoryChange): void {
+  store().history.push({
+    id: newId("hist"),
+    actorId: DEMO_OWNER_ID,
+    summary: describeHistoryChange(input),
+    createdAt: nowIso(),
+    ...input,
+  });
+}
 
 function required<T>(value: T | undefined, message: string): T {
   if (value === undefined) throw new DataError("not-found", message);
@@ -181,6 +195,7 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
   table: () => T[],
   idPrefix: string,
   build: (eventId: string, draft: TDraft, sortOrder: number) => T,
+  historyResource?: HistoryResource,
   sort?: (a: T, b: T) => number,
 ): EventScopedRepository<T, TDraft, TPatch> {
   const defaultSort = (a: T, b: T) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
@@ -197,6 +212,16 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
       const row = build(eventId, draft, nextOrder);
       row.id = newId(idPrefix);
       table().push(row);
+      if (historyResource) {
+        appendHistory({
+          eventId,
+          resource: historyResource,
+          resourceId: row.id,
+          action: "created",
+          before: null,
+          after: copy(row) as Record<string, unknown>,
+        });
+      }
       return copy(row);
     },
     async update(eventId, id, patch) {
@@ -205,7 +230,18 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
         table().find((r) => r.id === id && r.eventId === eventId),
         `Record ${id} no longer exists.`,
       );
+      const before = copy(row) as Record<string, unknown>;
       Object.assign(row, patch);
+      if (historyResource) {
+        appendHistory({
+          eventId,
+          resource: historyResource,
+          resourceId: row.id,
+          action: "updated",
+          before,
+          after: copy(row) as Record<string, unknown>,
+        });
+      }
       return copy(row);
     },
     async remove(eventId, id) {
@@ -213,7 +249,18 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
       const table_ = table();
       const index = table_.findIndex((r) => r.id === id && r.eventId === eventId);
       if (index === -1) throw new DataError("not-found", `Record ${id} no longer exists.`);
+      const before = copy(table_[index]!) as Record<string, unknown>;
       table_.splice(index, 1);
+      if (historyResource) {
+        appendHistory({
+          eventId,
+          resource: historyResource,
+          resourceId: id,
+          action: "deleted",
+          before,
+          after: null,
+        });
+      }
     },
   };
 }
@@ -280,6 +327,14 @@ const events: EventsRepository = {
       updatedAt: nowIso(),
     };
     store().events.push(event);
+    appendHistory({
+      eventId: event.id,
+      resource: "event",
+      resourceId: event.id,
+      action: "created",
+      before: null,
+      after: copy(event) as unknown as Record<string, unknown>,
+    });
     syncLocationCounts();
     return copy(event);
   },
@@ -287,6 +342,7 @@ const events: EventsRepository = {
   async update(id, patch) {
     await wait();
     const event = required(store().events.find((e) => e.id === id), `Event ${id} no longer exists.`);
+    const before = copy(event) as unknown as Record<string, unknown>;
     Object.assign(event, patch);
     if ("locationId" in patch) {
       const location = patch.locationId ? (store().locations.find((l) => l.id === patch.locationId) ?? null) : null;
@@ -295,6 +351,14 @@ const events: EventsRepository = {
       syncLocationCounts();
     }
     event.updatedAt = nowIso();
+    appendHistory({
+      eventId: id,
+      resource: "event",
+      resourceId: id,
+      action: "updated",
+      before,
+      after: copy(event) as unknown as Record<string, unknown>,
+    });
     return copy(event);
   },
 
@@ -303,6 +367,7 @@ const events: EventsRepository = {
     const state = store();
     const index = state.events.findIndex((e) => e.id === id);
     if (index === -1) throw new DataError("not-found", `Event ${id} no longer exists.`);
+    const before = copy(state.events[index]!) as unknown as Record<string, unknown>;
     state.events.splice(index, 1);
     // Firestore does not cascade — the real adapter deletes these explicitly too.
     for (const key of EVENT_SUBCOLLECTIONS) {
@@ -322,6 +387,7 @@ const events: EventsRepository = {
       if (board.eventId === id) board.eventId = null;
     }
     syncLocationCounts();
+    appendHistory({ eventId: id, resource: "event", resourceId: id, action: "deleted", before, after: null });
   },
 
   async share(id) {
@@ -670,6 +736,7 @@ const eventVendors = eventScoped<EventVendor, EventVendorDraft, EventVendorPatch
     vendor: store().vendors.find((v) => v.id === draft.vendorId) ?? null,
     createdAt: nowIso(),
   }),
+  "vendor-booking",
   (a, b) => a.createdAt.localeCompare(b.createdAt),
 );
 
@@ -704,6 +771,7 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),
   }),
+  "run-of-show",
   (a, b) => a.startTime.localeCompare(b.startTime) || a.sortOrder - b.sortOrder,
 );
 
@@ -722,6 +790,7 @@ const budget = eventScoped<BudgetItem, BudgetItemDraft, BudgetItemPatch>(
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),
   }),
+  "budget",
 );
 
 const menu = eventScoped<MenuItem, MenuItemDraft, MenuItemPatch>(
@@ -777,6 +846,7 @@ const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
     lotNumber: draft.lotNumber ?? null,
     createdAt: nowIso(),
   }),
+  undefined,
   (a, b) => (a.lotNumber ?? 999) - (b.lotNumber ?? 999),
 );
 
@@ -796,6 +866,7 @@ const sponsorships = eventScoped<Sponsorship, SponsorshipDraft, SponsorshipPatch
     status: draft.status ?? "pending",
     createdAt: nowIso(),
   }),
+  undefined,
   (a, b) => (b.amountCents ?? 0) - (a.amountCents ?? 0),
 );
 
@@ -908,6 +979,7 @@ const raffleBase = eventScoped<RaffleItem, RaffleItemDraft, RaffleItemPatch>(
     status: draft.status ?? "open",
     createdAt: nowIso(),
   }),
+  undefined,
   (a, b) => a.createdAt.localeCompare(b.createdAt),
 );
 
@@ -1109,13 +1181,39 @@ const floorplan: FloorplanRepository = {
   },
   async save(eventId, draft: FloorplanDraft) {
     await wait();
-    requireEvent(eventId);
+    const event = requireEvent(eventId);
     const state = store();
     const record: Floorplan = { eventId, name: draft.name, items: copy(draft.items), updatedAt: nowIso() };
     const existing = state.floorplans.find((plan) => plan.eventId === eventId);
+    const before = existing ? (copy(existing) as unknown as Record<string, unknown>) : null;
     if (existing) Object.assign(existing, record);
     else state.floorplans.push(record);
+    appendHistory({
+      eventId,
+      resource: "floorplan",
+      resourceId: eventId,
+      action: before ? "updated" : "created",
+      before,
+      after: {
+        ...copy(record),
+        locationId: event.locationId,
+        location: event.location,
+        guestCount: event.registrationCount,
+        capacity: event.capacity,
+      } as unknown as Record<string, unknown>,
+    });
     return copy(record);
+  },
+};
+
+const history: EventHistoryRepository = {
+  async list(eventId) {
+    await wait();
+    return copy(
+      store()
+        .history.filter((entry) => entry.eventId === eventId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    );
   },
 };
 
@@ -1255,6 +1353,7 @@ export const memoryAdapter: DataAdapter = {
   canvases,
   settings,
   floorplan,
+  history,
   roi,
   analytics,
 };

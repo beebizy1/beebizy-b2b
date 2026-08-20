@@ -184,6 +184,7 @@ async function handleAuthed(
         }
 
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
+        if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
         if (b === "floorplan" && method === "GET") return json(await repos.floorplan.get(ctx, a));
         if (b === "floorplan" && method === "PUT") {
           const items = Array.isArray(body.items) ? body.items : [];

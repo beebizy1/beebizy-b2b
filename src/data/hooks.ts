@@ -112,13 +112,14 @@ export const qk = {
 
   settings: ["settings"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
+  history: (eventId: string) => ["history", eventId] as const,
   roi: (eventId: string) => ["roi", eventId] as const,
 };
 
 /** Every key whose contents can change when one event's records change. */
 function eventDerivedKeys(eventId?: string): QueryKey[] {
   const keys: QueryKey[] = [qk.portfolio, qk.attention, qk.openTasks, ["analytics", "health"]];
-  if (eventId) keys.push(qk.event(eventId));
+  if (eventId) keys.push(qk.event(eventId), qk.history(eventId));
   keys.push(qk.events);
   return keys;
 }
@@ -431,7 +432,7 @@ export function useRunOfShow(eventId: string) {
 export function useAddRunOfShowItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: RunOfShowItemDraft }) => a.runOfShow.create(vars.eventId, vars.draft),
-    (vars) => [qk.runOfShow(vars.eventId)],
+    (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
@@ -439,14 +440,14 @@ export function useUpdateRunOfShowItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string; patch: RunOfShowItemPatch }) =>
       a.runOfShow.update(vars.eventId, vars.id, vars.patch),
-    (vars) => [qk.runOfShow(vars.eventId)],
+    (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
 export function useRemoveRunOfShowItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.runOfShow.remove(vars.eventId, vars.id),
-    (vars) => [qk.runOfShow(vars.eventId)],
+    (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
@@ -454,6 +455,10 @@ export function useRemoveRunOfShowItem() {
 
 export function useBudget(eventId: string) {
   return useAdapterQuery(qk.budget(eventId), (a) => a.budget.list(eventId), { enabled: !!eventId });
+}
+
+export function useEventHistory(eventId: string) {
+  return useAdapterQuery(qk.history(eventId), (a) => a.history.list(eventId), { enabled: !!eventId });
 }
 
 export function useAddBudgetItem() {
@@ -765,7 +770,7 @@ export function useFloorplan(eventId: string): UseQueryResult<Floorplan | null, 
 export function useSaveFloorplan() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.eventId, vars.draft),
-    (vars) => [qk.floorplan(vars.eventId)],
+    (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
   );
 }
 

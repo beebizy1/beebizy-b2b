@@ -6,7 +6,7 @@
  */
 
 import { Link } from "wouter";
-import { CheckSquare, Clock, Coins, Store, Ticket, Users } from "lucide-react";
+import { CheckSquare, Clock, Coins, History, Store, Ticket, Users } from "lucide-react";
 import {
   EmptyState,
   KeyValue,
@@ -17,7 +17,7 @@ import {
   Pill,
 } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
-import { useBudget, useChecklist, useEventVendors, useRunOfShow, useSponsorships, useTickets } from "@/data/hooks";
+import { useBudget, useChecklist, useEventHistory, useEventVendors, useRunOfShow, useSponsorships, useTickets } from "@/data/hooks";
 import { formatMoney, sumCents } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
@@ -29,6 +29,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
   const { data: tickets } = useTickets(event.id);
   const { data: sponsorships } = useSponsorships(event.id);
   const { data: runOfShow, isLoading: rosLoading } = useRunOfShow(event.id);
+  const { data: history, isLoading: historyLoading } = useEventHistory(event.id);
 
   const expenses = (budget ?? []).filter((item) => item.type === "expense");
   const revenue = (budget ?? []).filter((item) => item.type === "revenue");
@@ -186,6 +187,29 @@ export default function OverviewSection({ event, health }: { event: Event; healt
                 </li>
               ))}
             </ul>
+          )}
+        </Panel>
+
+        <Panel>
+          <PanelHeader title="Planning history" description="Structured decisions retained for reporting and future recommendations" />
+          {historyLoading ? (
+            <LoadingRows rows={3} className="p-4" />
+          ) : (history ?? []).length === 0 ? (
+            <EmptyState icon={History} title="No changes recorded yet" description="Edits to the event, schedule, budget, and floorplan will appear here." />
+          ) : (
+            <ol className="divide-y divide-hairline">
+              {(history ?? []).slice(0, 6).map((entry) => (
+                <li key={entry.id} className="flex gap-3 px-5 py-3">
+                  <History className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">{entry.summary}</span>
+                    <time dateTime={entry.createdAt} className="text-xs text-muted-foreground">
+                      {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.createdAt))}
+                    </time>
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </Panel>
 

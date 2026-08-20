@@ -27,6 +27,8 @@ import type {
   CanvasCard,
   Event,
   EventHealth,
+  EventHistoryChange,
+  EventHistoryEntry,
   Floorplan,
   FloorplanItem,
   Location,
@@ -38,8 +40,10 @@ import type {
   TicketTypeWithEvent,
   UserSettings,
   Vendor,
+  HistoryResource,
 } from "../data/entities.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
+import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 
 type Body = Record<string, unknown>;
@@ -73,6 +77,28 @@ function patchFrom<T extends object>(body: Body, spec: Record<string, (body: Bod
     if (key in body) patch[key] = read(body);
   }
   return patch as T;
+}
+
+function historyValues(
+  ctx: RequestContext,
+  input: EventHistoryChange,
+) {
+  return {
+    id: newId("hist"),
+    workspaceId: ctx.workspaceId,
+    actorId: ctx.userId,
+    summary: describeHistoryChange(input),
+    ...input,
+  };
+}
+
+async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
+  const [row] = await db
+    .select({ id: s.events.id })
+    .from(s.events)
+    .where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId)))
+    .limit(1);
+  if (!row) throw new HttpError(404, "That event no longer exists.");
 }
 
 /* --------------------------------------------------------------- events */
@@ -134,7 +160,8 @@ export const events = {
 
   async create(ctx: RequestContext, body: Body): Promise<Event> {
     const id = newId("evt");
-    await db.insert(s.events).values({
+    const createdAt = new Date();
+    const values = {
       id,
       workspaceId: ctx.workspaceId,
       title: str(body, "title"),
@@ -147,13 +174,49 @@ export const events = {
       status: (optStr(body, "status") ?? "draft") as "draft",
       category: str(body, "category", "Other"),
       imageUrl: optStr(body, "imageUrl"),
-    });
+      createdAt,
+    };
+    const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
+    if (values.locationId && !location) throw new HttpError(400, "That venue is not available in this workspace.");
+    const after: Event = {
+      id,
+      ownerId: ctx.workspaceId,
+      title: values.title,
+      description: values.description,
+      date: values.startsAt.toISOString(),
+      endDate: values.endsAt?.toISOString() ?? null,
+      location: values.venue ?? (location ? [location.name, location.city].filter(Boolean).join(", ") : null),
+      locationId: values.locationId,
+      locationRecord: location,
+      capacity: values.capacity,
+      status: values.status as Event["status"],
+      category: values.category,
+      imageUrl: values.imageUrl,
+      registrationCount: 0,
+      shareToken: null,
+      createdAt: createdAt.toISOString(),
+    };
+    await db.batch([
+      db.insert(s.events).values(values),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: id,
+          resource: "event",
+          resourceId: id,
+          action: "created",
+          before: null,
+          after: after as unknown as Record<string, unknown>,
+        }),
+      ),
+    ]);
     const created = await events.get(ctx, id);
     if (!created) throw new HttpError(500, "Event was created but could not be read back.");
     return created;
   },
 
   async update(ctx: RequestContext, id: string, body: Body): Promise<Event> {
+    const before = await events.get(ctx, id);
+    if (!before) throw new HttpError(404, "That event no longer exists.");
     const patch = patchFrom<Record<string, unknown>>(body, {
       title: (b) => str(b, "title"),
       description: (b) => optStr(b, "description"),
@@ -167,11 +230,44 @@ export const events = {
     if ("endDate" in body) patch.endsAt = parseOptionalDate(body.endDate, "endDate");
     if ("location" in body) patch.venue = optStr(body, "location");
 
-    const updated = await db
-      .update(s.events)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
-      .returning({ id: s.events.id });
+    const after: Event = { ...before };
+    if ("title" in body) after.title = patch.title as string;
+    if ("description" in body) after.description = patch.description as string | null;
+    if ("capacity" in body) after.capacity = patch.capacity as number | null;
+    if ("status" in body) after.status = patch.status as Event["status"];
+    if ("category" in body) after.category = patch.category as string;
+    if ("imageUrl" in body) after.imageUrl = patch.imageUrl as string | null;
+    if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
+    if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
+    if ("location" in body) after.location = patch.venue as string | null;
+    if ("locationId" in body) {
+      const locationId = patch.locationId as string | null;
+      const location = locationId ? await locations.get(ctx, locationId) : null;
+      if (locationId && !location) throw new HttpError(400, "That venue is not available in this workspace.");
+      after.locationId = locationId;
+      after.locationRecord = location;
+      if (location && after.location === null) after.location = [location.name, location.city].filter(Boolean).join(", ");
+    }
+
+    const updatedAt = new Date();
+    after.updatedAt = updatedAt.toISOString();
+    const [updated] = await db.batch([
+      db
+        .update(s.events)
+        .set({ ...patch, updatedAt })
+        .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
+        .returning({ id: s.events.id }),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: id,
+          resource: "event",
+          resourceId: id,
+          action: "updated",
+          before: before as unknown as Record<string, unknown>,
+          after: after as unknown as Record<string, unknown>,
+        }),
+      ),
+    ]);
     if (updated.length === 0) throw new HttpError(404, "That event no longer exists.");
 
     const result = await events.get(ctx, id);
@@ -181,12 +277,26 @@ export const events = {
 
   async remove(ctx: RequestContext, id: string): Promise<void> {
     requireRole(ctx, ["owner", "admin"]);
+    const before = await events.get(ctx, id);
+    if (!before) throw new HttpError(404, "That event no longer exists.");
     // No manual cascade: the foreign keys do it, which is eleven hand-written subcollection
     // deletes the document model needed and this does not.
-    const deleted = await db
-      .delete(s.events)
-      .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
-      .returning({ id: s.events.id });
+    const [deleted] = await db.batch([
+      db
+        .delete(s.events)
+        .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
+        .returning({ id: s.events.id }),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: id,
+          resource: "event",
+          resourceId: id,
+          action: "deleted",
+          before: before as unknown as Record<string, unknown>,
+          after: null,
+        }),
+      ),
+    ]);
     if (deleted.length === 0) throw new HttpError(404, "That event no longer exists.");
   },
 
@@ -687,6 +797,7 @@ function eventScoped<Entity>(config: {
   patch: Record<string, (body: Body) => unknown>;
   idPrefix: string;
   order?: "sortOrder" | "startTime" | "lotNumber" | "createdAt";
+  historyResource?: HistoryResource;
 }) {
   const table = config.table as unknown as typeof s.checklistItems;
   const orderColumn = () => {
@@ -713,34 +824,107 @@ function eventScoped<Entity>(config: {
     },
 
     async create(ctx: RequestContext, eventId: string, body: Body): Promise<Entity> {
+      await requireOwnedEvent(ctx, eventId);
       const [{ maxOrder } = { maxOrder: 0 }] = await db
         .select({ maxOrder: sql<number>`coalesce(max(${table.sortOrder}), 0)` })
         .from(table)
         .where(eq(table.eventId, eventId));
 
       const id = newId(config.idPrefix);
-      const values: Record<string, unknown> = { ...config.insert(ctx, eventId, body, Number(maxOrder) + 1), id };
-      await db.insert(table).values(values as never);
+      const values: Record<string, unknown> = {
+        ...config.insert(ctx, eventId, body, Number(maxOrder) + 1),
+        id,
+        createdAt: new Date(),
+      };
+      const insert = db.insert(table).values(values as never);
+      if (config.historyResource) {
+        await db.batch([
+          insert,
+          db.insert(s.eventHistory).values(
+            historyValues(ctx, {
+              eventId,
+              resource: config.historyResource,
+              resourceId: id,
+              action: "created",
+              before: null,
+              after: config.mapper(values as never) as Record<string, unknown>,
+            }),
+          ),
+        ]);
+      } else {
+        await insert;
+      }
       const [row] = await db.select().from(table).where(eq(table.id, id)).limit(1);
       return config.mapper(row as never);
     },
 
     async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Entity> {
       const patch = patchFrom<Record<string, unknown>>(body, config.patch);
-      const updated = await db
-        .update(table)
-        .set({ ...patch, updatedAt: new Date() } as never)
-        .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
-        .returning();
+      const updatedAt = new Date();
+      const buildUpdate = () =>
+        db
+          .update(table)
+          .set({ ...patch, updatedAt } as never)
+          .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
+          .returning();
+      let updated;
+      if (config.historyResource) {
+        const [current] = await db
+          .select()
+          .from(table)
+          .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
+          .limit(1);
+        if (!current) throw new HttpError(404, "That record no longer exists.");
+        const before = config.mapper(current as never) as Record<string, unknown>;
+        [updated] = await db.batch([
+          buildUpdate(),
+          db.insert(s.eventHistory).values(
+            historyValues(ctx, {
+              eventId,
+              resource: config.historyResource,
+              resourceId: id,
+              action: "updated",
+              before,
+              after: config.mapper({ ...current, ...patch, updatedAt } as never) as Record<string, unknown>,
+            }),
+          ),
+        ]);
+      } else {
+        updated = await buildUpdate();
+      }
       if (updated.length === 0) throw new HttpError(404, "That record no longer exists.");
       return config.mapper(updated[0] as never);
     },
 
     async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
-      const deleted = await db
+      const remove = db
         .delete(table)
         .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
         .returning({ id: table.id });
+      let deleted;
+      if (config.historyResource) {
+        const [current] = await db
+          .select()
+          .from(table)
+          .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
+          .limit(1);
+        if (!current) throw new HttpError(404, "That record no longer exists.");
+        [deleted] = await db.batch([
+          remove,
+          db.insert(s.eventHistory).values(
+            historyValues(ctx, {
+              eventId,
+              resource: config.historyResource,
+              resourceId: id,
+              action: "deleted",
+              before: config.mapper(current as never) as Record<string, unknown>,
+              after: null,
+            }),
+          ),
+        ]);
+      } else {
+        deleted = await remove;
+      }
       if (deleted.length === 0) throw new HttpError(404, "That record no longer exists.");
     },
   };
@@ -777,6 +961,7 @@ export const runOfShow = eventScoped({
   table: s.runOfShowItems as never,
   mapper: map.toRunOfShowItem as never,
   idPrefix: "ros",
+  historyResource: "run-of-show",
   order: "startTime",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
@@ -789,7 +974,7 @@ export const runOfShow = eventScoped({
   }),
   patch: {
     startTime: (b) => str(b, "startTime"),
-    duration: (b) => optInt(b, "duration"),
+    durationMinutes: (b) => optInt(b, "duration"),
     title: (b) => str(b, "title"),
     description: (b) => optStr(b, "description"),
     responsible: (b) => optStr(b, "responsible"),
@@ -800,6 +985,7 @@ export const budget = eventScoped({
   table: s.budgetItems as never,
   mapper: map.toBudgetItem as never,
   idPrefix: "bud",
+  historyResource: "budget",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
     name: str(body, "name"),
@@ -935,17 +1121,33 @@ export const eventVendors = {
     return rows.map((row) => map.toEventVendor(row.booking, row.vendor));
   },
   async create(ctx: RequestContext, eventId: string, body: Body) {
+    await requireOwnedEvent(ctx, eventId);
     const id = newId("ev");
+    const values = {
+      id,
+      workspaceId: ctx.workspaceId,
+      eventId,
+      vendorId: str(body, "vendorId"),
+      status: (optStr(body, "status") ?? "pending") as "pending",
+      feeCents: optInt(body, "feeCents"),
+      notes: optStr(body, "notes"),
+      createdAt: new Date(),
+      updatedAt: null,
+    };
     try {
-      await db.insert(s.eventVendors).values({
-        id,
-        workspaceId: ctx.workspaceId,
-        eventId,
-        vendorId: str(body, "vendorId"),
-        status: (optStr(body, "status") ?? "pending") as "pending",
-        feeCents: optInt(body, "feeCents"),
-        notes: optStr(body, "notes"),
-      });
+      await db.batch([
+        db.insert(s.eventVendors).values(values),
+        db.insert(s.eventHistory).values(
+          historyValues(ctx, {
+            eventId,
+            resource: "vendor-booking",
+            resourceId: id,
+            action: "created",
+            before: null,
+            after: map.toEventVendor(values, null) as unknown as Record<string, unknown>,
+          }),
+        ),
+      ]);
     } catch (error) {
       if (String(error).includes("event_vendors_event_vendor_idx")) {
         throw new HttpError(409, "That vendor is already booked on this event.");
@@ -956,24 +1158,61 @@ export const eventVendors = {
     return all.find((row) => row.id === id)!;
   },
   async update(ctx: RequestContext, eventId: string, id: string, body: Body) {
+    const [current] = await db
+      .select()
+      .from(s.eventVendors)
+      .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
+      .limit(1);
+    if (!current) throw new HttpError(404, "That booking no longer exists.");
     const patch = patchFrom<Record<string, unknown>>(body, {
       status: (b) => optStr(b, "status") ?? "pending",
       feeCents: (b) => optInt(b, "feeCents"),
       notes: (b) => optStr(b, "notes"),
     });
-    const updated = await db
-      .update(s.eventVendors)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId)))
-      .returning({ id: s.eventVendors.id });
+    const updatedAt = new Date();
+    const [updated] = await db.batch([
+      db
+        .update(s.eventVendors)
+        .set({ ...patch, updatedAt })
+        .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
+        .returning({ id: s.eventVendors.id }),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId,
+          resource: "vendor-booking",
+          resourceId: id,
+          action: "updated",
+          before: map.toEventVendor(current, null) as unknown as Record<string, unknown>,
+          after: map.toEventVendor({ ...current, ...patch, updatedAt }, null) as unknown as Record<string, unknown>,
+        }),
+      ),
+    ]);
     if (updated.length === 0) throw new HttpError(404, "That booking no longer exists.");
     const all = await eventVendors.list(ctx, eventId);
     return all.find((row) => row.id === id)!;
   },
   async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
-    await db
-      .delete(s.eventVendors)
-      .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)));
+    const [current] = await db
+      .select()
+      .from(s.eventVendors)
+      .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
+      .limit(1);
+    if (!current) throw new HttpError(404, "That booking no longer exists.");
+    await db.batch([
+      db
+        .delete(s.eventVendors)
+        .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId))),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId,
+          resource: "vendor-booking",
+          resourceId: id,
+          action: "deleted",
+          before: map.toEventVendor(current, null) as unknown as Record<string, unknown>,
+          after: null,
+        }),
+      ),
+    ]);
   },
 };
 
@@ -1315,12 +1554,50 @@ export const floorplan = {
     return row ? map.toFloorplan(row) : null;
   },
   async save(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
-    const [row] = await db
-      .insert(s.floorplans)
-      .values({ eventId, workspaceId: ctx.workspaceId, name, items, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: s.floorplans.eventId, set: { name, items, updatedAt: new Date() } })
-      .returning();
+    const event = await events.get(ctx, eventId);
+    if (!event) throw new HttpError(404, "That event no longer exists.");
+    const before = await floorplan.get(ctx, eventId);
+    const updatedAt = new Date();
+    const [saved] = await db.batch([
+      db
+        .insert(s.floorplans)
+        .values({ eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
+        .onConflictDoUpdate({ target: s.floorplans.eventId, set: { name, items, updatedAt } })
+        .returning(),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId,
+          resource: "floorplan",
+          resourceId: eventId,
+          action: before ? "updated" : "created",
+          before: before as unknown as Record<string, unknown> | null,
+          after: {
+            eventId,
+            name,
+            items,
+            updatedAt: updatedAt.toISOString(),
+            locationId: event.locationId,
+            location: event.location,
+            guestCount: event.registrationCount,
+            capacity: event.capacity,
+          },
+        }),
+      ),
+    ]);
+    const [row] = saved;
     return map.toFloorplan(row!);
+  },
+};
+
+export const history = {
+  async list(ctx: RequestContext, eventId: string): Promise<EventHistoryEntry[]> {
+    const rows = await db
+      .select()
+      .from(s.eventHistory)
+      .where(and(eq(s.eventHistory.workspaceId, ctx.workspaceId), eq(s.eventHistory.eventId, eventId)))
+      .orderBy(desc(s.eventHistory.createdAt))
+      .limit(100);
+    return rows.map(map.toEventHistory);
   },
 };
 
