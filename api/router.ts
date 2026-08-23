@@ -103,12 +103,63 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 
 /* --------------------------------------------------------------- public routes */
 
+const LEAD_FIELDS = ["name", "email", "company", "phone", "volume"] as const;
+const LEAD_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+async function handleLead(request: Request): Promise<Response> {
+  const body = await readBody(request);
+  if (typeof body.website === "string" && body.website.trim()) return json({ ok: true });
+
+  const lead = Object.fromEntries(
+    LEAD_FIELDS.flatMap((field) => {
+      const value = body[field];
+      return typeof value === "string" && value.trim() ? [[field, value.trim().slice(0, 200)]] : [];
+    }),
+  ) as Partial<Record<(typeof LEAD_FIELDS)[number], string>>;
+
+  const missing = (["name", "email", "company"] as const).filter((field) => !lead[field]);
+  if (missing.length > 0) return json({ error: `Missing: ${missing.join(", ")}` }, 400);
+  if (!LEAD_EMAIL.test(lead.email!)) return json({ error: "That email doesn't look right" }, 400);
+
+  const record = { at: new Date().toISOString(), ...lead, userAgent: request.headers.get("user-agent") };
+  console.log(`LEAD ${JSON.stringify(record)}`);
+
+  if (process.env.MAIL_TO && process.env.RESEND_API_KEY) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        from: process.env.MAIL_FROM ?? "Beebizy <onboarding@resend.dev>",
+        to: [process.env.MAIL_TO],
+        reply_to: lead.email,
+        subject: `New enquiry - ${lead.company}`,
+        text: [
+          `Name: ${lead.name}`,
+          `Email: ${lead.email}`,
+          `Company: ${lead.company}`,
+          `Phone: ${lead.phone ?? "-"}`,
+          `Events: ${lead.volume ?? "-"} per year`,
+          `Received: ${record.at}`,
+        ].join("\n"),
+      }),
+    });
+    if (!response.ok) console.error("LEAD_EMAIL_FAILED", response.status, await response.text());
+  }
+
+  return json({ ok: true });
+}
+
 /**
  * Routes a guest can reach with no session. Deliberately tiny, and each one takes the
  * share token as the only credential — which is why the token is a random UUID rather
  * than something guessable.
  */
-async function handlePublic(segments: string[], method: string): Promise<Response | null> {
+async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
+  if (segments[0] === "lead") {
+    if (method !== "POST") return json({ error: "Method not allowed" }, 405);
+    return handleLead(request);
+  }
+
   // GET /api/public/events/:token
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET") {
     const shared = await eventByShareToken(segments[2]);
@@ -376,7 +427,7 @@ export async function handleRequest(request: Request): Promise<Response> {
   const method = request.method.toUpperCase();
 
   try {
-    const publicResponse = await handlePublic(segments, method);
+    const publicResponse = await handlePublic(segments, method, request);
     if (publicResponse) return publicResponse;
 
     const ctx = await authorize(request);
