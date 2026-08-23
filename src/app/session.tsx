@@ -19,6 +19,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
 import { isClerkConfigured } from "@/lib/clerk";
+import { isDemoSession } from "./demo";
 
 export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous";
 
@@ -86,6 +87,8 @@ function DemoSessionProvider({ children }: { children: ReactNode }) {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  if (isDemoSession()) return <DemoSessionProvider>{children}</DemoSessionProvider>;
+
   // Chosen once at module scope, so the two providers never swap and take hook order
   // with them.
   return isClerkConfigured ? (
