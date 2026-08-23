@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Clock, ImagePlus, ListChecks, Plus, Trash2 } from "lucide-react";
+import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,8 +36,9 @@ import {
   useRemoveRunOfShowItem,
   useRunOfShow,
   useUpdateChecklistItem,
+  useUpdateRunOfShowItem,
 } from "@/data/hooks";
-import type { ChecklistItem, Event } from "@/data/entities";
+import type { ChecklistItem, Event, RunOfShowItem } from "@/data/entities";
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -247,14 +248,151 @@ function ChecklistPanel({ event }: { event: Event }) {
   );
 }
 
+function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem }) {
+  const update = useUpdateRunOfShowItem();
+  const remove = useRemoveRunOfShowItem();
+  const [editing, setEditing] = useState(false);
+  const currentDraft = () => ({
+    startTime: cue.startTime,
+    title: cue.title,
+    duration: cue.duration === null ? "" : String(cue.duration),
+    responsible: cue.responsible ?? "",
+    description: cue.description ?? "",
+  });
+  const [draft, setDraft] = useState(currentDraft);
+
+  const cancelEditing = () => {
+    setDraft(currentDraft());
+    setEditing(false);
+  };
+
+  const startEditing = () => {
+    setDraft(currentDraft());
+    setEditing(true);
+  };
+
+  if (editing) {
+    return (
+      <li className="bg-surface-sunken px-5 py-4">
+        <form
+          className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_90px]"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            const title = draft.title.trim();
+            if (!title) return;
+            const parsedDuration = draft.duration.trim() === "" ? null : Number.parseInt(draft.duration, 10);
+            update.mutate(
+              {
+                eventId,
+                id: cue.id,
+                patch: {
+                  startTime: draft.startTime,
+                  title,
+                  duration: Number.isFinite(parsedDuration) ? parsedDuration : null,
+                  responsible: draft.responsible.trim() || null,
+                  description: draft.description.trim() || null,
+                },
+              },
+              {
+                onSuccess: () => setEditing(false),
+                onError: (error) => toast({ title: "Couldn't update cue", description: error.message }),
+              },
+            );
+          }}
+        >
+          <Input
+            type="time"
+            value={draft.startTime}
+            onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
+            aria-label={`Start time for ${cue.title}`}
+          />
+          <Input
+            value={draft.title}
+            onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+            aria-label="Cue title"
+          />
+          <Input
+            type="number"
+            min={0}
+            value={draft.duration}
+            onChange={(event) => setDraft((current) => ({ ...current, duration: event.target.value }))}
+            aria-label="Duration in minutes"
+            placeholder="mins"
+          />
+          <Input
+            value={draft.responsible}
+            onChange={(event) => setDraft((current) => ({ ...current, responsible: event.target.value }))}
+            aria-label="Cue owner"
+            placeholder="Owner or team"
+            className="sm:col-span-1"
+          />
+          <Input
+            value={draft.description}
+            onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+            aria-label="Cue notes"
+            placeholder="Notes, handoffs, or dependencies"
+            className="sm:col-span-2"
+          />
+          <div className="flex justify-end gap-2 sm:col-span-3">
+            <Button type="button" variant="outline" size="sm" onClick={cancelEditing}>
+              <X className="mr-1.5 size-3.5" />
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={!draft.title.trim() || update.isPending}>
+              <Check className="mr-1.5 size-3.5" />
+              Save cue
+            </Button>
+          </div>
+        </form>
+      </li>
+    );
+  }
+
+  return (
+    <li className="group flex items-start gap-4 px-5 py-3">
+      <span data-numeric className="w-14 shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
+        {cue.startTime}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>
+        {cue.description ? <span className="mt-0.5 block text-xs text-muted-foreground">{cue.description}</span> : null}
+        {cue.responsible ? <span className="mt-1 block text-xs font-medium text-primary-text">Owner: {cue.responsible}</span> : null}
+      </span>
+      {cue.duration ? <span data-numeric className="shrink-0 pt-0.5 text-xs text-muted-foreground">{cue.duration}m</span> : null}
+      <button
+        type="button"
+        aria-label={`Edit cue “${cue.title}”`}
+        onClick={startEditing}
+        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Pencil className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label={`Delete cue “${cue.title}”`}
+        onClick={() =>
+          remove.mutate(
+            { eventId, id: cue.id },
+            { onError: (error) => toast({ title: "Couldn't delete", description: error.message }) },
+          )
+        }
+        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </li>
+  );
+}
+
 function RunOfShowPanel({ event }: { event: Event }) {
   const { timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const add = useAddRunOfShowItem();
-  const remove = useRemoveRunOfShowItem();
   const [startTime, setStartTime] = useState("09:00");
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
+  const [responsible, setResponsible] = useState("");
+  const [description, setDescription] = useState("");
 
   const submit = () => {
     const trimmed = title.trim();
@@ -267,12 +405,16 @@ function RunOfShowPanel({ event }: { event: Event }) {
           startTime,
           title: trimmed,
           duration: Number.isFinite(parsedDuration) ? parsedDuration : undefined,
+          responsible: responsible.trim() || undefined,
+          description: description.trim() || undefined,
         },
       },
       {
         onSuccess: () => {
           setTitle("");
           setDuration("");
+          setResponsible("");
+          setDescription("");
         },
         onError: (error) => toast({ title: "Couldn't add cue", description: error.message }),
       },
@@ -317,6 +459,20 @@ function RunOfShowPanel({ event }: { event: Event }) {
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
+        <Input
+          value={responsible}
+          onChange={(inputEvent) => setResponsible(inputEvent.target.value)}
+          placeholder="Owner or team"
+          aria-label="Cue owner"
+          className="min-w-[10rem] flex-1"
+        />
+        <Input
+          value={description}
+          onChange={(inputEvent) => setDescription(inputEvent.target.value)}
+          placeholder="Notes or dependencies"
+          aria-label="Cue notes"
+          className="min-w-[12rem] flex-2"
+        />
       </form>
 
       {isLoading ? (
@@ -325,37 +481,7 @@ function RunOfShowPanel({ event }: { event: Event }) {
         <EmptyState icon={Clock} title="No cues yet" description="Build the order of the day above." />
       ) : (
         <ol className="divide-y divide-hairline">
-          {(cues ?? []).map((cue) => (
-            <li key={cue.id} className="group flex items-baseline gap-4 px-5 py-3">
-              <span data-numeric className="w-14 shrink-0 font-mono text-xs font-semibold text-foreground">
-                {cue.startTime}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>
-                {cue.responsible ? (
-                  <span className="block truncate text-xs text-muted-foreground">{cue.responsible}</span>
-                ) : null}
-              </span>
-              {cue.duration ? (
-                <span data-numeric className="shrink-0 text-xs text-muted-foreground">
-                  {cue.duration}m
-                </span>
-              ) : null}
-              <button
-                type="button"
-                aria-label={`Delete cue “${cue.title}”`}
-                onClick={() =>
-                  remove.mutate(
-                    { eventId: event.id, id: cue.id },
-                    { onError: (error) => toast({ title: "Couldn't delete", description: error.message }) },
-                  )
-                }
-                className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </li>
-          ))}
+          {(cues ?? []).map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} />)}
         </ol>
       )}
     </Panel>

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
 import { dayNumberInZone, dayNumberOf } from "@/lib/datetime";
 import type { Event, EventStatus } from "@/data/entities";
+import { eventLocationLabel } from "./calendar";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -180,7 +181,7 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
                         <li key={event.id}>
                           <Link
                             href={`/app/events/${event.id}`}
-                            title={`${event.title} · ${formatDate(event.date, "time")}`}
+                            title={`${event.title} · ${eventLocationLabel(event)} · ${formatDate(event.date, "time")}`}
                             className={cn(
                               "block truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
                               STATUS_CHIP[event.status],
@@ -196,6 +197,9 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
                               </span>
                             )}
                             {event.title}
+                            {isStart ? (
+                              <span className="ml-1 font-normal opacity-70">· {eventLocationLabel(event)}</span>
+                            ) : null}
                           </Link>
                         </li>
                       );

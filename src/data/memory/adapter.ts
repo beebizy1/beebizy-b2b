@@ -424,10 +424,28 @@ const events: EventsRepository = {
       state.checklist.push({ ...copy(item), id: newId("cl"), eventId: event.id, createdAt: nowIso() });
     }
     for (const item of template.runOfShowItems) {
-      state.runOfShow.push({ ...copy(item), id: newId("ros"), eventId: event.id, createdAt: nowIso() });
+      const row = { ...copy(item), id: newId("ros"), eventId: event.id, createdAt: nowIso() };
+      state.runOfShow.push(row);
+      appendHistory({
+        eventId: event.id,
+        resource: "run-of-show",
+        resourceId: row.id,
+        action: "created",
+        before: null,
+        after: copy(row) as Record<string, unknown>,
+      });
     }
     for (const item of template.budgetItems) {
-      state.budget.push({ ...copy(item), id: newId("bud"), eventId: event.id, createdAt: nowIso() });
+      const row = { ...copy(item), id: newId("bud"), eventId: event.id, createdAt: nowIso() };
+      state.budget.push(row);
+      appendHistory({
+        eventId: event.id,
+        resource: "budget",
+        resourceId: row.id,
+        action: "created",
+        before: null,
+        after: copy(row) as Record<string, unknown>,
+      });
     }
     return copy(event);
   },
