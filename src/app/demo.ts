@@ -7,3 +7,7 @@ export function startDemoSession(): void {
 export function isDemoSession(): boolean {
   return typeof window !== "undefined" && window.sessionStorage.getItem(DEMO_SESSION_KEY) === "true";
 }
+
+export function endDemoSession(): void {
+  window.sessionStorage.removeItem(DEMO_SESSION_KEY);
+}

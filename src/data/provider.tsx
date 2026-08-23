@@ -12,7 +12,6 @@ import { isClerkConfigured } from "@/lib/clerk";
 import type { DataAdapter } from "./adapter";
 import { memoryAdapter } from "./memory/adapter";
 import { createHttpAdapter } from "./http/adapter";
-import { isDemoSession } from "@/app/demo";
 
 /**
  * `demo` — in-memory seed, no credentials, writes vanish on reload.
@@ -63,10 +62,18 @@ function DemoDataProvider({ children, adapter }: { children: ReactNode; adapter?
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
-export function DataProvider({ children, adapter }: { children: ReactNode; adapter?: DataAdapter }) {
+export function DataProvider({
+  children,
+  adapter,
+  forceDemo = false,
+}: {
+  children: ReactNode;
+  adapter?: DataAdapter;
+  forceDemo?: boolean;
+}) {
   // An injected adapter always wins, which is what lets a test mount a screen against a stub.
   if (adapter) return <DemoDataProvider adapter={adapter}>{children}</DemoDataProvider>;
-  if (isDemoSession()) return <DemoDataProvider>{children}</DemoDataProvider>;
+  if (forceDemo) return <DemoDataProvider>{children}</DemoDataProvider>;
   return isClerkConfigured ? (
     <LiveDataProvider>{children}</LiveDataProvider>
   ) : (

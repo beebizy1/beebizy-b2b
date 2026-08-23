@@ -19,7 +19,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
 import { isClerkConfigured } from "@/lib/clerk";
-import { isDemoSession } from "./demo";
+import { endDemoSession } from "./demo";
 
 export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous";
 
@@ -80,14 +80,22 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
 /** No Clerk instance: everyone is the demo organiser and nothing is gated. */
 function DemoSessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionValue>(
-    () => ({ status: "demo", user: DEMO_USER, isDemo: true, signOut: async () => {} }),
+    () => ({
+      status: "demo",
+      user: DEMO_USER,
+      isDemo: true,
+      signOut: async () => {
+        endDemoSession();
+        window.location.assign("/login");
+      },
+    }),
     [],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
-export function SessionProvider({ children }: { children: ReactNode }) {
-  if (isDemoSession()) return <DemoSessionProvider>{children}</DemoSessionProvider>;
+export function SessionProvider({ children, forceDemo = false }: { children: ReactNode; forceDemo?: boolean }) {
+  if (forceDemo) return <DemoSessionProvider>{children}</DemoSessionProvider>;
 
   // Chosen once at module scope, so the two providers never swap and take hook order
   // with them.

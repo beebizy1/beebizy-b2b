@@ -11,10 +11,12 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-No credentials needed. With no `.env` the app starts in **demo mode**: an in-memory
-store seeded with a realistic portfolio — an event six days out with unconfirmed
-catering, a gala with live fundraising, two completed events, a cancelled roadshow.
-Every screen and every write works; nothing is persisted, and a banner says so.
+No credentials are needed for the public product demo. A demo CTA starts an isolated,
+session-scoped in-memory workspace seeded with a realistic portfolio — an event six days
+out with unconfirmed catering, a gala with live fundraising, two completed events, and a
+cancelled roadshow. Every screen and write works, a banner says the data is temporary,
+and **Exit demo** clears the demo session before opening sign-in. The demo never reads or
+writes a signed-in workspace.
 
 **Sign-in is Clerk**, provisioned through the Vercel Marketplace:
 
@@ -23,9 +25,10 @@ vercel integration add clerk    # writes the keys into every environment
 vercel env pull --yes           # and into .env.local for local dev
 ```
 
-With a Clerk publishable key present, `/app` requires a session and `/login` renders
-Clerk's own widget (Google, email, MFA, password reset). Without one, the app falls back
-to the demo session so the credential-free demo keeps working.
+With a Clerk publishable key present, normal `/app` visits require a session and `/login`
+renders Clerk's own widget (Google, email, MFA, password reset). The landing-page demo
+CTA deliberately opens the isolated demo workspace described above. Without Clerk, the
+whole app falls back to that demo session so local development remains credential-free.
 
 Persistence is the separate half and is **not** wired yet — see *Firebase* below.
 

@@ -42,6 +42,7 @@ import TemplateDetail from "@/screens/library/TemplateDetail";
 import BoardDetail from "@/screens/library/BoardDetail";
 import Settings from "@/screens/Settings";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
+import { isDemoSession } from "@/app/demo";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -136,12 +137,14 @@ function Routes() {
 }
 
 export default function App() {
+  const demoSession = isDemoSession();
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ClerkGate>
-          <DataProvider>
-            <SessionProvider>
+          <DataProvider forceDemo={demoSession}>
+            <SessionProvider forceDemo={demoSession}>
               <TooltipProvider>
                 <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                   <Routes />

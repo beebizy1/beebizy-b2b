@@ -173,15 +173,11 @@ function UserMenu() {
             Settings
           </Link>
         </DropdownMenuItem>
-        {!isDemo ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void signOut()}>
-              <LogOut className="mr-2 size-4" />
-              Sign out
-            </DropdownMenuItem>
-          </>
-        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void signOut()}>
+          <LogOut className="mr-2 size-4" />
+          {isDemo ? "Exit demo" : "Sign out"}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
