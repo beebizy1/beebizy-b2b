@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" fill="none">
+  <!-- Circle of stars + mountain badge -->
+  <g transform="translate(12, 6) scale(0.9)">
+    <!-- Outer dark circle -->
+    <circle cx="60" cy="60" r="55" fill="#111"/>
+    <!-- Stars arranged in a circle (22 stars) -->
+    <g fill="white">
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(0,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(16.36,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(32.72,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(49.09,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(65.45,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(81.81,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(98.18,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(114.54,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(130.9,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(147.27,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(163.63,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(180,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(196.36,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(212.72,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(229.09,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(245.45,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(261.81,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(278.18,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(294.54,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(310.9,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(327.27,60,60)"/>
+      <polygon points="60,7 61.5,11.5 66.5,11.5 62.5,14.2 64,18.7 60,16 56,18.7 57.5,14.2 53.5,11.5 58.5,11.5" transform="rotate(343.63,60,60)"/>
+    </g>
+    <!-- Inner white circle (sky) -->
+    <circle cx="60" cy="60" r="43" fill="white"/>
+    <!-- Dark arc / banner at top -->
+    <path d="M17 60 A43 43 0 0 1 103 60" fill="#111"/>
+    <!-- Mountain -->
+    <path d="M60 28 L30 72 L90 72 Z" fill="#111"/>
+    <!-- Snow cap highlight -->
+    <path d="M60 28 L50 50 L70 50 Z" fill="white"/>
+    <!-- "Paramount" script text in banner -->
+    <text x="60" y="56" font-family="Georgia, 'Palatino Linotype', serif" font-size="13" font-weight="700" font-style="italic" fill="white" text-anchor="middle" letter-spacing="0.5">Paramount</text>
+  </g>
+  <!-- PICTURES label -->
+  <text x="178" y="70" font-family="'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" letter-spacing="5" fill="#111" text-anchor="middle">PICTURES</text>
+</svg>

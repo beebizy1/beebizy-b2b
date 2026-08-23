@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" fill="none">
+  <!-- MARRIOTT small caps top -->
+  <text x="120" y="28" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="5" fill="#1a1a1a" text-anchor="middle">MARRIOTT</text>
+  <!-- BONVOY large -->
+  <text x="120" y="62" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="34" font-weight="900" letter-spacing="2" fill="#1a1a1a" text-anchor="middle">BONVOY</text>
+  <!-- Orange accent bar under the O (second character, roughly under center-left) -->
+  <rect x="88" y="67" width="24" height="4" rx="2" fill="#E8632A"/>
+</svg>

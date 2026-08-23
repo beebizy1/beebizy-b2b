@@ -22,6 +22,8 @@ export default tseslint.config(
       // Marketplace installer wrote. Neither is ours to lint.
       "src/components/ui/**",
       ".agents/**",
+      // Captured production assets are immutable browser bundles, not source files.
+      "public/**/*.js",
     ],
   },
   js.configs.recommended,
