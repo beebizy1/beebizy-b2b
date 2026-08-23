@@ -23,6 +23,7 @@ with sync_playwright() as playwright:
     pricing = page.locator("#pricing")
     pricing.wait_for(state="visible")
     assert "Start planning for free." in pricing.inner_text()
+    assert pricing.evaluate("node => node.nextElementSibling?.id") == "testimonial"
     testimonial = page.locator("#testimonial")
     testimonial.wait_for(state="visible", timeout=5_000)
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()

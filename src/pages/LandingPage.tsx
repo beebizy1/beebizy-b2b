@@ -112,34 +112,34 @@ const testimonialQuote =
 
 function TestimonialSection() {
   return (
-    <div className="relative overflow-hidden bg-gray-950 text-white">
+    <div className="relative overflow-hidden border-y border-amber-100 bg-[#fffaf0] px-6 py-16 text-gray-950 md:py-24">
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -right-8 -top-28 select-none text-[18rem] font-black leading-none text-primary/10 md:right-8 md:text-[24rem]"
+        className="pointer-events-none absolute -right-8 -top-28 select-none text-[18rem] font-black leading-none text-amber-200/50 md:right-8 md:text-[24rem]"
       >
         “
       </span>
 
-      <figure className="container relative mx-auto grid max-w-6xl gap-12 px-6 py-20 md:py-28 lg:grid-cols-[0.7fr_1.3fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-20 lg:gap-y-8">
+      <figure className="container relative mx-auto grid max-w-6xl gap-12 rounded-[2.5rem] border border-amber-200 bg-white px-7 py-10 shadow-[0_24px_70px_rgba(120,78,0,0.10)] md:px-12 md:py-14 lg:grid-cols-[0.65fr_1.35fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-16 lg:gap-y-8 lg:px-16 lg:py-16">
         <header className="lg:col-start-1 lg:row-start-1">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary">
-            Partner perspective
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">
+            Testimonial
           </p>
           <h2
             id="testimonial-heading"
-            className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-white md:text-4xl"
+            className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-gray-950 md:text-4xl"
           >
-            Big ideas, brought to life without the chaos.
+            What partners say.
           </h2>
         </header>
 
         <blockquote className="border-l-4 border-primary pl-6 md:pl-10 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-white/90 md:text-2xl md:leading-relaxed">
+          <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-gray-700 md:text-2xl md:leading-relaxed">
             {testimonialQuote}
           </p>
         </blockquote>
 
-        <figcaption className="flex items-center gap-4 border-t border-white/15 pt-6 lg:col-start-1 lg:row-start-2">
+        <figcaption className="flex items-center gap-4 border-t border-gray-200 pt-6 lg:col-start-1 lg:row-start-2">
           <div
             aria-hidden="true"
             className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
@@ -147,8 +147,8 @@ function TestimonialSection() {
             JB
           </div>
           <div>
-            <cite className="font-bold not-italic text-white">Jaclynn Brennan</cite>
-            <p className="mt-1 text-sm text-white/55">Co-founder, Ayana Foundation</p>
+            <cite className="font-bold not-italic text-gray-950">Jaclynn Brennan</cite>
+            <p className="mt-1 text-sm text-gray-500">Co-founder, Ayana Foundation</p>
           </div>
         </figcaption>
       </figure>
@@ -204,14 +204,11 @@ export function LandingPage() {
     const pricingRoot = createRoot(pricingHost);
     pricingRoot.render(<PricingSection />);
 
-    const trustedTeamsSection = Array.from(document.querySelectorAll("section")).find((section) =>
-      section.textContent?.includes("Trusted by teams at"),
-    );
     const testimonialHost = document.createElement("section");
     testimonialHost.id = "testimonial";
     testimonialHost.setAttribute("aria-labelledby", "testimonial-heading");
-    if (trustedTeamsSection) {
-      trustedTeamsSection.after(testimonialHost);
+    if (pricingHost.isConnected) {
+      pricingHost.after(testimonialHost);
     } else {
       document.querySelector("main")?.append(testimonialHost);
     }
