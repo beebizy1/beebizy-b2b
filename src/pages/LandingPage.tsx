@@ -120,8 +120,8 @@ function TestimonialSection() {
         “
       </span>
 
-      <div className="container relative mx-auto grid max-w-6xl gap-12 px-6 py-20 md:py-28 lg:grid-cols-[0.7fr_1.3fr] lg:items-start lg:gap-20">
-        <div>
+      <figure className="container relative mx-auto grid max-w-6xl gap-12 px-6 py-20 md:py-28 lg:grid-cols-[0.7fr_1.3fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-20 lg:gap-y-8">
+        <header className="lg:col-start-1 lg:row-start-1">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary">
             Partner perspective
           </p>
@@ -131,27 +131,27 @@ function TestimonialSection() {
           >
             Big ideas, brought to life without the chaos.
           </h2>
+        </header>
 
-          <div className="mt-9 flex items-center gap-4 border-t border-white/15 pt-6">
-            <div
-              aria-hidden="true"
-              className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
-            >
-              JB
-            </div>
-            <div>
-              <p className="font-bold text-white">Jaclynn Brennan</p>
-              <p className="mt-1 text-sm text-white/55">Co-founder, Ayana Foundation</p>
-            </div>
-          </div>
-        </div>
-
-        <blockquote className="border-l-4 border-primary pl-6 md:pl-10">
+        <blockquote className="border-l-4 border-primary pl-6 md:pl-10 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-white/90 md:text-2xl md:leading-relaxed">
             {testimonialQuote}
           </p>
         </blockquote>
-      </div>
+
+        <figcaption className="flex items-center gap-4 border-t border-white/15 pt-6 lg:col-start-1 lg:row-start-2">
+          <div
+            aria-hidden="true"
+            className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
+          >
+            JB
+          </div>
+          <div>
+            <cite className="font-bold not-italic text-white">Jaclynn Brennan</cite>
+            <p className="mt-1 text-sm text-white/55">Co-founder, Ayana Foundation</p>
+          </div>
+        </figcaption>
+      </figure>
     </div>
   );
 }

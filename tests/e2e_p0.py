@@ -28,6 +28,19 @@ with sync_playwright() as playwright:
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
+
+    mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
+    mobile_page.goto(BASE_URL, wait_until="networkidle")
+    mobile_testimonial = mobile_page.locator("#testimonial")
+    mobile_testimonial.wait_for(state="visible", timeout=5_000)
+    quote_box = mobile_testimonial.locator("blockquote").bounding_box()
+    attribution_box = mobile_testimonial.get_by_text("Jaclynn Brennan", exact=True).bounding_box()
+    assert quote_box and attribution_box and quote_box["y"] < attribution_box["y"]
+    assert mobile_page.evaluate(
+        "document.documentElement.scrollWidth === document.documentElement.clientWidth",
+    )
+    mobile_page.close()
+
     wait_for_exact_text(
         page,
         "Enterprise, lean, or mission-driven. Sign in to launch the working demo. No credit card.",
