@@ -25,7 +25,6 @@ import { AppShell } from "@/app/shell/AppShell";
 import LandingPage from "@/pages/LandingPage";
 import LoginPage from "@/pages/LoginPage";
 import SignupPage from "@/pages/SignupPage";
-import AboutPage from "@/pages/AboutPage";
 import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
@@ -94,7 +93,7 @@ function Routes() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
-      <Route path="/about" component={AboutPage} />
+      <Route path="/about">{() => <Redirect to="/#about" replace />}</Route>
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
       <Route path="/signup" component={SignupPage} />

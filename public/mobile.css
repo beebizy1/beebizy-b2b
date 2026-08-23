@@ -1,0 +1,134 @@
+/* Mobile refinements for beebizy.com
+   ----------------------------------------------------------------------------
+   The page markup and `original.css` are the original build's compiled output,
+   captured verbatim, and the desktop rendering must stay pixel-identical. So
+   nothing here touches desktop: every rule sits inside a max-width media query.
+
+   These override Tailwind utility classes rather than elements, at the SAME
+   specificity (one class). Because this file loads AFTER original.css, the
+   later rule wins on the tie — so no `!important` is needed anywhere.
+
+   The problem being fixed: the original only scales type down at the `md`
+   breakpoint and above, so a 390px phone was getting desktop sizes — a 48px
+   h1, 48px section headings, 20px body copy, and 112–144px of padding above
+   and below every section. The hero alone was 955px tall (more than one
+   viewport for the headline), and the page ran to 12,497px against 7,200px on
+   desktop.
+*/
+
+@media (max-width: 767px) {
+  /* ---- type scale -------------------------------------------------------- */
+  /* Values chosen so the hierarchy still steps cleanly: 32 / 28 / 20 / 17 / 16 */
+
+  .text-5xl {            /* hero h1, and the "Stop patching…" h2:  48 → 32 */
+    font-size: 2rem;
+    line-height: 1.12;
+  }
+
+  .text-4xl {            /* every other section heading:           36 → 28 */
+    font-size: 1.75rem;
+    line-height: 1.18;
+  }
+
+  .text-2xl {            /* sub-headings and persona headings:     24 → 20 */
+    font-size: 1.25rem;
+    line-height: 1.3;
+  }
+
+  .text-xl {             /* hero sub-copy:                         20 → 17 */
+    font-size: 1.0625rem;
+    line-height: 1.55;
+  }
+
+  .text-lg {             /* section intros and feature bodies:     18 → 16 */
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  /* Big statistics ("200+", "40%", "3×") keep their emphasis but stop
+     dominating the screen. */
+  .text-6xl {
+    font-size: 2.25rem;
+    line-height: 1.1;
+  }
+
+  /* ---- vertical rhythm --------------------------------------------------- */
+  /* 112–144px of padding is desktop breathing room. On a phone it reads as
+     dead space and triples the scroll. */
+
+  /* The header is `position: fixed` and 65px tall on a phone, so the hero's top
+     padding has to clear it — 40px put the badge underneath the logo. */
+  .pt-40 { padding-top: 5.5rem; }      /* hero top:     160 → 88 */
+  .pb-28 { padding-bottom: 3rem; }     /* hero bottom:  112 → 48 */
+  .py-36 { padding-top: 3rem;   padding-bottom: 3rem; }   /* 144 → 48 */
+  .py-28 { padding-top: 3rem;   padding-bottom: 3rem; }   /* 112 → 48 */
+  .py-14 { padding-top: 2rem;   padding-bottom: 2rem; }   /*  56 → 32 */
+
+  /* Large internal gaps between stacked cards tighten up too. */
+  .gap-12 { gap: 2rem; }
+  .gap-10 { gap: 1.75rem; }
+  .space-y-24 > * + * { margin-top: 3rem; }
+  .space-y-20 > * + * { margin-top: 2.5rem; }
+
+  /* ---- calls to action --------------------------------------------------- */
+  /* Full-width, comfortably tappable, and equal — rather than two differently
+     sized pills centred on a narrow screen. 44px is the accessible minimum. */
+
+  .inline-flex.items-center.justify-center {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 639px) {
+  /* CTA rows use `flex flex-col sm:flex-row items-center gap-4`, so below the
+     sm breakpoint they are already stacked — they were just different widths
+     (204px next to 187px), which looks accidental. Make them match. */
+  .flex.flex-col.items-center.gap-4 > a,
+  .flex.flex-col.items-center.gap-4 > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  /* iOS Safari zooms the whole viewport when a focused form control has a
+     font-size below 16px, and the dialog uses text-sm (14px). Bumping just the
+     controls stops the page jumping when someone taps into the form — the
+     labels and helper text keep their smaller size. */
+  #sales-dialog input,
+  #sales-dialog select,
+  #sales-dialog textarea {
+    font-size: 16px;
+  }
+
+  /* Comfortable thumb targets for the form's own buttons. */
+  #sales-dialog button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 767px) {
+  /* The "200+ / 40% / 3x" stats row.
+     ------------------------------------------------------------------------
+     This was the one thing that actually broke rather than just looked large:
+     the row is `grid grid-cols-3` with NO responsive variant, so it stayed
+     three-up at 390px, giving each card about 110px. The numbers are
+     `text-7xl` (72px), so "200+" rendered as "20" and "40%" as "40" — the rest
+     was clipped by the card.
+
+     It didn't trip the horizontal-overflow check because the text is clipped
+     inside its card rather than pushing the document wider.
+
+     Both classes are used only here in the page — bare `grid-cols-3` once, and
+     bare `text-7xl` on exactly the three numbers — so overriding them is
+     precise. The event-type grid nearby is `grid-cols-2 sm:grid-cols-3
+     lg:grid-cols-4` and is already responsive, so it is untouched. */
+
+  .grid-cols-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .text-7xl {
+    font-size: 2.75rem;   /* 72 → 44, comfortable in a full-width card */
+    line-height: 1.05;
+  }
+}

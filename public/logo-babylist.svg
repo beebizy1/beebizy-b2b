@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 72" fill="none">
+  <defs>
+    <linearGradient id="heartGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF9BB5"/>
+      <stop offset="100%" stop-color="#F04E6E"/>
+    </linearGradient>
+    <!-- Inner highlight -->
+    <radialGradient id="heartHighlight" cx="35%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#FFB8CB" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#F04E6E" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Heart shape -->
+  <g transform="translate(8, 14)">
+    <path d="M22 38 C22 38 2 25 2 13 C2 6 8 2 14 4 C17 5 20 8 22 11 C24 8 27 5 30 4 C36 2 42 6 42 13 C42 25 22 38 22 38 Z" fill="url(#heartGrad)"/>
+    <!-- Highlight blob top-left -->
+    <ellipse cx="14" cy="13" rx="7" ry="6" fill="white" opacity="0.35"/>
+  </g>
+
+  <!-- babylist wordmark in purple -->
+  <text x="122" y="44" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.3" fill="#5C2D6E" text-anchor="middle">babylist</text>
+</svg>
