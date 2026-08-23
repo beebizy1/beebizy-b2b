@@ -1,0 +1,53 @@
+{
+  /*
+    The function has its own config because the root one is a *browser* config that never
+    emits: it sets `noEmit` and `allowImportingTsExtensions` (which is only legal alongside
+    it), pulls in the DOM lib, and its `include` covers `src` only — `api/` was never in the
+    program at all. Vercel's Node builder has to emit JavaScript, so it overrode `noEmit`,
+    which made `allowImportingTsExtensions` illegal and the build stopped at "Emit skipped".
+
+    So: the same strictness, no DOM, no `noEmit`, and the `@/*` alias pointed back at `src`
+    so the function keeps sharing the pure derivation code with the client rather than
+    growing a second copy of the risk rules.
+  */
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    /*
+      The one that makes the emitted function runnable. Vercel compiles per file rather
+      than bundling, so plain `./auth` becomes `./auth` in ESM output and Node — correctly —
+      refuses to guess an extension. Writing `./auth.ts` at the source and letting TypeScript
+      rewrite it to `./auth.js` on emit is the supported way out; Vite resolves the explicit
+      `.ts` just as happily, so one spelling works for both programs.
+
+      It is also why the server code no longer uses the `@/` alias: tsc rewrites relative
+      specifiers and leaves alias ones untouched, so an aliased import survives into the
+      emitted JavaScript as `@/data/derive` and fails at runtime.
+    */
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictFunctionTypes": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": false,
+    "sourceMap": true
+  },
+  /*
+    Only the entrypoint. What the function needs from `src` arrives by following its
+    imports, which keeps browser-only modules — React hooks, anything reading
+    `import.meta.env` — out of a program that has no DOM lib and no Vite.
+  */
+  "include": ["**/*.ts"]
+}

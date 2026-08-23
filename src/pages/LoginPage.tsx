@@ -1,137 +1,47 @@
-import { useState } from "react";
-import { Link, useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useAuth } from "@/hooks/use-auth";
+/**
+ * Sign in.
+ *
+ * Clerk's own component rather than a hand-built form: it brings Google and the rest of
+ * the social providers, email codes, password reset and MFA, all of which the previous
+ * hand-rolled Firebase form either lacked or half-implemented. Appearance is mapped onto
+ * the brand tokens so it doesn't look bolted on.
+ */
+
+import { Link } from "wouter";
+import { SignIn } from "@clerk/react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { GoogleIcon } from "@/components/icons/GoogleIcon";
-
-const formSchema = z.object({
-  email: z.string().email("Enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
-});
-
-type FormValues = z.infer<typeof formSchema>;
+import { isClerkConfigured } from "@/lib/clerk";
+import { clerkAppearance } from "@/app/clerkAppearance";
 
 export default function LoginPage() {
-  const [, navigate] = useLocation();
-  const { signInWithEmail, signInWithGoogle } = useAuth();
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [googleError, setGoogleError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: { email: "", password: "" },
-  });
-
-  const onSubmit = async (data: FormValues) => {
-    setSubmitError(null);
-    setIsSubmitting(true);
-    try {
-      await signInWithEmail(data.email, data.password);
-      navigate("/dashboard");
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to log in.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setGoogleError(null);
-    setIsGoogleLoading(true);
-    try {
-      const { isNewUser } = await signInWithGoogle();
-      navigate(isNewUser ? "/complete-profile" : "/dashboard");
-    } catch (error) {
-      setGoogleError(error instanceof Error ? error.message : "Failed to sign in with Google.");
-    } finally {
-      setIsGoogleLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12">
-      <Link href="/" className="mb-8">
-        <img src="/beebizy-logo.png" alt="Beebizy" className="h-9 w-auto" />
-      </Link>
+    <div className="grid min-h-dvh place-items-center bg-background px-6 py-12">
+      <div className="flex w-full max-w-md flex-col items-center gap-8">
+        <Link href="/" aria-label="Beebizy home">
+          <BrandLogo size="lg" />
+        </Link>
 
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-sm p-8">
-        <h1 className="text-2xl font-bold tracking-tight mb-1">Welcome back</h1>
-        <p className="text-sm text-muted-foreground mb-6">Log in to your Beebizy account.</p>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full gap-2 mb-4"
-          onClick={handleGoogleLogin}
-          disabled={isGoogleLoading}
-        >
-          <GoogleIcon />
-          {isGoogleLoading ? "Connecting..." : "Continue with Google"}
-        </Button>
-        {googleError && <p className="text-sm text-destructive mb-4">{googleError}</p>}
-
-        <div className="flex items-center gap-3 mb-4">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">or log in with email</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="you@company.com" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {submitError && <p className="text-sm text-destructive">{submitError}</p>}
-
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Logging in..." : "Log In"}
+        {isClerkConfigured ? (
+          <SignIn
+            appearance={clerkAppearance}
+            signUpUrl="/signup"
+            forceRedirectUrl="/app"
+            fallbackRedirectUrl="/app"
+          />
+        ) : (
+          <div className="w-full space-y-4 rounded-xl border border-card-border bg-card p-6 text-center shadow-xs">
+            <h1 className="headline text-foreground">Sign-in isn't configured</h1>
+            <p className="text-sm text-muted-foreground">
+              This deployment has no Clerk instance, so there is nothing to sign in to. The demo runs
+              without an account and every screen works — nothing is saved.
+            </p>
+            <Button asChild>
+              <Link href="/app">Open the demo</Link>
             </Button>
-          </form>
-        </Form>
+          </div>
+        )}
 
-        <p className="text-sm text-muted-foreground text-center mt-6">
-          Don't have an account?{" "}
-          <Link href="/signup" className="text-primary font-medium hover:underline">Sign up</Link>
-        </p>
       </div>
     </div>
   );

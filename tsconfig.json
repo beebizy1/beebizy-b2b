@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*", "vendor/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
   "compilerOptions": {
     "incremental": true,
@@ -28,8 +28,7 @@
     "allowImportingTsExtensions": true,
     "types": ["node", "vite/client"],
     "paths": {
-      "@/*": ["./src/*"],
-      "@workspace/api-client-react": ["./src/lib/firestore/index.ts"]
+      "@/*": ["./src/*"]
     }
   }
 }

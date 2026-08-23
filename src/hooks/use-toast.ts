@@ -15,6 +15,8 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
+// Exists to derive ActionType below; shadcn ships it this way.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",
