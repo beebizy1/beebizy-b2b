@@ -107,6 +107,55 @@ function PricingSection() {
   );
 }
 
+const testimonialQuote =
+  "I’ve had the pleasure of working with Laila and the BeBeezy team for the past two years at SXSW on the Ayana Foundation Tenpole community event. They’re incredible at sourcing vendors, bringing huge amounts of creativity, and making the production feel seamless with real-time problem-solving and a calm, steady approach. Collaborating with them has been such a joy, they help bring a vision to life while connecting with other amazing creatives. On top of that, their network of top-notch creative companies spans multiple cities across the U.S., making them an invaluable partner for any project.";
+
+function TestimonialSection() {
+  return (
+    <div className="relative overflow-hidden bg-gray-950 text-white">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-8 -top-28 select-none text-[18rem] font-black leading-none text-primary/10 md:right-8 md:text-[24rem]"
+      >
+        “
+      </span>
+
+      <div className="container relative mx-auto grid max-w-6xl gap-12 px-6 py-20 md:py-28 lg:grid-cols-[0.7fr_1.3fr] lg:items-start lg:gap-20">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary">
+            Partner perspective
+          </p>
+          <h2
+            id="testimonial-heading"
+            className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-white md:text-4xl"
+          >
+            Big ideas, brought to life without the chaos.
+          </h2>
+
+          <div className="mt-9 flex items-center gap-4 border-t border-white/15 pt-6">
+            <div
+              aria-hidden="true"
+              className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
+            >
+              JB
+            </div>
+            <div>
+              <p className="font-bold text-white">Jaclynn Brennan</p>
+              <p className="mt-1 text-sm text-white/55">Co-founder, Ayana Foundation</p>
+            </div>
+          </div>
+        </div>
+
+        <blockquote className="border-l-4 border-primary pl-6 md:pl-10">
+          <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-white/90 md:text-2xl md:leading-relaxed">
+            {testimonialQuote}
+          </p>
+        </blockquote>
+      </div>
+    </div>
+  );
+}
+
 export function LandingPage() {
   useEffect(() => {
     const openLogin = (event: MouseEvent) => {
@@ -155,6 +204,20 @@ export function LandingPage() {
     const pricingRoot = createRoot(pricingHost);
     pricingRoot.render(<PricingSection />);
 
+    const trustedTeamsSection = Array.from(document.querySelectorAll("section")).find((section) =>
+      section.textContent?.includes("Trusted by teams at"),
+    );
+    const testimonialHost = document.createElement("section");
+    testimonialHost.id = "testimonial";
+    testimonialHost.setAttribute("aria-labelledby", "testimonial-heading");
+    if (trustedTeamsSection) {
+      trustedTeamsSection.after(testimonialHost);
+    } else {
+      document.querySelector("main")?.append(testimonialHost);
+    }
+    const testimonialRoot = createRoot(testimonialHost);
+    testimonialRoot.render(<TestimonialSection />);
+
     const demoPrompt = Array.from(document.querySelectorAll("p")).find((paragraph) =>
       paragraph.textContent?.includes("try the working demo. No sign-up."),
     );
@@ -177,6 +240,8 @@ export function LandingPage() {
     return () => {
       document.removeEventListener("click", openLogin, true);
       pricingRoot.unmount();
+      testimonialRoot.unmount();
+      testimonialHost.remove();
       styles.forEach((style) => style.remove());
       script.remove();
       document.body.style.overflow = "";
