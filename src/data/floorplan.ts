@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FLOORPLAN_SHAPES, type FloorplanDraft } from "./entities";
+import { FLOORPLAN_SHAPES, type FloorplanDraft } from "./entities.ts";
 
 const floorplanItemSchema = z.object({
   id: z.string().trim().min(1).max(80),
