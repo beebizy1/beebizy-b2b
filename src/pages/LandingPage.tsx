@@ -114,16 +114,14 @@ export function LandingPage() {
       if (!trigger || trigger.closest("#sales-dialog")) return;
 
       const label = (trigger.textContent ?? "").trim().toLowerCase();
-      const href = trigger.getAttribute("href");
-      const isProductDemo =
-        href === "/demo" ||
+      const isDemoLogin =
         label === "demo" ||
         label.startsWith("try the demo") ||
         label.startsWith("launch demo") ||
         label.startsWith("launch the demo") ||
         label.startsWith("see it in action");
 
-      if (!isProductDemo) return;
+      if (!isDemoLogin) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       endDemoSession();
@@ -156,6 +154,14 @@ export function LandingPage() {
     existingPricing?.replaceWith(pricingHost);
     const pricingRoot = createRoot(pricingHost);
     pricingRoot.render(<PricingSection />);
+
+    const demoPrompt = Array.from(document.querySelectorAll("p")).find((paragraph) =>
+      paragraph.textContent?.includes("try the working demo. No sign-up."),
+    );
+    if (demoPrompt) {
+      demoPrompt.textContent =
+        "Enterprise, lean, or mission-driven. Sign in to launch the working demo. No credit card.";
+    }
 
     document.querySelectorAll('a[href="#features"]').forEach((featuresLink) => {
       const aboutLink = featuresLink.cloneNode(true) as HTMLAnchorElement;
