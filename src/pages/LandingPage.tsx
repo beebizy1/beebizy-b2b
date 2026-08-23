@@ -123,13 +123,13 @@ function TestimonialSection() {
       <figure className="container relative mx-auto grid max-w-6xl gap-12 rounded-[2.5rem] border border-amber-200 bg-white px-7 py-10 shadow-[0_24px_70px_rgba(120,78,0,0.10)] md:px-12 md:py-14 lg:grid-cols-[0.65fr_1.35fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-16 lg:gap-y-8 lg:px-16 lg:py-16">
         <header className="lg:col-start-1 lg:row-start-1">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">
-            Testimonial
+            Partner perspective
           </p>
           <h2
             id="testimonial-heading"
             className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-gray-950 md:text-4xl"
           >
-            What partners say.
+            Big ideas, brought to life without the chaos.
           </h2>
         </header>
 
