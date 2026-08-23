@@ -1,4 +1,4 @@
-"""Browser regression for the five P0 workflows in the public demo."""
+"""Browser regression for authenticated entry and the five P0 workflows."""
 
 import os
 import re
@@ -23,8 +23,19 @@ with sync_playwright() as playwright:
     pricing = page.locator("#pricing")
     pricing.wait_for(state="visible")
     assert "Start planning for free." in pricing.inner_text()
-    page.get_by_role("button", name="Try the Demo").click()
-    page.wait_for_url("**/app")
+
+    # Every landing-page demo CTA must enter through authentication.
+    for cta in ("Try the Demo", "Launch Demo", "Launch the Demo"):
+        page.get_by_role("button", name=cta, exact=True).click()
+        page.wait_for_url("**/login", timeout=5_000)
+        wait_for_exact_text(page, "Sign in to Beebizy")
+        assert page.evaluate("sessionStorage.getItem('beebizy:product-demo')") is None
+        page.goto(BASE_URL, wait_until="networkidle")
+
+    # Keep the seeded product available to regression tests without exposing an
+    # authentication bypass through the public landing page.
+    page.evaluate("sessionStorage.setItem('beebizy:product-demo', 'true')")
+    page.goto(f"{BASE_URL.rstrip('/')}/app", wait_until="networkidle")
     wait_for_exact_text(page, "Demo data.")
 
     # Multi-location calendar.
@@ -32,6 +43,7 @@ with sync_playwright() as playwright:
     wait_for_exact_text(page, "Every event you run")
     page.get_by_role("button", name="Calendar view").click()
     wait_for_exact_text(page, "Today")
+    page.locator('a[title*="Global Sales Kickoff"]').first.wait_for(state="visible")
     calendar = page.locator('a[title*=" · "]')
     calendar_text = " ".join(calendar.all_inner_texts())
     assert "Moscone Center West" in calendar_text
