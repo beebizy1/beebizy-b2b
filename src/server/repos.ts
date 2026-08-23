@@ -341,8 +341,7 @@ export const events = {
       );
     }
     if (contents.runOfShowItems.length > 0) {
-      await db.insert(s.runOfShowItems).values(
-        contents.runOfShowItems.map((item, index) => ({
+      const rows = contents.runOfShowItems.map((item, index) => ({
           ...base,
           id: newId("ros"),
           startTime: item.startTime,
@@ -351,12 +350,35 @@ export const events = {
           description: item.description ?? null,
           responsible: item.responsible ?? null,
           sortOrder: index + 1,
-        })),
-      );
+        }));
+      await db.batch([
+        db.insert(s.runOfShowItems).values(rows),
+        db.insert(s.eventHistory).values(
+          rows.map((row) =>
+            historyValues(ctx, {
+              eventId: created.id,
+              resource: "run-of-show",
+              resourceId: row.id,
+              action: "created",
+              before: null,
+              after: {
+                id: row.id,
+                eventId: created.id,
+                startTime: row.startTime,
+                duration: row.durationMinutes,
+                title: row.title,
+                description: row.description,
+                responsible: row.responsible,
+                sortOrder: row.sortOrder,
+                sourceTemplateId: templateId,
+              },
+            }),
+          ),
+        ),
+      ]);
     }
     if (contents.budgetItems.length > 0) {
-      await db.insert(s.budgetItems).values(
-        contents.budgetItems.map((item, index) => ({
+      const rows = contents.budgetItems.map((item, index) => ({
           ...base,
           id: newId("bud"),
           name: item.name,
@@ -366,8 +388,33 @@ export const events = {
           actualCents: null,
           notes: item.notes ?? null,
           sortOrder: index + 1,
-        })),
-      );
+        }));
+      await db.batch([
+        db.insert(s.budgetItems).values(rows),
+        db.insert(s.eventHistory).values(
+          rows.map((row) =>
+            historyValues(ctx, {
+              eventId: created.id,
+              resource: "budget",
+              resourceId: row.id,
+              action: "created",
+              before: null,
+              after: {
+                id: row.id,
+                eventId: created.id,
+                name: row.name,
+                category: row.category,
+                type: row.type,
+                estimatedCents: row.estimatedCents,
+                actualCents: null,
+                notes: row.notes,
+                sortOrder: row.sortOrder,
+                sourceTemplateId: templateId,
+              },
+            }),
+          ),
+        ),
+      ]);
     }
     return created;
   },

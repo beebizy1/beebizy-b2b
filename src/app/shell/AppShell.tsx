@@ -12,7 +12,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LogOut, Menu, PanelsTopLeft, Search, Settings, TriangleAlert } from "lucide-react";
+import { BookOpen, LogOut, Menu, Search, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -112,12 +112,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="border-t border-sidebar-border p-3">
         <Link
-          href="/"
+          href="/about"
           onClick={onNavigate}
           className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
         >
-          <PanelsTopLeft className="size-4" aria-hidden="true" />
-          Marketing site
+          <BookOpen className="size-4" aria-hidden="true" />
+          About Beebizy
         </Link>
       </div>
     </div>

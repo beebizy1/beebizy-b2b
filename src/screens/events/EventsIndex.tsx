@@ -26,11 +26,12 @@ import {
   ReadinessRing,
   RiskPill,
 } from "@/components/primitives";
-import { useAllEventHealth, useEvents, useSettings, useUpdateSettings } from "@/data/hooks";
+import { useAllEventHealth, useEvents, useLocations, useSettings, useUpdateSettings } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import { cn } from "@/lib/utils";
 import type { Event, EventHealth, UserSettings } from "@/data/entities";
 import EventsCalendar from "./EventsCalendar";
+import { ALL_LOCATIONS, eventLocationLabel, filterEventsByLocation, UNASSIGNED_LOCATION } from "./calendar";
 
 type Lens = "upcoming" | "all" | "draft" | "past";
 
@@ -65,7 +66,7 @@ function applyLens(events: Event[], lens: Lens): Event[] {
 }
 
 function groupKeyFor(event: Event, grouping: UserSettings["homeGrouping"]): string {
-  if (grouping === "location") return event.locationRecord?.name ?? event.location ?? "No venue";
+  if (grouping === "location") return eventLocationLabel(event);
   if (grouping === "category") return event.category || "Uncategorised";
   return event.status;
 }
@@ -104,7 +105,7 @@ function EventRow({ event, health }: { event: Event; health: EventHealth | undef
         </div>
 
         <p className="hidden truncate text-xs text-muted-foreground sm:block">
-          {event.locationRecord?.name ?? event.location ?? "No venue"}
+          {eventLocationLabel(event)}
           {event.locationRecord?.city ? <span className="block">{event.locationRecord.city}</span> : null}
         </p>
 
@@ -131,8 +132,15 @@ export default function EventsIndex() {
   const [lens, setLens] = useState<Lens>("upcoming");
   const [view, setView] = useState<"list" | "calendar">("list");
   const [search, setSearch] = useState("");
+  const [locationId, setLocationId] = useState(ALL_LOCATIONS);
 
   const { data: events, isLoading, isError, error, refetch } = useEvents();
+  const {
+    data: locations,
+    isError: locationsAreUnavailable,
+    error: locationsError,
+    refetch: refetchLocations,
+  } = useLocations();
   const { data: healths } = useAllEventHealth();
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
@@ -142,17 +150,18 @@ export default function EventsIndex() {
 
   const visible = useMemo(() => {
     const scoped = applyLens(events ?? [], lens);
+    const located = filterEventsByLocation(scoped, locationId);
     const needle = search.trim().toLowerCase();
     const filtered = needle
-      ? scoped.filter((event) =>
+      ? located.filter((event) =>
           [event.title, event.category, event.location ?? "", event.locationRecord?.name ?? ""].some((field) =>
             field.toLowerCase().includes(needle),
           ),
         )
-      : scoped;
+      : located;
     // Upcoming reads best soonest-first; history reads best most-recent-first.
     return filtered.sort((a, b) => (lens === "past" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)));
-  }, [events, lens, search]);
+  }, [events, lens, locationId, search]);
 
   const groups = useMemo(() => {
     const map = new Map<string, Event[]>();
@@ -206,7 +215,7 @@ export default function EventsIndex() {
           ))}
         </div>
 
-        <div className="flex flex-1 items-center gap-2 sm:max-w-md">
+        <div className="flex flex-1 flex-wrap items-center gap-2 sm:max-w-3xl sm:justify-end">
           <div className="relative flex-1">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -221,6 +230,20 @@ export default function EventsIndex() {
               aria-label="Search events"
             />
           </div>
+          <Select value={locationId} onValueChange={setLocationId}>
+            <SelectTrigger className="w-[168px] shrink-0" aria-label="Filter by venue">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_LOCATIONS}>All venues</SelectItem>
+              {(locations ?? []).map((location) => (
+                <SelectItem key={location.id} value={location.id}>
+                  {location.name}
+                </SelectItem>
+              ))}
+              <SelectItem value={UNASSIGNED_LOCATION}>No saved venue</SelectItem>
+            </SelectContent>
+          </Select>
           {view === "list" ? (
             <Select
               value={grouping}
@@ -271,6 +294,13 @@ export default function EventsIndex() {
       </div>
 
       {isError ? <ErrorNotice error={error} title="Couldn't load events" onRetry={() => void refetch()} /> : null}
+      {locationsAreUnavailable ? (
+        <ErrorNotice
+          error={locationsError}
+          title="Couldn't load venues"
+          onRetry={() => void refetchLocations()}
+        />
+      ) : null}
 
       {view === "calendar" ? (
         <EventsCalendar events={visible} />

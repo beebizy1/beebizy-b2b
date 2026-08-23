@@ -13,6 +13,8 @@
 import { authorize, HttpError, type RequestContext } from "../src/server/auth.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
+import { parseFloorplanDraft } from "../src/data/floorplan.ts";
+import { ZodError } from "zod";
 
 export const config = { runtime: "nodejs" };
 
@@ -187,8 +189,17 @@ async function handleAuthed(
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
         if (b === "floorplan" && method === "GET") return json(await repos.floorplan.get(ctx, a));
         if (b === "floorplan" && method === "PUT") {
-          const items = Array.isArray(body.items) ? body.items : [];
-          return json(await repos.floorplan.save(ctx, a, String(body.name ?? "Room layout"), items as never));
+          try {
+            const draft = parseFloorplanDraft(body);
+            return json(await repos.floorplan.save(ctx, a, draft.name, draft.items));
+          } catch (error) {
+            if (!(error instanceof ZodError)) throw error;
+            const details = error.issues
+              .slice(0, 3)
+              .map((issue) => `${issue.path.join(".") || "floorplan"}: ${issue.message}`)
+              .join("; ");
+            throw new HttpError(400, details);
+          }
         }
         if (b === "roi" && method === "GET") return json(await repos.roi.get(ctx, a));
         if (b === "roi" && method === "PUT") return json(await repos.roi.save(ctx, a, body));

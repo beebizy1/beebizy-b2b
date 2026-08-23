@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Coins, Gavel, Handshake, Plus, Ticket, Trash2, Trophy } from "lucide-react";
+import { Check, Coins, Gavel, Handshake, Pencil, Plus, Ticket, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -97,16 +97,94 @@ function MoneyCell({
 function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
   const update = useUpdateBudgetItem();
   const remove = useRemoveBudgetItem();
+  const [editing, setEditing] = useState(false);
+  const currentDraft = () => ({
+    name: item.name,
+    category: item.category,
+    type: item.type,
+    notes: item.notes ?? "",
+  });
+  const [draft, setDraft] = useState(currentDraft);
   const variance = item.actualCents === null ? null : item.actualCents - item.estimatedCents;
+
+  const cancelEditing = () => {
+    setDraft(currentDraft());
+    setEditing(false);
+  };
+
+  const startEditing = () => {
+    setDraft(currentDraft());
+    setEditing(true);
+  };
+
+  const saveDetails = () => {
+    const name = draft.name.trim();
+    const category = draft.category.trim();
+    if (!name || !category) return;
+    update.mutate(
+      {
+        eventId,
+        id: item.id,
+        patch: { name, category, type: draft.type, notes: draft.notes.trim() || null },
+      },
+      {
+        onSuccess: () => setEditing(false),
+        onError: (error) => toast({ title: "Couldn't update budget line", description: error.message }),
+      },
+    );
+  };
 
   return (
     <tr className="group border-b border-hairline last:border-0">
       <td className="px-5 py-2.5">
-        <p className="text-sm font-medium text-foreground">{item.name}</p>
-        {item.notes ? <p className="text-xs text-muted-foreground">{item.notes}</p> : null}
+        {editing ? (
+          <div className="min-w-52 space-y-2">
+            <Input
+              value={draft.name}
+              onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+              aria-label="Budget line name"
+              className="h-8"
+            />
+            <Input
+              value={draft.notes}
+              onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
+              aria-label="Budget line notes"
+              placeholder="Notes"
+              className="h-8"
+            />
+          </div>
+        ) : (
+          <>
+            <p className="text-sm font-medium text-foreground">{item.name}</p>
+            {item.notes ? <p className="text-xs text-muted-foreground">{item.notes}</p> : null}
+          </>
+        )}
       </td>
       <td className="px-3 py-2.5">
-        <Pill tone={item.type === "revenue" ? "success" : "neutral"}>{item.category}</Pill>
+        {editing ? (
+          <div className="min-w-36 space-y-2">
+            <Input
+              value={draft.category}
+              onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}
+              aria-label="Budget category"
+              className="h-8"
+            />
+            <Select
+              value={draft.type}
+              onValueChange={(value) => setDraft((current) => ({ ...current, type: value as BudgetLineType }))}
+            >
+              <SelectTrigger className="h-8" aria-label="Budget line type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="expense">Expense</SelectItem>
+                <SelectItem value="revenue">Revenue</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <Pill tone={item.type === "revenue" ? "success" : "neutral"}>{item.category}</Pill>
+        )}
       </td>
       <td className="px-3 py-2.5 text-right">
         <MoneyCell
@@ -153,19 +231,51 @@ function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
         )}
       </td>
       <td className="px-3 py-2.5 text-right">
-        <button
-          type="button"
-          aria-label={`Delete ${item.name}`}
-          onClick={() =>
-            remove.mutate(
-              { eventId, id: item.id },
-              { onError: (error) => toast({ title: "Couldn't delete", description: error.message }) },
-            )
-          }
-          className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
+        <div className="flex justify-end gap-1">
+          {editing ? (
+            <>
+              <button
+                type="button"
+                aria-label={`Save ${item.name}`}
+                onClick={saveDetails}
+                disabled={!draft.name.trim() || !draft.category.trim() || update.isPending}
+                className="rounded p-1 text-success-text hover:bg-success-tint disabled:opacity-40"
+              >
+                <Check className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Cancel editing ${item.name}`}
+                onClick={cancelEditing}
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Edit ${item.name}`}
+              onClick={startEditing}
+              className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <Pencil className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={`Delete ${item.name}`}
+            onClick={() =>
+              remove.mutate(
+                { eventId, id: item.id },
+                { onError: (error) => toast({ title: "Couldn't delete", description: error.message }) },
+              )
+            }
+            className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -177,6 +287,8 @@ function BudgetPanel({ event }: { event: Event }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<BudgetLineType>("expense");
+  const [category, setCategory] = useState("General");
+  const [notes, setNotes] = useState("");
 
   const expenses = (items ?? []).filter((item) => item.type === "expense");
   const revenue = (items ?? []).filter((item) => item.type === "revenue");
@@ -210,11 +322,21 @@ function BudgetPanel({ event }: { event: Event }) {
           const cents = centsFromInput(amount);
           if (!trimmed || cents === null) return;
           add.mutate(
-            { eventId: event.id, draft: { name: trimmed, type, estimatedCents: cents } },
+            {
+              eventId: event.id,
+              draft: {
+                name: trimmed,
+                category: category.trim() || "General",
+                type,
+                estimatedCents: cents,
+                notes: notes.trim() || null,
+              },
+            },
             {
               onSuccess: () => {
                 setName("");
                 setAmount("");
+                setNotes("");
               },
               onError: (mutationError) => toast({ title: "Couldn't add line", description: mutationError.message }),
             },
@@ -249,6 +371,20 @@ function BudgetPanel({ event }: { event: Event }) {
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
+        <Input
+          value={category}
+          onChange={(inputEvent) => setCategory(inputEvent.target.value)}
+          placeholder="Category"
+          aria-label="Budget category"
+          className="min-w-[9rem] flex-1"
+        />
+        <Input
+          value={notes}
+          onChange={(inputEvent) => setNotes(inputEvent.target.value)}
+          placeholder="Notes (optional)"
+          aria-label="Budget notes"
+          className="min-w-[12rem] flex-2"
+        />
       </form>
 
       {isError ? (

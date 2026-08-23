@@ -103,6 +103,9 @@ describe("events", () => {
     expect(checklist).toHaveLength(template.checklistItems.length);
     expect(checklist.every((item) => !item.completed)).toBe(true);
     expect(await memoryAdapter.budget.list(created.id)).toHaveLength(template.budgetItems.length);
+    const history = await memoryAdapter.history.list(created.id);
+    expect(history.filter((entry) => entry.resource === "run-of-show")).toHaveLength(template.runOfShowItems.length);
+    expect(history.filter((entry) => entry.resource === "budget")).toHaveLength(template.budgetItems.length);
   });
 
   it("saves an event as a template with progress stripped", async () => {
