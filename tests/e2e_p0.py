@@ -30,6 +30,13 @@ with sync_playwright() as playwright:
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
+    assert "Ayana Rising: The Women Of The New Frontier - SXSW, Austin" in testimonial.inner_text()
+    assert "@wearewatchers" in testimonial.inner_text()
+    assert "they literally did it all" in testimonial.inner_text()
+    assert "Execution" in testimonial.inner_text()
+    assert "The Beebizy experience" in testimonial.inner_text()
+    assert "Olympic Club" in testimonial.inner_text()
+    assert "payment was easily made available by check" in testimonial.inner_text()
 
     mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
     mobile_page.goto(BASE_URL, wait_until="networkidle")

@@ -7,6 +7,15 @@ const landingMarkup = "<div class=\"min-h-screen bg-background flex flex-col fon
 const testimonialQuote =
   "I’ve had the pleasure of working with Laila and the Beebizy team for the past two years at SXSW on the Ayana Foundation Tenpole community event. They’re incredible at sourcing vendors, bringing huge amounts of creativity, and making the production feel seamless with real-time problem-solving and a calm, steady approach. Collaborating with them has been such a joy, they help bring a vision to life while connecting with other amazing creatives. On top of that, their network of top-notch creative companies spans multiple cities across the U.S., making them an invaluable partner for any project.";
 
+const watchersQuote =
+  "I loved working with them. We had such a great experience with Beebizy. They were on time and made everything super easy. I don't love planning parties and surprises and they literally did it all! And it was very reasonable!";
+
+const olympicClubExecution =
+  "The overall flow was great and communicated well. The character actor was timely and willing to work with our schedule of events.";
+
+const olympicClubExperience =
+  "Your team made everything feel seamless. One less thing I had to worry about in planning my event! There were no communication issues, very transparent, and payment was easily made available by check, which was very helpful.";
+
 function TestimonialSection() {
   return (
     <div className="relative overflow-hidden border-y border-amber-100 bg-[#fffaf0] px-6 py-16 text-gray-950 md:py-24">
@@ -17,38 +26,94 @@ function TestimonialSection() {
         “
       </span>
 
-      <figure className="container relative mx-auto grid max-w-6xl gap-12 rounded-[2.5rem] border border-amber-200 bg-white px-7 py-10 shadow-[0_24px_70px_rgba(120,78,0,0.10)] md:px-12 md:py-14 lg:grid-cols-[0.65fr_1.35fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-16 lg:gap-y-8 lg:px-16 lg:py-16">
-        <header className="lg:col-start-1 lg:row-start-1">
+      <div className="container relative mx-auto max-w-6xl">
+        <header className="mx-auto mb-12 max-w-3xl text-center">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">
-            Partner perspective
+            Partner perspectives
           </p>
           <h2
             id="testimonial-heading"
-            className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-gray-950 md:text-4xl"
+            className="mt-5 text-4xl font-extrabold leading-tight tracking-tight text-gray-950 md:text-5xl"
           >
             Big ideas, brought to life without the chaos.
           </h2>
         </header>
 
-        <blockquote className="border-l-4 border-primary pl-6 md:pl-10 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-gray-700 md:text-2xl md:leading-relaxed">
-            {testimonialQuote}
-          </p>
-        </blockquote>
+        <figure className="grid gap-10 rounded-[2.5rem] border border-amber-200 bg-white px-7 py-10 shadow-[0_24px_70px_rgba(120,78,0,0.10)] md:px-12 md:py-14 lg:grid-cols-[0.65fr_1.35fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-16 lg:gap-y-8 lg:px-16 lg:py-16">
+          <div className="lg:col-start-1 lg:row-start-1">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
+              Ayana Foundation
+            </p>
+            <p className="mt-3 text-2xl font-extrabold leading-tight text-gray-950">
+              SXSW community event
+            </p>
+          </div>
 
-        <figcaption className="flex items-center gap-4 border-t border-gray-200 pt-6 lg:col-start-1 lg:row-start-2">
-          <div
-            aria-hidden="true"
-            className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
-          >
-            JB
-          </div>
-          <div>
-            <cite className="font-bold not-italic text-gray-950">Jaclynn Brennan</cite>
-            <p className="mt-1 text-sm text-gray-500">Co-founder, Ayana Foundation</p>
-          </div>
-        </figcaption>
-      </figure>
+          <blockquote className="border-l-4 border-primary pl-6 md:pl-10 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-gray-700 md:text-2xl md:leading-relaxed">
+              {testimonialQuote}
+            </p>
+          </blockquote>
+
+          <figcaption className="flex items-center gap-4 border-t border-gray-200 pt-6 lg:col-start-1 lg:row-start-2">
+            <div
+              aria-hidden="true"
+              className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
+            >
+              JB
+            </div>
+            <div>
+              <cite className="font-bold not-italic text-gray-950">Jaclynn Brennan</cite>
+              <p className="mt-1 text-sm text-gray-500">Co-founder, Ayana Foundation</p>
+            </div>
+          </figcaption>
+        </figure>
+
+        <div className="mt-8 grid gap-8 lg:grid-cols-2">
+          <figure className="flex h-full flex-col rounded-[2rem] border border-amber-200 bg-white p-7 shadow-[0_16px_45px_rgba(120,78,0,0.08)] md:p-10">
+            <div className="mb-7">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
+                Featured event
+              </p>
+              <h3 className="mt-3 text-2xl font-extrabold leading-tight text-gray-950">
+                Ayana Rising: The Women Of The New Frontier - SXSW, Austin
+              </h3>
+            </div>
+            <blockquote className="flex-1 border-l-4 border-primary pl-6">
+              <p className="text-lg font-medium leading-relaxed text-gray-700">
+                {watchersQuote}
+              </p>
+            </blockquote>
+            <figcaption className="mt-8 border-t border-gray-200 pt-5">
+              <cite className="font-bold not-italic text-gray-950">@wearewatchers</cite>
+            </figcaption>
+          </figure>
+
+          <figure className="flex h-full flex-col rounded-[2rem] border border-amber-200 bg-white p-7 shadow-[0_16px_45px_rgba(120,78,0,0.08)] md:p-10">
+            <div className="mb-7">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
+                Client perspective
+              </p>
+              <h3 className="mt-3 text-2xl font-extrabold leading-tight text-gray-950">
+                A seamless event from start to finish
+              </h3>
+            </div>
+            <blockquote className="flex-1 space-y-6 border-l-4 border-primary pl-6 text-lg leading-relaxed text-gray-700">
+              <p>
+                <strong className="font-extrabold text-gray-950">Execution:</strong>{" "}
+                {olympicClubExecution}
+              </p>
+              <p>
+                <strong className="font-extrabold text-gray-950">The Beebizy experience:</strong>{" "}
+                {olympicClubExperience}
+              </p>
+            </blockquote>
+            <figcaption className="mt-8 border-t border-gray-200 pt-5">
+              <cite className="font-bold not-italic text-gray-950">Olympic Club</cite>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
     </div>
   );
 }
