@@ -109,7 +109,7 @@ function PricingSection() {
 
 type TestimonialIdentity = {
   name: string;
-  role: string;
+  role?: string;
   initials: string;
 };
 
@@ -118,6 +118,7 @@ type Testimonial = TestimonialIdentity &
     | {
         kind: "quote";
         quote: string;
+        event?: string;
       }
     | {
         kind: "video";
@@ -146,6 +147,14 @@ const testimonials: Testimonial[] = [
       src: "/nia-sanchez-testimonial.mp4",
       poster: "/nia-sanchez-testimonial-poster.jpg",
     },
+  },
+  {
+    kind: "quote",
+    event: "Watcher Live Viewing Party - Las Vegas",
+    quote:
+      "I loved working with them. We had such a great experience with Beebizy. They were on time and made everything super easy. I don’t love planning parties and surprises and they literally did it all! And it was very reasonable!",
+    name: "@wearewatchers",
+    initials: "WW",
   },
 ];
 
@@ -204,6 +213,16 @@ function TestimonialSection() {
                 </div>
               ) : (
                 <blockquote className="m-7 flex-1 border-l-4 border-primary pl-5 md:m-8">
+                  {testimonial.event ? (
+                    <div className="mb-6">
+                      <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-amber-700">
+                        Featured event
+                      </p>
+                      <h3 className="mt-2 text-xl font-extrabold leading-snug tracking-tight text-gray-950">
+                        {testimonial.event}
+                      </h3>
+                    </div>
+                  ) : null}
                   <p className="text-base font-medium leading-relaxed tracking-[-0.01em] text-gray-700 md:text-lg">
                     {testimonial.quote}
                   </p>
@@ -219,7 +238,7 @@ function TestimonialSection() {
                 </div>
                 <div>
                   <cite className="font-bold not-italic text-gray-950">{testimonial.name}</cite>
-                  <p className="mt-1 text-sm text-gray-500">{testimonial.role}</p>
+                  {testimonial.role ? <p className="mt-1 text-sm text-gray-500">{testimonial.role}</p> : null}
                 </div>
               </figcaption>
             </figure>

@@ -29,7 +29,7 @@ with sync_playwright() as playwright:
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
-    assert testimonial.locator("figure").count() == 2
+    assert testimonial.locator("figure").count() == 3
     nia_card = testimonial.locator("figure").filter(has_text="Nia Sanchez")
     nia_card_text = nia_card.inner_text()
     assert "Bravo" in nia_card_text
@@ -54,6 +54,12 @@ with sync_playwright() as playwright:
             return played;
         }"""
     )
+    watcher_card = testimonial.locator("figure").filter(has_text="@wearewatchers")
+    watcher_card_text = watcher_card.inner_text()
+    assert "Featured event" in watcher_card_text
+    assert "Watcher Live Viewing Party" in watcher_card_text
+    assert "Las Vegas" in watcher_card_text
+    assert "Ayana Rising" not in watcher_card_text
 
     mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
     mobile_page.goto(BASE_URL, wait_until="networkidle")
