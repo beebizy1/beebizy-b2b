@@ -20,12 +20,13 @@ with sync_playwright() as playwright:
     page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
 
     page.goto(BASE_URL, wait_until="networkidle")
-    pricing = page.locator("#pricing")
-    pricing.wait_for(state="visible")
-    assert "Start planning for free." in pricing.inner_text()
-    assert pricing.evaluate("node => node.nextElementSibling?.id") == "testimonial"
+    assert page.locator("#pricing").count() == 0
+    assert page.get_by_text("Start planning for free.", exact=True).count() == 0
+    assert page.get_by_text("Corp Packages", exact=True).count() == 0
     testimonial = page.locator("#testimonial")
     testimonial.wait_for(state="visible", timeout=5_000)
+    assert "Laila and the Beebizy team" in testimonial.inner_text()
+    assert "BeBeezy" not in testimonial.inner_text()
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
@@ -55,8 +56,8 @@ with sync_playwright() as playwright:
         assert page.evaluate("sessionStorage.getItem('beebizy:product-demo')") is None
         page.goto(BASE_URL, wait_until="networkidle")
 
-    # The Enterprise sales CTA is not a product launch and must keep its lead form.
-    page.get_by_role("link", name="Contact us", exact=True).click()
+    # The sales CTA remains available after the public pricing section is removed.
+    page.get_by_role("button", name="Talk to Sales", exact=True).first.click()
     page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
     assert page.url.rstrip("/") == BASE_URL.rstrip("/")
     page.get_by_role("button", name="Cancel", exact=True).click()
