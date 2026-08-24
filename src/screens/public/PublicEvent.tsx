@@ -31,9 +31,7 @@ function PublicFrame({ children }: { children: React.ReactNode }) {
       </header>
       <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
       <footer className="mx-auto max-w-3xl px-6 pb-10">
-        <p className="text-xs text-muted-foreground">
-          Event page powered by Beebizy. <Link href="/" className="underline hover:text-foreground">What's this?</Link>
-        </p>
+        <p className="text-xs text-muted-foreground">Event page powered by Beebizy.</p>
       </footer>
     </div>
   );

@@ -13,7 +13,7 @@ export default function SignupPage() {
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-6 py-12">
       <div className="flex w-full max-w-md flex-col items-center gap-8">
-        <Link href="/" aria-label="Beebizy home">
+        <Link href="/login" aria-label="Beebizy sign in">
           <BrandLogo size="lg" />
         </Link>
 
