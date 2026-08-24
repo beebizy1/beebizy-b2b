@@ -30,9 +30,12 @@ with sync_playwright() as playwright:
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
     assert testimonial.locator("figure").count() == 2
-    assert "Nia Sanchez" in testimonial.inner_text()
-    assert "Bravo’s hit TV show The Valley" in testimonial.inner_text()
-    nia_video = testimonial.get_by_label("Nia Sanchez video testimonial")
+    nia_card = testimonial.locator("figure").filter(has_text="Nia Sanchez")
+    nia_card_text = nia_card.inner_text()
+    assert "Bravo" in nia_card_text
+    assert "The Valley" in nia_card_text
+    assert "Used Beebizy" in nia_card_text
+    nia_video = nia_card.get_by_label("Nia Sanchez video testimonial")
     assert nia_video.get_attribute("poster") == "/nia-sanchez-testimonial-poster.jpg"
     assert nia_video.locator('source[type="video/mp4"]').get_attribute("src") == "/nia-sanchez-testimonial.mp4"
     assert nia_video.evaluate(

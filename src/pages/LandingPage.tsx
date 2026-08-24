@@ -140,7 +140,7 @@ const testimonials: Testimonial[] = [
   {
     kind: "video",
     name: "Nia Sanchez",
-    role: "Bravo’s hit TV show The Valley",
+    role: "Featured on Bravo’s hit TV show “The Valley” • Used Beebizy for the show",
     initials: "NS",
     video: {
       src: "/nia-sanchez-testimonial.mp4",
