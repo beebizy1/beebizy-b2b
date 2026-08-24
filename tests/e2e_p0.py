@@ -29,6 +29,28 @@ with sync_playwright() as playwright:
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
+    assert testimonial.locator("figure").count() == 2
+    assert "Nia Sanchez" in testimonial.inner_text()
+    assert "Bravo’s hit TV show The Valley" in testimonial.inner_text()
+    nia_video = testimonial.get_by_label("Nia Sanchez video testimonial")
+    assert nia_video.get_attribute("poster") == "/nia-sanchez-testimonial-poster.jpg"
+    assert nia_video.locator('source[type="video/mp4"]').get_attribute("src") == "/nia-sanchez-testimonial.mp4"
+    assert nia_video.evaluate(
+        """async video => {
+            if (video.readyState < 1) {
+                video.load();
+                await new Promise((resolve, reject) => {
+                    video.addEventListener('loadedmetadata', resolve, { once: true });
+                    video.addEventListener('error', () => reject(new Error('Video metadata failed to load')), { once: true });
+                });
+            }
+            video.muted = true;
+            await video.play();
+            const played = !video.paused && video.duration > 0;
+            video.pause();
+            return played;
+        }"""
+    )
 
     mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
     mobile_page.goto(BASE_URL, wait_until="networkidle")
@@ -37,6 +59,9 @@ with sync_playwright() as playwright:
     quote_box = mobile_testimonial.locator("blockquote").bounding_box()
     attribution_box = mobile_testimonial.get_by_text("Jaclynn Brennan", exact=True).bounding_box()
     assert quote_box and attribution_box and quote_box["y"] < attribution_box["y"]
+    mobile_video = mobile_testimonial.get_by_label("Nia Sanchez video testimonial")
+    assert mobile_video.is_visible()
+    assert mobile_video.evaluate("video => video.controls && video.playsInline")
     assert mobile_page.evaluate(
         "document.documentElement.scrollWidth === document.documentElement.clientWidth",
     )

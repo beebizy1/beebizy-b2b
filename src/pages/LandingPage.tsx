@@ -107,10 +107,56 @@ function PricingSection() {
   );
 }
 
-const testimonialQuote =
-  "I’ve had the pleasure of working with Laila and the BeBeezy team for the past two years at SXSW on the Ayana Foundation Tenpole community event. They’re incredible at sourcing vendors, bringing huge amounts of creativity, and making the production feel seamless with real-time problem-solving and a calm, steady approach. Collaborating with them has been such a joy, they help bring a vision to life while connecting with other amazing creatives. On top of that, their network of top-notch creative companies spans multiple cities across the U.S., making them an invaluable partner for any project.";
+type TestimonialIdentity = {
+  name: string;
+  role: string;
+  initials: string;
+};
+
+type Testimonial = TestimonialIdentity &
+  (
+    | {
+        kind: "quote";
+        quote: string;
+      }
+    | {
+        kind: "video";
+        video: {
+          src: string;
+          poster: string;
+        };
+      }
+  );
+
+const testimonials: Testimonial[] = [
+  {
+    kind: "quote",
+    quote:
+      "I’ve had the pleasure of working with Laila and the BeBeezy team for the past two years at SXSW on the Ayana Foundation Tenpole community event. They’re incredible at sourcing vendors, bringing huge amounts of creativity, and making the production feel seamless with real-time problem-solving and a calm, steady approach. Collaborating with them has been such a joy, they help bring a vision to life while connecting with other amazing creatives. On top of that, their network of top-notch creative companies spans multiple cities across the U.S., making them an invaluable partner for any project.",
+    name: "Jaclynn Brennan",
+    role: "Co-founder, Ayana Foundation",
+    initials: "JB",
+  },
+  {
+    kind: "video",
+    name: "Nia Sanchez",
+    role: "Bravo’s hit TV show The Valley",
+    initials: "NS",
+    video: {
+      src: "/nia-sanchez-testimonial.mp4",
+      poster: "/nia-sanchez-testimonial-poster.jpg",
+    },
+  },
+];
 
 function TestimonialSection() {
+  const testimonialGridClass =
+    testimonials.length >= 3
+      ? "lg:grid-cols-3"
+      : testimonials.length === 2
+        ? "lg:mx-auto lg:max-w-5xl lg:grid-cols-2"
+        : "lg:mx-auto lg:max-w-lg";
+
   return (
     <div className="relative overflow-hidden border-y border-amber-100 bg-[#fffaf0] px-6 py-16 text-gray-950 md:py-24">
       <span
@@ -120,10 +166,10 @@ function TestimonialSection() {
         “
       </span>
 
-      <figure className="container relative mx-auto grid max-w-6xl gap-12 rounded-[2.5rem] border border-amber-200 bg-white px-7 py-10 shadow-[0_24px_70px_rgba(120,78,0,0.10)] md:px-12 md:py-14 lg:grid-cols-[0.65fr_1.35fr] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-16 lg:gap-y-8 lg:px-16 lg:py-16">
-        <header className="lg:col-start-1 lg:row-start-1">
+      <div className="container relative mx-auto max-w-7xl">
+        <header className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-700">
-            Partner perspective
+            Partner perspectives
           </p>
           <h2
             id="testimonial-heading"
@@ -133,25 +179,53 @@ function TestimonialSection() {
           </h2>
         </header>
 
-        <blockquote className="border-l-4 border-primary pl-6 md:pl-10 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          <p className="text-xl font-medium leading-relaxed tracking-[-0.015em] text-gray-700 md:text-2xl md:leading-relaxed">
-            {testimonialQuote}
-          </p>
-        </blockquote>
+        <div className={`mt-10 grid items-stretch gap-6 md:mt-14 ${testimonialGridClass}`}>
+          {testimonials.map((testimonial) => (
+            <figure
+              className="flex h-full flex-col overflow-hidden rounded-[2rem] border border-amber-200 bg-white shadow-[0_20px_55px_rgba(120,78,0,0.10)]"
+              key={testimonial.name}
+            >
+              {testimonial.kind === "video" ? (
+                <div className="relative flex flex-1 items-center justify-center bg-gray-950">
+                  <span className="absolute left-4 top-4 z-10 rounded-full bg-primary px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-gray-950 shadow-sm">
+                    Video testimonial
+                  </span>
+                  <video
+                    aria-label={`${testimonial.name} video testimonial`}
+                    className="aspect-[9/16] max-h-[42rem] w-full bg-gray-950 object-contain"
+                    controls
+                    playsInline
+                    poster={testimonial.video.poster}
+                    preload="metadata"
+                  >
+                    <source src={testimonial.video.src} type="video/mp4" />
+                    Your browser does not support embedded video.
+                  </video>
+                </div>
+              ) : (
+                <blockquote className="m-7 flex-1 border-l-4 border-primary pl-5 md:m-8">
+                  <p className="text-base font-medium leading-relaxed tracking-[-0.01em] text-gray-700 md:text-lg">
+                    {testimonial.quote}
+                  </p>
+                </blockquote>
+              )}
 
-        <figcaption className="flex items-center gap-4 border-t border-gray-200 pt-6 lg:col-start-1 lg:row-start-2">
-          <div
-            aria-hidden="true"
-            className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
-          >
-            JB
-          </div>
-          <div>
-            <cite className="font-bold not-italic text-gray-950">Jaclynn Brennan</cite>
-            <p className="mt-1 text-sm text-gray-500">Co-founder, Ayana Foundation</p>
-          </div>
-        </figcaption>
-      </figure>
+              <figcaption className="mt-auto flex items-center gap-4 border-t border-gray-200 px-7 py-6 md:px-8">
+                <div
+                  aria-hidden="true"
+                  className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-gray-950"
+                >
+                  {testimonial.initials}
+                </div>
+                <div>
+                  <cite className="font-bold not-italic text-gray-950">{testimonial.name}</cite>
+                  <p className="mt-1 text-sm text-gray-500">{testimonial.role}</p>
+                </div>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
