@@ -48,17 +48,48 @@ describe("public lead endpoint", () => {
 
   it("accepts human submissions and silently drops honeypots", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("MAIL_TO", "hello@beebizy.com");
+    vi.stubEnv("RESEND_API_KEY", "resend-test-key");
+    const sendEmail = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{"id":"email-1"}', { status: 200 }));
     const human = await handleRequest(
       leadRequest("POST", { name: "Ada", email: "ada@example.com", company: "Example", volume: "6-20" }),
     );
     expect(human.status).toBe(200);
     expect(log).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(JSON.parse(String((sendEmail.mock.calls[0]?.[1] as RequestInit | undefined)?.body))).toMatchObject({
+      to: ["hello@beebizy.com"],
+      reply_to: "ada@example.com",
+      subject: "New demo request - Example",
+    });
 
     const bot = await handleRequest(
       leadRequest("POST", { name: "Bot", email: "bot@example.com", company: "Spam", website: "filled" }),
     );
     expect(bot.status).toBe(200);
     expect(log).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledOnce();
+    vi.unstubAllEnvs();
+    sendEmail.mockRestore();
+    log.mockRestore();
+  });
+
+  it("does not report success when email delivery fails", async () => {
+    vi.stubEnv("MAIL_TO", "hello@beebizy.com");
+    vi.stubEnv("RESEND_API_KEY", "resend-test-key");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sendEmail = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("provider failure", { status: 500 }));
+
+    const response = await handleRequest(
+      leadRequest("POST", { name: "Ada", email: "ada@example.com", company: "Example" }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(error).toHaveBeenCalledWith("LEAD_EMAIL_FAILED", 500, "provider failure");
+    vi.unstubAllEnvs();
+    sendEmail.mockRestore();
+    error.mockRestore();
     log.mockRestore();
   });
 });

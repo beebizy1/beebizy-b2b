@@ -111,21 +111,23 @@ with sync_playwright() as playwright:
 
     wait_for_exact_text(
         page,
-        "Enterprise, lean, or mission-driven. Sign in to launch the working demo. No credit card.",
+        "Enterprise, lean, or mission-driven. Request a personalized demo. No credit card.",
     )
 
-    # Every landing-page demo CTA must enter through authentication.
-    for cta in ("Try the Demo", "Launch Demo", "Launch the Demo"):
-        page.get_by_role("button", name=cta, exact=True).click()
-        page.wait_for_url("**/login", timeout=5_000)
-        wait_for_exact_text(page, "Sign in to Beebizy")
-        assert page.evaluate("sessionStorage.getItem('beebizy:product-demo')") is None
-        page.goto(BASE_URL, wait_until="networkidle")
+    # Every CTA area has one Launch Demo action, and every demo action opens the lead form.
+    assert page.get_by_role("button", name="Talk to Sales", exact=True).count() == 0
+    assert page.locator("header").get_by_role("button", name="Launch Demo", exact=True).count() == 1
+    assert page.locator("main > section").first.get_by_role("button", name="Launch Demo", exact=True).count() == 1
+    launch_buttons = page.get_by_role("button", name="Launch Demo", exact=True)
+    assert launch_buttons.count() >= 3
+    for index in range(launch_buttons.count()):
+        launch_buttons.nth(index).click()
+        page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
+        assert page.url.rstrip("/") == BASE_URL.rstrip("/")
+        page.get_by_role("button", name="Cancel", exact=True).click()
 
-    # The sales CTA is not a product launch and must keep its lead form.
-    page.locator("header").get_by_role("button", name="Talk to Sales", exact=True).click()
+    page.get_by_role("link", name="See it in action").first.click()
     page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
-    assert page.url.rstrip("/") == BASE_URL.rstrip("/")
     page.get_by_role("button", name="Cancel", exact=True).click()
 
     # Keep the seeded product available to regression tests without exposing an

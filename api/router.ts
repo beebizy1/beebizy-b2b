@@ -124,26 +124,32 @@ async function handleLead(request: Request): Promise<Response> {
   const record = { at: new Date().toISOString(), ...lead, userAgent: request.headers.get("user-agent") };
   console.log(`LEAD ${JSON.stringify(record)}`);
 
-  if (process.env.MAIL_TO && process.env.RESEND_API_KEY) {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        from: process.env.MAIL_FROM ?? "Beebizy <onboarding@resend.dev>",
-        to: [process.env.MAIL_TO],
-        reply_to: lead.email,
-        subject: `New enquiry - ${lead.company}`,
-        text: [
-          `Name: ${lead.name}`,
-          `Email: ${lead.email}`,
-          `Company: ${lead.company}`,
-          `Phone: ${lead.phone ?? "-"}`,
-          `Events: ${lead.volume ?? "-"} per year`,
-          `Received: ${record.at}`,
-        ].join("\n"),
-      }),
-    });
-    if (!response.ok) console.error("LEAD_EMAIL_FAILED", response.status, await response.text());
+  if (!process.env.MAIL_TO || !process.env.RESEND_API_KEY) {
+    console.error("LEAD_EMAIL_NOT_CONFIGURED");
+    return json({ error: "Demo requests are temporarily unavailable. Please try again shortly." }, 503);
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      from: process.env.MAIL_FROM ?? "Beebizy <onboarding@resend.dev>",
+      to: [process.env.MAIL_TO],
+      reply_to: lead.email,
+      subject: `New demo request - ${lead.company}`,
+      text: [
+        `Name: ${lead.name}`,
+        `Email: ${lead.email}`,
+        `Company: ${lead.company}`,
+        `Phone: ${lead.phone ?? "-"}`,
+        `Events: ${lead.volume ?? "-"} per year`,
+        `Received: ${record.at}`,
+      ].join("\n"),
+    }),
+  });
+  if (!response.ok) {
+    console.error("LEAD_EMAIL_FAILED", response.status, await response.text());
+    return json({ error: "We couldn’t send your demo request. Please try again." }, 502);
   }
 
   return json({ ok: true });
