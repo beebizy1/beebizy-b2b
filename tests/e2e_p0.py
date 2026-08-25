@@ -27,10 +27,9 @@ with sync_playwright() as playwright:
     assert desktop_navigation.get_by_role("link").all_inner_texts() == ["Who It’s For", "Features", "About Us"]
     page.get_by_role("button", name="Close menu").click()
     assert not desktop_navigation.is_visible()
-    pricing = page.locator("#pricing")
-    pricing.wait_for(state="visible")
-    assert "Start planning for free." in pricing.inner_text()
-    assert pricing.evaluate("node => node.nextElementSibling?.id") == "testimonial"
+    assert page.locator("#pricing").count() == 0
+    assert "Start planning for free." not in page.locator("main").inner_text()
+    assert "Corp Packages" not in page.locator("main").inner_text()
     testimonial = page.locator("#testimonial")
     testimonial.wait_for(state="visible", timeout=5_000)
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
@@ -119,8 +118,8 @@ with sync_playwright() as playwright:
         assert page.evaluate("sessionStorage.getItem('beebizy:product-demo')") is None
         page.goto(BASE_URL, wait_until="networkidle")
 
-    # The Enterprise sales CTA is not a product launch and must keep its lead form.
-    page.get_by_role("link", name="Contact us", exact=True).click()
+    # The sales CTA is not a product launch and must keep its lead form.
+    page.locator("header").get_by_role("button", name="Talk to Sales", exact=True).click()
     page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
     assert page.url.rstrip("/") == BASE_URL.rstrip("/")
     page.get_by_role("button", name="Cancel", exact=True).click()
