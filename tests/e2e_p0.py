@@ -114,14 +114,14 @@ with sync_playwright() as playwright:
         "Enterprise, lean, or mission-driven. Request a personalized demo. No credit card.",
     )
 
-    # Every CTA area has one Launch Demo action, and every demo action opens the lead form.
+    # Every CTA area has one Book a Free Demo action, and every demo action opens the lead form.
     assert page.get_by_role("button", name="Talk to Sales", exact=True).count() == 0
-    assert page.locator("header").get_by_role("button", name="Launch Demo", exact=True).count() == 1
-    assert page.locator("main > section").first.get_by_role("button", name="Launch Demo", exact=True).count() == 1
-    launch_buttons = page.get_by_role("button", name="Launch Demo", exact=True)
-    assert launch_buttons.count() >= 3
-    for index in range(launch_buttons.count()):
-        launch_buttons.nth(index).click()
+    assert page.locator("header").get_by_role("button", name="Book a Free Demo", exact=True).count() == 1
+    assert page.locator("main > section").first.get_by_role("button", name="Book a Free Demo", exact=True).count() == 1
+    demo_buttons = page.get_by_role("button", name="Book a Free Demo", exact=True)
+    assert demo_buttons.count() >= 3
+    for index in range(demo_buttons.count()):
+        demo_buttons.nth(index).click()
         page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
         assert page.url.rstrip("/") == BASE_URL.rstrip("/")
         page.get_by_role("button", name="Cancel", exact=True).click()

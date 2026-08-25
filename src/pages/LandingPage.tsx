@@ -238,7 +238,7 @@ export function LandingPage() {
       const labelNode = Array.from(control.childNodes).find(
         (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
       );
-      if (labelNode) labelNode.textContent = "Launch Demo";
+      if (labelNode) labelNode.textContent = "Book a Free Demo";
     });
 
     controls
@@ -249,6 +249,18 @@ export function LandingPage() {
         ),
       )
       .forEach((control) => control.remove());
+
+    const openDemoForm = (event: MouseEvent) => {
+      const trigger = (event.target as HTMLElement | null)?.closest("a, button");
+      if (trigger?.textContent?.trim().toLowerCase() !== "book a free demo") return;
+
+      event.preventDefault();
+      const salesDialog = document.getElementById("sales-dialog");
+      salesDialog?.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+      salesDialog?.querySelector<HTMLInputElement>('input[name="name"]')?.focus();
+    };
+    document.addEventListener("click", openDemoForm);
 
     const formIntro = Array.from(document.querySelectorAll<HTMLParagraphElement>("#sales-step-form p")).find((paragraph) =>
       paragraph.textContent?.includes("working demo link"),
@@ -266,7 +278,7 @@ export function LandingPage() {
       if (new URLSearchParams(window.location.search).get("sales") !== "1") return;
 
       const demoTrigger = Array.from(document.querySelectorAll<HTMLElement>("a, button")).find((element) =>
-        element.textContent?.trim().toLowerCase() === "launch demo",
+        element.textContent?.trim().toLowerCase() === "book a free demo",
       );
       demoTrigger?.click();
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
@@ -315,6 +327,7 @@ export function LandingPage() {
     });
 
     return () => {
+      document.removeEventListener("click", openDemoForm);
       headerTextLinks.forEach((link) => link.style.removeProperty("display"));
       headerMenuRoot?.unmount();
       headerMenuHost.remove();
