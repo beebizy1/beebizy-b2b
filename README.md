@@ -4,6 +4,9 @@ Event operations for teams that run events but aren't event companies — corpor
 lean startups, nonprofits. Plan the event, staff it with vendors, sell tickets and
 fundraise, then report on what it cost and what came back.
 
+The completed P0 and V1 Core scope, verification evidence, and rollout dependencies are
+recorded in [`docs/P0-V1-COMPLETION.md`](docs/P0-V1-COMPLETION.md).
+
 ## Run it
 
 ```bash
@@ -11,12 +14,10 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-No credentials are needed for the public product demo. A demo CTA starts an isolated,
-session-scoped in-memory workspace seeded with a realistic portfolio — an event six days
-out with unconfirmed catering, a gala with live fundraising, two completed events, and a
-cancelled roadshow. Every screen and write works, a banner says the data is temporary,
-and **Exit demo** clears the demo session before opening sign-in. The demo never reads or
-writes a signed-in workspace.
+Local development without Clerk needs no credentials. In that environment the product
+uses an isolated, session-scoped in-memory workspace seeded with a realistic portfolio.
+Every screen and write works, a banner says the data is temporary, and the demo never
+reads or writes a signed-in workspace.
 
 **Sign-in is Clerk**, provisioned through the Vercel Marketplace:
 
@@ -26,11 +27,12 @@ vercel env pull --yes           # and into .env.local for local dev
 ```
 
 With a Clerk publishable key present, normal `/app` visits require a session and `/login`
-renders Clerk's own widget (Google, email, MFA, password reset). The landing-page demo
-CTA deliberately opens the isolated demo workspace described above. Without Clerk, the
-whole app falls back to that demo session so local development remains credential-free.
+renders Clerk's own widget (Google, email, MFA, password reset). Landing-page product
+CTAs enter through that sign-in route. Without Clerk, the whole app falls back to the
+demo session described above so local development remains credential-free.
 
-Persistence is the separate half and is **not** wired yet — see *Firebase* below.
+Authenticated workspaces use the HTTP adapter backed by PostgreSQL. Demo sessions use a
+separate in-memory adapter and never read or write production data.
 
 ```bash
 npm run verify       # typecheck + lint + test + build, the same as CI
@@ -56,7 +58,7 @@ src/
   components/
     primitives.tsx shared vocabulary: PageHeader, StatTile, Meter, Pill, EmptyState…
     ui/            shadcn primitives
-  pages/         marketing pages, plus Clerk's sign-in and sign-up
+  pages/         marketing pages, plus Clerk sign-in and access-denied routes
 ```
 
 **Screens never import a backend.** They call `useData()` and get whatever adapter the
@@ -109,24 +111,16 @@ Budgets, vendor fees, the guest list, attendee contacts, sponsorship amounts and
 auction bids are never on a public page. The Share section states this before you send
 the link.
 
-## Firebase
+## Persistence
 
-Firebase is now **database only** — Clerk replaced Firebase Auth, so `src/lib/firebase.ts`
-exists for a future Firestore adapter and nothing else. `firestore.rules` and
-`storage.rules` are deployed with the Firebase CLI. Three things to know before running
-against a real project:
+Approved signed-in users use `src/data/http/adapter.ts`, the Vercel API router, and
+PostgreSQL repositories under `src/server/`. An approved first-time user receives a
+personal workspace, and every request is scoped to that workspace. Event planning
+decisions are also written to the append-only `event_history` table as structured
+before-and-after snapshots.
 
-- **The Firestore adapter is not written.** Setting the env vars does not switch the app
-  off demo data by itself; `DataProvider` still resolves to the in-memory adapter.
-
-- **`firestore.indexes.json` is empty.** Composite indexes need to be added for the
-  filtered-and-ordered queries a Firestore adapter will issue, or those reads fail at
-  runtime with `failed-precondition`.
-- **Share tokens are not verified by the rules.** `allow read: if
-  resource.data.shareToken != null` lets anyone read *any* share-enabled event, so the
-  token gates nothing. Fixing it properly means mirroring public event data into a
-  `publicEvents/{shareToken}` document and reading that instead — a schema change, not a
-  rules tweak.
+The in-memory adapter remains the intentional public demo backend. Its writes are
+session-scoped and are never mixed with authenticated workspaces.
 
 ## Conventions
 

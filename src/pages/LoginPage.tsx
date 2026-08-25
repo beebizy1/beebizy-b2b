@@ -25,7 +25,8 @@ export default function LoginPage() {
         {isClerkConfigured ? (
           <SignIn
             appearance={clerkAppearance}
-            signUpUrl="/signup"
+            withSignUp={false}
+            transferable={false}
             forceRedirectUrl="/app"
             fallbackRedirectUrl="/app"
           />
@@ -42,6 +43,13 @@ export default function LoginPage() {
           </div>
         )}
 
+        <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
+          Beebizy Studio is a private workspace for approved internal operators. Need access for your team?{" "}
+          <Link href="/?sales=1" className="font-semibold text-foreground underline underline-offset-4">
+            Talk to sales
+          </Link>
+          .
+        </p>
       </div>
     </div>
   );

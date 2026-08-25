@@ -2,9 +2,9 @@
  * Routes and providers.
  *
  * Three route families:
- *   public marketing  — `/`
- *   public guest      — `/e/:token`, `/e/:token/tickets`, and Clerk's sign-in / sign-up
- *   the product       — `/app/*`, behind `RequireSession` and inside `AppShell`
+ *   public marketing  - `/`
+ *   public guest      - `/e/:token`, `/e/:token/tickets`, and Clerk sign-in
+ *   the product       - `/app/*`, behind `RequireSession` and inside `AppShell`
  *
  * The old build put the product under `/dashboard` with thirty flat routes and no
  * guard, so `/dashboard/settings` rendered a frame of the app before bouncing to login.
@@ -25,7 +25,7 @@ import { AppShell } from "@/app/shell/AppShell";
 import LandingPage from "@/pages/LandingPage";
 import AboutPage from "@/pages/AboutPage";
 import LoginPage from "@/pages/LoginPage";
-import SignupPage from "@/pages/SignupPage";
+import AccessDeniedPage from "@/pages/AccessDeniedPage";
 import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
@@ -98,8 +98,9 @@ function Routes() {
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
-      <Route path="/signup" component={SignupPage} />
-      <Route path="/signup/*" component={SignupPage} />
+      <Route path="/access-denied" component={AccessDeniedPage} />
+      <Route path="/signup">{() => <Redirect to="/access-denied" replace />}</Route>
+      <Route path="/signup/*">{() => <Redirect to="/access-denied" replace />}</Route>
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>

@@ -22,7 +22,7 @@ export function ClerkGate({ children }: { children: ReactNode }) {
       localization={clerkLocalization}
       // Wouter owns the URL; these keep Clerk's own redirects inside the app.
       signInUrl="/login"
-      signUpUrl="/signup"
+      signUpUrl="/access-denied"
       afterSignOutUrl="/"
     >
       {children}

@@ -249,6 +249,16 @@ export function LandingPage() {
     script.type = "module";
     script.src = "/original-home.js";
     script.dataset.beebizyLanding = "true";
+    const openRequestedSalesDialog = () => {
+      if (new URLSearchParams(window.location.search).get("sales") !== "1") return;
+
+      const salesTrigger = Array.from(document.querySelectorAll<HTMLElement>("a, button")).find((element) =>
+        element.textContent?.trim().toLowerCase().startsWith("talk to sales"),
+      );
+      salesTrigger?.click();
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
+    };
+    script.addEventListener("load", openRequestedSalesDialog);
     document.body.appendChild(script);
 
     const headerNavigation = document.querySelector("header nav");
@@ -299,6 +309,7 @@ export function LandingPage() {
       testimonialRoot.unmount();
       testimonialHost.remove();
       styles.forEach((style) => style.remove());
+      script.removeEventListener("load", openRequestedSalesDialog);
       script.remove();
       document.body.style.overflow = "";
     };

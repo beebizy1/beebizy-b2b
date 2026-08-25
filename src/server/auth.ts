@@ -12,8 +12,9 @@
  * attacker can change.
  */
 
-import { verifyToken } from "@clerk/backend";
+import { createClerkClient, verifyToken } from "@clerk/backend";
 import { and, eq } from "drizzle-orm";
+import { hasInternalAccess } from "../lib/internalAccess.ts";
 import { db } from "./db.ts";
 import { workspaceMembers, workspaces } from "./schema.ts";
 
@@ -36,23 +37,42 @@ export class HttpError extends Error {
 }
 
 const secretKey = process.env.CLERK_SECRET_KEY;
+const clerk = secretKey ? createClerkClient({ secretKey }) : null;
 
-/** Verifies the bearer token and returns the Clerk user id. */
-async function requireUserId(request: Request): Promise<string> {
-  if (!secretKey) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
+/** Verifies the bearer token and confirms the user is one of the approved operators. */
+async function requireInternalUserId(request: Request): Promise<string> {
+  if (!secretKey || !clerk) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
 
   const header = request.headers.get("authorization") ?? "";
   const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
   if (!token) throw new HttpError(401, "Missing bearer token.");
 
+  let userId: string;
   try {
     const claims = await verifyToken(token, { secretKey });
     if (!claims.sub) throw new HttpError(401, "Token has no subject.");
-    return claims.sub;
+    userId = claims.sub;
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(401, "Session token is invalid or expired.");
   }
+
+  let primaryEmail: string | null = null;
+  try {
+    const user = await clerk.users.getUser(userId);
+    primaryEmail =
+      user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId)?.emailAddress ?? null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("Clerk user lookup failed while verifying internal access.", error);
+    throw new HttpError(503, `Unable to verify internal access: ${detail}`);
+  }
+
+  if (!hasInternalAccess(primaryEmail)) {
+    throw new HttpError(403, "This account does not have access to Beebizy Studio.");
+  }
+
+  return userId;
 }
 
 function newId(prefix: string): string {
@@ -62,9 +82,9 @@ function newId(prefix: string): string {
 /**
  * The workspace a request acts on.
  *
- * A first-time user gets one created with them as owner, so signing up leads straight to
- * a usable account instead of an empty-state dead end. When Clerk organizations are in
- * play the org id claims the workspace, which is what lets a team share one.
+ * An approved user's first request creates a workspace when one does not exist. When
+ * Clerk organizations are in play the org id claims the workspace, which lets a team
+ * share one.
  */
 async function resolveWorkspace(userId: string, clerkOrgId: string | null): Promise<{ workspaceId: string; role: Role }> {
   if (clerkOrgId) {
@@ -98,7 +118,7 @@ async function resolveWorkspace(userId: string, clerkOrgId: string | null): Prom
 }
 
 export async function authorize(request: Request): Promise<RequestContext> {
-  const userId = await requireUserId(request);
+  const userId = await requireInternalUserId(request);
   const orgHeader = request.headers.get("x-clerk-org-id");
   const { workspaceId, role } = await resolveWorkspace(userId, orgHeader && orgHeader !== "null" ? orgHeader : null);
   return { userId, workspaceId, role };
