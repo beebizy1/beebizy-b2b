@@ -57,7 +57,7 @@ with sync_playwright() as playwright:
     )
     watcher_card = testimonial.locator("figure").filter(has_text="@wearewatchers")
     watcher_card_text = watcher_card.inner_text()
-    assert "Featured event" in watcher_card_text
+    assert "featured event" in watcher_card_text.casefold()
     assert "Watcher Live Viewing Party" in watcher_card_text
     assert "Las Vegas" in watcher_card_text
     assert "Ayana Rising" not in watcher_card_text
@@ -77,8 +77,9 @@ with sync_playwright() as playwright:
     assert mobile_page.url.endswith("#who")
     mobile_testimonial = mobile_page.locator("#testimonial")
     mobile_testimonial.wait_for(state="visible", timeout=5_000)
-    quote_box = mobile_testimonial.locator("blockquote").bounding_box()
-    attribution_box = mobile_testimonial.get_by_text("Jaclynn Brennan", exact=True).bounding_box()
+    mobile_jaclynn_card = mobile_testimonial.locator("figure").filter(has_text="Jaclynn Brennan")
+    quote_box = mobile_jaclynn_card.locator("blockquote").bounding_box()
+    attribution_box = mobile_jaclynn_card.get_by_text("Jaclynn Brennan", exact=True).bounding_box()
     assert quote_box and attribution_box and quote_box["y"] < attribution_box["y"]
     mobile_video = mobile_testimonial.get_by_label("Nia Sanchez video testimonial")
     assert mobile_video.is_visible()
