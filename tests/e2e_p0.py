@@ -70,6 +70,12 @@ with sync_playwright() as playwright:
     mobile_navigation = mobile_page.get_by_role("navigation", name="Mobile navigation")
     assert mobile_navigation.is_visible()
     assert mobile_navigation.get_by_role("link", name="About Us").get_attribute("href") == "/about"
+    features_link = mobile_navigation.get_by_role("link", name="Features")
+    assert features_link.get_attribute("href") == "#features"
+    features_link.click()
+    assert not mobile_navigation.is_visible()
+    assert mobile_page.url.endswith("#features")
+    menu_button.click()
     who_link = mobile_navigation.get_by_role("link", name="Who It’s For")
     assert who_link.get_attribute("href") == "#who"
     who_link.click()

@@ -147,18 +147,25 @@ function MobileMenu() {
           className="absolute right-0 top-[calc(100%+0.75rem)] z-[60] w-56 rounded-2xl border border-amber-200 bg-white p-2 shadow-[0_18px_50px_rgba(31,24,10,0.18)]"
         >
           <a
-            href="/about"
-            className="block rounded-xl px-4 py-3 text-sm font-bold text-gray-900 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-            onClick={() => setIsOpen(false)}
-          >
-            About Us
-          </a>
-          <a
             href="#who"
             className="block rounded-xl px-4 py-3 text-sm font-bold text-gray-900 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             onClick={() => setIsOpen(false)}
           >
             Who It’s For
+          </a>
+          <a
+            href="#features"
+            className="block rounded-xl px-4 py-3 text-sm font-bold text-gray-900 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            onClick={() => setIsOpen(false)}
+          >
+            Features
+          </a>
+          <a
+            href="/about"
+            className="block rounded-xl px-4 py-3 text-sm font-bold text-gray-900 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            onClick={() => setIsOpen(false)}
+          >
+            About Us
           </a>
         </nav>
       ) : null}
