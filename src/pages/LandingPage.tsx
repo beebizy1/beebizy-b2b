@@ -97,7 +97,7 @@ const testimonials: Testimonial[] = [
   {
     kind: "quote",
     quote:
-      "I’ve had the pleasure of working with Laila and the BeBeezy team for the past two years at SXSW on the Ayana Foundation Tenpole community event. They’re incredible at sourcing vendors, bringing huge amounts of creativity, and making the production feel seamless with real-time problem-solving and a calm, steady approach. Collaborating with them has been such a joy, they help bring a vision to life while connecting with other amazing creatives. On top of that, their network of top-notch creative companies spans multiple cities across the U.S., making them an invaluable partner for any project.",
+      "I’ve had the pleasure of working with Laila and the Beebizy team for the past two years at SXSW on the Ayana Foundation Tenpole community event. They’re incredible at sourcing vendors, bringing huge amounts of creativity, and making the production feel seamless with real-time problem-solving and a calm, steady approach. Collaborating with them has been such a joy, they help bring a vision to life while connecting with other amazing creatives. On top of that, their network of top-notch creative companies spans multiple cities across the U.S., making them an invaluable partner for any project.",
     name: "Jaclynn Brennan",
     role: "Co-founder, Ayana Foundation",
     initials: "JB",

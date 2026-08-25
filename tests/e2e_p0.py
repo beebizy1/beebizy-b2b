@@ -32,6 +32,8 @@ with sync_playwright() as playwright:
     assert "Corp Packages" not in page.locator("main").inner_text()
     testimonial = page.locator("#testimonial")
     testimonial.wait_for(state="visible", timeout=5_000)
+    assert "Beebizy team" in testimonial.inner_text()
+    assert "BeBeezy" not in testimonial.inner_text()
     assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
     assert "Jaclynn Brennan" in testimonial.inner_text()
     assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
