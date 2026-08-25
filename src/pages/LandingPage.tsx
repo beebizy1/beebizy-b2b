@@ -270,7 +270,7 @@ export function LandingPage() {
     });
     const headerMenuHost = document.createElement("div");
     headerMenuHost.dataset.beebizyHeaderMenu = "true";
-    headerNavigation?.prepend(headerMenuHost);
+    headerNavigation?.append(headerMenuHost);
     const headerMenuRoot = headerNavigation ? createRoot(headerMenuHost) : null;
     headerMenuRoot?.render(<HeaderMenu />);
 

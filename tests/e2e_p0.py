@@ -22,6 +22,7 @@ with sync_playwright() as playwright:
     page.goto(BASE_URL, wait_until="networkidle")
     desktop_menu_button = page.get_by_role("button", name="Open menu")
     assert desktop_menu_button.is_visible()
+    assert page.locator("header nav > *").last.get_by_role("button", name="Open menu").is_visible()
     desktop_menu_button.click()
     desktop_navigation = page.get_by_role("navigation", name="Header navigation")
     assert desktop_navigation.get_by_role("link").all_inner_texts() == ["Who It’s For", "Features", "About Us"]
