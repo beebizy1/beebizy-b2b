@@ -23,6 +23,7 @@ import { RequireSession, SessionProvider } from "@/app/session";
 import { AppShell } from "@/app/shell/AppShell";
 
 import LandingPage from "@/pages/LandingPage";
+import AboutPage from "@/pages/AboutPage";
 import LoginPage from "@/pages/LoginPage";
 import SignupPage from "@/pages/SignupPage";
 import NotFound from "@/pages/not-found";
@@ -94,7 +95,7 @@ function Routes() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
-      <Route path="/about">{() => <Redirect to="/#about" replace />}</Route>
+      <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
       <Route path="/signup" component={SignupPage} />

@@ -20,6 +20,7 @@ with sync_playwright() as playwright:
     page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
 
     page.goto(BASE_URL, wait_until="networkidle")
+    assert page.locator("header").get_by_role("link", name="About Us").get_attribute("href") == "/about"
     pricing = page.locator("#pricing")
     pricing.wait_for(state="visible")
     assert "Start planning for free." in pricing.inner_text()
@@ -63,6 +64,17 @@ with sync_playwright() as playwright:
 
     mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
     mobile_page.goto(BASE_URL, wait_until="networkidle")
+    menu_button = mobile_page.get_by_role("button", name="Open menu")
+    assert menu_button.is_visible()
+    menu_button.click()
+    mobile_navigation = mobile_page.get_by_role("navigation", name="Mobile navigation")
+    assert mobile_navigation.is_visible()
+    assert mobile_navigation.get_by_role("link", name="About Us").get_attribute("href") == "/about"
+    who_link = mobile_navigation.get_by_role("link", name="Who It’s For")
+    assert who_link.get_attribute("href") == "#who"
+    who_link.click()
+    assert not mobile_navigation.is_visible()
+    assert mobile_page.url.endswith("#who")
     mobile_testimonial = mobile_page.locator("#testimonial")
     mobile_testimonial.wait_for(state="visible", timeout=5_000)
     quote_box = mobile_testimonial.locator("blockquote").bounding_box()
@@ -74,6 +86,11 @@ with sync_playwright() as playwright:
     assert mobile_page.evaluate(
         "document.documentElement.scrollWidth === document.documentElement.clientWidth",
     )
+    mobile_page.get_by_role("button", name="Open menu").click()
+    mobile_page.get_by_role("navigation", name="Mobile navigation").get_by_role("link", name="About Us").click()
+    mobile_page.wait_for_url("**/about", timeout=5_000)
+    mobile_page.get_by_role("heading", name=re.compile("Built by an event planner")).wait_for(state="visible")
+    assert "500 events" in mobile_page.locator("main").inner_text()
     mobile_page.close()
 
     wait_for_exact_text(
