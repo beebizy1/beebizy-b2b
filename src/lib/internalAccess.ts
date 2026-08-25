@@ -1,5 +1,9 @@
 /** The only email addresses permitted to use the private Beebizy Studio workspace. */
-export const INTERNAL_ACCESS_EMAILS = ["laila@beebizy.com", "mary@beebizy.com"] as const;
+export const INTERNAL_ACCESS_EMAILS = [
+  "laila@beebizy.com",
+  "mary@beebizy.com",
+  "tarang@beebizy.com",
+] as const;
 
 const internalAccessEmailSet = new Set<string>(INTERNAL_ACCESS_EMAILS);
 
