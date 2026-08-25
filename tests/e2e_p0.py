@@ -20,7 +20,13 @@ with sync_playwright() as playwright:
     page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
 
     page.goto(BASE_URL, wait_until="networkidle")
-    assert page.locator("header").get_by_role("link", name="About Us").get_attribute("href") == "/about"
+    desktop_menu_button = page.get_by_role("button", name="Open menu")
+    assert desktop_menu_button.is_visible()
+    desktop_menu_button.click()
+    desktop_navigation = page.get_by_role("navigation", name="Header navigation")
+    assert desktop_navigation.get_by_role("link").all_inner_texts() == ["Who It’s For", "Features", "About Us"]
+    page.get_by_role("button", name="Close menu").click()
+    assert not desktop_navigation.is_visible()
     pricing = page.locator("#pricing")
     pricing.wait_for(state="visible")
     assert "Start planning for free." in pricing.inner_text()
@@ -67,7 +73,7 @@ with sync_playwright() as playwright:
     menu_button = mobile_page.get_by_role("button", name="Open menu")
     assert menu_button.is_visible()
     menu_button.click()
-    mobile_navigation = mobile_page.get_by_role("navigation", name="Mobile navigation")
+    mobile_navigation = mobile_page.get_by_role("navigation", name="Header navigation")
     assert mobile_navigation.is_visible()
     assert mobile_navigation.get_by_role("link", name="About Us").get_attribute("href") == "/about"
     features_link = mobile_navigation.get_by_role("link", name="Features")
@@ -94,7 +100,7 @@ with sync_playwright() as playwright:
         "document.documentElement.scrollWidth === document.documentElement.clientWidth",
     )
     mobile_page.get_by_role("button", name="Open menu").click()
-    mobile_page.get_by_role("navigation", name="Mobile navigation").get_by_role("link", name="About Us").click()
+    mobile_page.get_by_role("navigation", name="Header navigation").get_by_role("link", name="About Us").click()
     mobile_page.wait_for_url("**/about", timeout=5_000)
     mobile_page.get_by_role("heading", name=re.compile("Built by an event planner")).wait_for(state="visible")
     assert "500 events" in mobile_page.locator("main").inner_text()

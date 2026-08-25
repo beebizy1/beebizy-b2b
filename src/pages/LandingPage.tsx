@@ -107,7 +107,7 @@ function PricingSection() {
   );
 }
 
-function MobileMenu() {
+function HeaderMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -128,10 +128,10 @@ function MobileMenu() {
   }, []);
 
   return (
-    <div className="relative md:hidden" ref={menuRef}>
+    <div className="relative" ref={menuRef}>
       <button
         type="button"
-        aria-controls="mobile-navigation"
+        aria-controls="header-navigation-menu"
         aria-expanded={isOpen}
         aria-label={isOpen ? "Close menu" : "Open menu"}
         className="grid size-10 place-items-center rounded-xl border border-amber-300 bg-amber-50 text-gray-950 shadow-sm transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2"
@@ -142,8 +142,8 @@ function MobileMenu() {
 
       {isOpen ? (
         <nav
-          id="mobile-navigation"
-          aria-label="Mobile navigation"
+          id="header-navigation-menu"
+          aria-label="Header navigation"
           className="absolute right-0 top-[calc(100%+0.75rem)] z-[60] w-56 rounded-2xl border border-amber-200 bg-white p-2 shadow-[0_18px_50px_rgba(31,24,10,0.18)]"
         >
           <a
@@ -354,11 +354,17 @@ export function LandingPage() {
     document.body.appendChild(script);
 
     const headerNavigation = document.querySelector("header nav");
-    const mobileMenuHost = document.createElement("div");
-    mobileMenuHost.dataset.beebizyMobileMenu = "true";
-    headerNavigation?.prepend(mobileMenuHost);
-    const mobileMenuRoot = headerNavigation ? createRoot(mobileMenuHost) : null;
-    mobileMenuRoot?.render(<MobileMenu />);
+    const headerTextLinks = headerNavigation
+      ? Array.from(headerNavigation.querySelectorAll<HTMLAnchorElement>('a[href="#who"], a[href="#features"]'))
+      : [];
+    headerTextLinks.forEach((link) => {
+      link.style.display = "none";
+    });
+    const headerMenuHost = document.createElement("div");
+    headerMenuHost.dataset.beebizyHeaderMenu = "true";
+    headerNavigation?.prepend(headerMenuHost);
+    const headerMenuRoot = headerNavigation ? createRoot(headerMenuHost) : null;
+    headerMenuRoot?.render(<HeaderMenu />);
 
     const existingPricing = Array.from(document.querySelectorAll("section")).find((section) =>
       section.textContent?.includes("Corp Packages"),
@@ -389,7 +395,7 @@ export function LandingPage() {
         "Enterprise, lean, or mission-driven. Sign in to launch the working demo. No credit card.";
     }
 
-    document.querySelectorAll('a[href="#features"]').forEach((featuresLink) => {
+    document.querySelectorAll('footer a[href="#features"]').forEach((featuresLink) => {
       const aboutLink = featuresLink.cloneNode(true) as HTMLAnchorElement;
       aboutLink.href = "/about";
       aboutLink.textContent = "About Us";
@@ -398,8 +404,9 @@ export function LandingPage() {
 
     return () => {
       document.removeEventListener("click", openLogin, true);
-      mobileMenuRoot?.unmount();
-      mobileMenuHost.remove();
+      headerTextLinks.forEach((link) => link.style.removeProperty("display"));
+      headerMenuRoot?.unmount();
+      headerMenuHost.remove();
       pricingRoot.unmount();
       testimonialRoot.unmount();
       testimonialHost.remove();
