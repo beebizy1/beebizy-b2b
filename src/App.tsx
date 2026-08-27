@@ -30,6 +30,7 @@ import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
 import EventsIndex from "@/screens/events/EventsIndex";
+import CalendarView from "@/screens/CalendarView";
 import EventForm from "@/screens/events/EventForm";
 import EventWorkspace from "@/screens/events/EventWorkspace";
 import Guests from "@/screens/Guests";
@@ -37,6 +38,8 @@ import VendorsIndex from "@/screens/vendors/VendorsIndex";
 import VendorDetail from "@/screens/vendors/VendorDetail";
 import VendorForm from "@/screens/vendors/VendorForm";
 import Budget from "@/screens/Budget";
+import History from "@/screens/History";
+import Messages from "@/screens/Messages";
 import Tasks from "@/screens/Tasks";
 import Library from "@/screens/Library";
 import TemplateDetail from "@/screens/library/TemplateDetail";
@@ -66,6 +69,7 @@ function AppRoutes() {
       <AppShell>
         <Switch>
           <Route path="/app" component={Today} />
+          <Route path="/app/calendar" component={CalendarView} />
           <Route path="/app/events" component={EventsIndex} />
           <Route path="/app/events/new">{() => <EventForm />}</Route>
           <Route path="/app/events/:id/edit">{(params) => <EventForm id={params.id} />}</Route>
@@ -78,7 +82,18 @@ function AppRoutes() {
           <Route path="/app/vendors" component={VendorsIndex} />
           <Route path="/app/vendors/new">{() => <VendorForm />}</Route>
           <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
-          <Route path="/app/budget" component={Budget} />
+          <Route path="/app/budget">{() => <Budget />}</Route>
+          <Route path="/app/history" component={History} />
+          <Route path="/app/reports">
+            {() => (
+              <Budget
+                eyebrow="Reports"
+                title="Portfolio performance, event by event"
+                description="Track spend, revenue and return across every event, with the underlying event detail one click away."
+              />
+            )}
+          </Route>
+          <Route path="/app/messages" component={Messages} />
           <Route path="/app/tasks" component={Tasks} />
           <Route path="/app/library" component={Library} />
           <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>

@@ -44,9 +44,9 @@ export default function LoginPage() {
         )}
 
         <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
-          Beebizy Studio is a private workspace for approved internal operators. Need access for your team?{" "}
+          Beebizy Studio is a private workspace for invited beta testers. Need an invitation?{" "}
           <Link href="/?sales=1" className="font-semibold text-foreground underline underline-offset-4">
-            Talk to sales
+            Request beta access
           </Link>
           .
         </p>

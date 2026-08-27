@@ -128,9 +128,9 @@ export default function VendorsIndex() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Vendors"
-        title="Your vendor network"
-        description="Filter by city when you're planning across locations. Booking a vendor onto an event happens in that event's Suppliers section."
+        eyebrow="Vendor Hub"
+        title="Your vendors and the Beebizy marketplace"
+        description="Add vendors your team already trusts or use marketplace suggestions by category and city. Book them from the event's Vendors section."
         actions={
           <Button asChild>
             <Link href="/app/vendors/new">
@@ -194,14 +194,17 @@ export default function VendorsIndex() {
       </div>
 
       <Panel>
-        <PanelHeader title={`${visible.length} ${visible.length === 1 ? "vendor" : "vendors"}`} />
+        <PanelHeader
+          title={`${visible.length} ${visible.length === 1 ? "vendor" : "vendors"}`}
+          description="Your saved network and Beebizy marketplace suggestions"
+        />
         {isLoading ? (
           <LoadingRows rows={5} className="p-4" />
         ) : visible.length === 0 ? (
           <EmptyState
             icon={Store}
             title={search || category !== ALL || city !== ALL ? "No vendors match" : "No vendors yet"}
-            description="Add the caterers, AV companies and venues you actually use, then book them onto events."
+            description="Add your own vendor or broaden the search to see marketplace suggestions."
             action={
               <Button asChild size="sm">
                 <Link href="/app/vendors/new">

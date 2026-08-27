@@ -16,7 +16,11 @@ import {
   CheckCircle2,
   Coins,
   Inbox,
+  ListChecks,
   MapPin,
+  Palette,
+  Sparkles,
+  Store,
   Ticket,
   Users,
 } from "lucide-react";
@@ -250,6 +254,77 @@ function InboxPanel() {
   );
 }
 
+const suggestedBudget = [
+  ["Venue", "$30,000"],
+  ["Catering", "$10,000"],
+  ["Entertainment", "$5,000"],
+  ["Production & AV", "$10,000"],
+  ["Staffing & logistics", "$6,000"],
+  ["Design & decor", "$4,000"],
+  ["Contingency", "$5,000"],
+] as const;
+
+function PlanningBrief() {
+  const { data: events } = useEvents();
+  const event = upcoming(events, () => 0)[0];
+  const eventHref = event ? `/app/events/${event.id}` : "/app/events/new";
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-brand-hairline bg-brand-surface text-brand-foreground shadow-sm">
+      <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)]">
+        <div className="p-6 sm:p-8">
+          <div className="inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1 text-xs font-extrabold uppercase tracking-[0.14em] text-primary-foreground">
+            <Sparkles className="size-3.5" aria-hidden="true" />
+            Bee AI planning brief
+          </div>
+          <h2 className="mt-5 max-w-xl text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">
+            Give Beebizy a headcount and theme. Get a practical first draft.
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-brand-muted">
+            Start with suggested spend, then build the checklist, run of show, mood board and vendor shortlist in the same event workspace.
+          </p>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            {[
+              { icon: ListChecks, label: "Run of show + checklist", href: `${eventHref}${event ? "/plan" : ""}` },
+              { icon: Palette, label: "Theme mood boards", href: `${eventHref}${event ? "/plan" : ""}` },
+              { icon: Store, label: "Marketplace vendors", href: event ? `${eventHref}/vendors` : "/app/vendors" },
+            ].map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="flex items-center gap-2 rounded-xl border border-brand-hairline bg-background/5 px-3 py-3 text-sm font-semibold transition-colors hover:bg-background/10"
+              >
+                <item.icon className="size-4 text-primary" aria-hidden="true" />
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-brand-hairline bg-background/5 p-6 lg:border-l lg:border-t-0 sm:p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-muted">Example · 250 guests</p>
+              <p data-numeric className="mt-2 text-4xl font-extrabold tracking-tight">$70,000</p>
+              <p className="mt-1 text-sm text-brand-muted">Suggested total budget</p>
+            </div>
+            <Sparkles className="size-6 text-primary" aria-hidden="true" />
+          </div>
+          <dl className="mt-5 space-y-2 border-t border-brand-hairline pt-4">
+            {suggestedBudget.map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-4 text-sm">
+                <dt className="text-brand-muted">{label}</dt>
+                <dd data-numeric className="font-semibold text-brand-foreground">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Today() {
   const { user } = useSession();
   const prefs = usePreferences();
@@ -317,6 +392,8 @@ export default function Today() {
           loading={portfolioLoading}
         />
       </div>
+
+      <PlanningBrief />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <div className="space-y-6">

@@ -9,12 +9,13 @@
  */
 
 import {
+  BarChart3,
   BookMarked,
   CalendarDays,
-  Coins,
+  History,
   LayoutDashboard,
+  MessageSquare,
   Store,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { EventSectionId } from "@/data/entities";
@@ -31,11 +32,17 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   {
-    label: "Today",
+    label: "Dashboard",
     href: "/app",
     icon: LayoutDashboard,
-    hint: "What needs you now, across every event",
+    hint: "Portfolio health, decisions and AI planning suggestions",
     badge: "attention",
+  },
+  {
+    label: "Calendar",
+    href: "/app/calendar",
+    icon: CalendarDays,
+    hint: "Every event on one operating calendar",
   },
   {
     label: "Events",
@@ -44,29 +51,35 @@ export const NAV_ITEMS: NavItem[] = [
     hint: "Every event, its readiness and its workspace",
   },
   {
-    label: "Guests",
-    href: "/app/guests",
-    icon: Users,
-    hint: "Guests and their registrations",
-  },
-  {
-    label: "Vendors",
+    label: "Vendor Hub",
     href: "/app/vendors",
     icon: Store,
-    hint: "Vendors, bookings and conversations",
-    badge: "unread",
+    hint: "Your vendors and Beebizy marketplace suggestions",
   },
   {
-    label: "Budget",
-    href: "/app/budget",
-    icon: Coins,
-    hint: "Spend, ticket sales, fundraising and ROI",
-  },
-  {
-    label: "Library",
+    label: "Templates",
     href: "/app/library",
     icon: BookMarked,
-    hint: "Templates, venues and boards",
+    hint: "Reusable events, checklists, run of show and boards",
+  },
+  {
+    label: "History",
+    href: "/app/history",
+    icon: History,
+    hint: "Past events, spend and planning decisions",
+  },
+  {
+    label: "Reports",
+    href: "/app/reports",
+    icon: BarChart3,
+    hint: "Portfolio spend, revenue, attendance and ROI",
+  },
+  {
+    label: "Messages",
+    href: "/app/messages",
+    icon: MessageSquare,
+    hint: "All vendor conversations in one inbox",
+    badge: "unread",
   },
 ];
 

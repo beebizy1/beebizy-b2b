@@ -12,7 +12,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { BookOpen, LogOut, Menu, Search, Settings, TriangleAlert } from "lucide-react";
+import { BookOpen, Clock3, LogOut, Menu, Search, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -146,6 +146,20 @@ function DemoBanner() {
   );
 }
 
+function BetaBanner() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-primary/35 bg-primary-wash px-4 py-2 text-xs sm:px-6">
+      <Clock3 className="size-3.5 shrink-0 text-primary-text" aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-foreground">
+        <span className="font-semibold">Private beta.</span> Your first 3 months are free, then Beebizy transitions to a paid subscription.
+      </p>
+      <Link href="/app/settings" className="font-semibold text-primary-text underline underline-offset-2">
+        Subscription details
+      </Link>
+    </div>
+  );
+}
+
 function UserMenu() {
   const { user, isDemo, signOut } = useSession();
   const name = user?.name ?? "Signed out";
@@ -232,6 +246,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <UserMenu />
             </div>
           </div>
+          <BetaBanner />
           <DemoBanner />
         </header>
 

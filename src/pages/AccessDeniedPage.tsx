@@ -18,15 +18,15 @@ export default function AccessDeniedPage() {
           <div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/15 text-foreground">
             <LockKeyhole aria-hidden="true" className="size-5" />
           </div>
-          <h1 className="headline mt-5 text-foreground">Beebizy Studio is private</h1>
+          <h1 className="headline mt-5 text-foreground">Beebizy private beta</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            New account creation is closed. Studio access is currently limited to approved internal operators.
-            If your team is interested in Beebizy, our sales team can help.
+            This preview is limited to invited beta testers. Approved testers receive 3 months free in exchange for
+            product feedback, then transition to a paid subscription.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Button asChild>
-              <Link href="/?sales=1">Talk to sales</Link>
+              <Link href="/?sales=1">Request beta access</Link>
             </Button>
             <Button type="button" variant="outline" onClick={() => void signOut()}>
               Sign out
