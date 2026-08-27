@@ -21,4 +21,11 @@ describe("internal access allowlist", () => {
     expect(hasInternalAccess("laila@example.com")).toBe(false);
     expect(hasInternalAccess(null)).toBe(false);
   });
+
+  it("allows invited beta testers from a comma-separated environment list", () => {
+    const invited = " partner@example.com, DESIGNER@example.org ";
+    expect(hasInternalAccess("partner@example.com", invited)).toBe(true);
+    expect(hasInternalAccess("designer@example.org", invited)).toBe(true);
+    expect(hasInternalAccess("not-invited@example.com", invited)).toBe(false);
+  });
 });

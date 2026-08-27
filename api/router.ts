@@ -13,8 +13,10 @@
 import { authorize, HttpError, type RequestContext } from "../src/server/auth.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
+import { generatePlanningSuggestions } from "../src/server/planner.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
-import { ZodError } from "zod";
+import { PLANNING_LIMITS } from "../src/data/planner.ts";
+import { z, ZodError } from "zod";
 
 export const config = { runtime: "nodejs" };
 
@@ -206,7 +208,23 @@ async function handleAuthed(
 
   switch (resource) {
     case "me":
-      return json({ userId: ctx.userId, workspaceId: ctx.workspaceId, role: ctx.role });
+      return json({ userId: ctx.userId, workspaceId: ctx.workspaceId, role: ctx.role, access: ctx.access });
+
+    /* -------------------------------------------------------------- assistant */
+    case "assistant": {
+      if (a !== "plan" || method !== "POST") return notFound();
+      const brief = z
+        .object({
+          eventId: z.string().min(1).max(100),
+          headcount: z.number().int().min(PLANNING_LIMITS.minHeadcount).max(PLANNING_LIMITS.maxHeadcount),
+          totalBudgetCents: z.number().int().min(PLANNING_LIMITS.minBudgetCents).max(PLANNING_LIMITS.maxBudgetCents),
+          theme: z.string().trim().max(PLANNING_LIMITS.maxThemeLength),
+        })
+        .parse(body);
+      const event = await repos.events.get(ctx, brief.eventId);
+      if (!event) throw new HttpError(404, "This event no longer exists.");
+      return json(await generatePlanningSuggestions(event, brief, ctx.userId));
+    }
 
     /* ------------------------------------------------------------------ events */
     case "events": {

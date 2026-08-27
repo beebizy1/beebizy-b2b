@@ -15,15 +15,25 @@
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { and, eq } from "drizzle-orm";
 import { hasInternalAccess } from "../lib/internalAccess.ts";
+import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
 import { workspaceMembers, workspaces } from "./schema.ts";
 
 export type Role = "owner" | "admin" | "member";
 
+export type WorkspaceAccessStatus = "beta" | "active" | "expired" | "past_due" | "cancelled";
+
+export interface WorkspaceAccess {
+  status: WorkspaceAccessStatus;
+  betaStartedAt: string;
+  betaEndsAt: string;
+}
+
 export interface RequestContext {
   userId: string;
   workspaceId: string;
   role: Role;
+  access?: WorkspaceAccess;
 }
 
 export class HttpError extends Error {
@@ -68,7 +78,7 @@ async function requireInternalUserId(request: Request): Promise<string> {
     throw new HttpError(503, `Unable to verify internal access: ${detail}`);
   }
 
-  if (!hasInternalAccess(primaryEmail)) {
+  if (!hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS)) {
     throw new HttpError(403, "This account does not have access to Beebizy Studio.");
   }
 
@@ -86,7 +96,21 @@ function newId(prefix: string): string {
  * Clerk organizations are in play the org id claims the workspace, which lets a team
  * share one.
  */
-async function resolveWorkspace(userId: string, clerkOrgId: string | null): Promise<{ workspaceId: string; role: Role }> {
+function accessForWorkspace(workspace: typeof workspaces.$inferSelect): WorkspaceAccess {
+  const stored = workspace.subscriptionStatus;
+  const status: WorkspaceAccessStatus =
+    stored === "beta" && workspace.betaEndsAt.getTime() <= Date.now() ? "expired" : stored;
+  return {
+    status,
+    betaStartedAt: workspace.betaStartedAt.toISOString(),
+    betaEndsAt: workspace.betaEndsAt.toISOString(),
+  };
+}
+
+async function resolveWorkspace(
+  userId: string,
+  clerkOrgId: string | null,
+): Promise<{ workspaceId: string; role: Role; access: WorkspaceAccess }> {
   if (clerkOrgId) {
     const [existing] = await db.select().from(workspaces).where(eq(workspaces.clerkOrgId, clerkOrgId)).limit(1);
     if (existing) {
@@ -98,9 +122,9 @@ async function resolveWorkspace(userId: string, clerkOrgId: string | null): Prom
       // Being in the Clerk org is the source of truth; mirror it into membership once.
       if (!membership) {
         await db.insert(workspaceMembers).values({ workspaceId: existing.id, userId, role: "member" });
-        return { workspaceId: existing.id, role: "member" };
+        return { workspaceId: existing.id, role: "member", access: accessForWorkspace(existing) };
       }
-      return { workspaceId: existing.id, role: membership.role };
+      return { workspaceId: existing.id, role: membership.role, access: accessForWorkspace(existing) };
     }
   }
 
@@ -109,19 +133,46 @@ async function resolveWorkspace(userId: string, clerkOrgId: string | null): Prom
     .from(workspaceMembers)
     .where(eq(workspaceMembers.userId, userId))
     .limit(1);
-  if (membership) return { workspaceId: membership.workspaceId, role: membership.role };
+  if (membership) {
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, membership.workspaceId)).limit(1);
+    if (!workspace) throw new HttpError(403, "Your workspace is no longer available.");
+    return { workspaceId: membership.workspaceId, role: membership.role, access: accessForWorkspace(workspace) };
+  }
 
   const workspaceId = newId("ws");
-  await db.insert(workspaces).values({ id: workspaceId, name: "My workspace", clerkOrgId });
+  const [workspace] = await db
+    .insert(workspaces)
+    .values({ id: workspaceId, name: "My workspace", clerkOrgId })
+    .returning();
   await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
-  return { workspaceId, role: "owner" };
+  if (!workspace) throw new HttpError(500, "The workspace could not be created.");
+  return { workspaceId, role: "owner", access: accessForWorkspace(workspace) };
 }
 
 export async function authorize(request: Request): Promise<RequestContext> {
+  if (!isPrivateBetaHost(new URL(request.url).hostname)) {
+    throw new HttpError(403, "Beebizy Studio beta access is available only at the private preview link.");
+  }
+
   const userId = await requireInternalUserId(request);
   const orgHeader = request.headers.get("x-clerk-org-id");
-  const { workspaceId, role } = await resolveWorkspace(userId, orgHeader && orgHeader !== "null" ? orgHeader : null);
-  return { userId, workspaceId, role };
+  const { workspaceId, role, access } = await resolveWorkspace(
+    userId,
+    orgHeader && orgHeader !== "null" ? orgHeader : null,
+  );
+
+  const url = new URL(request.url);
+  const route = url.searchParams.get("__path") ?? url.pathname.replace(/^\/api\/?/, "");
+  if (access.status !== "beta" && access.status !== "active" && route !== "me") {
+    const message = access.status === "past_due"
+      ? "Your Beebizy Studio payment is past due. Update the subscription to continue."
+      : access.status === "cancelled"
+        ? "Your Beebizy Studio subscription is cancelled. Reactivate it to continue."
+        : "Your three-month Beebizy Studio beta has ended. Activate a subscription to continue.";
+    throw new HttpError(402, message);
+  }
+
+  return { userId, workspaceId, role, access };
 }
 
 /** Writes are closed to `member` on the destructive operations. */

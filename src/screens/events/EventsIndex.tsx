@@ -128,9 +128,9 @@ function EventRow({ event, health }: { event: Event; health: EventHealth | undef
   );
 }
 
-export default function EventsIndex() {
+export default function EventsIndex({ initialView = "list" }: { initialView?: "list" | "calendar" }) {
   const [lens, setLens] = useState<Lens>("upcoming");
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [view, setView] = useState<"list" | "calendar">(initialView);
   const [search, setSearch] = useState("");
   const [locationId, setLocationId] = useState(ALL_LOCATIONS);
 

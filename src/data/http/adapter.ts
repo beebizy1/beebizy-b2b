@@ -47,6 +47,7 @@ import type {
   Vendor,
   VendorMessage,
 } from "../entities";
+import type { PlanningBrief, PlanningSuggestions } from "../planner";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -144,6 +145,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     kind: "postgres",
 
     me: () => client.get<Identity>("/me"),
+
+    assistant: {
+      plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
+    },
 
     events: {
       list: (filter) => {

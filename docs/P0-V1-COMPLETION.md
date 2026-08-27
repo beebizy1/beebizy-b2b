@@ -4,7 +4,7 @@
 
 **Feature status:** Complete and packaged for isolated preview verification<br>
 **Deployment target:** Separate Vercel preview, not the `beebizy.com` custom domain<br>
-**Verification date:** August 24, 2026<br>
+**Verification date:** August 27, 2026<br>
 **Product goal:** Beebizy is the event system of record for lean teams.
 
 This document records the completed P0 and V1 Core scope. It separates functional
@@ -158,7 +158,7 @@ Test source: [`scripts/verify-api.ts`](../scripts/verify-api.ts)
 
 - TypeScript typecheck passed
 - ESLint completed with zero errors
-- 105 automated tests passed
+- 115 automated tests passed
 - Production build completed
 
 Four Fast Refresh lint warnings and non-blocking source-map and bundle-size build warnings
@@ -197,5 +197,6 @@ calling the rollout fully production-ready:
 
 ## Scope boundary
 
-The Beebizy marketplace at `app.bbusy.com` is separate and remains unchanged. This P0 and
-V1 Core completion record applies to the B2B event-management product at `beebizy.com`.
+The Beebizy marketplace at `app.beebizy.com` is separate and remains unchanged. This P0
+and V1 Core completion record applies only to the private B2B beta at
+`beebizy-studio-preview.vercel.app`; it does not deploy or attach anything to `beebizy.com`.

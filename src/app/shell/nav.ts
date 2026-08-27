@@ -4,13 +4,14 @@
  * The old sidebar was fourteen flat items — Dashboard, Calendar, Events, Templates,
  * Locations, Vendors, Messages, Guests, Registrations, Reporting, Financial Data,
  * Checklists, Inspiration Card, Settings — with no hierarchy and no answer to "where
- * do I start?". Six destinations replace them, grouped by the question each answers.
- * Everything else moved inside the event it belongs to.
+ * do I start?". The P0 navigation keeps the requested Dashboard, Calendar, and Events
+ * destinations explicit while grouping the remaining tools by workflow.
  */
 
 import {
   BookMarked,
   CalendarDays,
+  CalendarRange,
   Coins,
   LayoutDashboard,
   Store,
@@ -31,16 +32,22 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   {
-    label: "Today",
+    label: "Dashboard",
     href: "/app",
     icon: LayoutDashboard,
     hint: "What needs you now, across every event",
     badge: "attention",
   },
   {
+    label: "Calendar",
+    href: "/app/calendar",
+    icon: CalendarDays,
+    hint: "Month and year view across every event and venue",
+  },
+  {
     label: "Events",
     href: "/app/events",
-    icon: CalendarDays,
+    icon: CalendarRange,
     hint: "Every event, its readiness and its workspace",
   },
   {
@@ -86,7 +93,7 @@ export interface EventSection {
 export const EVENT_SECTIONS: EventSection[] = [
   { id: "overview", label: "Overview", slug: "", hint: "Readiness, risks and the shape of the day" },
   { id: "plan", label: "Plan", slug: "plan", hint: "Checklist, run of show and mood board" },
-  { id: "guests", label: "Guests", slug: "guests", hint: "Registrations and capacity" },
+  { id: "guests", label: "Invites", slug: "guests", hint: "Invitations, RSVPs, registrations and capacity" },
   { id: "vendors", label: "Vendors", slug: "vendors", hint: "Bookings, catering and the floorplan" },
   { id: "budget", label: "Budget", slug: "budget", hint: "Spend, tickets, fundraising and ROI" },
   { id: "share", label: "Share", slug: "share", hint: "Public event page and ticket link" },

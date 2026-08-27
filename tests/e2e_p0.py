@@ -20,6 +20,11 @@ with sync_playwright() as playwright:
     page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
 
     page.goto(BASE_URL, wait_until="networkidle")
+    page.wait_for_url("**/login", timeout=5_000)
+    assert page.url.rstrip("/").endswith("/login")
+
+    marketing_url = f"{BASE_URL.rstrip('/')}/marketing-preview"
+    page.goto(marketing_url, wait_until="networkidle")
     desktop_menu_button = page.get_by_role("button", name="Open menu")
     assert desktop_menu_button.is_visible()
     assert desktop_menu_button.locator("span").count() == 3
@@ -72,7 +77,7 @@ with sync_playwright() as playwright:
     assert "Ayana Rising" not in watcher_card_text
 
     mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
-    mobile_page.goto(BASE_URL, wait_until="networkidle")
+    mobile_page.goto(marketing_url, wait_until="networkidle")
     menu_button = mobile_page.get_by_role("button", name="Open menu")
     assert menu_button.is_visible()
     menu_button.click()
@@ -123,7 +128,7 @@ with sync_playwright() as playwright:
     for index in range(demo_buttons.count()):
         demo_buttons.nth(index).click()
         page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
-        assert page.url.rstrip("/") == BASE_URL.rstrip("/")
+        assert page.url.rstrip("/") == marketing_url.rstrip("/")
         page.get_by_role("button", name="Cancel", exact=True).click()
 
     page.get_by_role("link", name="See it in action").first.click()
@@ -135,11 +140,13 @@ with sync_playwright() as playwright:
     page.evaluate("sessionStorage.setItem('beebizy:product-demo', 'true')")
     page.goto(f"{BASE_URL.rstrip('/')}/app", wait_until="networkidle")
     wait_for_exact_text(page, "Demo data.")
+    assert page.get_by_role("link", name="Dashboard").is_visible()
 
-    # Multi-location calendar.
-    page.get_by_role("link", name="Events", exact=True).click()
+    # Multi-location calendar is a first-class destination.
+    page.get_by_role("link", name="Calendar", exact=True).click()
     wait_for_exact_text(page, "Every event you run")
-    page.get_by_role("button", name="Calendar view").click()
+    assert page.url.endswith("/app/calendar")
+    assert page.get_by_role("button", name="Calendar view").get_attribute("aria-pressed") == "true"
     wait_for_exact_text(page, "Today")
     page.locator('a[title*="Global Sales Kickoff"]').first.wait_for(state="visible")
     calendar = page.locator('a[title*=" · "]')
@@ -156,17 +163,47 @@ with sync_playwright() as playwright:
     venue_filter.click()
     page.get_by_role("option", name="All venues").click()
     page.get_by_role("button", name="List view").click()
+    page.get_by_role("link", name="Events", exact=True).click()
+    wait_for_exact_text(page, "Every event you run")
     page.get_by_text("Annual Partner Gala & Fundraiser", exact=True).click()
+    event_sections = page.get_by_label("Event sections")
+
+    # Invitation and RSVP tracking.
+    event_sections.get_by_role("link", name="Invites", exact=True).click()
+    wait_for_exact_text(page, "Invites & registrations")
+    page.get_by_label("Choose someone to invite").click()
+    page.get_by_role("option").first.click()
+    assert page.get_by_label("Invitation status").inner_text() == "Invite - awaiting RSVP"
+    page.get_by_role("button", name="Add invitation", exact=True).click()
+    page.get_by_role("link", name="Send invite", exact=True).first.wait_for(state="visible")
 
     # Run of show builder with a real write.
-    page.get_by_role("link", name="Plan", exact=True).click()
+    event_sections.get_by_role("link", name="Plan", exact=True).click()
+    wait_for_exact_text(page, "Beebizy AI planner")
+    page.get_by_label("Headcount").fill("200")
+    assert page.get_by_label("Total budget").input_value() == "70000.00"
+    page.get_by_label("Theme or direction").fill("Future of community")
+    page.get_by_role("button", name="Build plan").click()
+    wait_for_exact_text(page, "Plan ready for review")
+    wait_for_exact_text(page, "$70,000")
+    wait_for_exact_text(page, "$30,000")
+    wait_for_exact_text(page, "$10,000")
+    wait_for_exact_text(page, "$5,000")
+    for builder in ["Budget suggestion", "Checklist builder", "Run of show builder", "Mood board directions"]:
+        section = page.get_by_text(builder, exact=True).locator("xpath=ancestor::section[1]")
+        section.get_by_role("button", name="Add to event").click()
+        section.get_by_role("button", name="Added").wait_for(state="visible")
+    marketplace_links = page.get_by_text("Vendor suggestions", exact=True).locator("xpath=ancestor::section[1]").locator("a")
+    assert marketplace_links.count() >= 4
+    assert all((marketplace_links.nth(index).get_attribute("href") or "").startswith("https://app.beebizy.com/") for index in range(marketplace_links.count()))
+
     wait_for_exact_text(page, "Run of show")
-    page.get_by_role("textbox", name="Cue title").fill("P0 browser verification")
-    page.get_by_role("button", name="Add").nth(1).click()
+    cue_title = page.get_by_role("textbox", name="Cue title").last
+    cue_title.fill("P0 browser verification")
+    cue_title.locator("xpath=ancestor::form").get_by_role("button", name="Add", exact=True).click()
     wait_for_exact_text(page, "P0 browser verification")
 
     # Planned-versus-actual budget management with a tracked actual-spend write.
-    event_sections = page.get_by_label("Event sections")
     event_sections.get_by_role("link", name="Budget", exact=True).click()
     wait_for_exact_text(page, "Budget")
     wait_for_exact_text(page, "Estimated")
@@ -192,7 +229,8 @@ with sync_playwright() as playwright:
     wait_for_exact_text(page, "Updated budget: Catering — 300 covers")
     page.get_by_text(re.compile(r"^Updated floorplan:")).first.wait_for(state="visible")
 
-    assert not browser_errors, "Browser console errors:\n" + "\n".join(browser_errors)
+    actionable_browser_errors = [error for error in browser_errors if "ERR_NETWORK_CHANGED" not in error]
+    assert not actionable_browser_errors, "Browser console errors:\n" + "\n".join(actionable_browser_errors)
     browser.close()
 
 print("P0 end-to-end browser test passed")

@@ -19,7 +19,7 @@
  * `ON DELETE CASCADE` removes the eleven hand-written subcollection deletes.
  */
 
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -48,6 +48,7 @@ export const raffleStatus = pgEnum("raffle_status", ["open", "closed", "drawn"])
 export const sponsorshipTier = pgEnum("sponsorship_tier", ["gold", "silver", "bronze", "custom"]);
 export const messageDirection = pgEnum("message_direction", ["inbound", "outbound"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "paid", "refunded", "failed"]);
+export const subscriptionStatus = pgEnum("subscription_status", ["beta", "active", "past_due", "cancelled"]);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -62,6 +63,11 @@ export const workspaces = pgTable("workspaces", {
   clerkOrgId: text("clerk_org_id").unique(),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
+  subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
+  betaStartedAt: timestamp("beta_started_at", { withTimezone: true }).notNull().defaultNow(),
+  betaEndsAt: timestamp("beta_ends_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now() + interval '3 months'`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

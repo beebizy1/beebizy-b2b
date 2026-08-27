@@ -39,6 +39,7 @@ import {
   useUpdateRunOfShowItem,
 } from "@/data/hooks";
 import type { ChecklistItem, Event, RunOfShowItem } from "@/data/entities";
+import PlanningAssistantPanel from "./PlanningAssistantPanel";
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -581,6 +582,7 @@ function MoodBoardPanel({ event }: { event: Event }) {
 export default function PlanSection({ event }: { event: Event }) {
   return (
     <div className="space-y-6">
+      <PlanningAssistantPanel event={event} />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <ChecklistPanel event={event} />
         <RunOfShowPanel event={event} />

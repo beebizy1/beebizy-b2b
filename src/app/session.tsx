@@ -70,7 +70,7 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
       photoURL: user.imageUrl || null,
     };
 
-    return hasInternalAccess(email)
+    return hasInternalAccess(email, import.meta.env.VITE_BETA_ACCESS_EMAILS)
       ? { status: "authenticated", isDemo: false, signOut, user: sessionUser }
       : { status: "unauthorized", isDemo: false, signOut, user: sessionUser };
   }, [isLoaded, isSignedIn, user, clerk]);

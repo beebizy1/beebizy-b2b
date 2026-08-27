@@ -44,10 +44,14 @@ export default function LoginPage() {
         )}
 
         <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
-          Beebizy Studio is a private workspace for approved internal operators. Need access for your team?{" "}
-          <Link href="/?sales=1" className="font-semibold text-foreground underline underline-offset-4">
-            Talk to sales
-          </Link>
+          Beebizy Studio is a private workspace for approved beta testers. Beta access includes three free months
+          in exchange for product feedback, followed by paid access. Need an invitation?{" "}
+          <a
+            href="mailto:hello@beebizy.com?subject=Request%20Beebizy%20Studio%20beta%20access"
+            className="font-semibold text-foreground underline underline-offset-4"
+          >
+            Request beta access
+          </a>
           .
         </p>
       </div>

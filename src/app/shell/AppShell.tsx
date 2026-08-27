@@ -12,7 +12,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { BookOpen, LogOut, Menu, Search, Settings, TriangleAlert } from "lucide-react";
+import { BookOpen, Clock3, LockKeyhole, LogOut, Menu, Search, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -26,8 +26,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BrandLogoLink } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
-import { useAttention, useVendors } from "@/data/hooks";
+import { useAttention, useMe, useVendors } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
+import type { Identity } from "@/data/adapter";
 import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { isNavActive, NAV_ITEMS, type NavItem } from "./nav";
@@ -146,6 +147,69 @@ function DemoBanner() {
   );
 }
 
+function BetaBanner({ access }: { access: Identity["access"] | undefined }) {
+  if (!access || access.status !== "beta") return null;
+  const end = new Date(access.betaEndsAt);
+  const remaining = Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86_400_000));
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-primary/25 bg-primary/8 px-4 py-2 text-xs sm:px-6">
+      <Clock3 className="size-3.5 shrink-0 text-primary-text" aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-foreground">
+        <span className="font-semibold">Private beta.</span>{" "}
+        <span data-numeric>{remaining} {remaining === 1 ? "day" : "days"}</span> remaining. Free access ends{" "}
+        <span data-numeric>{new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(end)}</span>.
+      </p>
+      <a href="mailto:hello@beebizy.com?subject=Beebizy%20Studio%20beta%20feedback" className="font-semibold text-primary-text underline underline-offset-2">
+        Send feedback
+      </a>
+    </div>
+  );
+}
+
+function AccessEnded({ access }: { access: Identity["access"] }) {
+  const { signOut } = useSession();
+  const ended = new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date(access.betaEndsAt));
+  const copy = access.status === "past_due"
+    ? {
+        title: "Your Studio payment is past due",
+        description: "Your workspace and event history are preserved. Update the subscription to restore access.",
+        subject: "Update Beebizy Studio subscription",
+      }
+    : access.status === "cancelled"
+      ? {
+          title: "Your Studio subscription is cancelled",
+          description: "Your workspace and event history are preserved. Contact Beebizy to reactivate access.",
+          subject: "Reactivate Beebizy Studio",
+        }
+      : {
+          title: "Your Studio beta has ended",
+          description: `Your three-month beta period ended on ${ended}. Your workspace and event history are preserved. Contact Beebizy to activate paid access.`,
+          subject: "Activate Beebizy Studio",
+        };
+
+  return (
+    <div className="grid min-h-dvh place-items-center bg-background px-5 py-10">
+      <div className="w-full max-w-lg space-y-6 text-center">
+        <div className="flex justify-center"><BrandLogoLink to="/" size="lg" /></div>
+        <div className="rounded-2xl border border-hairline bg-surface p-8 shadow-sm">
+          <div className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-primary/10 text-primary-text">
+            <LockKeyhole className="size-5" aria-hidden="true" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">{copy.title}</h1>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{copy.description}</p>
+          <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
+            <Button asChild>
+              <a href={`mailto:hello@beebizy.com?subject=${encodeURIComponent(copy.subject)}`}>Manage subscription</a>
+            </Button>
+            <Button variant="outline" onClick={() => void signOut()}>Sign out</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UserMenu() {
   const { user, isDemo, signOut } = useSession();
   const name = user?.name ?? "Signed out";
@@ -186,6 +250,23 @@ function UserMenu() {
 export function AppShell({ children }: { children: ReactNode }) {
   const { open, setOpen } = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { mode } = useDataMode();
+  const { data: identity, isLoading: identityLoading } = useMe();
+
+  if (mode === "live" && identityLoading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="size-7 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          <p className="text-sm text-muted-foreground">Loading your Studio access…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "live" && identity && !["beta", "active"].includes(identity.access.status)) {
+    return <AccessEnded access={identity.access} />;
+  }
 
   return (
     <div className="min-h-dvh bg-background">
@@ -233,6 +314,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <DemoBanner />
+          {mode === "live" ? <BetaBanner access={identity?.access} /> : null}
         </header>
 
         <main id="main" className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:py-8">

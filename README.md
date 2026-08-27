@@ -47,7 +47,8 @@ npm run build
 ```
 src/
   data/          the only thing that talks to storage
-    entities.ts    domain model — money in cents, dates as ISO strings
+    entities.ts    persisted domain model — money in cents, dates as ISO strings
+    planner.ts     planning-proposal model, deterministic budgets and safe fallback
     adapter.ts     the DataAdapter interface every backend implements
     derive.ts      pure functions: event health, risks, the attention worklist
     money.ts       integer-cent money, parsing and formatting
@@ -83,19 +84,21 @@ records they summarise.
 
 ## Navigation
 
-Six destinations, not fourteen:
+Seven focused destinations:
 
 | Where | What it answers |
 | --- | --- |
-| Today | What needs a decision right now, ranked, linking to the fix |
+| Dashboard | What needs a decision right now, ranked, linking to the fix |
+| Calendar | Month and year view across events and venues |
 | Events | Every event, its readiness, and anything wrong with it |
-| People | Attendees and the events each is registered for |
+| Guests | Attendees and the events each is invited or registered for |
 | Vendors | Suppliers, bookings and conversations |
-| Money | Ticket sales, budgets, fundraising |
+| Budget | Ticket sales, budgets, fundraising and reporting |
 | Library | Templates and venues |
 
-Each event opens a workspace with six sections — Overview, Plan, People, Suppliers,
-Money, Share — replacing the fourteen tabs that used to compete for one row.
+Each event opens a workspace with six sections: Overview, Plan, Invites, Vendors,
+Budget, and Share. Plan contains the AI budget, checklist, run-of-show, mood-board,
+and marketplace-suggestion builders.
 
 `⌘K` searches every event and jumps to any section.
 
@@ -118,6 +121,13 @@ PostgreSQL repositories under `src/server/`. An approved first-time user receive
 personal workspace, and every request is scoped to that workspace. Event planning
 decisions are also written to the append-only `event_history` table as structured
 before-and-after snapshots.
+
+The beta app is restricted to `https://beebizy-studio-preview.vercel.app`. The three
+Beebizy operators are always approved. Additional testers are invited without a code
+change by adding the same comma-separated emails to `BETA_ACCESS_EMAILS` and
+`VITE_BETA_ACCESS_EMAILS` in the Vercel Preview environment. Each new workspace starts
+with three free months; expired, past-due, and cancelled access states are enforced by
+the API and shown explicitly in the app.
 
 The in-memory adapter remains the intentional public demo backend. Its writes are
 session-scoped and are never mixed with authenticated workspaces.

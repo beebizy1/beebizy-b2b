@@ -20,13 +20,15 @@ export default function AccessDeniedPage() {
           </div>
           <h1 className="headline mt-5 text-foreground">Beebizy Studio is private</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            New account creation is closed. Studio access is currently limited to approved internal operators.
-            If your team is interested in Beebizy, our sales team can help.
+            New account creation is closed. Studio access is limited to approved beta testers, with three free
+            months for feedback before paid access is required.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Button asChild>
-              <Link href="/?sales=1">Talk to sales</Link>
+              <a href="mailto:hello@beebizy.com?subject=Request%20Beebizy%20Studio%20beta%20access">
+                Request beta access
+              </a>
             </Button>
             <Button type="button" variant="outline" onClick={() => void signOut()}>
               Sign out

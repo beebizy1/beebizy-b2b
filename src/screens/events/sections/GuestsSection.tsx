@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { UserPlus, Users } from "lucide-react";
+import { Mail, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +36,7 @@ function AddGuest({ event }: { event: Event }) {
   const { data: registrations } = useEventRegistrations(event.id);
   const createRegistration = useCreateRegistration();
   const [guestId, setGuestId] = useState("");
+  const [status, setStatus] = useState<"pending" | "confirmed">("pending");
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
   const available = useMemo(() => {
@@ -52,7 +53,7 @@ function AddGuest({ event }: { event: Event }) {
         formEvent.preventDefault();
         if (!guestId) return;
         createRegistration.mutate(
-          { eventId: event.id, guestId, status: "confirmed" },
+          { eventId: event.id, guestId, status },
           {
             onSuccess: () => setGuestId(""),
             onError: (error) => toast({ title: "Couldn't register", description: error.message }),
@@ -61,8 +62,8 @@ function AddGuest({ event }: { event: Event }) {
       }}
     >
       <Select value={guestId} onValueChange={setGuestId} disabled={available.length === 0}>
-        <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to register">
-          <SelectValue placeholder={available.length === 0 ? "Everyone is already registered" : "Register someone…"} />
+        <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to invite">
+          <SelectValue placeholder={available.length === 0 ? "Everyone is already on the list" : "Choose a guest…"} />
         </SelectTrigger>
         <SelectContent>
           {available.map((guest) => (
@@ -72,9 +73,18 @@ function AddGuest({ event }: { event: Event }) {
           ))}
         </SelectContent>
       </Select>
+      <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
+        <SelectTrigger className="w-[178px]" aria-label="Invitation status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="pending">Invite - awaiting RSVP</SelectItem>
+          <SelectItem value="confirmed">Add as confirmed</SelectItem>
+        </SelectContent>
+      </Select>
       <Button type="submit" size="sm" disabled={!guestId || createRegistration.isPending}>
         <UserPlus className="mr-1.5 size-3.5" />
-        Register
+        {status === "pending" ? "Add invitation" : "Register"}
       </Button>
       {atCapacity ? (
         <p className="w-full text-xs text-warning-text">
@@ -145,7 +155,7 @@ export default function GuestsSection({ event }: { event: Event }) {
 
       <Panel>
         <PanelHeader
-          title="Registrations"
+          title="Invites & registrations"
           description={`${registrations?.length ?? 0} on the list`}
           actions={
             <Input
@@ -186,6 +196,19 @@ export default function GuestsSection({ event }: { event: Event }) {
                 </div>
 
                 <RegistrationStatusBadge status={row.status} />
+
+                {row.status === "pending" && row.guest?.contact.includes("@") ? (
+                  <Button asChild variant="outline" size="sm">
+                    <a
+                      href={`mailto:${row.guest.contact}?subject=${encodeURIComponent(`You're invited to ${event.title}`)}&body=${encodeURIComponent(
+                        `You're invited to ${event.title}. Please reply to confirm your RSVP.${event.shareToken ? `\n\nEvent details: ${window.location.origin}/e/${event.shareToken}` : ""}`,
+                      )}`}
+                    >
+                      <Mail className="mr-1.5 size-3.5" />
+                      Send invite
+                    </a>
+                  </Button>
+                ) : null}
 
                 <Select
                   value={row.status}

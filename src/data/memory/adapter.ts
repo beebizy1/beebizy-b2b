@@ -91,6 +91,7 @@ import type {
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
 import { describeHistoryChange } from "../history";
+import { buildRuleBasedSuggestions } from "../planner";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -1350,7 +1351,23 @@ export const memoryAdapter: DataAdapter = {
   kind: "memory",
 
   // The demo has a single implicit workspace and no roles to speak of.
-  me: async () => ({ userId: DEMO_OWNER_ID, workspaceId: DEMO_OWNER_ID, role: "owner" }),
+  me: async () => {
+    const started = new Date();
+    const ends = new Date(started);
+    ends.setMonth(ends.getMonth() + 3);
+    return {
+      userId: DEMO_OWNER_ID,
+      workspaceId: DEMO_OWNER_ID,
+      role: "owner",
+      access: { status: "beta", betaStartedAt: started.toISOString(), betaEndsAt: ends.toISOString() },
+    };
+  },
+  assistant: {
+    plan: async (brief) => {
+      await wait();
+      return buildRuleBasedSuggestions(requireEvent(brief.eventId), brief);
+    },
+  },
   events,
   locations,
   guests,

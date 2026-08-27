@@ -81,6 +81,7 @@ import type {
   VendorMessageDraft,
   VendorPatch,
 } from "./entities";
+import type { PlanningBrief, PlanningSuggestions } from "./planner";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -203,11 +204,21 @@ export interface AnalyticsRepository {
   openTasks(): Promise<OpenTask[]>;
 }
 
+export interface PlanningAssistantRepository {
+  /** Returns a proposal only. Applying any part of it is a separate, explicit write. */
+  plan(brief: PlanningBrief): Promise<PlanningSuggestions>;
+}
+
 /** Identity and authorization as the server sees them. */
 export interface Identity {
   userId: string;
   workspaceId: string;
   role: "owner" | "admin" | "member";
+  access: {
+    status: "beta" | "active" | "expired" | "past_due" | "cancelled";
+    betaStartedAt: string;
+    betaEndsAt: string;
+  };
 }
 
 export interface DataAdapter {
@@ -237,6 +248,7 @@ export interface DataAdapter {
   history: EventHistoryRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;
+  assistant: PlanningAssistantRepository;
 }
 
 /** Thrown by adapters so the UI can render a specific, non-generic message. */

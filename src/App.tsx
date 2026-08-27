@@ -2,7 +2,7 @@
  * Routes and providers.
  *
  * Three route families:
- *   public marketing  - `/`
+ *   private beta entry - `/`, which enters the authenticated product
  *   public guest      - `/e/:token`, `/e/:token/tickets`, and Clerk sign-in
  *   the product       - `/app/*`, behind `RequireSession` and inside `AppShell`
  *
@@ -44,6 +44,7 @@ import BoardDetail from "@/screens/library/BoardDetail";
 import Settings from "@/screens/Settings";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
 import { isDemoSession } from "@/app/demo";
+import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,7 +67,8 @@ function AppRoutes() {
       <AppShell>
         <Switch>
           <Route path="/app" component={Today} />
-          <Route path="/app/events" component={EventsIndex} />
+          <Route path="/app/calendar">{() => <EventsIndex initialView="calendar" />}</Route>
+          <Route path="/app/events">{() => <EventsIndex />}</Route>
           <Route path="/app/events/new">{() => <EventForm />}</Route>
           <Route path="/app/events/:id/edit">{(params) => <EventForm id={params.id} />}</Route>
           <Route path="/app/events/:id/:section">
@@ -94,7 +96,8 @@ function AppRoutes() {
 function Routes() {
   return (
     <Switch>
-      <Route path="/" component={LandingPage} />
+      <Route path="/">{() => <Redirect to="/app" replace />}</Route>
+      <Route path="/marketing-preview" component={LandingPage} />
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
@@ -139,6 +142,11 @@ function Routes() {
 }
 
 export default function App() {
+  if (!isPrivateBetaHost(window.location.hostname)) {
+    window.location.replace(privateBetaUrl(window.location.pathname, window.location.search, window.location.hash));
+    return null;
+  }
+
   const demoSession = isDemoSession();
 
   return (

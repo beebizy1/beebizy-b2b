@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { MapPin, Plus, Search, Star, Store } from "lucide-react";
+import { ExternalLink, MapPin, Plus, Search, Star, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -130,14 +130,22 @@ export default function VendorsIndex() {
       <PageHeader
         eyebrow="Vendors"
         title="Your vendor network"
-        description="Filter by city when you're planning across locations. Booking a vendor onto an event happens in that event's Suppliers section."
+        description="Add vendors your team already uses, or source new options from the Beebizy marketplace. Booking happens inside each event."
         actions={
-          <Button asChild>
-            <Link href="/app/vendors/new">
-              <Plus className="mr-1.5 size-4" />
-              New vendor
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <a href="https://app.beebizy.com/client-app/search-v2" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-1.5 size-4" />
+                Browse marketplace
+              </a>
+            </Button>
+            <Button asChild>
+              <Link href="/app/vendors/new">
+                <Plus className="mr-1.5 size-4" />
+                Add your vendor
+              </Link>
+            </Button>
+          </div>
         }
       />
 

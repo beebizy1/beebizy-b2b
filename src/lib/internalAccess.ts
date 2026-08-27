@@ -7,6 +7,17 @@ export const INTERNAL_ACCESS_EMAILS = [
 
 const internalAccessEmailSet = new Set<string>(INTERNAL_ACCESS_EMAILS);
 
-export function hasInternalAccess(email: string | null | undefined): boolean {
-  return typeof email === "string" && internalAccessEmailSet.has(email.trim().toLowerCase());
+export function configuredBetaAccessEmails(value: string | null | undefined): Set<string> {
+  return new Set(
+    (value ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+export function hasInternalAccess(email: string | null | undefined, configuredEmails?: string | null): boolean {
+  if (typeof email !== "string") return false;
+  const normalized = email.trim().toLowerCase();
+  return internalAccessEmailSet.has(normalized) || configuredBetaAccessEmails(configuredEmails).has(normalized);
 }

@@ -62,6 +62,7 @@ import type {
   VendorMessageDraft,
   VendorPatch,
 } from "./entities";
+import type { PlanningBrief } from "./planner";
 
 /* ---------------------------------------------------------------- query keys */
 
@@ -160,6 +161,10 @@ function useAdapterMutation<TVars, TResult>(
  */
 export function useMe() {
   return useAdapterQuery(qk.me, (a) => a.me(), { staleTime: 60_000 });
+}
+
+export function usePlanningSuggestions() {
+  return useAdapterMutation((a, brief: PlanningBrief) => a.assistant.plan(brief), () => []);
 }
 
 /* ------------------------------------------------------------------ analytics */
