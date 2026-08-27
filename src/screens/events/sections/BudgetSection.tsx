@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Check, Coins, Gavel, Handshake, Pencil, Plus, Ticket, Trash2, Trophy, X } from "lucide-react";
+import { Check, Coins, Gavel, Handshake, Pencil, Plus, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -294,12 +294,65 @@ function BudgetPanel({ event }: { event: Event }) {
   const revenue = (items ?? []).filter((item) => item.type === "revenue");
   const plannedSpend = sumCents(expenses.map((item) => item.estimatedCents));
   const actualSpend = sumCents(expenses.map((item) => item.actualCents));
+  const headcount = event.capacity ?? Math.max(event.registrationCount, 100);
+  const suggestedTotal = headcount * 28_000;
+  const suggestedLines = [
+    { name: "Venue", category: "Venue", units: 30 },
+    { name: "Catering", category: "Catering", units: 10 },
+    { name: "Entertainment", category: "Entertainment", units: 5 },
+    { name: "Production & AV", category: "AV", units: 10 },
+    { name: "Staffing & logistics", category: "Staffing", units: 6 },
+    { name: "Design & decor", category: "Decor", units: 4 },
+    { name: "Contingency", category: "General", units: 5 },
+  ].map((line, index, all) => {
+    const prior = all
+      .slice(0, index)
+      .reduce((sum, previous) => sum + Math.round((suggestedTotal * previous.units) / 70), 0);
+    return {
+      ...line,
+      estimatedCents:
+        index === all.length - 1 ? suggestedTotal - prior : Math.round((suggestedTotal * line.units) / 70),
+    };
+  });
+
+  const addSuggestedBudget = async () => {
+    const results = await Promise.allSettled(
+      suggestedLines.map((line, index) =>
+        add.mutateAsync({
+          eventId: event.id,
+          draft: {
+            name: line.name,
+            category: line.category,
+            type: "expense",
+            estimatedCents: line.estimatedCents,
+            notes: `Bee AI suggestion for ${headcount} guests. Review before booking.`,
+            sortOrder: index,
+          },
+        }),
+      ),
+    );
+    const failed = results.filter((result) => result.status === "rejected").length;
+    toast({
+      title: failed ? "Some suggestions couldn't be added" : "Suggested budget added",
+      description: failed
+        ? `${results.length - failed} of ${results.length} lines were added.`
+        : `${formatMoney(suggestedTotal)} across ${suggestedLines.length} editable lines.`,
+    });
+  };
 
   return (
     <Panel>
       <PanelHeader
         title="Budget"
         description={`${expenses.length} expense lines, ${revenue.length} revenue lines`}
+        actions={
+          expenses.length === 0 ? (
+            <Button variant="outline" size="sm" onClick={() => void addSuggestedBudget()} disabled={add.isPending}>
+              <Sparkles className="mr-1.5 size-3.5 text-primary-text" />
+              Suggest {formatMoney(suggestedTotal, { compact: true })} for {headcount} guests
+            </Button>
+          ) : null
+        }
       />
 
       {plannedSpend > 0 ? (

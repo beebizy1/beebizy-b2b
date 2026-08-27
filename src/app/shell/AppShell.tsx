@@ -147,11 +147,20 @@ function DemoBanner() {
 }
 
 function BetaBanner() {
+  const { isBeta, trialEndsAt } = useSession();
+  if (!isBeta || !trialEndsAt) return null;
+
+  const daysRemaining = Math.max(0, Math.ceil((Date.parse(trialEndsAt) - Date.now()) / (24 * 60 * 60 * 1_000)));
+  const trialEnd = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(
+    new Date(trialEndsAt),
+  );
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-primary/35 bg-primary-wash px-4 py-2 text-xs sm:px-6">
       <Clock3 className="size-3.5 shrink-0 text-primary-text" aria-hidden="true" />
       <p className="min-w-0 flex-1 text-foreground">
-        <span className="font-semibold">Private beta.</span> Your first 3 months are free, then Beebizy transitions to a paid subscription.
+        <span className="font-semibold">Private beta.</span> {daysRemaining} days remain in your complimentary 3-month
+        trial. A paid subscription is required after {trialEnd}.
       </p>
       <Link href="/app/settings" className="font-semibold text-primary-text underline underline-offset-2">
         Subscription details

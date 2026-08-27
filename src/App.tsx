@@ -26,9 +26,11 @@ import LandingPage from "@/pages/LandingPage";
 import AboutPage from "@/pages/AboutPage";
 import LoginPage from "@/pages/LoginPage";
 import AccessDeniedPage from "@/pages/AccessDeniedPage";
+import SubscriptionRequiredPage from "@/pages/SubscriptionRequiredPage";
 import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
+import AIPlanner from "@/screens/AIPlanner";
 import EventsIndex from "@/screens/events/EventsIndex";
 import CalendarView from "@/screens/CalendarView";
 import EventForm from "@/screens/events/EventForm";
@@ -69,6 +71,7 @@ function AppRoutes() {
       <AppShell>
         <Switch>
           <Route path="/app" component={Today} />
+          <Route path="/app/plan" component={AIPlanner} />
           <Route path="/app/calendar" component={CalendarView} />
           <Route path="/app/events" component={EventsIndex} />
           <Route path="/app/events/new">{() => <EventForm />}</Route>
@@ -114,6 +117,7 @@ function Routes() {
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
       <Route path="/access-denied" component={AccessDeniedPage} />
+      <Route path="/subscription-required" component={SubscriptionRequiredPage} />
       <Route path="/signup">{() => <Redirect to="/access-denied" replace />}</Route>
       <Route path="/signup/*">{() => <Redirect to="/access-denied" replace />}</Route>
 

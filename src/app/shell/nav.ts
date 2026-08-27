@@ -15,6 +15,7 @@ import {
   History,
   LayoutDashboard,
   MessageSquare,
+  WandSparkles,
   Store,
   type LucideIcon,
 } from "lucide-react";
@@ -37,6 +38,12 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
     hint: "Portfolio health, decisions and AI planning suggestions",
     badge: "attention",
+  },
+  {
+    label: "Plan an event",
+    href: "/app/plan",
+    icon: WandSparkles,
+    hint: "Plan with Bee AI or start manually",
   },
   {
     label: "Calendar",
@@ -97,12 +104,12 @@ export interface EventSection {
  * sits with the rest of the money.
  */
 export const EVENT_SECTIONS: EventSection[] = [
-  { id: "overview", label: "Overview", slug: "", hint: "Readiness, risks and the shape of the day" },
-  { id: "plan", label: "Plan", slug: "plan", hint: "Checklist, run of show and mood board" },
-  { id: "guests", label: "Guests", slug: "guests", hint: "Registrations and capacity" },
+  { id: "overview", label: "Analytics", slug: "", hint: "Readiness, risks and event performance" },
+  { id: "plan", label: "Plan", slug: "plan", hint: "Run of show, checklist and mood board" },
+  { id: "guests", label: "Invites & guests", slug: "guests", hint: "Invitations, registrations and capacity" },
   { id: "vendors", label: "Vendors", slug: "vendors", hint: "Bookings, catering and the floorplan" },
-  { id: "budget", label: "Budget", slug: "budget", hint: "Spend, tickets, fundraising and ROI" },
-  { id: "share", label: "Share", slug: "share", hint: "Public event page and ticket link" },
+  { id: "budget", label: "Budget & reporting", slug: "budget", hint: "Spend, tickets, fundraising and ROI" },
+  { id: "share", label: "Publish", slug: "share", hint: "Public event page and invitation link" },
 ];
 
 export function eventSectionHref(eventId: string, section: EventSectionId): string {

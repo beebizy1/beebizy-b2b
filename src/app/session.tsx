@@ -19,10 +19,10 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
 import { isClerkConfigured } from "@/lib/clerk";
-import { hasInternalAccess } from "@/lib/internalAccess";
+import { getStudioAccess } from "@/lib/internalAccess";
 import { endDemoSession } from "./demo";
 
-export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous" | "unauthorized";
+export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous" | "unauthorized" | "subscription_required";
 
 export interface SessionUser {
   name: string;
@@ -36,6 +36,8 @@ interface SessionValue {
   status: SessionStatus;
   user: SessionUser | null;
   isDemo: boolean;
+  isBeta: boolean;
+  trialEndsAt: string | null;
   signOut: () => Promise<void>;
 }
 
@@ -58,8 +60,8 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
       await clerk.signOut();
     };
 
-    if (!isLoaded) return { status: "loading", user: null, isDemo: false, signOut };
-    if (!isSignedIn || !user) return { status: "anonymous", user: null, isDemo: false, signOut };
+    if (!isLoaded) return { status: "loading", user: null, isDemo: false, isBeta: false, trialEndsAt: null, signOut };
+    if (!isSignedIn || !user) return { status: "anonymous", user: null, isDemo: false, isBeta: false, trialEndsAt: null, signOut };
 
     const email = user.primaryEmailAddress?.emailAddress ?? null;
     const sessionUser = {
@@ -70,9 +72,30 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
       photoURL: user.imageUrl || null,
     };
 
-    return hasInternalAccess(email)
-      ? { status: "authenticated", isDemo: false, signOut, user: sessionUser }
-      : { status: "unauthorized", isDemo: false, signOut, user: sessionUser };
+    const access = getStudioAccess({
+      email,
+      createdAt: user.createdAt,
+      publicMetadata: user.publicMetadata as Record<string, unknown>,
+    });
+
+    if (access.allowed) {
+      return {
+        status: "authenticated",
+        isDemo: false,
+        isBeta: access.kind === "beta",
+        trialEndsAt: access.trialEndsAt,
+        signOut,
+        user: sessionUser,
+      };
+    }
+    return {
+      status: access.kind === "expired" ? "subscription_required" : "unauthorized",
+      isDemo: false,
+      isBeta: false,
+      trialEndsAt: access.trialEndsAt,
+      signOut,
+      user: sessionUser,
+    };
   }, [isLoaded, isSignedIn, user, clerk]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -85,6 +108,8 @@ function DemoSessionProvider({ children }: { children: ReactNode }) {
       status: "demo",
       user: DEMO_USER,
       isDemo: true,
+      isBeta: false,
+      trialEndsAt: null,
       signOut: async () => {
         endDemoSession();
         window.location.assign("/login");
@@ -133,6 +158,7 @@ export function RequireSession({ children }: { children: ReactNode }) {
 
   if (status === "anonymous") return <Redirect to="/login" replace />;
   if (status === "unauthorized") return <Redirect to="/access-denied" replace />;
+  if (status === "subscription_required") return <Redirect to="/subscription-required" replace />;
 
   return <>{children}</>;
 }

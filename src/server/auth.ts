@@ -14,7 +14,7 @@
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { and, eq } from "drizzle-orm";
-import { hasInternalAccess } from "../lib/internalAccess.ts";
+import { getStudioAccess } from "../lib/internalAccess.ts";
 import { db } from "./db.ts";
 import { workspaceMembers, workspaces } from "./schema.ts";
 
@@ -39,8 +39,8 @@ export class HttpError extends Error {
 const secretKey = process.env.CLERK_SECRET_KEY;
 const clerk = secretKey ? createClerkClient({ secretKey }) : null;
 
-/** Verifies the bearer token and confirms the user is one of the approved operators. */
-async function requireInternalUserId(request: Request): Promise<string> {
+/** Verifies the bearer token and confirms the user has current Studio access. */
+async function requireStudioUserId(request: Request): Promise<string> {
   if (!secretKey || !clerk) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
 
   const header = request.headers.get("authorization") ?? "";
@@ -57,19 +57,31 @@ async function requireInternalUserId(request: Request): Promise<string> {
     throw new HttpError(401, "Session token is invalid or expired.");
   }
 
-  let primaryEmail: string | null = null;
+  let accessProfile: {
+    email: string | null;
+    createdAt: Date | string | number | null;
+    publicMetadata: Record<string, unknown>;
+  };
   try {
     const user = await clerk.users.getUser(userId);
-    primaryEmail =
-      user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId)?.emailAddress ?? null;
+    accessProfile = {
+      email: user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId)?.emailAddress ?? null,
+      createdAt: user.createdAt,
+      publicMetadata: user.publicMetadata,
+    };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("Clerk user lookup failed while verifying internal access.", error);
     throw new HttpError(503, `Unable to verify internal access: ${detail}`);
   }
 
-  if (!hasInternalAccess(primaryEmail)) {
-    throw new HttpError(403, "This account does not have access to Beebizy Studio.");
+  const access = getStudioAccess(accessProfile);
+  if (!access.allowed) {
+    const message =
+      access.kind === "expired"
+        ? "Your Beebizy Studio beta has ended. A paid subscription is required to continue."
+        : "This account does not have access to Beebizy Studio.";
+    throw new HttpError(403, message);
   }
 
   return userId;
@@ -118,7 +130,7 @@ async function resolveWorkspace(userId: string, clerkOrgId: string | null): Prom
 }
 
 export async function authorize(request: Request): Promise<RequestContext> {
-  const userId = await requireInternalUserId(request);
+  const userId = await requireStudioUserId(request);
   const orgHeader = request.headers.get("x-clerk-org-id");
   const { workspaceId, role } = await resolveWorkspace(userId, orgHeader && orgHeader !== "null" ? orgHeader : null);
   return { userId, workspaceId, role };
