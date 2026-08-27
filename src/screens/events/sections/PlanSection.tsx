@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -495,10 +495,60 @@ function MoodBoardPanel({ event }: { event: Event }) {
   const remove = useRemoveMoodBoardImage();
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [theme, setTheme] = useState("Modern garden");
+  const [showVariations, setShowVariations] = useState(false);
+
+  const variations = [
+    {
+      name: "Airy",
+      note: `A light, restrained take on ${theme.toLowerCase()} with natural texture and generous negative space.`,
+      swatches: ["bg-[#e9efe6]", "bg-[#adc6a8]", "bg-[#f3ead9]"],
+    },
+    {
+      name: "Warm",
+      note: `A welcoming ${theme.toLowerCase()} direction built around amber light, layered materials and social energy.`,
+      swatches: ["bg-[#8c5d3f]", "bg-[#e8bd6d]", "bg-[#efe1cb]"],
+    },
+    {
+      name: "Dramatic",
+      note: `A higher-contrast ${theme.toLowerCase()} variation for evening lighting, focal moments and photography.`,
+      swatches: ["bg-[#172922]", "bg-[#4b6555]", "bg-[#bba875]"],
+    },
+  ];
 
   return (
     <Panel>
       <PanelHeader title="Mood board" description="Reference images for decor, staging and lighting" />
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-hairline bg-primary-wash px-5 py-3">
+        <Sparkles className="size-4 text-primary-text" aria-hidden="true" />
+        <Input
+          value={theme}
+          onChange={(inputEvent) => setTheme(inputEvent.target.value)}
+          placeholder="Describe a theme"
+          aria-label="Mood board theme"
+          className="min-w-[12rem] flex-1 bg-surface"
+        />
+        <Button type="button" size="sm" onClick={() => setShowVariations(true)} disabled={!theme.trim()}>
+          Create theme variations
+        </Button>
+      </div>
+
+      {showVariations ? (
+        <div className="grid gap-3 border-b border-hairline p-5 md:grid-cols-3">
+          {variations.map((variation) => (
+            <article key={variation.name} className="overflow-hidden rounded-xl border border-hairline bg-card">
+              <div className="grid h-16 grid-cols-3">
+                {variation.swatches.map((swatch) => <span key={swatch} className={swatch} />)}
+              </div>
+              <div className="p-3.5">
+                <h3 className="text-sm font-semibold text-foreground">{variation.name} · {theme}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{variation.note}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"

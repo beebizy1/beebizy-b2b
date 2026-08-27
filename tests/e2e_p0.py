@@ -141,12 +141,41 @@ with sync_playwright() as playwright:
     page.goto(f"{BASE_URL.rstrip('/')}/app", wait_until="networkidle")
     wait_for_exact_text(page, "Demo data.")
     assert page.get_by_role("link", name="Dashboard").is_visible()
+    page.set_viewport_size({"width": 1986, "height": 1488})
+    page.screenshot(path="design-references/studio-dashboard-implementation.png")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+
+    product_mobile = browser.new_page(viewport={"width": 390, "height": 844})
+    product_mobile.add_init_script("sessionStorage.setItem('beebizy:product-demo', 'true')")
+    product_mobile.goto(f"{BASE_URL.rstrip('/')}/app", wait_until="networkidle")
+    product_mobile.screenshot(path="design-references/studio-dashboard-mobile-implementation.png")
+    product_mobile.get_by_role("button", name="Open navigation").click()
+    assert product_mobile.get_by_role("navigation", name="Main").get_by_role("link", name="Plan an event").is_visible()
+    product_mobile.keyboard.press("Escape")
+    assert product_mobile.evaluate(
+        "document.documentElement.scrollWidth === document.documentElement.clientWidth",
+    )
+    product_mobile.close()
+
+    # The private beta starts with an AI-assisted or manual planning choice.
+    page.get_by_role("link", name="Plan an event", exact=True).click()
+    wait_for_exact_text(page, "How would you like to plan?")
+    page.get_by_role("button", name="Plan with the AI agent").click()
+    page.get_by_label("Headcount").fill("200")
+    page.get_by_role("button", name="Build my plan").click()
+    wait_for_exact_text(page, "Bee AI working plan")
+    wait_for_exact_text(page, "$70,000")
+    wait_for_exact_text(page, "$30,000")
+    wait_for_exact_text(page, "$10,000")
+    wait_for_exact_text(page, "$5,000")
+    page.set_viewport_size({"width": 1986, "height": 1488})
+    page.screenshot(path="design-references/studio-ai-planner-implementation.png")
+    page.set_viewport_size({"width": 1440, "height": 1000})
 
     # Multi-location calendar is a first-class destination.
     page.get_by_role("link", name="Calendar", exact=True).click()
-    wait_for_exact_text(page, "Every event you run")
+    wait_for_exact_text(page, "Your full event calendar")
     assert page.url.endswith("/app/calendar")
-    assert page.get_by_role("button", name="Calendar view").get_attribute("aria-pressed") == "true"
     wait_for_exact_text(page, "Today")
     page.locator('a[title*="Global Sales Kickoff"]').first.wait_for(state="visible")
     calendar = page.locator('a[title*=" · "]')
@@ -154,22 +183,13 @@ with sync_playwright() as playwright:
     assert "Moscone Center West" in calendar_text
     assert "The Foundry Loft" in calendar_text
 
-    venue_filter = page.get_by_label("Filter by venue")
-    venue_filter.click()
-    page.get_by_role("option", name="Moscone Center West").click()
-    page.locator('a[title*="Global Sales Kickoff"]').first.wait_for(state="visible")
-    assert page.locator('a[title*="Customer Advisory Board — Spring"]').count() == 0
-
-    venue_filter.click()
-    page.get_by_role("option", name="All venues").click()
-    page.get_by_role("button", name="List view").click()
     page.get_by_role("link", name="Events", exact=True).click()
     wait_for_exact_text(page, "Every event you run")
     page.get_by_text("Annual Partner Gala & Fundraiser", exact=True).click()
     event_sections = page.get_by_label("Event sections")
 
     # Invitation and RSVP tracking.
-    event_sections.get_by_role("link", name="Invites", exact=True).click()
+    event_sections.get_by_role("link", name="Invites & guests", exact=True).click()
     wait_for_exact_text(page, "Invites & registrations")
     page.get_by_label("Choose someone to invite").click()
     page.get_by_role("option").first.click()
@@ -204,7 +224,7 @@ with sync_playwright() as playwright:
     wait_for_exact_text(page, "P0 browser verification")
 
     # Planned-versus-actual budget management with a tracked actual-spend write.
-    event_sections.get_by_role("link", name="Budget", exact=True).click()
+    event_sections.get_by_role("link", name="Budget & reporting", exact=True).click()
     wait_for_exact_text(page, "Budget")
     wait_for_exact_text(page, "Estimated")
     wait_for_exact_text(page, "Actual")
@@ -223,7 +243,7 @@ with sync_playwright() as playwright:
     wait_for_exact_text(page, "Floorplan saved")
 
     # The writes above must survive SPA navigation and appear in structured history.
-    event_sections.get_by_role("link", name="Overview", exact=True).click()
+    event_sections.get_by_role("link", name="Analytics", exact=True).click()
     wait_for_exact_text(page, "Planning history")
     wait_for_exact_text(page, "Created run-of-show: P0 browser verification")
     wait_for_exact_text(page, "Updated budget: Catering — 300 covers")

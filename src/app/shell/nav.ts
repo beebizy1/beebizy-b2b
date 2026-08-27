@@ -9,13 +9,15 @@
  */
 
 import {
+  BarChart3,
   BookMarked,
   CalendarDays,
   CalendarRange,
-  Coins,
+  History as HistoryIcon,
   LayoutDashboard,
+  MessageSquare,
   Store,
-  Users,
+  WandSparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { EventSectionId } from "@/data/entities";
@@ -35,14 +37,20 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Dashboard",
     href: "/app",
     icon: LayoutDashboard,
-    hint: "What needs you now, across every event",
+    hint: "Portfolio health, decisions and AI planning suggestions",
     badge: "attention",
+  },
+  {
+    label: "Plan an event",
+    href: "/app/plan",
+    icon: WandSparkles,
+    hint: "Plan with Bee AI or start manually",
   },
   {
     label: "Calendar",
     href: "/app/calendar",
     icon: CalendarDays,
-    hint: "Month and year view across every event and venue",
+    hint: "Every event on one operating calendar",
   },
   {
     label: "Events",
@@ -51,29 +59,35 @@ export const NAV_ITEMS: NavItem[] = [
     hint: "Every event, its readiness and its workspace",
   },
   {
-    label: "Guests",
-    href: "/app/guests",
-    icon: Users,
-    hint: "Guests and their registrations",
-  },
-  {
-    label: "Vendors",
+    label: "Vendor Hub",
     href: "/app/vendors",
     icon: Store,
-    hint: "Vendors, bookings and conversations",
-    badge: "unread",
+    hint: "Your vendors and Beebizy marketplace suggestions",
   },
   {
-    label: "Budget",
-    href: "/app/budget",
-    icon: Coins,
-    hint: "Spend, ticket sales, fundraising and ROI",
-  },
-  {
-    label: "Library",
+    label: "Templates",
     href: "/app/library",
     icon: BookMarked,
-    hint: "Templates, venues and boards",
+    hint: "Reusable events, checklists, run of show and boards",
+  },
+  {
+    label: "History",
+    href: "/app/history",
+    icon: HistoryIcon,
+    hint: "Past events, spend and planning decisions",
+  },
+  {
+    label: "Reports",
+    href: "/app/reports",
+    icon: BarChart3,
+    hint: "Portfolio spend, revenue, attendance and ROI",
+  },
+  {
+    label: "Messages",
+    href: "/app/messages",
+    icon: MessageSquare,
+    hint: "All vendor conversations in one inbox",
+    badge: "unread",
   },
 ];
 
@@ -91,12 +105,12 @@ export interface EventSection {
  * sits with the rest of the money.
  */
 export const EVENT_SECTIONS: EventSection[] = [
-  { id: "overview", label: "Overview", slug: "", hint: "Readiness, risks and the shape of the day" },
-  { id: "plan", label: "Plan", slug: "plan", hint: "Checklist, run of show and mood board" },
-  { id: "guests", label: "Invites", slug: "guests", hint: "Invitations, RSVPs, registrations and capacity" },
+  { id: "overview", label: "Analytics", slug: "", hint: "Readiness, risks and event performance" },
+  { id: "plan", label: "Plan", slug: "plan", hint: "Run of show, checklist and mood board" },
+  { id: "guests", label: "Invites & guests", slug: "guests", hint: "Invitations, registrations and capacity" },
   { id: "vendors", label: "Vendors", slug: "vendors", hint: "Bookings, catering and the floorplan" },
-  { id: "budget", label: "Budget", slug: "budget", hint: "Spend, tickets, fundraising and ROI" },
-  { id: "share", label: "Share", slug: "share", hint: "Public event page and ticket link" },
+  { id: "budget", label: "Budget & reporting", slug: "budget", hint: "Spend, tickets, fundraising and ROI" },
+  { id: "share", label: "Publish", slug: "share", hint: "Public event page and invitation link" },
 ];
 
 export function eventSectionHref(eventId: string, section: EventSectionId): string {

@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import { isNavActive, NAV_ITEMS } from "./nav";
 
 describe("P0 product navigation", () => {
-  it("exposes Dashboard, Calendar, and Events as distinct destinations", () => {
-    expect(NAV_ITEMS.slice(0, 3).map(({ label, href }) => ({ label, href }))).toEqual([
+  it("exposes planning, Dashboard, Calendar, and Events as distinct destinations", () => {
+    expect(NAV_ITEMS.map(({ label, href }) => ({ label, href }))).toEqual(expect.arrayContaining([
       { label: "Dashboard", href: "/app" },
+      { label: "Plan an event", href: "/app/plan" },
       { label: "Calendar", href: "/app/calendar" },
       { label: "Events", href: "/app/events" },
-    ]);
+    ]));
   });
 
   it("does not mark Calendar and Events active at the same time", () => {

@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Check, Coins, Gavel, Handshake, Pencil, Plus, Ticket, Trash2, Trophy, X } from "lucide-react";
+import { Check, Coins, Gavel, Handshake, Pencil, Plus, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -50,6 +50,7 @@ import {
   useUpdateTicketType,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
+import { buildBudgetSuggestions, suggestedTotalBudgetCents } from "@/data/planner";
 import { usePreferences } from "@/app/preferences";
 import {
   BOOKING_STATUSES,
@@ -294,12 +295,48 @@ function BudgetPanel({ event }: { event: Event }) {
   const revenue = (items ?? []).filter((item) => item.type === "revenue");
   const plannedSpend = sumCents(expenses.map((item) => item.estimatedCents));
   const actualSpend = sumCents(expenses.map((item) => item.actualCents));
+  const headcount = event.capacity ?? Math.max(event.registrationCount, 100);
+  const suggestedTotal = suggestedTotalBudgetCents(headcount);
+  const suggestedLines = buildBudgetSuggestions(suggestedTotal);
+
+  const addSuggestedBudget = async () => {
+    const results = await Promise.allSettled(
+      suggestedLines.map((line, index) =>
+        add.mutateAsync({
+          eventId: event.id,
+          draft: {
+            name: line.name,
+            category: line.category,
+            type: "expense",
+            estimatedCents: line.estimatedCents,
+            notes: line.rationale,
+            sortOrder: index,
+          },
+        }),
+      ),
+    );
+    const failed = results.filter((result) => result.status === "rejected").length;
+    toast({
+      title: failed ? "Some suggestions couldn't be added" : "Suggested budget added",
+      description: failed
+        ? `${results.length - failed} of ${results.length} lines were added.`
+        : `${formatMoney(suggestedTotal)} across ${suggestedLines.length} editable lines.`,
+    });
+  };
 
   return (
     <Panel>
       <PanelHeader
         title="Budget"
         description={`${expenses.length} expense lines, ${revenue.length} revenue lines`}
+        actions={
+          expenses.length === 0 ? (
+            <Button variant="outline" size="sm" onClick={() => void addSuggestedBudget()} disabled={add.isPending}>
+              <Sparkles className="mr-1.5 size-3.5 text-primary-text" />
+              Suggest {formatMoney(suggestedTotal, { compact: true })} for {headcount} guests
+            </Button>
+          ) : null
+        }
       />
 
       {plannedSpend > 0 ? (

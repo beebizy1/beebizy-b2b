@@ -31,6 +31,19 @@ renders Clerk's own widget (Google, email, MFA, password reset). Landing-page pr
 CTAs enter through that sign-in route. Without Clerk, the whole app falls back to the
 demo session described above so local development remains credential-free.
 
+The hosted Studio is a private beta. Internal Beebizy addresses remain permanently
+approved. Give an invited tester the Clerk public metadata below to start a 90-day trial
+from their account creation time:
+
+```json
+{ "beebizyBeta": true }
+```
+
+After 90 days both the client and API deny product access and send the tester to the paid
+subscription screen. Once billing confirms payment, set `subscriptionStatus` to `active`
+in Clerk public metadata. Payment-provider checkout and webhook setup are deployment
+configuration and are intentionally not simulated by the preview.
+
 Authenticated workspaces use the HTTP adapter backed by PostgreSQL. Demo sessions use a
 separate in-memory adapter and never read or write production data.
 
@@ -84,21 +97,22 @@ records they summarise.
 
 ## Navigation
 
-Seven focused destinations:
+The Studio workspace uses these focused destinations:
 
 | Where | What it answers |
 | --- | --- |
-| Dashboard | What needs a decision right now, ranked, linking to the fix |
-| Calendar | Month and year view across events and venues |
-| Events | Every event, its readiness, and anything wrong with it |
-| Guests | Attendees and the events each is invited or registered for |
-| Vendors | Suppliers, bookings and conversations |
-| Budget | Ticket sales, budgets, fundraising and reporting |
-| Library | Templates and venues |
+| Dashboard | Portfolio health, decisions, and upcoming work |
+| Plan an event | AI-guided budget, run of show, checklist, mood board, and vendors |
+| Calendar | Every event on one operating calendar |
+| Events | Analytics, plan, invites, vendors, budget, and publishing per event |
+| Vendor Hub | The team's vendors plus Beebizy marketplace suggestions |
+| Templates | Reusable events, checklists, run of show, and boards |
+| History | Past events, spend, and planning decisions |
+| Reports | Portfolio spend, revenue, attendance, and ROI |
+| Messages | Vendor conversations in one inbox |
 
-Each event opens a workspace with six sections: Overview, Plan, Invites, Vendors,
-Budget, and Share. Plan contains the AI budget, checklist, run-of-show, mood-board,
-and marketplace-suggestion builders.
+Each event opens a workspace with Analytics, Plan, Invites & guests, Vendors,
+Budget & reporting, and Publish sections.
 
 `⌘K` searches every event and jumps to any section.
 

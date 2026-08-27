@@ -1,10 +1,10 @@
 import { Link } from "wouter";
-import { LockKeyhole } from "lucide-react";
+import { Clock3 } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/app/session";
 
-export default function AccessDeniedPage() {
+export default function SubscriptionRequiredPage() {
   const { signOut } = useSession();
 
   return (
@@ -16,19 +16,17 @@ export default function AccessDeniedPage() {
 
         <section className="w-full rounded-2xl border border-card-border bg-card p-8 shadow-sm">
           <div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/15 text-foreground">
-            <LockKeyhole aria-hidden="true" className="size-5" />
+            <Clock3 aria-hidden="true" className="size-5" />
           </div>
-          <h1 className="headline mt-5 text-foreground">Beebizy private beta</h1>
+          <h1 className="headline mt-5 text-foreground">Your private beta has ended</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            New account creation is closed. Studio access is limited to approved beta testers, with three free
-            months for feedback before paid access is required.
+            Your complimentary three-month Beebizy Studio beta has ended. Your workspace is preserved while you
+            contact Beebizy to activate paid access.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Button asChild>
-              <a href="mailto:hello@beebizy.com?subject=Request%20Beebizy%20Studio%20beta%20access">
-                Request beta access
-              </a>
+              <a href="mailto:hello@beebizy.com?subject=Activate%20Beebizy%20Studio">Activate Studio</a>
             </Button>
             <Button type="button" variant="outline" onClick={() => void signOut()}>
               Sign out

@@ -49,7 +49,7 @@ export class HttpError extends Error {
 const secretKey = process.env.CLERK_SECRET_KEY;
 const clerk = secretKey ? createClerkClient({ secretKey }) : null;
 
-/** Verifies the bearer token and confirms the user is one of the approved operators. */
+/** Verifies the bearer token and confirms the user is an approved Studio operator or beta tester. */
 async function requireInternalUserId(request: Request): Promise<string> {
   if (!secretKey || !clerk) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
 

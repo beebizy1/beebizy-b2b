@@ -84,6 +84,7 @@ function NavRow({
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const [pathname] = useLocation();
+  const { user } = useSession();
   const { data: attention } = useAttention();
   const { data: vendors } = useVendors();
 
@@ -95,8 +96,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-        <BrandLogoLink to="/app" size="md" />
+      <div className="border-b border-sidebar-border px-5 py-5">
+        <BrandLogoLink to="/app" size="lg" />
+        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Private beta workspace</p>
+        <p className="mt-1 truncate text-sm font-semibold text-foreground">{user?.name ?? "Beebizy Studio"}</p>
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -274,11 +277,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-sidebar-border lg:block">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-sidebar-border lg:block xl:w-72 2xl:w-80">
         <SidebarContent />
       </aside>
 
-      <div className="lg:pl-64">
+      <div className="lg:pl-64 xl:pl-72 2xl:pl-80">
         <header className="sticky top-0 z-30 border-b border-hairline bg-background/85 backdrop-blur">
           <div className="flex h-14 items-center gap-2 px-4 sm:px-6">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -317,7 +320,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {mode === "live" ? <BetaBanner access={identity?.access} /> : null}
         </header>
 
-        <main id="main" className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:py-8">
+        <main id="main" className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:py-8 xl:px-8">
           {children}
         </main>
       </div>

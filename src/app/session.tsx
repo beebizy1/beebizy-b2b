@@ -133,6 +133,5 @@ export function RequireSession({ children }: { children: ReactNode }) {
 
   if (status === "anonymous") return <Redirect to="/login" replace />;
   if (status === "unauthorized") return <Redirect to="/access-denied" replace />;
-
   return <>{children}</>;
 }
