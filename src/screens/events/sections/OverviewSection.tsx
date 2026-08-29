@@ -21,6 +21,7 @@ import { useBudget, useChecklist, useEventHistory, useEventVendors, useRunOfShow
 import { formatMoney, sumCents } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
+import { formatClockTime } from "@/lib/datetime";
 
 export default function OverviewSection({ event, health }: { event: Event; health: EventHealth | null | undefined }) {
   const { data: checklist, isLoading: checklistLoading } = useChecklist(event.id);
@@ -125,8 +126,8 @@ export default function OverviewSection({ event, health }: { event: Event; healt
             <ol className="divide-y divide-hairline">
               {(runOfShow ?? []).slice(0, 6).map((cue) => (
                 <li key={cue.id} className="flex items-baseline gap-4 px-5 py-3">
-                  <span data-numeric className="w-14 shrink-0 font-mono text-xs font-semibold text-foreground">
-                    {cue.startTime}
+                  <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
+                    {formatClockTime(cue.startTime)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>

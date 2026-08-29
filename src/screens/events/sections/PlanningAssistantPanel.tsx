@@ -20,6 +20,7 @@ import {
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
 import { moodConceptDataUrl, PLANNING_LIMITS, suggestedTotalBudgetCents, type PlanningSuggestions } from "@/data/planner";
 import type { Event } from "@/data/entities";
+import { formatClockTime } from "@/lib/datetime";
 
 type AppliedSection = "budget" | "checklist" | "runOfShow" | "mood";
 
@@ -308,7 +309,9 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
               <ol className="divide-y divide-hairline">
                 {suggestions.runOfShow.map((cue) => (
                   <li key={`${cue.startTime}-${cue.title}`} className="flex items-start gap-3 px-4 py-2.5">
-                    <span data-numeric className="w-12 shrink-0 font-mono text-xs font-semibold text-foreground">{cue.startTime}</span>
+                    <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
+                      {formatClockTime(cue.startTime)}
+                    </span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">{cue.title}</p>
                       <p className="text-xs text-muted-foreground">

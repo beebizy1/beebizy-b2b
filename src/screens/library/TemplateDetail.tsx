@@ -29,6 +29,7 @@ import {
 import { useReplaceTemplateContents, useTemplate, useUpdateTemplate } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { EVENT_CATEGORIES, type TemplateContents } from "@/data/entities";
+import { formatClockTime } from "@/lib/datetime";
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -344,8 +345,8 @@ export default function TemplateDetail({ id }: { id: string }) {
             <ol className="divide-y divide-hairline">
               {working.runOfShowItems.map((cue) => (
                 <li key={cue.id} className="group flex items-center gap-3 px-5 py-2.5">
-                  <span data-numeric className="w-14 shrink-0 font-mono text-xs font-semibold text-foreground">
-                    {cue.startTime}
+                  <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
+                    {formatClockTime(cue.startTime)}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">{cue.title}</span>
                   <button

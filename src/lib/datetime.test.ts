@@ -14,8 +14,10 @@ import {
   describeWhenInZone,
   dayNumberInZone,
   dayNumberOf,
+  formatClockTime,
   formatInZone,
   isSameDayInZone,
+  NO_DATE,
   resolveTimeZone,
 } from "./datetime";
 
@@ -82,6 +84,15 @@ describe("formatting", () => {
     expect(formatInZone(null, LA)).toBe("—");
     expect(formatInZone("", LA)).toBe("—");
     expect(formatInZone("nope", LA)).toBe("—");
+  });
+
+  it("renders stored run-of-show times on a compact 12-hour clock", () => {
+    expect(formatClockTime("08:00")).toBe("8 AM");
+    expect(formatClockTime("10:00")).toBe("10 AM");
+    expect(formatClockTime("14:30")).toBe("2:30 PM");
+    expect(formatClockTime("00:00")).toBe("12 AM");
+    expect(formatClockTime("12:00")).toBe("12 PM");
+    expect(formatClockTime("not-a-time")).toBe(NO_DATE);
   });
 });
 

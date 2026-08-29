@@ -33,6 +33,7 @@ import {
   suggestedTotalBudgetCents,
 } from "@/data/planner";
 import { toast } from "@/hooks/use-toast";
+import { formatClockTime } from "@/lib/datetime";
 import type { ChecklistItemDraft, EventCategory, RunOfShowItemDraft } from "@/data/entities";
 
 type PlannerMode = "choose" | "agent" | "plan";
@@ -320,7 +321,9 @@ export default function AIPlanner() {
               <ol className="divide-y divide-hairline">
                 {runOfShowDraft.map((cue) => (
                   <li key={cue.startTime} className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2.5">
-                    <span data-numeric className="font-mono text-xs font-semibold text-primary-text">{cue.startTime}</span>
+                    <span data-numeric className="font-mono text-xs font-semibold text-primary-text">
+                      {formatClockTime(cue.startTime)}
+                    </span>
                     <span className="text-sm font-medium text-foreground">{cue.title}</span>
                     <span className="text-xs text-muted-foreground">{cue.duration} min</span>
                   </li>

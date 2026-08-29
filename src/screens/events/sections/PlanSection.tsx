@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { formatClockTime } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
 import {
   EmptyState,
@@ -351,8 +352,8 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
 
   return (
     <li className="group flex items-start gap-4 px-5 py-3">
-      <span data-numeric className="w-14 shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
-        {cue.startTime}
+      <span data-numeric className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
+        {formatClockTime(cue.startTime)}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>

@@ -155,6 +155,15 @@ with sync_playwright() as playwright:
     assert product_mobile.evaluate(
         "document.documentElement.scrollWidth === document.documentElement.clientWidth",
     )
+    product_mobile.goto(f"{BASE_URL.rstrip('/')}/app/plan", wait_until="networkidle")
+    product_mobile.get_by_role("button", name="Plan with the AI agent").click()
+    product_mobile.get_by_label("Headcount").fill("200")
+    product_mobile.get_by_role("button", name="Build my plan").click()
+    product_mobile.get_by_text("3 PM", exact=True).wait_for(state="visible")
+    assert "15:00" not in product_mobile.locator("main").inner_text()
+    assert product_mobile.evaluate(
+        "document.documentElement.scrollWidth === document.documentElement.clientWidth",
+    )
     product_mobile.close()
 
     # The private beta starts with an AI-assisted or manual planning choice.
@@ -168,6 +177,8 @@ with sync_playwright() as playwright:
     wait_for_exact_text(page, "$30,000")
     wait_for_exact_text(page, "$10,000")
     wait_for_exact_text(page, "$5,000")
+    wait_for_exact_text(page, "3 PM")
+    assert "15:00" not in page.locator("main").inner_text()
     page.set_viewport_size({"width": 1986, "height": 1488})
     page.screenshot(path="design-references/studio-ai-planner-implementation.png")
     page.set_viewport_size({"width": 1440, "height": 1000})
@@ -209,6 +220,8 @@ with sync_playwright() as playwright:
     wait_for_exact_text(page, "$30,000")
     wait_for_exact_text(page, "$10,000")
     wait_for_exact_text(page, "$5,000")
+    wait_for_exact_text(page, "4:30 PM")
+    assert "16:30" not in page.locator("main").inner_text()
     for builder in ["Budget suggestion", "Checklist builder", "Run of show builder", "Mood board directions"]:
         section = page.get_by_text(builder, exact=True).locator("xpath=ancestor::section[1]")
         section.get_by_role("button", name="Add to event").click()
