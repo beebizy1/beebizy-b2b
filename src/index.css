@@ -49,9 +49,8 @@
      white, so anything set in the brand colour uses this darker tone instead. */
   --color-primary-text: hsl(var(--primary-text));
 
-  /* Brand ink: the second half of the two-colour identity. Marketing surfaces sit on
-     this near-black navy in both themes — the way Binance keeps its marketing dark and
-     flips only transactional screens — with yellow carrying the voltage on top. */
+  /* Warm brand grounding tones. Marketing surfaces use espresso and honey instead of
+     black, with yellow carrying the energy on top. */
   --color-brand-ink: hsl(var(--brand-ink));
   --color-brand-surface: hsl(var(--brand-surface));
   --color-brand-hairline: hsl(var(--brand-hairline));
@@ -163,29 +162,25 @@
   --popover-foreground: 222 47% 11%;
   --popover-border: 220 16% 89%;
 
-  /*
-    Brand yellow, sampled from the logo itself (#f8d810), with a deeper step for hover
-    and active. The logo is yellow and black on white, so those are the two colours the
-    product uses — an invented navy would have been a third brand nobody asked for.
-  */
+  /* Brand yellow, sampled from the logo itself (#f8d810), with a deeper step for hover
+     and active. Warm espresso replaces the previous black treatment. */
   --primary: 52 94% 52%;
   --primary-hover: 48 92% 45%;
-  /* Black on brand yellow measures 12.6:1. */
-  --primary-foreground: 0 0% 4%;
+  --primary-foreground: 36 66% 16%;
   /* Soft honey wash for tinted surfaces and section bands. */
   --primary-muted: 51 94% 92%;
   --primary-wash: 51 96% 96%;
   /* Yellow as small text is unreadable at fill brightness; this is 5.4:1 on white. */
   --primary-text: 36 88% 29%;
 
-  /* The logo's black, used for grounding bands and the secondary button. */
-  --brand-ink: 0 0% 4%;
-  --brand-surface: 0 0% 9%;
-  --brand-hairline: 0 0% 18%;
+  /* Warm espresso and ochre ground feature bands and secondary actions. */
+  --brand-ink: 36 45% 24%;
+  --brand-surface: 38 42% 29%;
+  --brand-hairline: 40 30% 43%;
   --brand-foreground: 0 0% 100%;
-  --brand-muted: 0 0% 72%;
+  --brand-muted: 43 38% 82%;
 
-  --secondary: 0 0% 6%;
+  --secondary: 36 45% 26%;
   --secondary-foreground: 0 0% 100%;
 
   --muted: 220 20% 95%;
@@ -360,7 +355,7 @@
     color: hsl(var(--primary-text));
   }
 
-  /* Marketing surface: brand ink in both themes, with yellow doing the talking. */
+  /* Marketing surface: warm brand ink with yellow doing the talking. */
   .brand-canvas {
     background-color: hsl(var(--brand-ink));
     color: hsl(var(--brand-foreground));
@@ -380,7 +375,7 @@
   .honeycomb {
     background-image:
       radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.10), transparent 60%),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3C/svg%3E");
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%236f5328' stroke-opacity='0.06'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%236f5328' stroke-opacity='0.06'/%3E%3C/svg%3E");
   }
   /* A yellow band with the comb pattern, for section grounds. */
   .honey-band {

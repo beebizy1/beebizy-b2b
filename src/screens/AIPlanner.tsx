@@ -6,6 +6,7 @@ import {
   Clock3,
   Coins,
   ExternalLink,
+  FileSpreadsheet,
   Loader2,
   Palette,
   PencilLine,
@@ -35,8 +36,9 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { formatClockTime } from "@/lib/datetime";
 import type { ChecklistItemDraft, EventCategory, RunOfShowItemDraft } from "@/data/entities";
+import SpreadsheetImporter from "@/screens/import/SpreadsheetImporter";
 
-type PlannerMode = "choose" | "agent" | "plan";
+type PlannerMode = "choose" | "agent" | "plan" | "import";
 
 const eventTypes = ["Conference", "Gala", "Workshop", "Fundraiser", "Product launch", "Company offsite"];
 
@@ -46,21 +48,21 @@ const themeDirections = {
     variations: [
       { name: "Botanical minimal", note: "Airy greens, linen and restrained florals", colors: ["#1f5138", "#b9d6b5", "#f4efe2"] },
       { name: "Golden hour garden", note: "Amber light, meadow flowers and oak", colors: ["#9f5f2e", "#f2c66d", "#efe6d2"] },
-      { name: "Midnight conservatory", note: "Deep foliage, black accents and glass", colors: ["#102d25", "#365f4d", "#c8b989"] },
+      { name: "Evening conservatory", note: "Deep foliage, bronze accents and glass", colors: ["#102d25", "#365f4d", "#c8b989"] },
     ],
   },
   "Bold brand launch": {
     description: "High-energy staging, graphic moments and camera-ready reveals.",
     variations: [
-      { name: "Color field", note: "Oversized brand blocks and clean typography", colors: ["#f8d810", "#111111", "#ffffff"] },
+      { name: "Color field", note: "Oversized brand blocks and clean typography", colors: ["#f8d810", "#6f5328", "#ffffff"] },
       { name: "Future studio", note: "Chrome, projection and electric highlights", colors: ["#24263b", "#765cff", "#d8f6ff"] },
-      { name: "Editorial reveal", note: "Monochrome sets with one sharp accent", colors: ["#171717", "#dedede", "#ff5a36"] },
+      { name: "Editorial reveal", note: "Warm neutral sets with one sharp accent", colors: ["#76542f", "#f0e4cf", "#ff5a36"] },
     ],
   },
   "Black tie": {
     description: "Formal pacing, cinematic lighting and elevated table details.",
     variations: [
-      { name: "Classic gala", note: "Black, ivory and polished gold", colors: ["#111111", "#f5f0e6", "#b9954e"] },
+      { name: "Classic gala", note: "Espresso, ivory and polished gold", colors: ["#513d2a", "#f5f0e6", "#b9954e"] },
       { name: "Jewel box", note: "Emerald velvet, brass and dramatic florals", colors: ["#123d32", "#8f1e3b", "#c5a25d"] },
       { name: "Moonlit modern", note: "Ink blue, silver and architectural light", colors: ["#111d36", "#8995a8", "#eef1f5"] },
     ],
@@ -183,7 +185,7 @@ export default function AIPlanner() {
       />
 
       {mode === "choose" ? (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid gap-5 lg:grid-cols-3">
           <button
             type="button"
             onClick={() => setMode("agent")}
@@ -232,8 +234,35 @@ export default function AIPlanner() {
               Create manually <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
             </span>
           </Link>
+
+          <button
+            type="button"
+            onClick={() => setMode("import")}
+            className="group rounded-2xl border border-card-border bg-card p-7 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="grid size-12 place-items-center rounded-xl bg-primary-muted text-primary-text">
+              <FileSpreadsheet className="size-6" aria-hidden="true" />
+            </span>
+            <h2 className="mt-5 text-xl font-bold text-foreground">Import an existing plan</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Turn an Excel file, CSV, or public Google Sheet into a draft event you can review before saving.
+            </p>
+            <ul className="mt-5 space-y-2 text-sm text-foreground">
+              {["Map event details", "Bring checklists, schedules and budgets", "Preview every record first"].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-success-text" aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <span className="mt-6 inline-flex items-center gap-2 font-semibold text-primary-text">
+              Import spreadsheet <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </button>
         </div>
       ) : null}
+
+      {mode === "import" ? <SpreadsheetImporter onBack={() => setMode("choose")} /> : null}
 
       {mode === "agent" ? (
         <Panel>

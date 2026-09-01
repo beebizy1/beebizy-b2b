@@ -91,7 +91,8 @@ import type {
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
 import { describeHistoryChange } from "../history";
-import { buildRuleBasedSuggestions } from "../planner";
+import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../planner";
+import { googleSheetCsvUrl } from "../import";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -1365,7 +1366,59 @@ export const memoryAdapter: DataAdapter = {
   assistant: {
     plan: async (brief) => {
       await wait();
-      return buildRuleBasedSuggestions(requireEvent(brief.eventId), brief);
+      const event = requireEvent(brief.eventId);
+      const current = store();
+      const memory: PastEventPlanningRecord[] = current.events
+        .filter((candidate) => candidate.status === "completed" && candidate.id !== event.id)
+        .map((candidate) => ({
+          event: candidate,
+          budget: current.budget.filter((line) => line.eventId === candidate.id).map((line) => ({
+            name: line.name,
+            category: line.category,
+            type: line.type,
+            estimatedCents: line.estimatedCents,
+            actualCents: line.actualCents,
+            notes: line.notes,
+            sortOrder: line.sortOrder,
+          })),
+          checklist: current.checklist.filter((item) => item.eventId === candidate.id).map((item) => ({
+            title: item.title,
+            description: item.description,
+            completed: item.completed,
+            assignedTo: item.assignedTo,
+            category: item.category,
+            sortOrder: item.sortOrder,
+            dueDaysBefore: item.dueDate
+              ? Math.max(0, Math.round((new Date(candidate.date).getTime() - new Date(item.dueDate).getTime()) / 86_400_000))
+              : 14,
+          })),
+          runOfShow: current.runOfShow.filter((cue) => cue.eventId === candidate.id).map((cue) => ({
+            startTime: cue.startTime,
+            duration: cue.duration,
+            title: cue.title,
+            description: cue.description,
+            responsible: cue.responsible,
+            sortOrder: cue.sortOrder,
+          })),
+          moodCaptions: current.moodBoard
+            .filter((image) => image.eventId === candidate.id && image.caption)
+            .map((image) => image.caption!),
+          floorplanShapes: current.floorplans
+            .find((plan) => plan.eventId === candidate.id)?.items.map((item) => item.shape) ?? [],
+        }));
+      return buildRuleBasedSuggestions(event, brief, memory);
+    },
+  },
+  imports: {
+    loadGoogleSheet: async (url) => {
+      const response = await fetch(googleSheetCsvUrl(url));
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (!response.ok || contentType.includes("text/html")) {
+        throw new DataError("invalid", 'Set Google Sheets sharing to "Anyone with the link can view," then try again.');
+      }
+      const csv = await response.text();
+      if (csv.length > 2 * 1024 * 1024) throw new DataError("invalid", "This sheet is larger than the 2 MB import limit.");
+      return { name: "Google Sheet", csv };
     },
   },
   events,

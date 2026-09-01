@@ -150,6 +150,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
     },
 
+    imports: {
+      loadGoogleSheet: (url: string) => client.post<{ name: string; csv: string }>("/imports/google-sheet", { url }),
+    },
+
     events: {
       list: (filter) => {
         const params = new URLSearchParams();

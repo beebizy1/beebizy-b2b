@@ -5,6 +5,7 @@ import {
   buildRuleBasedSuggestions,
   marketplaceSearchUrl,
   type MoodConcept,
+  type PastEventPlanningRecord,
   type PlanningBrief,
   type PlanningSuggestions,
 } from "../data/planner.ts";
@@ -67,8 +68,9 @@ export async function generatePlanningSuggestions(
   event: Event,
   brief: PlanningBrief,
   userId: string,
+  pastEvents: PastEventPlanningRecord[] = [],
 ): Promise<PlanningSuggestions> {
-  const fallback = buildRuleBasedSuggestions(event, brief);
+  const fallback = buildRuleBasedSuggestions(event, brief, pastEvents);
   if (!process.env.VERCEL_OIDC_TOKEN && !process.env.AI_GATEWAY_API_KEY) return fallback;
 
   const eventContext = {
@@ -84,6 +86,25 @@ export async function generatePlanningSuggestions(
     deterministicBudget: fallback.budget.map((line) => ({
       category: line.category,
       amountCents: line.estimatedCents,
+    })),
+    pastEventEvidence: pastEvents.map((record) => ({
+      title: record.event.title,
+      category: record.event.category,
+      date: record.event.date,
+      capacity: record.event.capacity,
+      actualBudgetByCategory: record.budget.map((line) => ({
+        category: line.category,
+        actualCents: line.actualCents ?? line.estimatedCents,
+      })),
+      checklist: record.checklist.map((item) => ({ title: item.title, category: item.category, dueDaysBefore: item.dueDaysBefore })),
+      runOfShow: record.runOfShow.map((cue) => ({
+        startTime: cue.startTime,
+        duration: cue.duration,
+        title: cue.title,
+        responsible: cue.responsible,
+      })),
+      moodCaptions: record.moodCaptions,
+      floorplanShapes: record.floorplanShapes,
     })),
   };
 
@@ -123,6 +144,7 @@ export async function generatePlanningSuggestions(
         ...vendor,
         marketplaceUrl: marketplaceSearchUrl(vendor.searchQuery),
       })),
+      learning: fallback.learning,
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

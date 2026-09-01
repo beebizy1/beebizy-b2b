@@ -6,6 +6,7 @@ import {
   marketplaceSearchUrl,
   moodConceptDataUrl,
   suggestedTotalBudgetCents,
+  type PastEventPlanningRecord,
 } from "./planner";
 
 const event: Event = {
@@ -52,6 +53,44 @@ describe("planning suggestions", () => {
     expect(plan.runOfShow.length).toBeGreaterThanOrEqual(6);
     expect(plan.moodConcepts).toHaveLength(3);
     expect(plan.vendors.every((vendor) => vendor.marketplaceUrl.startsWith("https://app.beebizy.com/"))).toBe(true);
+  });
+
+  it("adapts the plan from similar completed events in the same workspace", () => {
+    const memory: PastEventPlanningRecord[] = [{
+      event: {
+        ...event,
+        id: "past-summit",
+        title: "Leadership Summit 2025",
+        status: "completed",
+        capacity: 220,
+        date: "2025-10-20T16:00:00.000Z",
+      },
+      budget: [
+        { name: "Venue", category: "Venue", type: "expense", estimatedCents: 2_800_000, actualCents: 4_000_000 },
+        { name: "Catering", category: "Catering", type: "expense", estimatedCents: 1_800_000, actualCents: 2_000_000 },
+      ],
+      checklist: [
+        { title: "Confirm speaker releases", category: "Programme", dueDaysBefore: 14 },
+      ],
+      runOfShow: [
+        { startTime: "08:00", duration: 45, title: "Executive rehearsal", responsible: "Production" },
+        { startTime: "09:00", duration: 30, title: "Guest arrival", responsible: "Guest experience" },
+      ],
+      moodCaptions: ["Warm editorial stage with honey lighting"],
+      floorplanShapes: ["stage", "round-table", "av"],
+    }];
+
+    const plan = buildRuleBasedSuggestions(
+      event,
+      { eventId: event.id, headcount: 200, totalBudgetCents: 7_000_000, theme: "Future of community" },
+      memory,
+    );
+
+    expect(plan.learning).toMatchObject({ eventCount: 1, eventTitles: ["Leadership Summit 2025"] });
+    expect(plan.checklist.some((item) => item.title === "Confirm speaker releases")).toBe(true);
+    expect(plan.runOfShow.some((item) => item.title === "Executive rehearsal")).toBe(true);
+    expect(plan.budget.find((item) => item.category === "Venue")!.estimatedCents).toBeGreaterThan(3_000_000);
+    expect(plan.budget.reduce((sum, item) => sum + item.estimatedCents, 0)).toBe(7_000_000);
   });
 
   it("encodes marketplace searches and mood-board artwork safely", () => {

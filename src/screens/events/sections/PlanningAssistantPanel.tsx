@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, CalendarClock, CheckCircle2, ExternalLink, ListChecks, Palette, Sparkles, Store } from "lucide-react";
+import { Bot, CalendarClock, CheckCircle2, ExternalLink, ListChecks, Palette, Plus, Sparkles, Store, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,9 +18,14 @@ import {
   useRunOfShow,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
-import { moodConceptDataUrl, PLANNING_LIMITS, suggestedTotalBudgetCents, type PlanningSuggestions } from "@/data/planner";
+import {
+  moodConceptDataUrl,
+  PLANNING_LIMITS,
+  suggestedTotalBudgetCents,
+  type MoodConcept,
+  type PlanningSuggestions,
+} from "@/data/planner";
 import type { Event } from "@/data/entities";
-import { formatClockTime } from "@/lib/datetime";
 
 type AppliedSection = "budget" | "checklist" | "runOfShow" | "mood";
 
@@ -90,6 +95,18 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
     setApplying(null);
   };
 
+  const reviseSuggestions = (
+    section: AppliedSection,
+    update: (current: PlanningSuggestions) => PlanningSuggestions,
+  ) => {
+    setSuggestions((current) => (current ? update(current) : current));
+    setApplied((current) => {
+      const next = new Set(current);
+      next.delete(section);
+      return next;
+    });
+  };
+
   const applyBudget = async () => {
     if (!suggestions) return;
     setApplying("budget");
@@ -107,7 +124,9 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const applyChecklist = async () => {
     if (!suggestions) return;
     setApplying("checklist");
-    const pending = suggestions.checklist.filter((item) => !existing.checklist.has(item.title.trim().toLowerCase()));
+    const pending = suggestions.checklist.filter(
+      (item) => item.title.trim() && !existing.checklist.has(item.title.trim().toLowerCase()),
+    );
     try {
       await Promise.all(
         pending.map(({ dueDaysBefore, ...draft }) =>
@@ -129,7 +148,7 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
     if (!suggestions) return;
     setApplying("runOfShow");
     const pending = suggestions.runOfShow.filter(
-      (item) => !existing.runOfShow.has(`${item.startTime}|${item.title.trim().toLowerCase()}`),
+      (item) => item.title.trim() && !existing.runOfShow.has(`${item.startTime}|${item.title.trim().toLowerCase()}`),
     );
     try {
       await Promise.all(pending.map((draft) => addCue.mutateAsync({ eventId: event.id, draft })));
@@ -144,7 +163,9 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const applyMood = async () => {
     if (!suggestions) return;
     setApplying("mood");
-    const pending = suggestions.moodConcepts.filter((concept) => !existing.mood.has(concept.name.trim().toLowerCase()));
+    const pending = suggestions.moodConcepts.filter(
+      (concept) => concept.name.trim() && !existing.mood.has(concept.name.trim().toLowerCase()),
+    );
     try {
       await Promise.all(
         pending.map((concept) =>
@@ -242,6 +263,19 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                 </Pill>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">{suggestions.summary}</p>
+              {suggestions.learning ? (
+                <div className="mt-3 rounded-lg border border-primary/25 bg-primary-wash px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Pill tone="info">Past-event informed</Pill>
+                    <p className="text-xs font-medium text-foreground">
+                      Learned from {suggestions.learning.eventCount} similar completed {suggestions.learning.eventCount === 1 ? "event" : "events"}
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    {suggestions.learning.explanation} Sources: {suggestions.learning.eventTitles.join(", ")}.
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div className="text-right">
               <p data-numeric className="text-xl font-bold text-foreground">{formatMoney(suggestions.totalBudgetCents)}</p>
@@ -249,8 +283,8 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
             </div>
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-2">
-            <section className="rounded-xl border border-hairline bg-surface/90">
+          <div className="grid gap-5 xl:grid-cols-12">
+            <section className="rounded-xl border border-hairline bg-surface/90 xl:col-span-5">
               <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">Budget suggestion</p>
@@ -271,7 +305,7 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
               </ul>
             </section>
 
-            <section className="rounded-xl border border-hairline bg-surface/90">
+            <section className="rounded-xl border border-hairline bg-surface/90 xl:col-span-7">
               <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
                 <div className="flex items-center gap-2">
                   <ListChecks className="size-4 text-primary-text" aria-hidden="true" />
@@ -280,22 +314,109 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                     <p data-numeric className="text-xs text-muted-foreground">{suggestions.checklist.length} suggested tasks</p>
                   </div>
                 </div>
-                <ApplyButton applied={applied.has("checklist")} busy={applying === "checklist"} onClick={() => void applyChecklist()} />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      reviseSuggestions("checklist", (current) => ({
+                        ...current,
+                        checklist: [
+                          ...current.checklist,
+                          {
+                            title: "New task",
+                            category: "General",
+                            completed: false,
+                            dueDate: null,
+                            assignedTo: null,
+                            sortOrder: current.checklist.length,
+                            dueDaysBefore: 14,
+                          },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus className="mr-1 size-3.5" />
+                    Task
+                  </Button>
+                  <ApplyButton applied={applied.has("checklist")} busy={applying === "checklist"} onClick={() => void applyChecklist()} />
+                </div>
               </div>
-              <ul className="divide-y divide-hairline">
-                {suggestions.checklist.map((item) => (
-                  <li key={`${item.category}-${item.title}`} className="px-4 py-2.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium text-foreground">{item.title}</p>
-                      <Pill><span data-numeric>{item.dueDaysBefore}d</span> before</Pill>
-                    </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{item.category}</p>
+              <ul className="divide-y divide-hairline" aria-label="Editable checklist suggestions">
+                {suggestions.checklist.map((item, index) => (
+                  <li key={index} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_8rem_6rem_auto] sm:items-end">
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Task</span>
+                      <Input
+                        value={item.title}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("checklist", (current) => ({
+                            ...current,
+                            checklist: current.checklist.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, title: inputEvent.target.value } : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Category</span>
+                      <Input
+                        value={item.category ?? ""}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("checklist", (current) => ({
+                            ...current,
+                            checklist: current.checklist.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, category: inputEvent.target.value } : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Days before</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={365}
+                        value={item.dueDaysBefore}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("checklist", (current) => ({
+                            ...current,
+                            checklist: current.checklist.map((draft, draftIndex) =>
+                              draftIndex === index
+                                ? { ...draft, dueDaysBefore: Math.max(0, Number.parseInt(inputEvent.target.value, 10) || 0) }
+                                : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 text-muted-foreground hover:text-danger-text"
+                      aria-label={`Remove ${item.title || "task"}`}
+                      onClick={() =>
+                        reviseSuggestions("checklist", (current) => ({
+                          ...current,
+                          checklist: current.checklist.filter((_, draftIndex) => draftIndex !== index),
+                        }))
+                      }
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
                   </li>
                 ))}
               </ul>
             </section>
 
-            <section className="rounded-xl border border-hairline bg-surface/90">
+            <section className="rounded-xl border border-hairline bg-surface/90 xl:col-span-7">
               <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
                 <div className="flex items-center gap-2">
                   <CalendarClock className="size-4 text-primary-text" aria-hidden="true" />
@@ -304,44 +425,230 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                     <p data-numeric className="text-xs text-muted-foreground">{suggestions.runOfShow.length} timed cues</p>
                   </div>
                 </div>
-                <ApplyButton applied={applied.has("runOfShow")} busy={applying === "runOfShow"} onClick={() => void applyRunOfShow()} />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      reviseSuggestions("runOfShow", (current) => ({
+                        ...current,
+                        runOfShow: [
+                          ...current.runOfShow,
+                          {
+                            startTime: "09:00",
+                            duration: 15,
+                            title: "New cue",
+                            description: null,
+                            responsible: null,
+                            sortOrder: current.runOfShow.length,
+                          },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus className="mr-1 size-3.5" />
+                    Cue
+                  </Button>
+                  <ApplyButton applied={applied.has("runOfShow")} busy={applying === "runOfShow"} onClick={() => void applyRunOfShow()} />
+                </div>
               </div>
-              <ol className="divide-y divide-hairline">
-                {suggestions.runOfShow.map((cue) => (
-                  <li key={`${cue.startTime}-${cue.title}`} className="flex items-start gap-3 px-4 py-2.5">
-                    <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
-                      {formatClockTime(cue.startTime)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground">{cue.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {cue.responsible || "Owner to assign"}
-                        {cue.duration ? <> · <span data-numeric>{cue.duration} min</span></> : null}
-                      </p>
-                    </div>
+              <ol className="divide-y divide-hairline" aria-label="Editable run of show suggestions">
+                {suggestions.runOfShow.map((cue, index) => (
+                  <li key={index} className="grid gap-2 px-4 py-3 sm:grid-cols-[7.25rem_minmax(0,1fr)_7rem_8rem_auto] sm:items-end">
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Start</span>
+                      <Input
+                        type="time"
+                        value={cue.startTime}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("runOfShow", (current) => ({
+                            ...current,
+                            runOfShow: current.runOfShow.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, startTime: inputEvent.target.value } : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8 font-mono"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Cue</span>
+                      <Input
+                        value={cue.title}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("runOfShow", (current) => ({
+                            ...current,
+                            runOfShow: current.runOfShow.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, title: inputEvent.target.value } : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Minutes</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={cue.duration ?? ""}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("runOfShow", (current) => ({
+                            ...current,
+                            runOfShow: current.runOfShow.map((draft, draftIndex) =>
+                              draftIndex === index
+                                ? { ...draft, duration: Math.max(0, Number.parseInt(inputEvent.target.value, 10) || 0) }
+                                : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Owner</span>
+                      <Input
+                        value={cue.responsible ?? ""}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("runOfShow", (current) => ({
+                            ...current,
+                            runOfShow: current.runOfShow.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, responsible: inputEvent.target.value || null } : draft,
+                            ),
+                          }))
+                        }
+                        placeholder="Assign later"
+                        className="h-8"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 text-muted-foreground hover:text-danger-text"
+                      aria-label={`Remove ${cue.title || "cue"}`}
+                      onClick={() =>
+                        reviseSuggestions("runOfShow", (current) => ({
+                          ...current,
+                          runOfShow: current.runOfShow.filter((_, draftIndex) => draftIndex !== index),
+                        }))
+                      }
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
                   </li>
                 ))}
               </ol>
             </section>
 
-            <section className="rounded-xl border border-hairline bg-surface/90">
+            <section className="rounded-xl border border-hairline bg-surface/90 xl:col-span-5">
               <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Palette className="size-4 text-primary-text" aria-hidden="true" />
                   <div>
                     <p className="text-sm font-semibold text-foreground">Mood board directions</p>
-                    <p className="text-xs text-muted-foreground">Three variations from the same theme</p>
+                    <p className="text-xs text-muted-foreground">Edit the names, notes and colors before adding them</p>
                   </div>
                 </div>
-                <ApplyButton applied={applied.has("mood")} busy={applying === "mood"} onClick={() => void applyMood()} />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      reviseSuggestions("mood", (current) => ({
+                        ...current,
+                        moodConcepts: [
+                          ...current.moodConcepts,
+                          {
+                            name: "New direction",
+                            description: "Add the visual feeling, materials and details for this direction.",
+                            palette: ["#F8D810", "#FFF4C2", "#C98B2E", "#FFFFFF"],
+                            keywords: ["warm", "welcoming"],
+                          },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus className="mr-1 size-3.5" />
+                    Direction
+                  </Button>
+                  <ApplyButton applied={applied.has("mood")} busy={applying === "mood"} onClick={() => void applyMood()} />
+                </div>
               </div>
               <div className="grid gap-3 p-4 sm:grid-cols-3">
-                {suggestions.moodConcepts.map((concept) => (
-                  <article key={concept.name} className="overflow-hidden rounded-lg border border-hairline bg-surface">
+                {suggestions.moodConcepts.map((concept, index) => (
+                  <article key={index} className="relative overflow-hidden rounded-lg border border-hairline bg-surface">
                     <img src={moodConceptDataUrl(concept)} alt={`${concept.name} palette`} className="aspect-4/3 w-full object-cover" />
-                    <div className="space-y-1.5 p-3">
-                      <p className="text-sm font-semibold text-foreground">{concept.name}</p>
-                      <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{concept.description}</p>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="secondary"
+                      className="absolute right-2 top-2 size-7"
+                      aria-label={`Remove ${concept.name || "mood direction"}`}
+                      onClick={() =>
+                        reviseSuggestions("mood", (current) => ({
+                          ...current,
+                          moodConcepts: current.moodConcepts.filter((_, draftIndex) => draftIndex !== index),
+                        }))
+                      }
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                    <div className="space-y-2 p-3">
+                      <Input
+                        value={concept.name}
+                        aria-label="Mood direction name"
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("mood", (current) => ({
+                            ...current,
+                            moodConcepts: current.moodConcepts.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, name: inputEvent.target.value } : draft,
+                            ),
+                          }))
+                        }
+                        className="h-8 font-semibold"
+                      />
+                      <Textarea
+                        value={concept.description}
+                        aria-label={`${concept.name || "Mood direction"} description`}
+                        onChange={(inputEvent) =>
+                          reviseSuggestions("mood", (current) => ({
+                            ...current,
+                            moodConcepts: current.moodConcepts.map((draft, draftIndex) =>
+                              draftIndex === index ? { ...draft, description: inputEvent.target.value } : draft,
+                            ),
+                          }))
+                        }
+                        rows={3}
+                        className="resize-none text-xs leading-relaxed"
+                      />
+                      <div className="flex items-center gap-2" aria-label={`${concept.name || "Mood direction"} colors`}>
+                        {concept.palette.map((color, colorIndex) => (
+                          <label key={colorIndex} className="relative size-8 overflow-hidden rounded-full border border-hairline">
+                            <span className="sr-only">Color {colorIndex + 1}</span>
+                            <input
+                              type="color"
+                              value={color}
+                              onChange={(inputEvent) =>
+                                reviseSuggestions("mood", (current) => ({
+                                  ...current,
+                                  moodConcepts: current.moodConcepts.map((draft, draftIndex) => {
+                                    if (draftIndex !== index) return draft;
+                                    const palette = draft.palette.map((entry, entryIndex) =>
+                                      entryIndex === colorIndex ? inputEvent.target.value : entry,
+                                    ) as MoodConcept["palette"];
+                                    return { ...draft, palette };
+                                  }),
+                                }))
+                              }
+                              className="absolute -inset-1 size-10 cursor-pointer border-0 bg-transparent p-0"
+                            />
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </article>
                 ))}

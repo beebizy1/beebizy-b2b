@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { GripVertical, LayoutGrid, RotateCcw, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -57,6 +57,8 @@ export default function FloorplanPanel({ event }: { event: Event }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
+  const suppressPaletteClick = useRef(false);
 
   // Local edits win until saved or reset; otherwise mirror the stored plan. Memoized so
   // the derived values below don't recompute on every render.
@@ -75,7 +77,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const addShape = (shape: FloorplanShape) => {
+  const addShape = (shape: FloorplanShape, position?: { x: number; y: number }) => {
     const spec = SHAPES[shape];
     const sameShape = workingItems.filter((item) => item.shape === shape).length;
     const item: FloorplanItem = {
@@ -83,12 +85,46 @@ export default function FloorplanPanel({ event }: { event: Event }) {
       shape,
       label: spec.seats === null ? spec.label : String(sameShape + 1),
       // Stagger new objects so they don't stack on the same spot.
-      x: clamp(20 + ((sameShape * 13) % 60)),
-      y: clamp(24 + ((sameShape * 9) % 50)),
+      x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
+      y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
       seats: spec.seats,
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
+  };
+
+  const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
+    const room = roomRef.current;
+    if (!room) return false;
+    const rect = room.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
+    addShape(shape, {
+      x: ((clientX - rect.left) / rect.width) * 100,
+      y: ((clientY - rect.top) / rect.height) * 100,
+    });
+    return true;
+  };
+
+  const onPalettePointerDown = (pointerEvent: React.PointerEvent<HTMLButtonElement>, shape: FloorplanShape) => {
+    if (pointerEvent.button !== 0) return;
+    paletteDragState.current = { shape, startX: pointerEvent.clientX, startY: pointerEvent.clientY };
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+  };
+
+  const onPalettePointerUp = (pointerEvent: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = paletteDragState.current;
+    paletteDragState.current = null;
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+    }
+    if (!drag) return;
+    const moved = Math.hypot(pointerEvent.clientX - drag.startX, pointerEvent.clientY - drag.startY) > 6;
+    if (!moved) return;
+    suppressPaletteClick.current = true;
+    addShapeAtPointer(drag.shape, pointerEvent.clientX, pointerEvent.clientY);
+    window.setTimeout(() => {
+      suppressPaletteClick.current = false;
+    }, 0);
   };
 
   const removeSelected = () => {
@@ -241,10 +277,26 @@ export default function FloorplanPanel({ event }: { event: Event }) {
           aria-label="Floorplan name"
           className="h-8 w-52"
         />
-        <span className="text-xs text-muted-foreground">Add:</span>
+        <span className="text-xs text-muted-foreground">Drag into the room:</span>
         {FLOORPLAN_SHAPES.map((shape) => (
-          <Button key={shape} variant="outline" size="sm" onClick={() => addShape(shape)}>
-            <Plus className="mr-1 size-3" />
+          <Button
+            key={shape}
+            type="button"
+            variant="outline"
+            size="sm"
+            className="touch-none cursor-grab active:cursor-grabbing"
+            onPointerDown={(pointerEvent) => onPalettePointerDown(pointerEvent, shape)}
+            onPointerUp={onPalettePointerUp}
+            onPointerCancel={() => {
+              paletteDragState.current = null;
+            }}
+            onClick={() => {
+              if (suppressPaletteClick.current) return;
+              addShape(shape);
+            }}
+            title={`Drag ${SHAPES[shape].label.toLowerCase()} into the room, or click to add`}
+          >
+            <GripVertical className="mr-1 size-3" />
             {SHAPES[shape].label}
           </Button>
         ))}
@@ -257,6 +309,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
           <div className="p-5">
             <div
               ref={roomRef}
+              aria-label="Floorplan room"
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
@@ -273,7 +326,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
                   <EmptyState
                     icon={LayoutGrid}
                     title="Empty room"
-                    description="Add tables and objects from the row above, then drag them into place."
+                    description="Drag tables and objects from the toolbar into this blank room. You can also click an object to add it."
                   />
                 </div>
               ) : null}
@@ -311,8 +364,8 @@ export default function FloorplanPanel({ event }: { event: Event }) {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag to move. Tab to an object and use the arrow keys to nudge it, shift for a bigger step, delete to
-              remove.
+              Drag objects from the toolbar to place them. Drag again to move. Tab to an object and use the arrow
+              keys to nudge it, shift for a bigger step, delete to remove.
             </p>
           </div>
 

@@ -167,6 +167,10 @@ export function usePlanningSuggestions() {
   return useAdapterMutation((a, brief: PlanningBrief) => a.assistant.plan(brief), () => []);
 }
 
+export function useLoadGoogleSheet() {
+  return useAdapterMutation((a, url: string) => a.imports.loadGoogleSheet(url), () => []);
+}
+
 /* ------------------------------------------------------------------ analytics */
 
 export function usePortfolio() {

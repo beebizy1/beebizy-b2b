@@ -16,6 +16,7 @@ import { eventByShareToken } from "../src/server/repos.ts";
 import { generatePlanningSuggestions } from "../src/server/planner.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
 import { PLANNING_LIMITS } from "../src/data/planner.ts";
+import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
 import { z, ZodError } from "zod";
 
 export const config = { runtime: "nodejs" };
@@ -223,7 +224,19 @@ async function handleAuthed(
         .parse(body);
       const event = await repos.events.get(ctx, brief.eventId);
       if (!event) throw new HttpError(404, "This event no longer exists.");
-      return json(await generatePlanningSuggestions(event, brief, ctx.userId));
+      const memory = await repos.planningMemory.list(ctx, event);
+      return json(await generatePlanningSuggestions(event, brief, ctx.userId, memory));
+    }
+
+    /* --------------------------------------------------------------- imports */
+    case "imports": {
+      if (a !== "google-sheet" || method !== "POST") return notFound();
+      const input = z.object({ url: z.string().trim().min(1).max(2_000) }).parse(body);
+      try {
+        return json(await fetchGoogleSheetCsv(input.url));
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : "The Google Sheet could not be imported.");
+      }
     }
 
     /* ------------------------------------------------------------------ events */

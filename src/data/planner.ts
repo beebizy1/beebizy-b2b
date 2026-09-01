@@ -1,4 +1,4 @@
-import type { BudgetItemDraft, ChecklistItemDraft, Event, RunOfShowItemDraft } from "./entities";
+import type { BudgetItemDraft, ChecklistItemDraft, Event, FloorplanShape, RunOfShowItemDraft } from "./entities";
 
 export interface PlanningBrief {
   eventId: string;
@@ -39,6 +39,23 @@ export interface PlanningSuggestions {
   runOfShow: RunOfShowItemDraft[];
   moodConcepts: MoodConcept[];
   vendors: VendorSuggestion[];
+  learning: PlanningLearning | null;
+}
+
+export interface PlanningLearning {
+  eventCount: number;
+  eventTitles: string[];
+  explanation: string;
+  signals: string[];
+}
+
+export interface PastEventPlanningRecord {
+  event: Event;
+  budget: Array<BudgetItemDraft & { actualCents?: number | null }>;
+  checklist: Array<ChecklistItemDraft & { dueDaysBefore: number }>;
+  runOfShow: RunOfShowItemDraft[];
+  moodCaptions: string[];
+  floorplanShapes: FloorplanShape[];
 }
 
 export const PLANNING_LIMITS = {
@@ -62,7 +79,7 @@ const BUDGET_WEIGHTS = [
 const BUDGET_ALLOCATION_UNITS = BUDGET_WEIGHTS.reduce((sum, line) => sum + line.allocationUnits, 0);
 
 const FALLBACK_PALETTES: MoodConcept["palette"][] = [
-  ["#171717", "#F7B500", "#FFF4D6", "#FFFFFF"],
+  ["#6F5328", "#F7B500", "#FFF4D6", "#FFFFFF"],
   ["#183153", "#61A5C2", "#E9F5F9", "#F7C59F"],
   ["#4A2545", "#D17A22", "#F4E3C1", "#2E4057"],
 ];
@@ -76,6 +93,131 @@ function addMinutes(time: string, minutes: number): string {
   const [hours = 0, mins = 0] = time.split(":").map(Number);
   const total = (hours * 60 + mins + minutes + 24 * 60) % (24 * 60);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function minutesFromTime(time: string): number {
+  const [hours = 0, minutes = 0] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function eventStartTime(event: Event): string {
+  const start = new Date(event.date);
+  return Number.isNaN(start.getTime())
+    ? "09:00"
+    : `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+}
+
+function normalizedTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function selectSimilarPastEvents(
+  event: Event,
+  records: PastEventPlanningRecord[],
+  limit = 5,
+): PastEventPlanningRecord[] {
+  return records
+    .filter((record) => record.event.status === "completed" && record.event.id !== event.id)
+    .sort((left, right) => {
+      const category = Number(left.event.category !== event.category) - Number(right.event.category !== event.category);
+      if (category !== 0) return category;
+      const targetCapacity = event.capacity ?? 0;
+      const leftDistance = Math.abs((left.event.capacity ?? targetCapacity) - targetCapacity);
+      const rightDistance = Math.abs((right.event.capacity ?? targetCapacity) - targetCapacity);
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+      return new Date(right.event.date).getTime() - new Date(left.event.date).getTime();
+    })
+    .slice(0, limit);
+}
+
+function learnedBudget(totalBudgetCents: number, baseline: SuggestedBudgetLine[], records: PastEventPlanningRecord[]): SuggestedBudgetLine[] {
+  const historicalShares = new Map<string, { total: number; events: number }>();
+  for (const record of records) {
+    const expenses = record.budget.filter((line) => line.type === "expense");
+    const eventTotal = expenses.reduce((sum, line) => sum + (line.actualCents ?? line.estimatedCents), 0);
+    if (eventTotal <= 0) continue;
+    const eventShares = new Map<string, number>();
+    for (const line of expenses) {
+      const category = line.category ?? "General";
+      eventShares.set(category, (eventShares.get(category) ?? 0) + (line.actualCents ?? line.estimatedCents) / eventTotal);
+    }
+    for (const [category, share] of eventShares) {
+      const aggregate = historicalShares.get(category) ?? { total: 0, events: 0 };
+      aggregate.total += share;
+      aggregate.events += 1;
+      historicalShares.set(category, aggregate);
+    }
+  }
+  if (historicalShares.size === 0) return baseline;
+
+  const baselineShares = new Map(baseline.map((line) => [line.category ?? "General", line.estimatedCents / totalBudgetCents]));
+  const orderedCategories = [...baseline.map((line) => line.category ?? "General")];
+  for (const category of historicalShares.keys()) if (!orderedCategories.includes(category)) orderedCategories.push(category);
+  const rawWeights = orderedCategories.map((category) => {
+    const historical = historicalShares.get(category);
+    const historicalShare = historical ? historical.total / historical.events : 0;
+    return (baselineShares.get(category) ?? 0) * 0.45 + historicalShare * 0.55;
+  });
+  const weightTotal = rawWeights.reduce((sum, value) => sum + value, 0);
+  let allocated = 0;
+  return orderedCategories.map((category, index) => {
+    const original = baseline.find((line) => line.category === category);
+    const estimatedCents = index === orderedCategories.length - 1
+      ? totalBudgetCents - allocated
+      : Math.round((totalBudgetCents * (rawWeights[index] ?? 0)) / weightTotal);
+    allocated += estimatedCents;
+    return {
+      name: original?.name ?? category,
+      category,
+      type: "expense",
+      estimatedCents,
+      notes: original?.notes ?? `Allocation observed in similar completed events.`,
+      rationale: original
+        ? `${original.rationale} Adjusted using actual spending from similar completed events.`
+        : "Included because this category appeared in similar completed events.",
+      sortOrder: index,
+    };
+  });
+}
+
+function learnedChecklist(
+  fallback: SuggestedChecklistItem[],
+  records: PastEventPlanningRecord[],
+): SuggestedChecklistItem[] {
+  const candidates = new Map<string, { item: PastEventPlanningRecord["checklist"][number]; count: number }>();
+  for (const record of records) {
+    for (const item of record.checklist) {
+      const key = normalizedTitle(item.title);
+      if (!key) continue;
+      const existing = candidates.get(key);
+      if (existing) existing.count += 1;
+      else candidates.set(key, { item, count: 1 });
+    }
+  }
+  const learned = [...candidates.values()]
+    .sort((left, right) => right.count - left.count || right.item.dueDaysBefore - left.item.dueDaysBefore)
+    .slice(0, 4)
+    .map(({ item }, index): SuggestedChecklistItem => ({
+      ...item,
+      description: item.description ?? "Recommended from a similar completed event.",
+      sortOrder: index,
+    }));
+  const seen = new Set(learned.map((item) => normalizedTitle(item.title)));
+  return [...learned, ...fallback.filter((item) => !seen.has(normalizedTitle(item.title)))]
+    .slice(0, 12)
+    .map((item, index) => ({ ...item, sortOrder: index }));
+}
+
+function learnedRunOfShow(event: Event, fallback: RunOfShowItemDraft[], records: PastEventPlanningRecord[]): RunOfShowItemDraft[] {
+  const closest = records[0];
+  if (!closest || closest.runOfShow.length === 0) return fallback;
+  const shift = minutesFromTime(eventStartTime(event)) - minutesFromTime(eventStartTime(closest.event));
+  const learned = closest.runOfShow.map((cue) => ({ ...cue, startTime: addMinutes(cue.startTime, shift) }));
+  const seen = new Set(learned.map((cue) => normalizedTitle(cue.title)));
+  return [...learned, ...fallback.filter((cue) => !seen.has(normalizedTitle(cue.title)))]
+    .slice(0, 12)
+    .sort((left, right) => left.startTime.localeCompare(right.startTime))
+    .map((cue, index) => ({ ...cue, sortOrder: index }));
 }
 
 export function suggestedTotalBudgetCents(headcount: number): number {
@@ -108,7 +250,11 @@ export function marketplaceSearchUrl(query: string): string {
   return `https://app.beebizy.com/client-app/search-v2?q=${encodeURIComponent(query.trim())}`;
 }
 
-export function buildRuleBasedSuggestions(event: Event, brief: PlanningBrief): PlanningSuggestions {
+export function buildRuleBasedSuggestions(
+  event: Event,
+  brief: PlanningBrief,
+  pastEvents: PastEventPlanningRecord[] = [],
+): PlanningSuggestions {
   const theme = brief.theme.trim() || `${event.category} with a polished, welcoming feel`;
   const headcount = clampInteger(
     brief.headcount || event.capacity || PLANNING_LIMITS.minHeadcount,
@@ -120,10 +266,7 @@ export function buildRuleBasedSuggestions(event: Event, brief: PlanningBrief): P
     PLANNING_LIMITS.minBudgetCents,
     PLANNING_LIMITS.maxBudgetCents,
   );
-  const start = new Date(event.date);
-  const startTime = Number.isNaN(start.getTime())
-    ? "09:00"
-    : `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+  const startTime = eventStartTime(event);
 
   const checklist: SuggestedChecklistItem[] = [
     { title: "Confirm venue contract and access times", category: "Venue", dueDaysBefore: 60 },
@@ -164,16 +307,37 @@ export function buildRuleBasedSuggestions(event: Event, brief: PlanningBrief): P
     { category: "Entertainment", searchQuery: "DJ music entertainment", why: "Match the energy and theme of the guest experience." },
   ].map((item) => ({ ...item, marketplaceUrl: marketplaceSearchUrl(item.searchQuery) }));
 
+  const similarEvents = selectSimilarPastEvents(event, pastEvents);
+  const baselineBudget = buildBudgetSuggestions(totalBudgetCents);
+  const learned = similarEvents.length > 0;
+  const learning: PlanningLearning | null = learned
+    ? {
+        eventCount: similarEvents.length,
+        eventTitles: similarEvents.map((record) => record.event.title),
+        explanation: `Recommendations use patterns from ${similarEvents.length} similar completed ${similarEvents.length === 1 ? "event" : "events"} in this workspace.`,
+        signals: [
+          `${similarEvents.filter((record) => record.budget.length > 0).length} budget histories`,
+          `${similarEvents.reduce((sum, record) => sum + record.checklist.length, 0)} checklist items`,
+          `${similarEvents.reduce((sum, record) => sum + record.runOfShow.length, 0)} run-of-show cues`,
+          `${similarEvents.reduce((sum, record) => sum + record.moodCaptions.length, 0)} mood references`,
+          `${similarEvents.reduce((sum, record) => sum + record.floorplanShapes.length, 0)} floorplan objects`,
+        ],
+      }
+    : null;
+
   return {
     source: "rules",
-    summary: `A review-ready starting plan for ${event.title}, built for ${headcount.toLocaleString()} guests and the “${theme}” direction.`,
+    summary: learned
+      ? `A review-ready starting plan for ${event.title}, adapted from ${similarEvents.length} similar completed ${similarEvents.length === 1 ? "event" : "events"}.`
+      : `A review-ready starting plan for ${event.title}, built for ${headcount.toLocaleString()} guests and the “${theme}” direction.`,
     headcount,
     totalBudgetCents,
-    budget: buildBudgetSuggestions(totalBudgetCents),
-    checklist,
-    runOfShow,
+    budget: learnedBudget(totalBudgetCents, baselineBudget, similarEvents),
+    checklist: learnedChecklist(checklist, similarEvents),
+    runOfShow: learnedRunOfShow(event, runOfShow, similarEvents),
     moodConcepts,
     vendors,
+    learning,
   };
 }
 

@@ -209,6 +209,11 @@ export interface PlanningAssistantRepository {
   plan(brief: PlanningBrief): Promise<PlanningSuggestions>;
 }
 
+export interface SpreadsheetImportsRepository {
+  /** Reads one public Google Sheets tab through the authenticated server proxy. */
+  loadGoogleSheet(url: string): Promise<{ name: string; csv: string }>;
+}
+
 /** Identity and authorization as the server sees them. */
 export interface Identity {
   userId: string;
@@ -249,6 +254,7 @@ export interface DataAdapter {
   roi: RoiRepository;
   analytics: AnalyticsRepository;
   assistant: PlanningAssistantRepository;
+  imports: SpreadsheetImportsRepository;
 }
 
 /** Thrown by adapters so the UI can render a specific, non-generic message. */

@@ -45,6 +45,8 @@ import type {
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
+import { parseFloorplanDraft } from "../data/floorplan.ts";
+import { selectSimilarPastEvents, type PastEventPlanningRecord } from "../data/planner.ts";
 
 type Body = Record<string, unknown>;
 
@@ -1645,6 +1647,82 @@ export const history = {
       .orderBy(desc(s.eventHistory.createdAt))
       .limit(100);
     return rows.map(map.toEventHistory);
+  },
+};
+
+/**
+ * Bounded, workspace-scoped evidence for the planning assistant. This deliberately
+ * reads structured completed-event records instead of exposing the raw history log or
+ * another customer's data to the model.
+ */
+export const planningMemory = {
+  async list(ctx: RequestContext, target: Event): Promise<PastEventPlanningRecord[]> {
+    const completed = await events.list(ctx, { status: "completed" });
+    const selected = selectSimilarPastEvents(
+      target,
+      completed.map((event) => ({ event, budget: [], checklist: [], runOfShow: [], moodCaptions: [], floorplanShapes: [] })),
+    );
+    const eventIds = selected.map((record) => record.event.id);
+    if (eventIds.length === 0) return [];
+
+    const [budgets, checklistRows, cues, moods, planRows] = await Promise.all([
+      db.select().from(s.budgetItems).where(and(eq(s.budgetItems.workspaceId, ctx.workspaceId), inArray(s.budgetItems.eventId, eventIds))),
+      db.select().from(s.checklistItems).where(and(eq(s.checklistItems.workspaceId, ctx.workspaceId), inArray(s.checklistItems.eventId, eventIds))),
+      db.select().from(s.runOfShowItems).where(and(eq(s.runOfShowItems.workspaceId, ctx.workspaceId), inArray(s.runOfShowItems.eventId, eventIds))),
+      db.select().from(s.moodBoardImages).where(and(eq(s.moodBoardImages.workspaceId, ctx.workspaceId), inArray(s.moodBoardImages.eventId, eventIds))),
+      db.select().from(s.floorplans).where(and(eq(s.floorplans.workspaceId, ctx.workspaceId), inArray(s.floorplans.eventId, eventIds))),
+    ]);
+
+    return selected.map(({ event }) => {
+      const eventStart = new Date(event.date).getTime();
+      const floorplan = planRows.find((row) => row.eventId === event.id);
+      let floorplanShapes: PastEventPlanningRecord["floorplanShapes"] = [];
+      if (floorplan) {
+        try {
+          const parsed = parseFloorplanDraft({ name: floorplan.name, items: floorplan.items });
+          floorplanShapes = parsed.items.map((item) => item.shape);
+        } catch {
+          // Older opaque layouts should not prevent the rest of the event evidence
+          // from informing a new plan.
+          floorplanShapes = [];
+        }
+      }
+      return {
+        event,
+        budget: budgets.filter((row) => row.eventId === event.id).map((row) => ({
+          name: row.name,
+          category: row.category,
+          type: row.type,
+          estimatedCents: row.estimatedCents,
+          actualCents: row.actualCents,
+          notes: row.notes,
+          sortOrder: row.sortOrder,
+        })),
+        checklist: checklistRows.filter((row) => row.eventId === event.id).map((row) => ({
+          title: row.title,
+          description: row.description,
+          category: row.category,
+          completed: row.completed,
+          assignedTo: row.assignedTo,
+          sortOrder: row.sortOrder,
+          dueDaysBefore: row.dueDate
+            ? Math.max(0, Math.round((eventStart - row.dueDate.getTime()) / 86_400_000))
+            : 14,
+        })),
+        runOfShow: cues.filter((row) => row.eventId === event.id).map((row) => ({
+          startTime: row.startTime,
+          duration: row.durationMinutes,
+          title: row.title,
+          description: row.description,
+          responsible: row.responsible,
+          sortOrder: row.sortOrder,
+        })),
+        moodCaptions: moods
+          .filter((row) => row.eventId === event.id && row.caption)
+          .map((row) => row.caption!),
+        floorplanShapes,
+      };
+    });
   },
 };
 

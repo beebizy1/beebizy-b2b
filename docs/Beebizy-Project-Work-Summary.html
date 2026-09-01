@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Beebizy Project Work Summary</title>
+  <style>
+    @page { size: Letter; margin: .68in .75in; }
+    :root { --ink: #513d2a; --honey: #f4c400; --wash: #fff8cf; --line: #e6dcc8; --text: #25211d; }
+    * { box-sizing: border-box; }
+    body { max-width: 980px; margin: 0 auto; padding: 42px; color: var(--text); font-family: Arial, Helvetica, sans-serif; font-size: 10.2pt; line-height: 1.42; }
+    body::before { content: "beebizy"; display: block; color: var(--ink); font-size: 20pt; font-weight: 700; border-left: 8px solid var(--honey); padding-left: 10pt; margin: 4pt 0 36pt; }
+    h1, h2, h3, h4 { color: var(--ink); page-break-after: avoid; }
+    h1 { font-size: 28pt; line-height: 1.08; letter-spacing: -.5pt; margin: 0 0 18pt; }
+    h2 { font-size: 17pt; margin: 24pt 0 10pt; padding-bottom: 5pt; border-bottom: 2px solid var(--honey); }
+    h3 { font-size: 13pt; margin: 16pt 0 6pt; }
+    h4 { font-size: 11pt; margin: 12pt 0 4pt; }
+    p { margin: 0 0 8pt; }
+    ul, ol { margin: 4pt 0 10pt 18pt; padding: 0; }
+    li { margin-bottom: 3pt; }
+    table { width: 100%; border-collapse: collapse; margin: 9pt 0 15pt; font-size: 9.2pt; page-break-inside: avoid; }
+    th { background: var(--ink); color: #fff; text-align: left; padding: 7pt; }
+    td { border-bottom: 1px solid var(--line); padding: 7pt; vertical-align: top; }
+    code { font-family: Consolas, monospace; font-size: 9pt; background: #f6f2ea; padding: 1pt 3pt; }
+    a { color: #826600; text-decoration: none; }
+    strong { color: var(--ink); }
+    blockquote { margin: 10pt 0; padding: 10pt 12pt; background: var(--wash); border-left: 4px solid var(--honey); }
+    @media print { body { max-width: none; margin: 0; padding: 0; } }
+  </style>
+</head>
+<body><h1>Beebizy Project Work Summary</h1>
+<p><strong>Prepared:</strong> September 1, 2026<br><strong>Coverage:</strong> Beebizy Studio product, public marketing site, supporting infrastructure, and release readiness<br><strong>Primary repositories:</strong> <code>beebizy-b2b</code> and <code>beebizy-landing</code></p>
+<h2>Executive summary</h2>
+<p>Beebizy has been moved from an early MVP into a private-beta event operations platform with a separate production marketing site. The work covers the full product stack: product strategy and positioning, interface redesign, event-planning workflows, data architecture, authentication, workspace isolation, persistent PostgreSQL storage, AI-assisted planning that learns from completed events, spreadsheet-to-event migration, public demo safety, landing-page lead capture, DNS and email delivery, automated tests, browser verification, and release documentation.</p>
+<p>The agreed P0 and V1 Core product scope is functionally complete and available on the isolated Studio preview. The public landing site is also available at <code>www.beebizy.com</code> and hands qualified users into the Studio sign-in flow. The remaining work is primarily rollout work, not missing core product functionality: merge the current Studio branch, finish production Clerk DNS verification, onboard design partners, connect billing automation, and validate the product during real events.</p>
+<h2>Current status at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Status</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Beebizy Studio P0 / V1 Core</td>
+<td>Complete for private-beta use</td>
+<td>Core workflows, persistence, history, and preview browser coverage are implemented</td>
+</tr>
+<tr>
+<td>Product quality gate</td>
+<td>Passing</td>
+<td>TypeScript, ESLint, 122 automated tests, production build, and feedback-flow browser QA passed on September 1, 2026</td>
+</tr>
+<tr>
+<td>AI planning feedback</td>
+<td>Implemented</td>
+<td>Checklist, run-of-show, and mood-board drafts are editable before approval; completed events inform future plans</td>
+</tr>
+<tr>
+<td>Existing-plan import</td>
+<td>Implemented</td>
+<td>CSV, Excel, and public Google Sheets can be reviewed and converted into an event</td>
+</tr>
+<tr>
+<td>Floorplan builder</td>
+<td>Implemented</td>
+<td>Blank room canvas supports direct pointer drag-and-drop, click placement, keyboard nudging, and saved layouts</td>
+</tr>
+<tr>
+<td>Public landing site</td>
+<td>Built and reachable</td>
+<td>Build and typecheck passed; <code>www.beebizy.com</code> returned HTTP 200 on August 31, 2026</td>
+</tr>
+<tr>
+<td>Studio preview</td>
+<td>Reachable</td>
+<td><code>beebizy-studio-preview.vercel.app</code> returned HTTP 200 on August 31, 2026</td>
+</tr>
+<tr>
+<td>Design QA</td>
+<td>Passed</td>
+<td>No remaining P0, P1, or P2 visual findings in the recorded design QA pass</td>
+</tr>
+<tr>
+<td>Release branch</td>
+<td>Not fully merged</td>
+<td><code>Beebizy-test</code> is synchronized with its remote and is 32 commits ahead of <code>origin/main</code></td>
+</tr>
+<tr>
+<td>Design-partner adoption</td>
+<td>Pending</td>
+<td>Eleventy Milano and Campbell Hall still need real-event onboarding and acceptance</td>
+</tr>
+<tr>
+<td>Production authentication</td>
+<td>Partially configured</td>
+<td>Clerk works for preview; production domain verification still requires the remaining DNS records</td>
+</tr>
+</tbody></table>
+<h2>Repositories and responsibilities</h2>
+<h3><code>beebizy-b2b</code></h3>
+<p>The main product repository contains:</p>
+<ul>
+<li>The Beebizy Studio application</li>
+<li>The authenticated HTTP API</li>
+<li>PostgreSQL schema, migrations, and repositories</li>
+<li>Clerk authentication and private-beta access controls</li>
+<li>The isolated in-memory demo environment</li>
+<li>Public event sharing pages</li>
+<li>Product and marketing pages used by the preview</li>
+<li>Unit, integration, API, and browser verification assets</li>
+<li>P0 / V1 completion and design QA documentation</li>
+</ul>
+<p>The current working branch contains 61 commits since the original local MVP baseline. It represents a major rebuild rather than an incremental visual refresh.</p>
+<h3><code>beebizy-landing</code></h3>
+<p>The public-site repository contains:</p>
+<ul>
+<li>The production Beebizy marketing page</li>
+<li>The approved AI planner pricing presentation</li>
+<li>Sales-dialog and lead-capture flow</li>
+<li>Vercel lead API with Resend and SMTP delivery options</li>
+<li>Mobile-specific presentation fixes</li>
+<li>Product sign-in handoff</li>
+<li>DNS inventory, migration record, rollback details, and email-authentication notes</li>
+<li>Landing-page browser tests</li>
+</ul>
+<p>The repository contains 15 implementation commits and is synchronized with <code>origin/main</code>.</p>
+<h2>Work completed</h2>
+<h3>1. Product positioning and brand system</h3>
+<ul>
+<li>Repositioned Beebizy as event operations software for teams that run events but are not event companies, including corporate operations teams, lean startups, and nonprofits.</li>
+<li>Rewrote the product messaging around one operational system of record instead of disconnected event tools.</li>
+<li>Restored the real Beebizy logo and established a yellow, white, honey, and warm-espresso visual identity.</li>
+<li>Removed dark mode to keep the private-beta interface focused and consistent with the approved visual direction.</li>
+<li>Updated product terminology so the interface uses event-industry vocabulary rather than database or implementation language.</li>
+<li>Added founder and About content, partner proof, and testimonials from the Ayana Foundation, Nia Sanchez, and Watcher Las Vegas.</li>
+<li>Added desktop and mobile navigation improvements, including the menu structure and About-page mobile fix.</li>
+</ul>
+<h3>2. Product interface rebuild</h3>
+<ul>
+<li>Rebuilt the application around a focused Studio workspace with a persistent desktop rail and responsive mobile navigation.</li>
+<li>Created a reusable component and semantic-token design system for page headers, metrics, status pills, meters, empty states, panels, and data display.</li>
+<li>Added global command search with <code>Command-K</code> navigation across events and event sections.</li>
+<li>Replaced a large amount of dead and duplicated legacy UI with a smaller destination-based product structure.</li>
+<li>Matched the supplied design references at desktop and mobile sizes, then corrected the content width, responsive sidebar proportions, and mobile overflow found during visual comparison.</li>
+<li>Verified keyboard operation, focus treatment, tap targets, responsive layout, icon consistency, typography, and browser-console cleanliness for the tested workflows.</li>
+</ul>
+<p>The final Studio navigation covers:</p>
+<ul>
+<li>Dashboard</li>
+<li>Plan an event</li>
+<li>Calendar</li>
+<li>Events</li>
+<li>Vendor Hub</li>
+<li>Templates and reusable boards</li>
+<li>History</li>
+<li>Reports</li>
+<li>Messages</li>
+<li>Settings</li>
+</ul>
+<h3>3. Event workspace and planning workflows</h3>
+<p>Each event now has a working operational workspace rather than a static detail page. Completed capabilities include:</p>
+<ul>
+<li>Event creation and editing</li>
+<li>Portfolio and per-event analytics</li>
+<li>Invitations, guests, and registration status</li>
+<li>Vendor assignment and reusable vendor records</li>
+<li>Checklists and cross-event tasks</li>
+<li>Run-of-show planning</li>
+<li>Budget and revenue tracking</li>
+<li>Ticket types and public ticket views</li>
+<li>Menus and mood boards</li>
+<li>Sponsorships, raffles, silent auctions, and live auctions</li>
+<li>Return-on-event entry and reporting</li>
+<li>Event publishing and controlled public sharing</li>
+<li>Floorplan creation and editing</li>
+<li>Planning-history timeline</li>
+</ul>
+<h3>4. AI-assisted event planning</h3>
+<ul>
+<li>Added a guided planning brief based on event type, headcount, city, date, budget, and planning constraints.</li>
+<li>Added planning suggestions for budget allocation, run of show, checklist tasks, mood direction, and vendor categories.</li>
+<li>Integrated the server planner with the Vercel AI Gateway when credentials are available.</li>
+<li>Added deterministic, tested fallback suggestions so the workflow remains usable when no AI credential is present.</li>
+<li>Made proposed checklist tasks, run-of-show cues, and mood-board directions editable before they write to an event.</li>
+<li>Added controls to add or remove draft tasks, cues, and visual directions, plus edit titles, timing, owners, descriptions, and palette colors.</li>
+<li>Kept every generated section behind an explicit approval action, preventing an AI response from silently changing live planning data.</li>
+<li>Added guardrails and planning limits for supported headcount and budget inputs.</li>
+<li>Connected the planner to both the dedicated planning screen and the event workspace.</li>
+<li>Added workspace-scoped learning from similar completed events, prioritizing matching event categories, capacity, and recency.</li>
+<li>Used actual budget outcomes to adjust future category allocations while preserving the exact requested total.</li>
+<li>Reused proven checklist tasks and run-of-show patterns from completed events, shifted to the new event time.</li>
+<li>Added completed-event mood-board and floorplan signals to the server-side AI evidence packet.</li>
+<li>Displayed the names and count of source events in the planner so clients can see when a proposal is past-event informed.</li>
+<li>Kept the learning system bounded to the current workspace so one client can never influence another client&#39;s plan.</li>
+</ul>
+<h3>4.1 Spreadsheet and Google Sheets event import</h3>
+<ul>
+<li>Added a third planning path for importing an existing event plan.</li>
+<li>Added CSV and multi-sheet <code>.xlsx</code> upload with a 10 MB file limit.</li>
+<li>Added public Google Sheets import that preserves the selected sheet tab and rejects non-Google or private HTML responses.</li>
+<li>Added automatic recognition for event details, checklists, run-of-show schedules, budgets, mood references, and guest lists.</li>
+<li>Added a review screen where event name, date, type, location, capacity, and description can be corrected before creation.</li>
+<li>Added record counts and remove controls so unwanted imported rows can be excluded before saving.</li>
+<li>Created the event and its supporting records only after explicit client approval, with partial-write reporting if a supporting record fails.</li>
+<li>Added safe server-side streaming, response-size limits, timeouts, and authenticated workspace routing for Google Sheets retrieval.</li>
+</ul>
+<h3>5. P0 / V1 Core workflows</h3>
+<p>The five formally agreed V1 Core workflows are complete.</p>
+<h4>Run-of-show builder</h4>
+<ul>
+<li>Create, update, reorder, and delete cues</li>
+<li>Store start time, duration, owner, description, and stable display order</li>
+<li>Display time-zone-aware schedules in 12-hour format</li>
+<li>Record every change in structured event history</li>
+</ul>
+<h4>Multi-location calendar</h4>
+<ul>
+<li>Show events in list and calendar views</li>
+<li>Connect events to structured venue records</li>
+<li>Filter by one venue or view all venues</li>
+<li>Include events with no assigned venue</li>
+<li>Show event time, category, status, capacity, and location context</li>
+</ul>
+<h4>Budget management</h4>
+<ul>
+<li>Manage planned and actual expenses and revenue</li>
+<li>Organize lines by category with notes</li>
+<li>Calculate variance automatically</li>
+<li>Summarize financial performance by event and across the portfolio</li>
+<li>Preserve before-and-after budget history</li>
+</ul>
+<h4>Historical data tracking</h4>
+<ul>
+<li>Store append-only planning events with workspace, event, actor, action, resource, identifier, summary, before state, after state, and timestamp</li>
+<li>Track changes to events, schedules, budgets, vendors, checklists, menus, mood boards, ticket types, auctions, sponsorships, raffles, and floorplans</li>
+<li>Backfill existing core planning data into the same history model</li>
+<li>Support event timelines today and cross-event learning later</li>
+</ul>
+<h4>Floorplan builder</h4>
+<ul>
+<li>Create typed venue layouts with round tables, long tables, stages, bars, entrances, dance floors, booths, and AV areas</li>
+<li>Store labels, seat counts, and proportional positions</li>
+<li>Keep layouts readable across screen sizes</li>
+<li>Associate layout history with venue, event capacity, and active guest count</li>
+<li>Start from a blank gridded room with a visible object palette</li>
+<li>Drag tables and room objects directly from the palette onto the canvas using mouse, pen, or touch</li>
+<li>Keep click placement and keyboard arrow-key movement as accessible alternatives</li>
+<li>Compare planned seats with event capacity while the layout is being edited</li>
+</ul>
+<h3>6. Data architecture and persistence</h3>
+<ul>
+<li>Introduced a backend-independent data adapter as the only application layer allowed to communicate with storage.</li>
+<li>Added a complete typed domain model for events, venues, vendors, guests, budgets, schedules, templates, fundraising, public sharing, and history.</li>
+<li>Standardized money as integer cents at the data boundary, eliminating float and string-comparison errors.</li>
+<li>Moved computed readiness, risk, attention lists, and portfolio analytics into pure derived functions instead of storing drift-prone calculated state.</li>
+<li>Added a realistic in-memory adapter and seed portfolio for local development and the public demo.</li>
+<li>Added an HTTP adapter for authenticated use.</li>
+<li>Replaced Firebase and Firestore with PostgreSQL accessed through the Vercel API.</li>
+<li>Added Drizzle schema definitions and migrations.</li>
+<li>Added server repositories, model mappers, database access, and an API router.</li>
+<li>Added structured venue records, event history, user preferences, and subscription state.</li>
+</ul>
+<h3>7. Authentication, tenancy, and private-beta access</h3>
+<ul>
+<li>Migrated authentication from Firebase to Clerk.</li>
+<li>Added Clerk sign-in, Google and email options, MFA, password reset, branded localization, and branded denial states.</li>
+<li>Required authentication before entering the persistent product.</li>
+<li>Added workspace creation for approved first-time users.</li>
+<li>Enforced workspace scope on server reads and writes so one workspace cannot access another workspace&#39;s data.</li>
+<li>Added permanent internal access for the Beebizy operators and environment-configured access for invited testers.</li>
+<li>Added 90-day private-beta access from account creation.</li>
+<li>Added explicit expired, past-due, cancelled, and active subscription states.</li>
+<li>Added a subscription-required screen after beta expiration.</li>
+<li>Kept billing activation manual through Clerk metadata until payment-provider checkout and webhook automation are connected.</li>
+<li>Restricted the private beta to the dedicated Studio preview host.</li>
+</ul>
+<h3>8. Demo isolation and public sharing</h3>
+<ul>
+<li>Added a full working demo that requires no credentials.</li>
+<li>Kept demo data session-scoped and visibly labeled as temporary.</li>
+<li>Prevented demo sessions from reading or writing authenticated workspaces.</li>
+<li>Ensured all demo workflows remain writable during a session so prospects can evaluate the real product behavior.</li>
+<li>Added share-off-by-default event publishing.</li>
+<li>Added tokenized public event and ticket URLs.</li>
+<li>Limited public responses to intended event, agenda, ticket, and time-zone information.</li>
+<li>Kept budgets, vendor fees, guest lists, contact details, sponsorship values, and auction bids private.</li>
+</ul>
+<h3>9. Vendor, template, board, and reporting systems</h3>
+<ul>
+<li>Added a reusable team vendor directory and Beebizy marketplace suggestions.</li>
+<li>Added vendor create, edit, detail, and event-booking workflows.</li>
+<li>Added reusable event templates, checklists, run-of-show structures, and boards.</li>
+<li>Separated reusable boards from event-specific inspiration data.</li>
+<li>Added board editing and library navigation.</li>
+<li>Added portfolio reporting for spend, revenue, attendance, and return on event.</li>
+<li>Added a validated spend-versus-money-in comparison.</li>
+<li>Added portfolio health, risks, upcoming work, and decision queues to the dashboard.</li>
+<li>Added event and portfolio history views.</li>
+</ul>
+<h3>10. Public marketing site and conversion flow</h3>
+<ul>
+<li>Rebuilt the public site as a deployable Vite application.</li>
+<li>Preserved the approved original markup and compiled CSS for visual fidelity rather than approximating the design with a new component implementation.</li>
+<li>Added responsive behavior without changing the approved desktop design.</li>
+<li>Restored the approved AI planner pricing presentation, then kept pricing changes isolated from the Studio flow.</li>
+<li>Routed marketing calls to action through a sales-dialog and lead-capture flow.</li>
+<li>Validated leads on the server and added a honeypot field for basic bot resistance.</li>
+<li>Logged every valid lead even when email credentials are unavailable.</li>
+<li>Added Resend as the preferred delivery path and Google Workspace SMTP as a fallback.</li>
+<li>Added readable local timestamps to lead notifications.</li>
+<li>Avoided promising a Calendly scheduler when no scheduler is configured.</li>
+<li>Added a post-submit handoff to the separate Studio sign-in route.</li>
+<li>Kept the B2C marketplace and vendor portal outside this project and untouched.</li>
+</ul>
+<h3>11. Domain, DNS, and email infrastructure</h3>
+<ul>
+<li>Captured the complete <code>beebizy.com</code> DNS inventory before changing production records.</li>
+<li>Documented Google Workspace, SendGrid, Stripe, Firebase, Mailchimp, Amazon SES, Zoho Desk, Google-hosted app, Vercel, and Replit records.</li>
+<li>Moved the <code>www</code> front door from Replit to the new Vercel landing project.</li>
+<li>Preserved the apex redirect and all existing mail and application subdomains.</li>
+<li>Documented the exact rollback procedure for the <code>www</code> migration.</li>
+<li>Added Resend DKIM, return-path MX, and SPF records on the <code>send</code> subdomain.</li>
+<li>Deliberately avoided the optional apex inbound SES record because it would take priority over Google Workspace and break company email.</li>
+<li>Verified after the DNS work that the five Google Workspace MX records remained intact.</li>
+</ul>
+<h3>12. Testing, CI, and release documentation</h3>
+<ul>
+<li>Added TypeScript checking, ESLint, Vitest, production build validation, and CI.</li>
+<li>Added tests for money, dates and time zones, derived event health, floorplans, navigation, planner behavior, calendar layout, access controls, server routing, and the in-memory adapter.</li>
+<li>Added tests for spreadsheet parsing, public Google Sheets URL handling, bounded sheet downloads, and past-event planner learning.</li>
+<li>Added real API verification for authentication rejection, workspace creation, persistence, history, analytics, public sharing, and cross-tenant isolation.</li>
+<li>Added P0 browser coverage for sign-in routing, access denial, calendar filtering, run-of-show writes, budget writes, variance, floorplan saves, history, and browser-console errors.</li>
+<li>Added landing-page browser coverage for conversion behavior and responsive presentation.</li>
+<li>Added visual comparison artifacts and a formal design QA record.</li>
+<li>Added the P0 / V1 completion record and a polished completion brief.</li>
+<li>Added repository READMEs covering local development, architecture, deployment behavior, commands, and operational boundaries.</li>
+</ul>
+<h2>Verification record</h2>
+<h3>Current repository checks, September 1, 2026</h3>
+<p><code>beebizy-b2b</code>:</p>
+<ul>
+<li>TypeScript typecheck: passed</li>
+<li>ESLint: passed with zero errors and four Fast Refresh warnings</li>
+<li>Vitest: 13 files passed, 122 tests passed</li>
+<li>Production build: passed</li>
+<li>Feedback-flow browser QA: passed for CSV upload, import review, event creation, editable AI drafts, and floorplan toolbar-to-canvas dragging</li>
+</ul>
+<p><code>beebizy-landing</code>:</p>
+<ul>
+<li>TypeScript build: passed</li>
+<li>Vite production build: passed</li>
+<li>Standalone typecheck: passed</li>
+</ul>
+<p>Live reachability:</p>
+<ul>
+<li><code>https://beebizy.com</code> redirected to <code>https://www.beebizy.com/</code> and returned HTTP 200</li>
+<li><code>https://www.beebizy.com/</code> returned HTTP 200</li>
+<li><code>https://beebizy-studio-preview.vercel.app/</code> returned HTTP 200</li>
+</ul>
+<h3>Previously recorded end-to-end checks</h3>
+<ul>
+<li>Preview browser verification passed for the P0 planning workflows.</li>
+<li>Real API verification passed for authentication, persistence, workspace isolation, history, analytics, and public sharing.</li>
+<li>Design QA passed with no remaining P0, P1, or P2 visual findings.</li>
+</ul>
+<h2>Major technical decisions</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Storage behind a typed adapter</td>
+<td>Keeps screens independent of the backend and supports both a safe demo and persistent product through the same UI</td>
+</tr>
+<tr>
+<td>PostgreSQL instead of Firebase</td>
+<td>Provides explicit relational tenancy, server-controlled access, migrations, and a reliable history model</td>
+</tr>
+<tr>
+<td>Clerk for authentication</td>
+<td>Provides managed sign-in, MFA, password recovery, and metadata-driven beta access</td>
+</tr>
+<tr>
+<td>Integer-cent money</td>
+<td>Prevents floating-point errors and inconsistent legacy string comparisons</td>
+</tr>
+<tr>
+<td>Derived readiness and analytics</td>
+<td>Avoids storing calculated state that can drift from source records</td>
+</tr>
+<tr>
+<td>Append-only event history</td>
+<td>Preserves planning decisions and creates a foundation for cross-event reporting and future recommendations</td>
+</tr>
+<tr>
+<td>Retrieval-based past-event learning</td>
+<td>Uses current workspace evidence at generation time, stays explainable, and avoids cross-client model training or data leakage</td>
+</tr>
+<tr>
+<td>Review-before-create spreadsheet import</td>
+<td>Lets users correct inferred data and remove unwanted rows before any event records are written</td>
+</tr>
+<tr>
+<td>Pointer-based floorplan placement</td>
+<td>Supports consistent drag placement across mouse, pen, and touch while keeping keyboard and click alternatives</td>
+</tr>
+<tr>
+<td>Warm espresso instead of black surfaces</td>
+<td>Preserves strong brand contrast without the heavy black treatment called out in client feedback</td>
+</tr>
+<tr>
+<td>Original landing DOM and CSS</td>
+<td>Preserves the approved visual design exactly instead of approximating it</td>
+</tr>
+<tr>
+<td>Separate marketing and Studio deployments</td>
+<td>Protects the public domain and existing marketplace while the B2B product remains in controlled private beta</td>
+</tr>
+<tr>
+<td>Deterministic AI fallback</td>
+<td>Keeps planning usable and testable when AI credentials or upstream generation are unavailable</td>
+</tr>
+</tbody></table>
+<h2>Timeline</h2>
+<h3>July 30 to August 5</h3>
+<ul>
+<li>Started from the MVP baseline.</li>
+<li>Rebuilt the product interface and data layer.</li>
+<li>Removed dead code and added tests, linting, and CI.</li>
+<li>Added event workspaces, calendar, fundraising, floorplans, tasks, budgets, templates, venues, boards, Vercel routing, and brand updates.</li>
+<li>Migrated authentication to Clerk and persistence to PostgreSQL.</li>
+<li>Proved database tenancy and the real API end to end.</li>
+</ul>
+<h3>August 6 to August 7</h3>
+<ul>
+<li>Rebuilt and deployed the separate public landing site.</li>
+<li>Restored exact visual fidelity using the original markup and CSS.</li>
+<li>Added lead capture, Resend and SMTP delivery, Calendly-aware behavior, and local timestamps.</li>
+<li>Migrated <code>www.beebizy.com</code> from Replit to Vercel.</li>
+<li>Recorded the complete DNS inventory, change history, rollback plan, and email-authentication safeguards.</li>
+</ul>
+<h3>August 20 to August 24</h3>
+<ul>
+<li>Added structured event planning history.</li>
+<li>Completed the P0 workflows, public demo, public sharing controls, login boundary, and About page.</li>
+<li>Added testimonials, video proof, responsive landing navigation, internal access, and formal completion documentation.</li>
+</ul>
+<h3>August 25 to August 29</h3>
+<ul>
+<li>Consolidated the demo lead flow.</li>
+<li>Shaped the Studio for private beta.</li>
+<li>Added the agentic planning workflow and completed the beta planning workspace.</li>
+<li>Closed mobile navigation issues.</li>
+<li>Changed run-of-show display to 12-hour time.</li>
+</ul>
+<h3>September 1</h3>
+<ul>
+<li>Added CSV, Excel, and public Google Sheets event import with a review-before-create workflow.</li>
+<li>Added workspace-scoped planning recommendations informed by completed event budgets, checklists, schedules, mood references, and floorplans.</li>
+<li>Made generated checklist, run-of-show, and mood-board drafts editable before approval.</li>
+<li>Added direct pointer drag-and-drop from the floorplan object palette onto a blank room canvas.</li>
+<li>Replaced large black product surfaces and black AI palette choices with warm espresso, honey, and ivory treatments.</li>
+<li>Added six automated tests and completed focused browser QA for the new feedback flows.</li>
+</ul>
+<h2>Remaining work and release dependencies</h2>
+<p>These items are not missing P0 / V1 Core features. They are the work needed to move from a verified private beta to a production rollout.</p>
+<ol>
+<li><strong>Merge and release the current Studio branch.</strong> <code>Beebizy-test</code> is 32 commits ahead of <code>origin/main</code>. Review and merge it when the preview is approved.</li>
+<li><strong>Review the remaining design artifacts.</strong> The worktree contains visual comparison files and completion-brief exports that should be intentionally committed or archived.</li>
+<li><strong>Finish Clerk production DNS verification.</strong> Add the remaining Clerk records through the GoDaddy account that controls <code>beebizy.com</code>, then confirm the production instance is no longer in development mode.</li>
+<li><strong>Onboard design partners.</strong> Invite the Eleventy Milano and Campbell Hall users, confirm their roles, and create the first real event in each workspace.</li>
+<li><strong>Complete real-event acceptance.</strong> Use the calendar, run of show, budget, floorplan, and history during live planning, record feedback, and fix any blocking usability or data-integrity issue.</li>
+<li><strong>Automate billing.</strong> Connect checkout and payment webhooks so subscription state no longer depends on manual Clerk metadata.</li>
+<li><strong>Clean up non-blocking engineering warnings.</strong> Split non-component exports that cause four Fast Refresh warnings, improve source-map reporting for generated UI files, and code-split the main JavaScript bundle.</li>
+<li><strong>Refresh the example environment file.</strong> <code>.env.example</code> still contains obsolete Firebase guidance even though Firebase was removed; it should be aligned with Clerk, PostgreSQL, beta access, and AI Gateway configuration.</li>
+</ol>
+<h2>Design-partner acceptance criteria</h2>
+<p>V1 should be considered adopted when:</p>
+<ol>
+<li>Each partner can sign in and access the correct workspace.</li>
+<li>Each partner creates at least one real event.</li>
+<li>The partner uses the run of show, location calendar, budget, and floorplan during planning.</li>
+<li>Real organizer decisions appear in the event history timeline.</li>
+<li>Feedback is recorded against agreed test cases.</li>
+<li>Blocking usability and data-integrity issues are resolved.</li>
+</ol>
+<h2>Scope boundaries</h2>
+<ul>
+<li>The private B2B Studio is deployed separately from the public marketing site.</li>
+<li>The B2C marketplace at <code>app.beebizy.com</code> remains a separate product and was not changed by this work.</li>
+<li>The vendor portal and other existing company subdomains were preserved during the DNS migration.</li>
+<li>Reachability checks confirm that the URLs respond, but they do not replace authenticated partner acceptance testing.</li>
+</ul>
+<h2>Source records</h2>
+<p>This summary was compiled from the current repositories and their recorded verification evidence:</p>
+<ul>
+<li><code>beebizy-b2b/README.md</code></li>
+<li><code>beebizy-b2b/docs/P0-V1-COMPLETION.md</code></li>
+<li><code>beebizy-b2b/design-qa.md</code></li>
+<li><code>beebizy-b2b/package.json</code></li>
+<li><code>beebizy-b2b/src/</code>, <code>api/</code>, <code>scripts/</code>, <code>tests/</code>, <code>drizzle/</code>, and Git history</li>
+<li><code>beebizy-landing/README.md</code></li>
+<li><code>beebizy-landing/docs/dns-inventory.md</code></li>
+<li><code>beebizy-landing/package.json</code>, source files, tests, and Git history</li>
+<li>Fresh typecheck, lint, test, build, and feedback-flow browser checks completed on September 1, 2026</li>
+</ul>
+</body>
+</html>
