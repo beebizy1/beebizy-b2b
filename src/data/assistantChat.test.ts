@@ -158,3 +158,47 @@ describe("agreeing with the assistant", () => {
     });
   });
 });
+
+describe("when the keyword list misses", () => {
+  it("believes what they said rather than asking again", () => {
+    // The reported failure: "we are planning a large company dinner" was answered with
+    // "What kind of event is it?" — asking again for what it had just been told.
+    const turn = nextTurn([user("we are planning a large company dinner")]);
+    expect(turn.reply).not.toMatch(/what kind of event/i);
+    expect(turn.reply).toMatch(/how many people/i);
+    expect(turn.collected.eventType).toBeTruthy();
+  });
+
+  it("classifies what it knows, and quotes them back for what it doesn't", () => {
+    // A known kind wins, because it also picks the per-head budget.
+    expect(collectBrief([user("we are planning a large company dinner")]).eventType).toBe("Dinner");
+    expect(collectBrief([user("organising an awards evening")]).eventType).toBe("Awards");
+    // Nothing matches, so their own words are used rather than asking again.
+    expect(collectBrief([user("a summer BBQ for the team")]).eventType).toBe("summer BBQ for the team");
+    expect(collectBrief([user("we are planning a supplier open day")]).eventType).toBe("supplier open day");
+  });
+
+  it("still prefers a known type when one is mentioned", () => {
+    expect(collectBrief([user("we are planning a charity gala")]).eventType).toBe("Gala");
+  });
+
+  it("recognises the kinds the first version missed", () => {
+    expect(extractEventType("a company dinner")).toBe("Dinner");
+    expect(extractEventType("our awards ceremony")).toBe("Awards");
+    expect(extractEventType("the holiday party")).toBe("Celebration");
+    expect(extractEventType("a trade show booth")).toBe("Expo");
+  });
+
+  it("carries an unknown type all the way to a finished brief", () => {
+    const turn = nextTurn([
+      user("we are planning a large company dinner"),
+      bee("Roughly how many people are you expecting?"),
+      user("200"),
+      bee("For an event that size I'd budget around $60,000 all in. Does that sound right?"),
+      user("yes"),
+      bee("What vibe are you going for?"),
+      user("warm and modern"),
+    ]);
+    expect(turn.brief).toMatchObject({ headcount: 200, theme: "warm and modern" });
+  });
+});

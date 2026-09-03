@@ -52,6 +52,12 @@ const EVENT_TYPES: Array<[RegExp, string]> = [
   [/\bwedding\b/i, "Wedding"],
   [/\bbirthday|anniversar|party\b/i, "Celebration"],
   [/\bnetworking|mixer|reception\b/i, "Reception"],
+  [/\bdinner|banquet|luncheon|breakfast\b/i, "Dinner"],
+  [/\bawards?|ceremony|prize giving\b/i, "Awards"],
+  [/\bholiday|christmas|end of year|festive\b/i, "Celebration"],
+  [/\bexpo|trade show|exhibition|showcase\b/i, "Expo"],
+  [/\bpanel|fireside|talk|seminar|webinar\b/i, "Conference"],
+  [/\bopening|ribbon cutting|groundbreaking\b/i, "Reception"],
 ];
 
 /** The first event type mentioned anywhere in the transcript. */
@@ -135,6 +141,25 @@ export function collectBrief(messages: AssistantChatMessage[]): PartialBrief {
     totalBudgetCents: extractBudgetCents(all),
     theme: null,
   };
+
+  /*
+   * When the keywords miss, believe them anyway.
+   *
+   * The opening question is "what kind of event", so the first thing they say is the
+   * answer to it. Demanding it match a known list meant "we are planning a large company
+   * dinner" was met with "what kind of event is it?" — the assistant asking again for
+   * something it had just been told, which reads as not listening. Their own words become
+   * the event type instead; the list only exists to pick a sensible per-head budget.
+   */
+  if (!collected.eventType) {
+    const firstAnswer = said[0]?.content.trim();
+    if (firstAnswer && firstAnswer.length > 2) {
+      collected.eventType = firstAnswer
+        .replace(/^(?:we(?:'re| are)?\s+)?(?:planning|organi[sz]ing|doing|hosting|running)\s+/i, "")
+        .replace(/^(?:an?|the)\s+/i, "")
+        .slice(0, 60);
+    }
+  }
 
   /*
    * Agreeing to a suggested budget counts as naming it. Without this, "yes that works"
