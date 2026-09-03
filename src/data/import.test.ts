@@ -145,3 +145,64 @@ describe("services and vendors import", () => {
     expect(plan.warnings.join(" ")).not.toContain("not recognised");
   });
 });
+
+describe("services become checklist tasks", () => {
+  const sheet = (rows: string, name = "Services") => parseCsvTable(rows, name);
+
+  it("adds a task for each imported service, in the right category", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Event Name\nSpring Gala", "Event"),
+        sheet(
+          [
+            "Vendor,Category,Notes",
+            "Golden Gate Catering,Catering,Plated dinner for 300",
+            "Apex AV,AV & Tech,Stage and lighting",
+            "City Coaches,Transport,",
+          ].join("\n"),
+        ),
+      ],
+      "x.xlsx",
+    );
+
+    expect(plan.checklist.map((item) => [item.title, item.category])).toEqual([
+      ["Confirm Golden Gate Catering", "Catering"],
+      ["Confirm Apex AV", "AV/Tech"],
+      ["Confirm City Coaches", "Logistics"],
+    ]);
+    // What they're providing carries onto the task, so the chaser knows what for.
+    expect(plan.checklist[0]!.description).toBe("Plated dinner for 300");
+  });
+
+  it("falls back to General for a category the checklist has no home for", () => {
+    const plan = buildEventImportPlan(
+      [sheet("Vendor,Category\nBloom & Vine,Decor")],
+      "x.xlsx",
+    );
+    expect(plan.checklist[0]!.category).toBe("General");
+  });
+
+  it("does not duplicate a task the checklist sheet already covers", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Task,Category\nChase Golden Gate Catering for the contract,Catering", "Checklist"),
+        sheet("Vendor,Category\nGolden Gate Catering,Catering\nApex AV,AV & Tech"),
+      ],
+      "x.xlsx",
+    );
+    const titles = plan.checklist.map((item) => item.title);
+    expect(titles).toEqual(["Chase Golden Gate Catering for the contract", "Confirm Apex AV"]);
+  });
+
+  it("keeps sheet tasks first and appends the service ones", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Task\nBook the band", "Checklist"),
+        sheet("Vendor,Category\nApex AV,AV & Tech"),
+      ],
+      "x.xlsx",
+    );
+    expect(plan.checklist.map((i) => i.title)).toEqual(["Book the band", "Confirm Apex AV"]);
+    expect(plan.checklist.map((i) => i.sortOrder)).toEqual([0, 1]);
+  });
+});

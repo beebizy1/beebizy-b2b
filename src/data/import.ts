@@ -92,6 +92,24 @@ const aliases = {
   vendorNotes: ["notes", "scope", "providing", "details", "description", "what they're providing"],
 } as const;
 
+/**
+ * Vendor categories and checklist categories are different vocabularies, so a booked
+ * supplier lands in the part of the checklist someone would look for it in. Anything
+ * unmapped falls to General rather than inventing a category the picker doesn't offer.
+ */
+const VENDOR_TO_CHECKLIST_CATEGORY: Record<string, string> = {
+  Venue: "Venue",
+  Catering: "Catering",
+  "AV & Tech": "AV/Tech",
+  Staffing: "Staffing",
+  Transport: "Logistics",
+  Print: "Marketing",
+};
+
+function checklistCategoryForVendor(category: string): string {
+  return VENDOR_TO_CHECKLIST_CATEGORY[category] ?? "General";
+}
+
 const normalize = (value: string): string => value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 
 function matchingHeader(table: SpreadsheetTable, names: readonly string[]): string | null {
@@ -196,7 +214,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
   };
 
   const checklistTable = tableNamed(tables, [/check\s*list/, /tasks?/, /to dos?/]);
-  const checklist = (checklistTable?.rows ?? []).flatMap((row, index): ChecklistItemDraft[] => {
+  const checklistFromSheet = (checklistTable?.rows ?? []).flatMap((row, index): ChecklistItemDraft[] => {
     const itemTitle = stringFrom(row, checklistTable!, aliases.task);
     if (!itemTitle) return [];
     return [{
@@ -295,6 +313,36 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
       `${ignored.length === 1 ? "This sheet was" : "These sheets were"} not recognised and nothing was imported from ${ignored.length === 1 ? "it" : "them"}: ${ignored.map((table) => table.name).join(", ")}.`,
     );
   }
+
+  /*
+   * Every imported service also becomes a task.
+   *
+   * A supplier on a spreadsheet is a commitment someone has to chase — confirm the
+   * booking, sign the contract, agree the details. Importing them into the directory and
+   * leaving the checklist untouched moves the row without moving the work, so the thing
+   * most likely to be forgotten is the thing that was never written down.
+   *
+   * Skipped when the checklist sheet already mentions the vendor by name, so a
+   * spreadsheet that tracks both does not produce the task twice.
+   */
+  const mentioned = new Set(checklistFromSheet.map((item) => normalize(item.title)));
+  const vendorTasks = vendors.flatMap((imported, index): ChecklistItemDraft[] => {
+    const name = imported.vendor.name;
+    if ([...mentioned].some((title) => title.includes(normalize(name)))) return [];
+    return [
+      {
+        title: `Confirm ${name}`,
+        description: imported.notes,
+        category: checklistCategoryForVendor(imported.vendor.category),
+        dueDate: null,
+        assignedTo: null,
+        completed: false,
+        sortOrder: checklistFromSheet.length + index,
+      },
+    ];
+  });
+
+  const checklist = [...checklistFromSheet, ...vendorTasks];
 
   return { sourceName, event, checklist, runOfShow, budget, moodBoard, guests, vendors, warnings };
 }
