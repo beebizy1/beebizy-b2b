@@ -11,6 +11,11 @@
  *
  *   npx tsx scripts/seed-demo-content.mts --workspace ws_xxx [--dry-run]
  *   npx tsx scripts/seed-demo-content.mts --workspace ws_xxx --undo
+ *
+ * `--bootstrap-user user_xxx` provisions a workspace first, for someone who has a Clerk
+ * account but has never signed in and so has no workspace yet. It creates exactly the
+ * rows the API would create on their first request, plus demo events, so their first
+ * sign-in lands on a populated workspace rather than an empty one.
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -25,18 +30,31 @@ const value = (name: string) => {
   return i === -1 ? undefined : args[i + 1];
 };
 
-const workspaceId = value("workspace");
+const bootstrapUser = value("bootstrap-user");
 const dryRun = flag("dry-run");
 const undo = flag("undo");
 
-if (!workspaceId) {
-  console.error("Missing --workspace ws_xxx");
+if (!value("workspace") && !bootstrapUser) {
+  console.error("Missing --workspace ws_xxx (or --bootstrap-user user_xxx)");
   process.exit(1);
 }
 
 const sql = neon(process.env.DATABASE_URL!);
 const rid = (prefix: string) =>
   `${prefix}_${Math.random().toString(16).slice(2, 10)}${Math.random().toString(16).slice(2, 10)}`;
+
+/**
+ * Events a fresh workspace needs before registrations have anywhere to attach. Offsets
+ * are days from today, so the set always straddles past and future and the dashboard's
+ * next-30-days panel is never empty.
+ */
+const BOOTSTRAP_EVENTS: Array<[string, string, number, number | null, string, string]> = [
+  ["Annual Partner Gala & Fundraiser", "Gala", 74, 300, "published", "Black tie. Silent auction at reception, live auction after dinner."],
+  ["Global Sales Kickoff", "Summit", 6, 450, "published", "Two-day kickoff with breakouts and an evening reception."],
+  ["Customer Advisory Board — Spring", "Conference", 2, 24, "published", "Half-day session with the advisory board."],
+  ["Product Launch — Press & Analyst Day", "Product Launch", 19, 180, "published", "Demos, briefings and a media room."],
+  ["Design Systems Training — Cohort 4", "Training", -65, 40, "completed", "Two-day practitioner training."],
+];
 
 /* ---------------------------------------------------------------------- people */
 
@@ -252,11 +270,46 @@ function buildContents(spec: TemplateSpec) {
 /* ------------------------------------------------------------------------ run */
 
 if (undo) {
-  const g = await sql`delete from guests where workspace_id = ${workspaceId} and notes like ${"%" + MARKER} returning id`;
+  const workspaceId = value("workspace")!;
+  // Registrations cascade from both events and guests, so they need no separate sweep.
+  const e = await sql`delete from events    where workspace_id = ${workspaceId} and description like ${"%" + MARKER} returning id`;
+  const g = await sql`delete from guests    where workspace_id = ${workspaceId} and notes       like ${"%" + MARKER} returning id`;
   const t = await sql`delete from templates where workspace_id = ${workspaceId} and description like ${"%" + MARKER} returning id`;
-  // Registrations cascade from guests, but sweep any that outlived their guest.
-  console.log(`Removed ${g.length} guests and ${t.length} templates (registrations cascade with the guest).`);
+  console.log(`Removed ${e.length} events, ${g.length} guests and ${t.length} templates. Registrations cascaded.`);
   process.exit(0);
+}
+
+let workspaceId = value("workspace");
+
+if (bootstrapUser || flag("with-events")) {
+  const [existing] = bootstrapUser
+    ? await sql`select workspace_id from workspace_members where user_id = ${bootstrapUser} limit 1`
+    : [{ workspace_id: value("workspace")! }];
+
+  if (existing) {
+    workspaceId = (existing as { workspace_id: string }).workspace_id;
+    console.log(`${bootstrapUser} already owns ${workspaceId} — seeding that instead of creating another.`);
+  } else {
+    workspaceId = rid("ws");
+    // Exactly what resolveWorkspace() writes on a first request, defaults and all.
+    await sql`insert into workspaces (id, name) values (${workspaceId}, ${"My workspace"})`;
+    await sql`insert into workspace_members (workspace_id, user_id, role)
+              values (${workspaceId}, ${bootstrapUser}, ${"owner"})`;
+    console.log(`Provisioned ${workspaceId} for ${bootstrapUser}.`);
+  }
+
+  const [{ n }] = (await sql`
+    select count(*)::int as n from events where workspace_id = ${workspaceId}
+    and description like ${"%" + MARKER}`) as Array<{ n: number }>;
+  if (n === 0) {
+    for (const [title, category, dayOffset, capacity, status, description] of BOOTSTRAP_EVENTS) {
+      await sql`
+        insert into events (id, workspace_id, title, description, category, status, capacity, starts_at)
+        values (${rid("evt")}, ${workspaceId}, ${title}, ${`${description} ${MARKER}`}, ${category}, ${status},
+                ${capacity}, now() + (${dayOffset} || ' days')::interval)`;
+    }
+    console.log(`Inserted ${BOOTSTRAP_EVENTS.length} events.`);
+  }
 }
 
 const events = await sql`
