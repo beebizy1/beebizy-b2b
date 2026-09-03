@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchGoogleSheetCsv } from "./imports";
+import { fetchGoogleSheetCsv, sheetNameFrom} from "./imports";
 
 describe("Google Sheets import", () => {
   it("downloads only the selected public sheet as bounded CSV", async () => {
@@ -30,5 +30,26 @@ describe("Google Sheets import", () => {
     await expect(
       fetchGoogleSheetCsv("https://docs.google.com/spreadsheets/d/private/edit", fetcher),
     ).rejects.toThrow("Anyone with the link");
+  });
+});
+
+describe("sheetNameFrom", () => {
+  it("takes the document title from the download filename", () => {
+    expect(sheetNameFrom('attachment; filename="Annual Reunion Event - Sheet1.csv"')).toBe("Annual Reunion Event");
+  });
+
+  it("keeps a hyphenated title that is not a tab name", () => {
+    expect(sheetNameFrom('attachment; filename="Q3 Gala - Los Angeles.csv"')).toBe("Q3 Gala - Los Angeles");
+  });
+
+  it("handles the encoded form", () => {
+    expect(sheetNameFrom("attachment; filename*=UTF-8''Annual%20Reunion%20Event%20-%20Sheet1.csv")).toBe(
+      "Annual Reunion Event",
+    );
+  });
+
+  it("falls back when the header is missing or unparseable", () => {
+    expect(sheetNameFrom(null)).toBe("Google Sheet");
+    expect(sheetNameFrom("attachment")).toBe("Google Sheet");
   });
 });

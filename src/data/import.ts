@@ -67,7 +67,7 @@ const aliases = {
   capacity: ["capacity", "headcount", "guest count", "attendees", "attendance"],
   category: ["category", "event type", "type"],
   description: ["description", "event description", "brief", "notes"],
-  task: ["task", "checklist item", "action", "to do", "todo", "title"],
+  task: ["task", "tasks", "checklist item", "checklist items", "action", "actions", "to do", "to dos", "todo", "title"],
   dueDate: ["due date", "deadline", "due"],
   owner: ["owner", "assigned to", "assignee", "responsible"],
   completed: ["completed", "done", "status"],
@@ -82,7 +82,15 @@ const aliases = {
   caption: ["caption", "description", "notes", "direction"],
   guestName: ["guest name", "attendee name", "name"],
   email: ["email", "email address", "contact", "guest email"],
-  vendorName: ["vendor", "vendor name", "supplier", "supplier name", "service", "service provider", "company", "name"],
+  // Plurals matter: a column headed SERVICES is at least as common as SERVICE, and
+  // matching is exact after normalising, so both spellings have to be listed.
+  vendorName: [
+    "vendor", "vendors", "vendor name",
+    "supplier", "suppliers", "supplier name",
+    "service", "services", "service provider", "service providers",
+    "provider", "providers",
+    "company", "name",
+  ],
   // Not "service": a sheet that titles its name column "Service" would have its vendor
   // name read back as the category, because header matching walks the sheet's own column
   // order rather than this list.
@@ -146,11 +154,16 @@ function tableNamed(tables: SpreadsheetTable[], patterns: RegExp[], required?: r
  * every kind of sheet and would match all of them.
  */
 const ROLE_SIGNATURES = {
-  checklist: ["task", "checklist item", "to do", "todo", "action"],
+  checklist: ["task", "tasks", "checklist item", "checklist items", "to do", "to dos", "todo", "todos", "action", "actions"],
   runOfShow: ["start time", "cue", "cue time", "agenda item", "activity"],
-  vendors: ["vendor", "vendor name", "supplier", "supplier name", "service", "service provider"],
+  vendors: [
+    "vendor", "vendors", "vendor name",
+    "supplier", "suppliers", "supplier name",
+    "service", "services", "service provider", "service providers",
+    "provider", "providers",
+  ],
   budget: ["budget item", "line item", "estimated", "estimate", "actual", "spent"],
-  guests: ["guest name", "attendee name", "rsvp", "guest email"],
+  guests: ["guest name", "guest names", "guests", "attendee name", "attendees", "rsvp", "guest email"],
   moodBoard: ["image url", "reference", "image"],
 } as const;
 

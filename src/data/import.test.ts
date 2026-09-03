@@ -255,3 +255,55 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
     expect(plan.checklist.map((i) => i.title)).toEqual(["The real checklist"]);
   });
 });
+
+describe("a wide sheet that mixes event details with a list", () => {
+  /**
+   * A real sheet from a customer: event details on row 2, services running down one
+   * column with every other cell blank, and a plural SERVICES header. It imported the
+   * date and venue and silently dropped all seven services.
+   */
+  const CSV = [
+    "DATE,TIME,LOCATION,SERVICES",
+    "5/30/2027,6-9pm,Campbell Hall,Catering",
+    ",,,Balloon Artist",
+    ",,,Bartenders",
+    ",,,Dessert Cart",
+    ",,,Magician",
+    ",,,DJ",
+    ",,,Popcorn cart",
+  ].join("\n");
+
+  const plan = () => buildEventImportPlan([parseCsvTable(CSV, "Annual Reunion Event")], "Annual Reunion Event");
+
+  it("reads the event details from the first row", () => {
+    expect(plan().event.location).toBe("Campbell Hall");
+    expect(plan().event.date.slice(0, 4)).toBe("2027");
+  });
+
+  it("imports every service, including the ones on otherwise empty rows", () => {
+    expect(plan().vendors.map((v) => v.vendor.name)).toEqual([
+      "Catering", "Balloon Artist", "Bartenders", "Dessert Cart", "Magician", "DJ", "Popcorn cart",
+    ]);
+  });
+
+  it("puts every service on the checklist", () => {
+    expect(plan().checklist.map((c) => c.title)).toEqual([
+      "Confirm Catering", "Confirm Balloon Artist", "Confirm Bartenders", "Confirm Dessert Cart",
+      "Confirm Magician", "Confirm DJ", "Confirm Popcorn cart",
+    ]);
+  });
+
+  it("lets one sheet be both the event overview and a list", () => {
+    // Being claimed as the event table must not stop it also being read as services.
+    const result = plan();
+    expect(result.event.location).toBe("Campbell Hall");
+    expect(result.vendors.length).toBe(7);
+  });
+
+  it("matches singular and plural column headings alike", () => {
+    for (const header of ["SERVICE", "SERVICES", "Vendors", "Suppliers", "Providers"]) {
+      const p = buildEventImportPlan([parseCsvTable(`${header}\nCatering`, "Google Sheet")], "x");
+      expect(p.vendors.map((v) => v.vendor.name), header).toEqual(["Catering"]);
+    }
+  });
+});
