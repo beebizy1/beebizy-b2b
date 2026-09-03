@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import ChecklistLibrarySheet from "./ChecklistLibrarySheet";
 import { cn } from "@/lib/utils";
 import { formatClockTime } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
@@ -40,7 +41,6 @@ import {
   useUpdateRunOfShowItem,
 } from "@/data/hooks";
 import type { ChecklistItem, Event, RunOfShowItem } from "@/data/entities";
-import PlanningAssistantPanel from "./PlanningAssistantPanel";
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -117,7 +117,7 @@ function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem 
   );
 }
 
-function ChecklistPanel({ event }: { event: Event }) {
+export function ChecklistPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useChecklist(event.id);
   const add = useAddChecklistItem();
   const [title, setTitle] = useState("");
@@ -127,6 +127,10 @@ function ChecklistPanel({ event }: { event: Event }) {
   const done = (items ?? []).filter((item) => item.completed).length;
   const total = items?.length ?? 0;
   const overdueCount = (items ?? []).filter(isOverdue).length;
+
+  // The library hides anything already here, matched on title.
+  const existingTitles = useMemo(() => new Set((items ?? []).map((item) => item.title)), [items]);
+  const nextOrder = (items ?? []).reduce((max, item) => Math.max(max, item.sortOrder), 0) + 1;
 
   /** Overdue areas float to the top; completed items hide behind a toggle. */
   const groups = useMemo(() => {
@@ -164,11 +168,18 @@ function ChecklistPanel({ event }: { event: Event }) {
         title="Checklist"
         description={total > 0 ? `${done} of ${total} done${overdueCount ? ` · ${overdueCount} overdue` : ""}` : "Nothing yet"}
         actions={
-          total > done ? (
-            <Button variant="outline" size="sm" onClick={() => setShowCompleted((previous) => !previous)}>
-              {showCompleted ? "Hide done" : "Show done"}
-            </Button>
-          ) : null
+          <>
+            <ChecklistLibrarySheet
+              eventId={event.id}
+              existingTitles={existingTitles}
+              nextOrder={nextOrder}
+            />
+            {total > done ? (
+              <Button variant="outline" size="sm" onClick={() => setShowCompleted((previous) => !previous)}>
+                {showCompleted ? "Hide done" : "Show done"}
+              </Button>
+            ) : null}
+          </>
         }
       />
 
@@ -386,7 +397,7 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
   );
 }
 
-function RunOfShowPanel({ event }: { event: Event }) {
+export function RunOfShowPanel({ event }: { event: Event }) {
   const { timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const add = useAddRunOfShowItem();
@@ -490,7 +501,21 @@ function RunOfShowPanel({ event }: { event: Event }) {
   );
 }
 
-function MoodBoardPanel({ event }: { event: Event }) {
+/**
+ * A few reference images to start a board from.
+ *
+ * Unsplash source URLs rather than bundled assets: the board stores a URL, so a sample
+ * has to be one, and shipping image binaries for a starter suggestion is not worth the
+ * bundle.
+ */
+const SAMPLE_REFERENCES = [
+  { caption: "Warm candlelit tables", url: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=1200&q=80" },
+  { caption: "Stage and LED backdrop", url: "https://images.unsplash.com/photo-1505236858219-8359eb29e329?w=1200&q=80" },
+  { caption: "Garden reception", url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=1200&q=80" },
+  { caption: "Minimal conference set", url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80" },
+];
+
+export function MoodBoardPanel({ event }: { event: Event }) {
   const { data: images, isLoading } = useMoodBoard(event.id);
   const add = useAddMoodBoardImage();
   const remove = useRemoveMoodBoardImage();
@@ -590,6 +615,25 @@ function MoodBoardPanel({ event }: { event: Event }) {
         </Button>
       </form>
 
+      {/* Starting from a blank URL field is a cold start. These fill it in one click so
+          the board has something to react to. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-2.5">
+        <span className="text-xs font-medium text-muted-foreground">Or pick a sample</span>
+        {SAMPLE_REFERENCES.map((sample) => (
+          <button
+            key={sample.url}
+            type="button"
+            onClick={() => {
+              setUrl(sample.url);
+              setCaption(sample.caption);
+            }}
+            className="rounded-full border border-hairline px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
+            {sample.caption}
+          </button>
+        ))}
+      </div>
+
       {isLoading ? (
         <LoadingRows rows={2} className="p-4" />
       ) : (images ?? []).length === 0 ? (
@@ -627,20 +671,5 @@ function MoodBoardPanel({ event }: { event: Event }) {
         </ul>
       )}
     </Panel>
-  );
-}
-
-export default function PlanSection({ event }: { event: Event }) {
-  return (
-    <div className="space-y-6">
-      <PlanningAssistantPanel event={event} />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        <ChecklistPanel event={event} />
-        <RunOfShowPanel event={event} />
-      </div>
-      {/* Full width, below the two working panels: reference images are for judging a look,
-          and at sidebar width they were too small to judge anything by. */}
-      <MoodBoardPanel event={event} />
-    </div>
   );
 }

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import GuestCsvImportDialog from "./GuestCsvImportDialog";
 import {
   EmptyState,
   ErrorNotice,
@@ -158,14 +159,17 @@ export default function GuestsSection({ event }: { event: Event }) {
           title="Invites & registrations"
           description={`${registrations?.length ?? 0} on the list`}
           actions={
-            <Input
-              type="search"
-              value={search}
-              onChange={(inputEvent) => setSearch(inputEvent.target.value)}
-              placeholder="Search guests"
-              aria-label="Search guests"
-              className="h-8 w-44"
-            />
+            <>
+              <Input
+                type="search"
+                value={search}
+                onChange={(inputEvent) => setSearch(inputEvent.target.value)}
+                placeholder="Search guests"
+                aria-label="Search guests"
+                className="h-8 w-44"
+              />
+              <GuestCsvImportDialog event={event} />
+            </>
           }
         />
 

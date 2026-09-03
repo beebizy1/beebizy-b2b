@@ -28,11 +28,9 @@ import { eventSectionHref } from "@/app/shell/nav";
 import { cn } from "@/lib/utils";
 
 export default function Budget({
-  eyebrow = "Budget",
   title = "What each event cost and what it brought in",
   description = "Booked revenue and committed spend per event. Amounts are what has actually happened, not forecast.",
 }: {
-  eyebrow?: string;
   title?: string;
   description?: string;
 } = {}) {
@@ -89,11 +87,7 @@ export default function Budget({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-      />
+      <PageHeader title={title} description={description} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile

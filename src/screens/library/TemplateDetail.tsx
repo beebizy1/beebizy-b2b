@@ -120,7 +120,6 @@ export default function TemplateDetail({ id }: { id: string }) {
       </Link>
 
       <PageHeader
-        eyebrow="Template"
         title={template.name}
         description="Everything here is copied into a new event when you start from this template."
         actions={

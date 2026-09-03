@@ -44,7 +44,6 @@ export default function VendorForm() {
       </Link>
 
       <PageHeader
-        eyebrow="New vendor"
         title="Add a vendor"
         description="They go into your directory, ready to book onto any event."
       />

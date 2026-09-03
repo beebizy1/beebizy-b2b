@@ -11,7 +11,6 @@ export default function CalendarView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Calendar"
         title="Your full event calendar"
         description="See every draft, live event and multi-day program in one operating view."
         actions={

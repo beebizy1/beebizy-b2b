@@ -8,6 +8,7 @@
  * old page never said: how ready this event is and what is wrong with it.
  */
 
+import { useEffect, useRef } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import {
   ArrowLeft,
@@ -49,14 +50,29 @@ import {
 } from "@/components/primitives";
 import { useDeleteEvent, useEvent, useEventHealth, useSaveEventAsTemplate } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
-import { EVENT_SECTIONS, eventSectionHref, sectionFromSlug } from "@/app/shell/nav";
-import type { Event, EventHealth, EventSectionId } from "@/data/entities";
+import { EVENT_TABS, eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, type EventTabId } from "@/app/shell/nav";
+import type { Event, EventHealth } from "@/data/entities";
 import OverviewSection from "./sections/OverviewSection";
-import PlanSection from "./sections/PlanSection";
 import GuestsSection from "./sections/GuestsSection";
-import VendorsSection from "./sections/VendorsSection";
-import BudgetSection from "./sections/BudgetSection";
 import ShareSection from "./sections/ShareSection";
+import FloorplanPanel from "./sections/FloorplanPanel";
+import RfpPanel from "./sections/RfpPanel";
+import DepositsPanel from "./sections/DepositsPanel";
+import AnalyticsPanel from "./sections/AnalyticsPanel";
+import FundraisingPanel from "./sections/FundraisingPanel";
+import LiveAuctionPanel from "./sections/LiveAuctionPanel";
+import PlanningAssistantPanel from "./sections/PlanningAssistantPanel";
+import { ChecklistPanel, MoodBoardPanel, RunOfShowPanel } from "./sections/PlanSection";
+import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/VendorsSection";
+import {
+  AuctionPanel,
+  BudgetPanel,
+  BudgetRoiSummary,
+  BudgetTotals,
+  RafflePanel,
+  RoiPanel,
+  TicketsPanel,
+} from "./sections/BudgetSection";
 
 /**
  * "12 Mar 2026, 6:00 PM – 11:00 PM" for a single day, "– 13 Mar, 2:00 AM" when it runs
@@ -71,24 +87,34 @@ function formatRange(event: Event, prefs: Preferences): string {
   return `${startText} – ${endText}`;
 }
 
-function SectionTabs({ eventId, active }: { eventId: string; active: EventSectionId }) {
+function SectionTabs({ eventId, active }: { eventId: string; active: EventTabId }) {
+  const activeRef = useRef<HTMLAnchorElement>(null);
+
+  // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
+  // a late tab like Deposits shows a bar that does not contain the tab you are on.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
+
   return (
     <nav aria-label="Event sections" className="-mb-px flex gap-1 overflow-x-auto">
-      {EVENT_SECTIONS.map((section) => {
-        const isActive = section.id === active;
+      {EVENT_TABS.map((tab) => {
+        const isActive = tab.id === active;
         return (
           <Link
-            key={section.id}
-            href={eventSectionHref(eventId, section.id)}
+            key={tab.id}
+            ref={isActive ? activeRef : undefined}
+            href={eventTabHref(eventId, tab.id)}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm transition-colors",
+              "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
               isActive
-                ? "border-primary font-semibold text-foreground"
-                : "border-transparent font-medium text-muted-foreground hover:border-hairline hover:text-foreground",
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:border-hairline hover:text-foreground",
             )}
           >
-            {section.label}
+            {tab.icon ? <tab.icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+            {tab.label}
           </Link>
         );
       })}
@@ -109,7 +135,7 @@ function RiskStrip({ health, eventId }: { health: EventHealth; eventId: string }
             <RiskPill level={risk.level} />
             <span className="min-w-0 flex-1 truncate text-foreground">{risk.message}</span>
             <span className="shrink-0 text-xs font-medium text-muted-foreground">
-              Fix in {EVENT_SECTIONS.find((s) => s.id === risk.section)?.label}
+              Fix in {eventSectionLabel(risk.section)}
             </span>
           </Link>
         </li>
@@ -125,7 +151,7 @@ function WorkspaceHeader({
 }: {
   event: Event;
   health: EventHealth | null | undefined;
-  active: EventSectionId;
+  active: EventTabId;
 }) {
   const [, navigate] = useLocation();
   const prefs = usePreferences();
@@ -278,7 +304,7 @@ function WorkspaceHeader({
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
   const { data: health } = useEventHealth(id);
-  const active = sectionFromSlug(slug);
+  const active = tabFromSlug(slug);
 
   if (isLoading) {
     return (
@@ -306,7 +332,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   }
 
   // An unknown slug lands on Overview rather than a blank pane.
-  if (slug && !EVENT_SECTIONS.some((s) => s.slug === slug)) {
+  if (active === null) {
     return <Redirect to={`/app/events/${id}`} replace />;
   }
 
@@ -314,11 +340,40 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     <div className="space-y-6">
       <WorkspaceHeader event={event} health={health} active={active} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
-      {active === "plan" ? <PlanSection event={event} /> : null}
-      {active === "guests" ? <GuestsSection event={event} /> : null}
-      {active === "vendors" ? <VendorsSection event={event} /> : null}
-      {active === "budget" ? <BudgetSection event={event} /> : null}
+      {active === "registrations" ? <GuestsSection event={event} /> : null}
+      {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
+      {active === "checklist" ? (
+        <div className="space-y-6">
+          <PlanningAssistantPanel event={event} />
+          <ChecklistPanel event={event} />
+        </div>
+      ) : null}
+      {active === "vendors" ? (
+        <div className="space-y-6">
+          <VendorsPanel event={event} />
+          <VendorCoveragePanel event={event} />
+        </div>
+      ) : null}
+      {active === "budget" ? (
+        <div className="space-y-6">
+          <BudgetTotals event={event} />
+          <BudgetPanel event={event} />
+          <BudgetRoiSummary event={event} />
+          <RoiPanel event={event} />
+        </div>
+      ) : null}
+      {active === "floorplan" ? <FloorplanPanel event={event} /> : null}
+      {active === "inspiration" ? <MoodBoardPanel event={event} /> : null}
+      {active === "fundraising" ? <FundraisingPanel event={event} /> : null}
+      {active === "analytics" ? <AnalyticsPanel event={event} /> : null}
       {active === "share" ? <ShareSection event={event} /> : null}
+      {active === "menu" ? <MenuPanel event={event} /> : null}
+      {active === "tickets" ? <TicketsPanel event={event} /> : null}
+      {active === "raffle" ? <RafflePanel event={event} /> : null}
+      {active === "silent-auction" ? <AuctionPanel event={event} only="silent" /> : null}
+      {active === "live-auction" ? <LiveAuctionPanel event={event} /> : null}
+      {active === "rfp" ? <RfpPanel event={event} /> : null}
+      {active === "deposits" ? <DepositsPanel event={event} /> : null}
     </div>
   );
 }

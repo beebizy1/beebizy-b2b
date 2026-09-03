@@ -46,6 +46,13 @@ import Tasks from "@/screens/Tasks";
 import Library from "@/screens/Library";
 import TemplateDetail from "@/screens/library/TemplateDetail";
 import BoardDetail from "@/screens/library/BoardDetail";
+import LocationsIndex from "@/screens/locations/LocationsIndex";
+import LocationForm from "@/screens/locations/LocationForm";
+import LocationDetail from "@/screens/locations/LocationDetail";
+import RegistrationsIndex from "@/screens/registrations/RegistrationsIndex";
+import RegistrationForm from "@/screens/registrations/RegistrationForm";
+import PostEventSummary from "@/screens/events/PostEventSummary";
+import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
 import { isDemoSession } from "@/app/demo";
@@ -77,21 +84,27 @@ function AppRoutes() {
           <Route path="/app/events">{() => <EventsIndex />}</Route>
           <Route path="/app/events/new">{() => <EventForm />}</Route>
           <Route path="/app/events/:id/edit">{(params) => <EventForm id={params.id} />}</Route>
+          <Route path="/app/events/:id/summary">{(params) => <PostEventSummary id={params.id} />}</Route>
           <Route path="/app/events/:id/:section">
             {(params) => <EventWorkspace id={params.id} section={params.section} />}
           </Route>
           <Route path="/app/events/:id">{(params) => <EventWorkspace id={params.id} />}</Route>
-          <Route path="/app/guests" component={Guests} />
-          <Route path="/app/guests/new" component={Guests} />
+          <Route path="/app/attendees" component={Guests} />
+          <Route path="/app/attendees/new" component={Guests} />
+          <Route path="/app/locations" component={LocationsIndex} />
+          <Route path="/app/locations/new">{() => <LocationForm />}</Route>
+          <Route path="/app/locations/:id/edit">{(params) => <LocationForm id={params.id} />}</Route>
+          <Route path="/app/locations/:id">{(params) => <LocationDetail id={params.id} />}</Route>
+          <Route path="/app/registrations" component={RegistrationsIndex} />
+          <Route path="/app/registrations/new">{() => <RegistrationForm />}</Route>
           <Route path="/app/vendors" component={VendorsIndex} />
           <Route path="/app/vendors/new">{() => <VendorForm />}</Route>
           <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
           <Route path="/app/budget">{() => <Budget />}</Route>
           <Route path="/app/history" component={History} />
-          <Route path="/app/reports">
+          <Route path="/app/reporting">
             {() => (
               <Budget
-                eyebrow="Reports"
                 title="Portfolio performance, event by event"
                 description="Track spend, revenue and return across every event, with the underlying event detail one click away."
               />
@@ -99,9 +112,10 @@ function AppRoutes() {
           </Route>
           <Route path="/app/messages" component={Messages} />
           <Route path="/app/tasks" component={Tasks} />
-          <Route path="/app/library" component={Library} />
-          <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
-          <Route path="/app/library/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
+          <Route path="/app/tickets" component={TicketSales} />
+          <Route path="/app/templates" component={Library} />
+          <Route path="/app/templates/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
+          <Route path="/app/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
           <Route component={NotFound} />
         </Switch>
@@ -133,18 +147,27 @@ function Routes() {
         bookmarked, and a dead bookmark is a worse welcome than a redirect.
       */}
       <Route path="/app/money">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/app/people">{() => <Redirect to="/app/guests" replace />}</Route>
+      <Route path="/app/people">{() => <Redirect to="/app/attendees" replace />}</Route>
+      {/* The rail moved Guests to Attendees, Library to Templates and Reports to
+          Reporting when the vocabulary aligned with the reference design. All three
+          were live long enough to be bookmarked. */}
+      <Route path="/app/guests">{() => <Redirect to="/app/attendees" replace />}</Route>
+      <Route path="/app/guests/new">{() => <Redirect to="/app/attendees/new" replace />}</Route>
+      <Route path="/app/reports">{() => <Redirect to="/app/reporting" replace />}</Route>
+      <Route path="/app/library">{() => <Redirect to="/app/templates" replace />}</Route>
+      <Route path="/app/library/templates/:id">{(params) => <Redirect to={`/app/templates/${params.id}`} replace />}</Route>
+      <Route path="/app/library/boards/:id">{(params) => <Redirect to={`/app/templates/boards/${params.id}`} replace />}</Route>
       <Route path="/dashboard">{() => <Redirect to="/app" replace />}</Route>
       <Route path="/dashboard/events">{() => <Redirect to="/app/events" replace />}</Route>
       <Route path="/dashboard/events/:id">{(params) => <Redirect to={`/app/events/${params.id}`} replace />}</Route>
       <Route path="/dashboard/vendors">{() => <Redirect to="/app/vendors" replace />}</Route>
-      <Route path="/dashboard/guests">{() => <Redirect to="/app/guests" replace />}</Route>
-      <Route path="/dashboard/registrations">{() => <Redirect to="/app/guests" replace />}</Route>
-      <Route path="/dashboard/tickets">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/dashboard/reporting">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/dashboard/history">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/dashboard/templates">{() => <Redirect to="/app/library" replace />}</Route>
-      <Route path="/dashboard/locations">{() => <Redirect to="/app/library" replace />}</Route>
+      <Route path="/dashboard/guests">{() => <Redirect to="/app/attendees" replace />}</Route>
+      <Route path="/dashboard/registrations">{() => <Redirect to="/app/registrations" replace />}</Route>
+      <Route path="/dashboard/tickets">{() => <Redirect to="/app/tickets" replace />}</Route>
+      <Route path="/dashboard/reporting">{() => <Redirect to="/app/reporting" replace />}</Route>
+      <Route path="/dashboard/history">{() => <Redirect to="/app/history" replace />}</Route>
+      <Route path="/dashboard/templates">{() => <Redirect to="/app/templates" replace />}</Route>
+      <Route path="/dashboard/locations">{() => <Redirect to="/app/locations" replace />}</Route>
       <Route path="/dashboard/settings">{() => <Redirect to="/app/settings" replace />}</Route>
       <Route path="/buy/:token">{(params) => <Redirect to={`/e/${params.token}/tickets`} replace />}</Route>
       <Route path="/share/:token">{(params) => <Redirect to={`/e/${params.token}`} replace />}</Route>

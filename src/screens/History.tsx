@@ -28,7 +28,6 @@ export default function History() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="History"
         title="Past events become your playbook"
         description="Compare headcount, spend and planning decisions so the next event starts with evidence instead of a blank page."
       />

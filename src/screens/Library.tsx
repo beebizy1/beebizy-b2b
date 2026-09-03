@@ -492,7 +492,6 @@ export default function Library() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Library"
         title="What you reuse"
         description="Templates, boards and venues. Set these up once and every future event starts further along."
       />

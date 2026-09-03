@@ -14,7 +14,6 @@ export default function Messages() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Messages"
         title="Every vendor conversation, together"
         description="Review replies, keep briefs attached to the right vendor, and continue the conversation without leaving Beebizy."
       />

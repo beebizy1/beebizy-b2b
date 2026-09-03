@@ -197,7 +197,6 @@ export default function EventForm({ id }: { id?: string }) {
       </Link>
 
       <PageHeader
-        eyebrow={isEdit ? "Edit event" : "New event"}
         title={isEdit ? (existing?.title ?? "Edit event") : "Plan an event"}
         description={
           isEdit

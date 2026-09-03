@@ -33,11 +33,11 @@ export function PageHeader({
   return (
     <header className={cn("flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="min-w-0 space-y-1.5">
-        {eyebrow ? (
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</p>
-        ) : null}
-        <h1 className="display-md text-foreground">{title}</h1>
-        {description ? <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
+        {/* An eyebrow is the exception, not the pattern: the planning workspace uses one,
+            the table screens lead with the title alone. Amber, not grey micro-caps. */}
+        {eyebrow ? <p className="text-base font-medium text-primary-text">{eyebrow}</p> : null}
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        {description ? <p className="max-w-2xl leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>

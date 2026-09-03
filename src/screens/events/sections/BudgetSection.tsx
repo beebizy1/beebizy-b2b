@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Check, Coins, Gavel, Handshake, Pencil, Plus, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
+import { Check, Coins, Copy, ExternalLink, Gavel, Handshake, Pencil, Plus, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -282,7 +282,7 @@ function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
   );
 }
 
-function BudgetPanel({ event }: { event: Event }) {
+export function BudgetPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useBudget(event.id);
   const add = useAddBudgetItem();
   const [name, setName] = useState("");
@@ -482,7 +482,7 @@ function BudgetPanel({ event }: { event: Event }) {
   );
 }
 
-function TicketsPanel({ event }: { event: Event }) {
+export function TicketsPanel({ event }: { event: Event }) {
   const { data: tickets, isLoading } = useTickets(event.id);
   const add = useAddTicketType();
   const update = useUpdateTicketType();
@@ -493,8 +493,61 @@ function TicketsPanel({ event }: { event: Event }) {
 
   const revenue = sumCents((tickets ?? []).map((ticket) => ticket.priceCents * ticket.quantitySold));
   const sold = (tickets ?? []).reduce((total, ticket) => total + ticket.quantitySold, 0);
+  // Capped tiers only: an unlimited tier has no share of a fixed allocation to fill.
+  const allocated = (tickets ?? []).reduce((total, ticket) => total + ticket.quantityTotal, 0);
+  const capacityFilled = event.capacity ? Math.round((sold / event.capacity) * 100) : null;
+
+  /** The page a guest buys from. Only exists once the event has been shared. */
+  const guestLink = event.shareToken ? `${window.location.origin}/e/${event.shareToken}/tickets` : null;
 
   return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <StatTile label="Tickets sold" value={String(sold)} icon={Ticket} />
+        <StatTile label="Revenue collected" value={formatMoney(revenue)} tone="success" />
+        <StatTile
+          label="Capacity filled"
+          value={capacityFilled === null ? "—" : `${capacityFilled}%`}
+          sublabel={
+            event.capacity
+              ? `${sold} of ${event.capacity}`
+              : allocated > 0
+                ? `${allocated} allocated across tiers`
+                : "No capacity set"
+          }
+        />
+      </div>
+
+      {guestLink ? (
+        <Panel className="flex flex-wrap items-center gap-3 p-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">Guest ticket link</p>
+            <p className="truncate font-mono text-xs text-muted-foreground">{guestLink}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void navigator.clipboard.writeText(guestLink);
+              toast({ title: "Link copied" });
+            }}
+          >
+            <Copy className="mr-1.5 size-3.5" aria-hidden="true" />
+            Copy
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href={guestLink} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="mr-1.5 size-3.5" aria-hidden="true" />
+              Open
+            </a>
+          </Button>
+        </Panel>
+      ) : (
+        <p className="rounded-lg border border-hairline bg-surface-sunken px-4 py-3 text-sm text-muted-foreground">
+          Publish the event to get a guest ticket link.
+        </p>
+      )}
+
     <Panel>
       <PanelHeader
         title="Tickets"
@@ -618,28 +671,41 @@ function TicketsPanel({ event }: { event: Event }) {
         </ul>
       )}
     </Panel>
+    </div>
   );
 }
 
-function AuctionPanel({ event }: { event: Event }) {
-  const { data: lots, isLoading } = useAuctionItems(event.id);
+/**
+ * Auction lots.
+ *
+ * `only` narrows the panel to one auction type, which is how the silent and live tabs
+ * each get their own board. Left off, the panel shows every lot and lets the author pick
+ * the type per lot.
+ */
+export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind }) {
+  const { data: allLots, isLoading } = useAuctionItems(event.id);
   const add = useAddAuctionItem();
   const update = useUpdateAuctionItem();
   const remove = useRemoveAuctionItem();
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<AuctionKind>("silent");
+  const [kind, setKind] = useState<AuctionKind>(only ?? "silent");
   const [opening, setOpening] = useState("");
 
+  const lots = only ? allLots?.filter((lot) => lot.auctionType === only) : allLots;
   const bids = sumCents((lots ?? []).map((lot) => lot.currentBidCents));
 
   return (
     <Panel>
       <PanelHeader
-        title="Auction lots"
+        title={only === "live" ? "Live auction lots" : only === "silent" ? "Silent auction lots" : "Auction lots"}
         description={
           lots?.length
             ? `${lots.length} lots · ${formatMoney(bids)} in current bids`
-            : "Silent lots open at reception; live lots run after dinner"
+            : only === "live"
+              ? "Live lots run after dinner"
+              : only === "silent"
+                ? "Silent lots open at reception"
+                : "Silent lots open at reception; live lots run after dinner"
         }
       />
 
@@ -649,7 +715,7 @@ function AuctionPanel({ event }: { event: Event }) {
           formEvent.preventDefault();
           const trimmed = title.trim();
           if (!trimmed) return;
-          const nextLot = (lots ?? []).reduce((max, lot) => Math.max(max, lot.lotNumber ?? 0), 0) + 1;
+          const nextLot = (allLots ?? []).reduce((max, lot) => Math.max(max, lot.lotNumber ?? 0), 0) + 1;
           add.mutate(
             {
               eventId: event.id,
@@ -677,15 +743,17 @@ function AuctionPanel({ event }: { event: Event }) {
           aria-label="Lot title"
           className="min-w-[10rem] flex-1"
         />
-        <Select value={kind} onValueChange={(value) => setKind(value as AuctionKind)}>
-          <SelectTrigger className="w-[110px]" aria-label="Auction type">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="silent">Silent</SelectItem>
-            <SelectItem value="live">Live</SelectItem>
-          </SelectContent>
-        </Select>
+        {only ? null : (
+          <Select value={kind} onValueChange={(value) => setKind(value as AuctionKind)}>
+            <SelectTrigger className="w-[110px]" aria-label="Auction type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="silent">Silent</SelectItem>
+              <SelectItem value="live">Live</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         <Input
           value={opening}
           onChange={(inputEvent) => setOpening(inputEvent.target.value)}
@@ -778,7 +846,7 @@ function AuctionPanel({ event }: { event: Event }) {
   );
 }
 
-function RafflePanel({ event }: { event: Event }) {
+export function RafflePanel({ event }: { event: Event }) {
   const { data: raffles, isLoading } = useRaffleItems(event.id);
   const add = useAddRaffleItem();
   const remove = useRemoveRaffleItem();
@@ -800,7 +868,31 @@ function RafflePanel({ event }: { event: Event }) {
     setQuantity("1");
   };
 
+  const ticketsSold = (raffles ?? []).reduce((sum, item) => sum + item.soldTickets, 0);
+  const ticketRevenue = sumCents((raffles ?? []).map((item) => item.ticketPriceCents * item.soldTickets));
+  const ticketsAvailable = (raffles ?? []).reduce((sum, item) => sum + item.totalTickets, 0);
+  const winnersDrawn = (raffles ?? []).filter((item) => item.drawnAt != null).length;
+
   return (
+    <div className="space-y-6">
+      {(raffles?.length ?? 0) > 0 ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile label="Tickets sold" value={String(ticketsSold)} icon={Ticket} />
+          <StatTile label="Ticket revenue" value={formatMoney(ticketRevenue)} tone="success" />
+          <StatTile
+            label="Total tickets available"
+            value={String(ticketsAvailable)}
+            sublabel={ticketsAvailable > 0 ? `${ticketsAvailable - ticketsSold} unsold` : undefined}
+          />
+          <StatTile
+            label="Winners drawn"
+            value={String(winnersDrawn)}
+            tone={winnersDrawn > 0 ? "warning" : "neutral"}
+            sublabel={`of ${raffles?.length ?? 0} ${(raffles?.length ?? 0) === 1 ? "prize" : "prizes"}`}
+          />
+        </div>
+      ) : null}
+
     <Panel>
       <PanelHeader
         title="Raffles"
@@ -990,10 +1082,11 @@ function RafflePanel({ event }: { event: Event }) {
         </ul>
       )}
     </Panel>
+    </div>
   );
 }
 
-function SponsorsPanel({ event }: { event: Event }) {
+export function SponsorsPanel({ event }: { event: Event }) {
   const { data: sponsors, isLoading } = useSponsorships(event.id);
   const add = useAddSponsorship();
   const update = useUpdateSponsorship();
@@ -1147,7 +1240,7 @@ function SponsorsPanel({ event }: { event: Event }) {
  * "Financial Data" page collected the same three numbers with no way to see them
  * alongside the event they describe.
  */
-function RoiPanel({ event }: { event: Event }) {
+export function RoiPanel({ event }: { event: Event }) {
   const { date: formatDate } = usePreferences();
   const { data: roi, isLoading } = useEventRoi(event.id);
   const save = useSaveEventRoi();
@@ -1261,7 +1354,14 @@ function RoiPanel({ event }: { event: Event }) {
   );
 }
 
-export default function BudgetSection({ event }: { event: Event }) {
+/**
+ * The four money readings for an event, above the budget table.
+ *
+ * Budget revenue is reported separately rather than summed with tickets and fundraising:
+ * a gala books its sponsorship both as a sponsorship record and as a revenue line, so
+ * adding them would double-count.
+ */
+export function BudgetTotals({ event }: { event: Event }) {
   const { data: budget } = useBudget(event.id);
   const { data: tickets } = useTickets(event.id);
   const { data: sponsorships } = useSponsorships(event.id);
@@ -1277,33 +1377,128 @@ export default function BudgetSection({ event }: { event: Event }) {
       sumCents((sponsorships ?? []).filter((s) => s.status === "confirmed").map((s) => s.amountCents)) +
       sumCents((auction ?? []).map((item) => item.currentBidCents)) +
       sumCents((raffles ?? []).map((item) => item.ticketPriceCents * item.soldTickets));
-    // Budget revenue (internal allocations, grants) is reported separately rather than
-    // summed with tickets and fundraising: a gala books its sponsorship both as a
-    // sponsorship record and as a revenue line, so adding them would double-count.
     const budgetRevenue = sumCents(revenueLines.map((item) => item.actualCents));
     return { spend, ticketRevenue, fundraising, budgetRevenue };
   }, [budget, tickets, sponsorships, auction, raffles]);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Committed spend" value={formatMoney(totals.spend, { compact: true })} icon={Coins} />
-        <StatTile label="Ticket revenue" value={formatMoney(totals.ticketRevenue, { compact: true })} icon={Ticket} tone="info" />
-        <StatTile label="Fundraising" value={formatMoney(totals.fundraising, { compact: true })} icon={Trophy} tone="success" />
-        <StatTile
-          label="Budget revenue in"
-          value={formatMoney(totals.budgetRevenue, { compact: true })}
-          tone="neutral"
-          sublabel="Internal allocations and grants, recorded as actual"
-        />
-      </div>
-
-      <BudgetPanel event={event} />
-      <TicketsPanel event={event} />
-      <SponsorsPanel event={event} />
-      <AuctionPanel event={event} />
-      <RafflePanel event={event} />
-      <RoiPanel event={event} />
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <StatTile label="Committed spend" value={formatMoney(totals.spend, { compact: true })} icon={Coins} />
+      <StatTile label="Ticket revenue" value={formatMoney(totals.ticketRevenue, { compact: true })} icon={Ticket} tone="info" />
+      <StatTile label="Fundraising" value={formatMoney(totals.fundraising, { compact: true })} icon={Trophy} tone="success" />
+      <StatTile
+        label="Budget revenue in"
+        value={formatMoney(totals.budgetRevenue, { compact: true })}
+        tone="neutral"
+        sublabel="Internal allocations and grants, recorded as actual"
+      />
     </div>
+  );
+}
+
+/**
+ * Budget utilisation and the two ROI readings.
+ *
+ * Projected uses the estimates, actual uses what was really spent and taken, and they are
+ * shown side by side rather than blended: before the event only the projection exists,
+ * after it only the actual matters, and averaging them would describe neither.
+ *
+ * ROI is null rather than zero when there is no spend to divide by — a return on nothing
+ * is undefined, not break-even.
+ */
+export function BudgetRoiSummary({ event }: { event: Event }) {
+  const { data: budget, isLoading } = useBudget(event.id);
+
+  const lines = budget ?? [];
+  const expenses = lines.filter((line) => line.type === "expense");
+  const revenues = lines.filter((line) => line.type === "revenue");
+
+  const estimatedSpend = sumCents(expenses.map((line) => line.estimatedCents));
+  const actualSpend = sumCents(expenses.map((line) => line.actualCents));
+  const estimatedRevenue = sumCents(revenues.map((line) => line.estimatedCents));
+  const actualRevenue = sumCents(revenues.map((line) => line.actualCents));
+
+  const utilisation = estimatedSpend > 0 ? Math.round((actualSpend / estimatedSpend) * 100) : null;
+  const projectedRoi =
+    estimatedSpend > 0 ? Math.round(((estimatedRevenue - estimatedSpend) / estimatedSpend) * 100) : null;
+  const actualRoi = actualSpend > 0 ? Math.round(((actualRevenue - actualSpend) / actualSpend) * 100) : null;
+
+  /**
+   * Actual ROI divides recorded revenue by recorded spend, so it is only meaningful once
+   * most costs are in. Half the invoices entered against all the income reads as a
+   * spectacular return that will collapse as the rest arrive — so the number is labelled
+   * partial and kept in neutral ink until the expense lines are complete.
+   */
+  const linesWithActual = expenses.filter((line) => line.actualCents != null).length;
+  const roiIsPartial = expenses.length > 0 && linesWithActual < expenses.length;
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Summary & ROI"
+        description={
+          lines.length === 0
+            ? "Add budget lines to see utilisation and return"
+            : actualSpend > 0
+              ? "Actual figures, from what has been recorded against each line"
+              : "Based on estimated figures — enter actual amounts post-event"
+        }
+      />
+      {isLoading ? (
+        <LoadingRows rows={2} className="p-4" />
+      ) : (
+        <div className="space-y-4 p-5">
+          <Meter
+            value={actualSpend}
+            max={estimatedSpend > 0 ? estimatedSpend : 1}
+            tone={utilisation !== null && utilisation > 100 ? "danger" : "brand"}
+            label="Budget utilisation"
+            caption={
+              utilisation === null
+                ? "No budget set"
+                : `${utilisation}% · ${formatMoney(actualSpend)} of ${formatMoney(estimatedSpend)}`
+            }
+          />
+
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estimated</dt>
+              <dd data-numeric className="mt-0.5 font-semibold text-foreground">{formatMoney(estimatedSpend)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Actual</dt>
+              <dd data-numeric className="mt-0.5 font-semibold text-foreground">{formatMoney(actualSpend)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Projected ROI</dt>
+              <dd data-numeric className="mt-0.5 font-semibold text-foreground">
+                {projectedRoi === null ? "—" : `${projectedRoi}%`}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Actual ROI</dt>
+              <dd
+                data-numeric
+                className={cn(
+                  "mt-0.5 font-semibold",
+                  actualRoi === null || roiIsPartial
+                    ? "text-muted-foreground"
+                    : actualRoi >= 0
+                      ? "text-success-text"
+                      : "text-danger-text",
+                )}
+              >
+                {actualRoi === null ? "Add actual amounts to calculate" : `${actualRoi}%`}
+              </dd>
+              {actualRoi !== null && roiIsPartial ? (
+                <dd className="mt-0.5 text-xs text-warning-text">
+                  Partial — {linesWithActual} of {expenses.length} expense lines have actuals
+                </dd>
+              ) : null}
+            </div>
+          </dl>
+        </div>
+      )}
+    </Panel>
   );
 }

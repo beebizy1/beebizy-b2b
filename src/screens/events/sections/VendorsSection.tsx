@@ -35,7 +35,6 @@ import {
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { BOOKING_STATUSES, type BookingStatus, type Event } from "@/data/entities";
-import FloorplanPanel from "./FloorplanPanel";
 
 const COURSES = ["Breakfast", "Starter", "Main", "Dessert", "Lunch", "Canapés", "Drinks", "Other"];
 
@@ -46,10 +45,14 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   status: BookingStatus;
   feeCents: number | null;
   notes: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  city: string | null;
 }) {
   const update = useUpdateEventVendor();
   const remove = useRemoveEventVendor();
   const [fee, setFee] = useState(centsToInput(props.feeCents));
+  const [notes, setNotes] = useState(props.notes ?? "");
 
   const commitFee = () => {
     const next = centsFromInput(fee);
@@ -59,6 +62,18 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
       { onError: (error) => toast({ title: "Couldn't update fee", description: error.message }) },
     );
   };
+
+  /** What this vendor is doing for *this* event, as opposed to what they do generally. */
+  const commitNotes = () => {
+    const next = notes.trim() || null;
+    if (next === props.notes) return;
+    update.mutate(
+      { eventId, id: bookingId, patch: { notes: next } },
+      { onError: (error) => toast({ title: "Couldn't update the brief", description: error.message }) },
+    );
+  };
+
+  const contact = [props.contactEmail, props.contactPhone, props.city].filter(Boolean).join(" · ");
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3">
@@ -75,11 +90,26 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
           <Pill>{props.category}</Pill>
           <BookingStatusBadge status={props.status} />
         </div>
-        {props.notes ? <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{props.notes}</p> : null}
+        {contact ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact}</p> : null}
       </div>
 
+      <label className="min-w-[12rem] flex-1 text-xs text-muted-foreground">
+        <span className="sr-only">What {props.name} is providing</span>
+        <Input
+          value={notes}
+          onChange={(inputEvent) => setNotes(inputEvent.target.value)}
+          onBlur={commitNotes}
+          onKeyDown={(keyEvent) => {
+            if (keyEvent.key === "Enter") keyEvent.currentTarget.blur();
+          }}
+          placeholder="What they're providing…"
+          className="h-8"
+          aria-label={`What ${props.name} is providing`}
+        />
+      </label>
+
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="sr-only">Fee for {props.name}</span>
+        <span className="sr-only">Agreed fee for {props.name}</span>
         <span aria-hidden="true">$</span>
         <Input
           value={fee}
@@ -90,7 +120,7 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
           }}
           inputMode="decimal"
           className="h-8 w-28 text-right"
-          aria-label={`Fee for ${props.name}`}
+          aria-label={`Agreed fee for ${props.name}`}
         />
       </label>
 
@@ -138,7 +168,7 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   );
 }
 
-function VendorsPanel({ event }: { event: Event }) {
+export function VendorsPanel({ event }: { event: Event }) {
   const { data: bookings, isLoading, isError, error, refetch } = useEventVendors(event.id);
   const { data: directory } = useVendors();
   const addVendor = useAddEventVendor();
@@ -222,6 +252,9 @@ function VendorsPanel({ event }: { event: Event }) {
               status={booking.status}
               feeCents={booking.feeCents}
               notes={booking.notes}
+              contactEmail={booking.vendor?.contactEmail ?? null}
+              contactPhone={booking.vendor?.contactPhone ?? null}
+              city={booking.vendor?.city ?? null}
             />
           ))}
         </ul>
@@ -230,7 +263,7 @@ function VendorsPanel({ event }: { event: Event }) {
   );
 }
 
-function MenuPanel({ event }: { event: Event }) {
+export function MenuPanel({ event }: { event: Event }) {
   const { data: dishes, isLoading } = useMenu(event.id);
   const addDish = useAddMenuItem();
   const removeDish = useRemoveMenuItem();
@@ -368,7 +401,8 @@ function MenuPanel({ event }: { event: Event }) {
   );
 }
 
-export default function VendorsSection({ event }: { event: Event }) {
+/** Confirmed against booked, per vendor category. The gap is the risk. */
+export function VendorCoveragePanel({ event }: { event: Event }) {
   const { data: bookings } = useEventVendors(event.id);
 
   const byCategory = useMemo(() => {
@@ -383,33 +417,20 @@ export default function VendorsSection({ event }: { event: Event }) {
     return [...map.entries()].sort((a, b) => b[1].total - a[1].total);
   }, [bookings]);
 
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        <div className="space-y-6">
-          <VendorsPanel event={event} />
-        </div>
-      <div className="space-y-6">
-        {byCategory.length > 0 ? (
-          <Panel>
-            <PanelHeader title="Coverage by category" description="Confirmed against booked" />
-            <dl className="divide-y divide-hairline px-5 py-2">
-              {byCategory.map(([category, entry]) => (
-                <KeyValue key={category} label={category}>
-                  <span className={entry.confirmed === entry.total ? "text-success-text" : "text-warning-text"}>
-                    {entry.confirmed}/{entry.total}
-                  </span>
-                </KeyValue>
-              ))}
-            </dl>
-          </Panel>
-        ) : null}
-        <MenuPanel event={event} />
-        </div>
-      </div>
+  if (byCategory.length === 0) return null;
 
-      {/* Full width: a room plan squeezed into a 7fr column is unusable. */}
-      <FloorplanPanel event={event} />
-    </div>
+  return (
+    <Panel>
+      <PanelHeader title="Coverage by category" description="Confirmed against booked" />
+      <dl className="divide-y divide-hairline px-5 py-2">
+        {byCategory.map(([category, entry]) => (
+          <KeyValue key={category} label={category}>
+            <span className={entry.confirmed === entry.total ? "text-success-text" : "text-warning-text"}>
+              {entry.confirmed}/{entry.total}
+            </span>
+          </KeyValue>
+        ))}
+      </dl>
+    </Panel>
   );
 }

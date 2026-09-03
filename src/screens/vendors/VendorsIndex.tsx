@@ -205,7 +205,6 @@ export default function VendorsIndex() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Vendor Hub"
         title="Your vendors and the Beebizy marketplace"
         description="Add vendors your team already trusts or use marketplace suggestions by category and city. Book them from the event's Vendors section."
         actions={

@@ -70,7 +70,6 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
-        eyebrow="Settings"
         title="Preferences"
         description="Stored against your account, so they follow you to any device."
       />
