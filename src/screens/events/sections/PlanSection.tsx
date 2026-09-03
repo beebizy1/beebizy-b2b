@@ -122,6 +122,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
   const add = useAddChecklistItem();
   const [title, setTitle] = useState("");
   const [area, setArea] = useState("General");
+  const [owner, setOwner] = useState("");
   // Completed items stay on the list. Hiding them made ticking a task look like it
   // deleted the task — the row vanished and only the progress bar moved, so the tick
   // you just earned was never visible.
@@ -157,9 +158,17 @@ export function ChecklistPanel({ event }: { event: Event }) {
     const trimmed = title.trim();
     if (!trimmed) return;
     add.mutate(
-      { eventId: event.id, draft: { title: trimmed, category: area } },
       {
-        onSuccess: () => setTitle(""),
+        eventId: event.id,
+        // An unowned task is the one nobody does, so the owner is captured up front
+        // rather than through a second edit nobody makes.
+        draft: { title: trimmed, category: area, assignedTo: owner.trim() || null },
+      },
+      {
+        onSuccess: () => {
+          setTitle("");
+          setOwner("");
+        },
         onError: (mutationError) => toast({ title: "Couldn't add task", description: mutationError.message }),
       },
     );
@@ -210,6 +219,13 @@ export function ChecklistPanel({ event }: { event: Event }) {
           placeholder="Add a task…"
           aria-label="New task"
           className="min-w-[12rem] flex-1"
+        />
+        <Input
+          value={owner}
+          onChange={(inputEvent) => setOwner(inputEvent.target.value)}
+          placeholder="Who's responsible?"
+          aria-label="Assign this task to someone"
+          className="w-[172px]"
         />
         <Select value={area} onValueChange={setArea}>
           <SelectTrigger className="w-[150px]" aria-label="Task area">

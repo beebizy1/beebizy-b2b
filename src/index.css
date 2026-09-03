@@ -163,24 +163,27 @@
   --popover-border: 220 16% 89%;
 
   /* Brand yellow, sampled from the logo itself (#f8d810), with a deeper step for hover
-     and active. Warm espresso replaces the previous black treatment. */
+     and active. Yellow carries ink-black, not brown: the logo is black on yellow and the
+     brown treatment read as muddy against it. */
   --primary: 52 94% 52%;
   --primary-hover: 48 92% 45%;
-  --primary-foreground: 36 66% 16%;
+  --primary-foreground: 222 47% 11%;
   /* Soft honey wash for tinted surfaces and section bands. */
   --primary-muted: 51 94% 92%;
   --primary-wash: 51 96% 96%;
   /* Yellow as small text is unreadable at fill brightness; this is 5.4:1 on white. */
   --primary-text: 36 88% 29%;
 
-  /* Warm espresso and ochre ground feature bands and secondary actions. */
-  --brand-ink: 36 45% 24%;
-  --brand-surface: 38 42% 29%;
-  --brand-hairline: 40 30% 43%;
+  /* Feature bands and secondary actions ground in ink, not espresso. The palette is
+     black and yellow with green for done and red for outstanding; a brown mid-tone
+     muddied all three and read as a different product. */
+  --brand-ink: 222 47% 11%;
+  --brand-surface: 222 40% 16%;
+  --brand-hairline: 220 18% 32%;
   --brand-foreground: 0 0% 100%;
-  --brand-muted: 43 38% 82%;
+  --brand-muted: 220 14% 82%;
 
-  --secondary: 36 45% 26%;
+  --secondary: 222 47% 11%;
   --secondary-foreground: 0 0% 100%;
 
   --muted: 220 20% 95%;

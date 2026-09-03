@@ -4,6 +4,7 @@ import type {
   EventDraft,
   GuestDraft,
   RunOfShowItemDraft,
+  VendorDraft,
 } from "./entities";
 
 export type SpreadsheetValue = string | number | boolean | Date | null;
@@ -27,7 +28,17 @@ export interface EventImportPlan {
   budget: BudgetItemDraft[];
   moodBoard: ImportedMoodReference[];
   guests: GuestDraft[];
+  /** Suppliers from a Services or Vendors sheet, with the fee agreed for this event. */
+  vendors: ImportedVendor[];
   warnings: string[];
+}
+
+export interface ImportedVendor {
+  vendor: VendorDraft;
+  /** What this event is paying them, when the sheet said. */
+  feeCents: number | null;
+  /** What they are providing for this event. */
+  notes: string | null;
 }
 
 const MAX_SPREADSHEET_BYTES = 10 * 1024 * 1024;
@@ -71,6 +82,14 @@ const aliases = {
   caption: ["caption", "description", "notes", "direction"],
   guestName: ["guest name", "attendee name", "name"],
   email: ["email", "email address", "contact", "guest email"],
+  vendorName: ["vendor", "vendor name", "supplier", "supplier name", "service", "service provider", "company", "name"],
+  // Not "service": a sheet that titles its name column "Service" would have its vendor
+  // name read back as the category, because header matching walks the sheet's own column
+  // order rather than this list.
+  vendorCategory: ["category", "service type", "vendor type", "type", "discipline"],
+  vendorPhone: ["phone", "telephone", "phone number", "contact number", "mobile"],
+  vendorFee: ["fee", "agreed fee", "cost", "price", "amount", "quote", "total"],
+  vendorNotes: ["notes", "scope", "providing", "details", "description", "what they're providing"],
 } as const;
 
 const normalize = (value: string): string => value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
@@ -240,7 +259,44 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     return [{ name, contact, notes: stringFrom(row, guestTable!, aliases.description) || null }];
   });
 
-  return { sourceName, event, checklist, runOfShow, budget, moodBoard, guests, warnings };
+  /* ------------------------------------------------------------------ vendors */
+
+  const vendorTable = tableNamed(tables, [/services?/, /vendors?/, /suppliers?/, /providers?/]);
+  const vendors = (vendorTable?.rows ?? []).flatMap((row): ImportedVendor[] => {
+    const name = stringFrom(row, vendorTable!, aliases.vendorName);
+    if (!name) return [];
+    return [
+      {
+        vendor: {
+          name,
+          category: stringFrom(row, vendorTable!, aliases.vendorCategory) || "Other",
+          contactEmail: stringFrom(row, vendorTable!, aliases.email) || null,
+          contactPhone: stringFrom(row, vendorTable!, aliases.vendorPhone) || null,
+        },
+        feeCents: moneyCents(valueFrom(row, vendorTable!, aliases.vendorFee)),
+        notes: stringFrom(row, vendorTable!, aliases.vendorNotes) || null,
+      },
+    ];
+  });
+
+  /*
+   * Any sheet that produced nothing is named back to the reader. A tab that is silently
+   * ignored is worse than one that fails: the import looks like it worked and the gap is
+   * only found later, by someone who assumed the data was there.
+   */
+  const consumed = new Set(
+    [eventTable, checklistTable, runTable, budgetTable, moodTable, guestTable, vendorTable]
+      .filter(Boolean)
+      .map((table) => table!.name),
+  );
+  const ignored = tables.filter((table) => !consumed.has(table.name) && table.rows.length > 0);
+  if (ignored.length > 0) {
+    warnings.push(
+      `${ignored.length === 1 ? "This sheet was" : "These sheets were"} not recognised and nothing was imported from ${ignored.length === 1 ? "it" : "them"}: ${ignored.map((table) => table.name).join(", ")}.`,
+    );
+  }
+
+  return { sourceName, event, checklist, runOfShow, budget, moodBoard, guests, vendors, warnings };
 }
 
 /** RFC 4180-style CSV parser used for uploads and Google Sheets CSV exports. */

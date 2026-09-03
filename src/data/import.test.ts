@@ -78,3 +78,70 @@ describe("spreadsheet import", () => {
     );
   });
 });
+
+describe("services and vendors import", () => {
+  it("reads a Services sheet into vendors with their fee", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Event Name,Date\nSpring Gala,2026-11-16", "Event"),
+        parseCsvTable(
+          [
+            "Service,Category,Email,Phone,Fee,Notes",
+            "Golden Gate Catering,Catering,events@ggc.example,+1 415 555 0121,28400,Plated dinner for 300",
+            "Apex AV,AV & Tech,bookings@apex.example,,11250,Stage and lighting",
+          ].join("\n"),
+          "Services",
+        ),
+      ],
+      "Spring Gala.xlsx",
+    );
+
+    expect(plan.vendors).toHaveLength(2);
+    expect(plan.vendors[0]).toMatchObject({
+      vendor: { name: "Golden Gate Catering", category: "Catering", contactEmail: "events@ggc.example" },
+      feeCents: 2_840_000,
+      notes: "Plated dinner for 300",
+    });
+    expect(plan.vendors[1]!.vendor.contactPhone).toBeNull();
+  });
+
+  it("also recognises the sheet when it is called Vendors or Suppliers", () => {
+    for (const name of ["Vendors", "Suppliers", "Service Providers"]) {
+      const plan = buildEventImportPlan(
+        [parseCsvTable("Vendor,Category\nBloom & Vine,Decor", name)],
+        "x.xlsx",
+      );
+      expect(plan.vendors.map((v) => v.vendor.name), name).toEqual(["Bloom & Vine"]);
+    }
+  });
+
+  it("skips rows with no vendor name rather than importing a blank supplier", () => {
+    const plan = buildEventImportPlan(
+      [parseCsvTable("Vendor,Fee\nReal Vendor,100\n,250", "Vendors")],
+      "x.xlsx",
+    );
+    expect(plan.vendors).toHaveLength(1);
+  });
+
+  it("names any sheet it could not read, so nothing is dropped silently", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Event Name\nSpring Gala", "Event"),
+        parseCsvTable("Song,Artist\nSomething,Someone", "Playlist"),
+      ],
+      "x.xlsx",
+    );
+    expect(plan.warnings.join(" ")).toContain("Playlist");
+  });
+
+  it("says nothing when every sheet was understood", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Event Name\nSpring Gala", "Event"),
+        parseCsvTable("Vendor,Fee\nBloom & Vine,100", "Vendors"),
+      ],
+      "x.xlsx",
+    );
+    expect(plan.warnings.join(" ")).not.toContain("not recognised");
+  });
+});

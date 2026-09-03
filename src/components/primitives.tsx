@@ -198,7 +198,13 @@ export function ReadinessRing({ value, size = 56, label }: { value: number; size
   const stroke = Math.max(4, Math.round(size * 0.1));
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const tone: Tone = clamped >= 80 ? "success" : clamped >= 50 ? "warning" : "danger";
+  /**
+   * The arc is how much is done, so it is green at any value — the same meaning a tick
+   * carries everywhere else. Amber at half-done read as a warning about being on
+   * schedule, which is not what this number measures; the risk strip says that, in words.
+   * Only a genuinely unstarted event is called out, in red.
+   */
+  const tone: Tone = clamped === 0 ? "danger" : "success";
   const strokeClass: Record<Tone, string> = {
     neutral: "stroke-muted-foreground",
     brand: "stroke-primary",

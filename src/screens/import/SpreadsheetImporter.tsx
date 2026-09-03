@@ -1,14 +1,6 @@
 import { useRef, useState } from "react";
 import { useLocation } from "wouter";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  FileSpreadsheet,
-  Link2,
-  Loader2,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, Link2, Loader2, Store, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +15,8 @@ import {
   useCreateEvent,
   useCreateGuest,
   useCreateRegistration,
+  useCreateVendor,
+  useAddEventVendor,
   useLoadGoogleSheet,
 } from "@/data/hooks";
 import {
@@ -91,6 +85,8 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
   const [isCreating, setIsCreating] = useState(false);
   const loadGoogleSheet = useLoadGoogleSheet();
   const createEvent = useCreateEvent();
+  const createVendor = useCreateVendor();
+  const addEventVendor = useAddEventVendor();
   const addBudget = useAddBudgetItem();
   const addChecklist = useAddChecklistItem();
   const addRunOfShow = useAddRunOfShowItem();
@@ -133,6 +129,15 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
         ...plan.guests.map(async (draft) => {
           const guest = await createGuest.mutateAsync(draft);
           return createRegistration.mutateAsync({ eventId: created.id, guestId: guest.id, status: "confirmed" });
+        }),
+        // A service on the sheet becomes a vendor in the directory and a booking on this
+        // event, so the fee lands on the budget rather than only in the address book.
+        ...plan.vendors.map(async (imported) => {
+          const vendor = await createVendor.mutateAsync(imported.vendor);
+          return addEventVendor.mutateAsync({
+            eventId: created.id,
+            draft: { vendorId: vendor.id, feeCents: imported.feeCents, notes: imported.notes },
+          });
         }),
       ];
       const results = await Promise.allSettled(writes);
@@ -225,7 +230,13 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
     );
   }
 
-  const supportingCount = plan.checklist.length + plan.runOfShow.length + plan.budget.length + plan.moodBoard.length + plan.guests.length;
+  const supportingCount =
+    plan.checklist.length +
+    plan.runOfShow.length +
+    plan.budget.length +
+    plan.moodBoard.length +
+    plan.guests.length +
+    plan.vendors.length;
   return (
     <div className="space-y-5">
       <Panel>
@@ -303,6 +314,27 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
       </Panel>
 
       <div className="grid gap-4 xl:grid-cols-2">
+        <ImportedList title="Services and vendors" count={plan.vendors.length}>
+          {plan.vendors.map((imported, index) => (
+            <li key={`${imported.vendor.name}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <Store className="size-4 shrink-0 text-primary-text" />
+              <span className="min-w-0 flex-1 truncate text-foreground">{imported.vendor.name}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {[imported.vendor.category, imported.notes].filter(Boolean).join(" · ")}
+              </span>
+              {imported.feeCents == null ? null : (
+                <span data-numeric className="text-xs font-medium text-foreground">
+                  {formatMoney(imported.feeCents)}
+                </span>
+              )}
+              <RemoveButton
+                label={imported.vendor.name}
+                onClick={() => setPlan({ ...plan, vendors: plan.vendors.filter((_, i) => i !== index) })}
+              />
+            </li>
+          ))}
+        </ImportedList>
+
         <ImportedList title="Checklist" count={plan.checklist.length}>
           {plan.checklist.map((item, index) => (
             <li key={`${item.title}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
