@@ -103,6 +103,7 @@ import type {
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
 import { describeHistoryChange } from "../history";
 import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../planner";
+import { nextTurn } from "../assistantChat";
 import { googleSheetCsvUrl } from "../import";
 
 /**
@@ -1517,6 +1518,10 @@ export const memoryAdapter: DataAdapter = {
     };
   },
   assistant: {
+    chat: async ({ messages }) => {
+      await wait();
+      return nextTurn(messages);
+    },
     plan: async (brief) => {
       await wait();
       const event = requireEvent(brief.eventId);

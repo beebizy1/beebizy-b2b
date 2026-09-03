@@ -71,6 +71,7 @@ import type {
   VendorPatch,
 } from "./entities";
 import type { PlanningBrief } from "./planner";
+import type { AssistantChatMessage } from "./assistantChat";
 
 /* ---------------------------------------------------------------- query keys */
 
@@ -172,6 +173,20 @@ function useAdapterMutation<TVars, TResult>(
  */
 export function useMe() {
   return useAdapterQuery(qk.me, (a) => a.me(), { staleTime: 60_000 });
+}
+
+/**
+ * One turn of the planning conversation.
+ *
+ * A mutation rather than a query: each turn is a write to the conversation, and the
+ * transcript lives in the calling component so a half-finished interview is never cached
+ * and replayed at someone who has moved on.
+ */
+export function useAssistantChat() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; messages: AssistantChatMessage[] }) => a.assistant.chat(vars),
+    () => [],
+  );
 }
 
 export function usePlanningSuggestions() {

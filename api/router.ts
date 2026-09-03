@@ -13,7 +13,7 @@
 import { authorize, HttpError, type RequestContext } from "../src/server/auth.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
-import { generatePlanningSuggestions } from "../src/server/planner.ts";
+import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
 import { PLANNING_LIMITS } from "../src/data/planner.ts";
 import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
@@ -213,6 +213,23 @@ async function handleAuthed(
 
     /* -------------------------------------------------------------- assistant */
     case "assistant": {
+      if (a === "chat" && method === "POST") {
+        const input = z
+          .object({
+            eventId: z.string().min(1).max(100),
+            messages: z
+              .array(
+                z.object({
+                  role: z.enum(["user", "assistant"]),
+                  content: z.string().trim().min(1).max(2_000),
+                }),
+              )
+              // Bounded so one tab cannot grow a transcript into an unbounded prompt.
+              .max(40),
+          })
+          .parse(body);
+        return json(await continuePlanningChat(input.messages, ctx.userId));
+      }
       if (a !== "plan" || method !== "POST") return notFound();
       const brief = z
         .object({

@@ -95,6 +95,7 @@ import type {
   VendorPatch,
 } from "./entities";
 import type { PlanningBrief, PlanningSuggestions } from "./planner";
+import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -233,6 +234,11 @@ export interface AnalyticsRepository {
 export interface PlanningAssistantRepository {
   /** Returns a proposal only. Applying any part of it is a separate, explicit write. */
   plan(brief: PlanningBrief): Promise<PlanningSuggestions>;
+  /**
+   * One turn of the planning conversation. The transcript is sent whole rather than held
+   * server-side, so a reload or a second tab resumes the same conversation.
+   */
+  chat(input: { eventId: string; messages: AssistantChatMessage[] }): Promise<AssistantTurn>;
 }
 
 export interface SpreadsheetImportsRepository {

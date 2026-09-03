@@ -53,6 +53,7 @@ import type {
   VendorMessage,
 } from "../entities";
 import type { PlanningBrief, PlanningSuggestions } from "../planner";
+import type { AssistantTurn } from "../assistantChat";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -153,6 +154,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     assistant: {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
+      chat: (input) => client.post<AssistantTurn>("/assistant/chat", input),
     },
 
     imports: {

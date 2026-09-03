@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import PlanningChat from "./PlanningChat";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -184,29 +185,51 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
     }
   };
 
+  const build = (brief: { headcount: number; totalBudgetCents: number; theme: string }) => {
+    generate.mutate(
+      { eventId: event.id, ...brief },
+      {
+        onSuccess: (result) => {
+          setSuggestions(result);
+          setApplied(new Set());
+        },
+        onError: (error) => toast({ title: "Couldn't build the plan", description: error.message }),
+      },
+    );
+  };
+
   return (
     <Panel className="overflow-hidden border-primary/30 bg-linear-to-br from-primary/8 via-surface to-surface">
       <PanelHeader
         title="Beebizy AI planner"
-        description="Build a budget, checklist, run of show, mood directions and marketplace searches from one brief. Nothing is added until you approve it."
+        description="Tell Bee about the event and it drafts the budget, checklist, run of show, mood directions and vendor searches. Nothing is added until you approve it."
         actions={<Pill tone="info">Beta</Pill>}
       />
+
+      {/*
+        The conversation is the way in; the form below stays for anyone who already knows
+        their numbers and would rather not be interviewed. A finished interview fills the
+        form and drafts immediately, so both routes end in the same reviewable proposal.
+      */}
+      <div className="border-b border-hairline">
+        <PlanningChat
+          eventId={event.id}
+          onBrief={(brief) => {
+            setHeadcount(String(brief.headcount));
+            setBudget(centsToInput(brief.totalBudgetCents));
+            setBudgetEdited(true);
+            setTheme(brief.theme);
+            build(brief);
+          }}
+        />
+      </div>
 
       <form
         className="grid gap-4 border-b border-hairline p-5 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto] lg:items-end"
         onSubmit={(formEvent) => {
           formEvent.preventDefault();
           if (!Number.isFinite(parsedHeadcount) || parsedHeadcount < 1 || parsedBudget === null || parsedBudget < 100) return;
-          generate.mutate(
-            { eventId: event.id, headcount: parsedHeadcount, totalBudgetCents: parsedBudget, theme: theme.trim() },
-            {
-              onSuccess: (result) => {
-                setSuggestions(result);
-                setApplied(new Set());
-              },
-              onError: (error) => toast({ title: "Couldn't build the plan", description: error.message }),
-            },
-          );
+          build({ headcount: parsedHeadcount, totalBudgetCents: parsedBudget, theme: theme.trim() });
         }}
       >
         <div className="space-y-1.5">
