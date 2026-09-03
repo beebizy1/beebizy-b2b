@@ -20,6 +20,7 @@ import type {
   Canvas,
   CanvasCard,
   ChecklistItem,
+  Deposit,
   Event,
   EventHealth,
   EventHistoryEntry,
@@ -36,8 +37,12 @@ import type {
   RaffleTicket,
   Registration,
   RegistrationWithGuest,
+  Rfp,
+  RfpResponse,
+  RfpWithResponses,
   RunOfShowItem,
   Sponsorship,
+  TeamHoursEntry,
   Template,
   TemplateContents,
   TemplateDetail,
@@ -239,6 +244,23 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     moodBoard: eventScoped<MoodBoardImage, never, never>(client, "mood-board") as DataAdapter["moodBoard"],
     auction: eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"],
     sponsorships: eventScoped<Sponsorship, never, never>(client, "sponsorships") as DataAdapter["sponsorships"],
+
+    // `list` returns each RFP with its responses attached, matching the memory adapter,
+    // so the tab never has to fetch replies per row.
+    rfps: {
+      ...(eventScoped<Rfp, never, never>(client, "rfps") as DataAdapter["rfps"]),
+      list: (eventId) => client.get<RfpWithResponses[]>(`/events/${eventId}/rfps`),
+      addResponse: (eventId, rfpId, draft) =>
+        client.post<RfpResponse>(`/events/${eventId}/rfps/${rfpId}/responses`, draft),
+      setResponseStatus: (eventId, rfpId, responseId, status) =>
+        client.patch<RfpResponse>(`/events/${eventId}/rfps/${rfpId}/responses/${responseId}`, { status }),
+      removeResponse: async (eventId, rfpId, responseId) => {
+        await client.del(`/events/${eventId}/rfps/${rfpId}/responses/${responseId}`);
+      },
+    },
+
+    deposits: eventScoped<Deposit, never, never>(client, "deposits") as DataAdapter["deposits"],
+    teamHours: eventScoped<TeamHoursEntry, never, never>(client, "team-hours") as DataAdapter["teamHours"],
 
     tickets: {
       ...(eventScoped<TicketType, never, never>(client, "ticket-types") as DataAdapter["tickets"]),

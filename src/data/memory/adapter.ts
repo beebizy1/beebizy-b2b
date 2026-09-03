@@ -20,6 +20,7 @@ import type {
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
+  RfpsRepository,
   RoiRepository,
   SettingsRepository,
   TemplatesRepository,
@@ -45,6 +46,9 @@ import type {
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  Deposit,
+  DepositDraft,
+  DepositPatch,
   Event,
   EventFilter,
   EventHealth,
@@ -66,6 +70,13 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RaffleTicket,
+  Rfp,
+  RfpDraft,
+  RfpPatch,
+  RfpResponse,
+  TeamHoursEntry,
+  TeamHoursDraft,
+  TeamHoursPatch,
   Registration,
   RegistrationStatus,
   RegistrationWithGuest,
@@ -281,6 +292,9 @@ const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "raffleTickets",
   "sponsorships",
   "eventVendors",
+  "rfps",
+  "deposits",
+  "teamHours",
 ];
 
 const events: EventsRepository = {
@@ -1068,6 +1082,145 @@ const raffle: RaffleRepository = {
 
 /* ----------------------------------------------------------------- templates */
 
+/* ---------------------------------------------------------------------- rfps */
+
+const rfpsBase = eventScoped<Rfp, RfpDraft, RfpPatch>(
+  () => store().rfps,
+  "rfp",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    title: draft.title,
+    vendorCategory: draft.vendorCategory,
+    description: draft.description ?? null,
+    budgetMinCents: draft.budgetMinCents ?? null,
+    budgetMaxCents: draft.budgetMaxCents ?? null,
+    headcount: draft.headcount ?? null,
+    deadline: draft.deadline ?? null,
+    requirements: draft.requirements ?? null,
+    status: draft.status ?? "draft",
+    createdAt: nowIso(),
+  }),
+  undefined,
+  (a, b) => b.createdAt.localeCompare(a.createdAt),
+);
+
+/** The RFP has to belong to the event before its responses can be touched. */
+function requireRfp(eventId: string, rfpId: string): Rfp {
+  return required(
+    store().rfps.find((row) => row.id === rfpId && row.eventId === eventId),
+    `RFP ${rfpId} no longer exists.`,
+  );
+}
+
+const rfps: RfpsRepository = {
+  ...rfpsBase,
+
+  async list(eventId) {
+    await wait();
+    const responses = store().rfpResponses;
+    return copy(
+      store()
+        .rfps.filter((row) => row.eventId === eventId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((rfp) => ({
+          ...rfp,
+          responses: responses
+            .filter((response) => response.rfpId === rfp.id)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+        })),
+    );
+  },
+
+  async remove(eventId, id) {
+    await rfpsBase.remove(eventId, id);
+    // Responses are owned by the RFP, so they go with it.
+    const responses = store().rfpResponses;
+    for (let i = responses.length - 1; i >= 0; i -= 1) {
+      if (responses[i]!.rfpId === id) responses.splice(i, 1);
+    }
+  },
+
+  async addResponse(eventId, rfpId, draft) {
+    await wait();
+    requireRfp(eventId, rfpId);
+    const response: RfpResponse = {
+      id: newId("rfpres"),
+      rfpId,
+      vendorName: draft.vendorName,
+      contactName: draft.contactName ?? null,
+      contactEmail: draft.contactEmail ?? null,
+      contactPhone: draft.contactPhone ?? null,
+      quotedAmountCents: draft.quotedAmountCents ?? null,
+      notes: draft.notes ?? null,
+      status: draft.status ?? "pending",
+      createdAt: nowIso(),
+    };
+    store().rfpResponses.push(response);
+    return copy(response);
+  },
+
+  async setResponseStatus(eventId, rfpId, responseId, status) {
+    await wait();
+    requireRfp(eventId, rfpId);
+    const response = required(
+      store().rfpResponses.find((row) => row.id === responseId && row.rfpId === rfpId),
+      `Response ${responseId} no longer exists.`,
+    );
+    response.status = status;
+    return copy(response);
+  },
+
+  async removeResponse(eventId, rfpId, responseId) {
+    await wait();
+    requireRfp(eventId, rfpId);
+    const responses = store().rfpResponses;
+    const index = responses.findIndex((row) => row.id === responseId && row.rfpId === rfpId);
+    if (index === -1) throw new DataError("not-found", `Response ${responseId} no longer exists.`);
+    responses.splice(index, 1);
+  },
+};
+
+/* ------------------------------------------------------------------ deposits */
+
+const deposits = eventScoped<Deposit, DepositDraft, DepositPatch>(
+  () => store().deposits,
+  "dep",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    vendorName: draft.vendorName,
+    amountCents: draft.amountCents,
+    dueDate: draft.dueDate ?? null,
+    paidDate: draft.paidDate ?? null,
+    paidBy: draft.paidBy ?? null,
+    paymentMethod: draft.paymentMethod ?? null,
+    status: draft.status ?? "pending",
+    notes: draft.notes ?? null,
+    createdAt: nowIso(),
+  }),
+  undefined,
+  // Soonest due first; deposits with no due date sink to the bottom.
+  (a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
+);
+
+/* ---------------------------------------------------------------- team hours */
+
+const teamHours = eventScoped<TeamHoursEntry, TeamHoursDraft, TeamHoursPatch>(
+  () => store().teamHours,
+  "hrs",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    staffMember: draft.staffMember,
+    role: draft.role,
+    hours: draft.hours,
+    createdAt: nowIso(),
+  }),
+  undefined,
+  (a, b) => b.hours - a.hours,
+);
+
 const templates: TemplatesRepository = {
   async list() {
     await wait();
@@ -1437,6 +1590,9 @@ export const memoryAdapter: DataAdapter = {
   auction,
   raffle,
   sponsorships,
+  rfps,
+  deposits,
+  teamHours,
   templates,
   canvases,
   settings,

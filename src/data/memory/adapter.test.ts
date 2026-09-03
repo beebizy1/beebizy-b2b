@@ -497,3 +497,108 @@ describe("settings", () => {
     expect(settings.currency).toBe("GBP");
   });
 });
+
+describe("rfps", () => {
+  it("returns each RFP with its responses attached, newest RFP first", async () => {
+    const rfps = await memoryAdapter.rfps.list("evt-gala");
+    expect(rfps.length).toBe(2);
+    for (let i = 1; i < rfps.length; i += 1) {
+      expect(rfps[i - 1]!.createdAt >= rfps[i]!.createdAt).toBe(true);
+    }
+    const catering = rfps.find((rfp) => rfp.id === "rfp-gala-catering")!;
+    expect(catering.responses.length).toBe(3);
+    expect(catering.responses.map((r) => r.vendorName)).toContain("Golden Gate Catering");
+  });
+
+  it("scopes RFPs to their event", async () => {
+    const kickoff = await memoryAdapter.rfps.list("evt-skickoff");
+    expect(kickoff.every((rfp) => rfp.eventId === "evt-skickoff")).toBe(true);
+    expect(kickoff.map((rfp) => rfp.id)).not.toContain("rfp-gala-catering");
+  });
+
+  it("adds a response and moves it through its statuses", async () => {
+    const added = await memoryAdapter.rfps.addResponse("evt-gala", "rfp-gala-catering", {
+      vendorName: "Marina Feasts",
+      quotedAmountCents: 2_600_000,
+    });
+    expect(added.status).toBe("pending");
+
+    const accepted = await memoryAdapter.rfps.setResponseStatus(
+      "evt-gala",
+      "rfp-gala-catering",
+      added.id,
+      "accepted",
+    );
+    expect(accepted.status).toBe("accepted");
+
+    const stored = (await memoryAdapter.rfps.list("evt-gala"))
+      .find((rfp) => rfp.id === "rfp-gala-catering")!;
+    expect(stored.responses.find((r) => r.id === added.id)!.status).toBe("accepted");
+  });
+
+  it("refuses to touch a response through the wrong event", async () => {
+    await expect(
+      memoryAdapter.rfps.addResponse("evt-skickoff", "rfp-gala-catering", { vendorName: "Nope" }),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("deletes an RFP's responses along with it", async () => {
+    await memoryAdapter.rfps.remove("evt-gala", "rfp-gala-catering");
+    const rfps = await memoryAdapter.rfps.list("evt-gala");
+    expect(rfps.map((rfp) => rfp.id)).not.toContain("rfp-gala-catering");
+    await expect(
+      memoryAdapter.rfps.setResponseStatus("evt-gala", "rfp-gala-catering", "rfpres-gala-catering-1", "received"),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+});
+
+describe("deposits", () => {
+  it("lists an event's deposits soonest-due first", async () => {
+    const deposits = await memoryAdapter.deposits.list("evt-gala");
+    expect(deposits.length).toBe(3);
+    const due = deposits.map((deposit) => deposit.dueDate ?? "9999");
+    expect([...due].sort()).toEqual(due);
+  });
+
+  it("creates, updates and removes a deposit", async () => {
+    const created = await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      amountCents: 120_000,
+    });
+    expect(created.status).toBe("pending");
+
+    const paid = await memoryAdapter.deposits.update("evt-gala", created.id, {
+      status: "paid",
+      paidBy: "Dana Kim",
+    });
+    expect(paid.status).toBe("paid");
+    expect(paid.paidBy).toBe("Dana Kim");
+
+    await memoryAdapter.deposits.remove("evt-gala", created.id);
+    const remaining = await memoryAdapter.deposits.list("evt-gala");
+    expect(remaining.map((deposit) => deposit.id)).not.toContain(created.id);
+  });
+});
+
+describe("team hours", () => {
+  it("lists an event's staff time, largest booking first", async () => {
+    const hours = await memoryAdapter.teamHours.list("evt-gala");
+    expect(hours.length).toBeGreaterThan(0);
+    const values = hours.map((entry) => entry.hours);
+    expect([...values].sort((a, b) => b - a)).toEqual(values);
+  });
+
+  it("scopes entries to their event", async () => {
+    const hours = await memoryAdapter.teamHours.list("evt-townhall");
+    expect(hours.every((entry) => entry.eventId === "evt-townhall")).toBe(true);
+  });
+});
+
+describe("event deletion", () => {
+  it("cascades into rfps, deposits and team hours", async () => {
+    await memoryAdapter.events.remove("evt-gala");
+    expect(await memoryAdapter.rfps.list("evt-gala")).toEqual([]);
+    expect(await memoryAdapter.deposits.list("evt-gala")).toEqual([]);
+    expect(await memoryAdapter.teamHours.list("evt-gala")).toEqual([]);
+  });
+});

@@ -647,6 +647,141 @@ export interface SponsorshipDraft {
 
 export type SponsorshipPatch = Partial<SponsorshipDraft>;
 
+/* ----------------------------------------------------------------------- rfps */
+
+export const RFP_STATUSES = ["draft", "sent", "closed"] as const;
+export type RfpStatus = (typeof RFP_STATUSES)[number];
+
+export const RFP_RESPONSE_STATUSES = ["pending", "received", "accepted", "declined"] as const;
+export type RfpResponseStatus = (typeof RFP_RESPONSE_STATUSES)[number];
+
+/**
+ * A request for proposal put out to one vendor category.
+ *
+ * Budget is a range rather than a single figure, because an RFP asks the market what
+ * something costs rather than telling it. Both bounds are cents like every other money
+ * field in the product, so `formatMoney` works without a special case.
+ */
+export interface Rfp {
+  id: string;
+  eventId: string;
+  title: string;
+  vendorCategory: string;
+  description: string | null;
+  budgetMinCents: Cents | null;
+  budgetMaxCents: Cents | null;
+  headcount: number | null;
+  /** Responses are due by this date. */
+  deadline: IsoDateTime | null;
+  requirements: string | null;
+  status: RfpStatus;
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
+
+export interface RfpDraft {
+  title: string;
+  vendorCategory: string;
+  description?: string | null;
+  budgetMinCents?: Cents | null;
+  budgetMaxCents?: Cents | null;
+  headcount?: number | null;
+  deadline?: IsoDateTime | null;
+  requirements?: string | null;
+  status?: RfpStatus;
+}
+
+export type RfpPatch = Partial<RfpDraft>;
+
+/** One vendor's reply to an RFP. */
+export interface RfpResponse {
+  id: string;
+  rfpId: string;
+  vendorName: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  quotedAmountCents: Cents | null;
+  notes: string | null;
+  status: RfpResponseStatus;
+  createdAt: IsoDateTime;
+}
+
+export interface RfpResponseDraft {
+  vendorName: string;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  quotedAmountCents?: Cents | null;
+  notes?: string | null;
+  status?: RfpResponseStatus;
+}
+
+/** An RFP with its replies, which is the only shape the RFP tab ever renders. */
+export interface RfpWithResponses extends Rfp {
+  responses: RfpResponse[];
+}
+
+/* ------------------------------------------------------------------- deposits */
+
+export const DEPOSIT_STATUSES = ["pending", "paid", "overdue", "refunded"] as const;
+export type DepositStatus = (typeof DEPOSIT_STATUSES)[number];
+
+/**
+ * Money committed to a vendor ahead of the event.
+ *
+ * `status` is stored rather than derived, because "overdue" is a decision someone made
+ * about an unpaid deposit, not simply a date in the past — a deposit can be past its due
+ * date and still agreed as fine.
+ */
+export interface Deposit {
+  id: string;
+  eventId: string;
+  vendorName: string;
+  amountCents: Cents;
+  dueDate: IsoDateTime | null;
+  paidDate: IsoDateTime | null;
+  paidBy: string | null;
+  paymentMethod: string | null;
+  status: DepositStatus;
+  notes: string | null;
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
+
+export interface DepositDraft {
+  vendorName: string;
+  amountCents: Cents;
+  dueDate?: IsoDateTime | null;
+  paidDate?: IsoDateTime | null;
+  paidBy?: string | null;
+  paymentMethod?: string | null;
+  status?: DepositStatus;
+  notes?: string | null;
+}
+
+export type DepositPatch = Partial<DepositDraft>;
+
+/* ----------------------------------------------------------------- team hours */
+
+/** Staff time booked against an event, the labour half of what an event really cost. */
+export interface TeamHoursEntry {
+  id: string;
+  eventId: string;
+  staffMember: string;
+  role: string;
+  hours: number;
+  createdAt: IsoDateTime;
+}
+
+export interface TeamHoursDraft {
+  staffMember: string;
+  role: string;
+  hours: number;
+}
+
+export type TeamHoursPatch = Partial<TeamHoursDraft>;
+
 /* ------------------------------------------------------------------ templates */
 
 export interface Template extends OwnedRecord {

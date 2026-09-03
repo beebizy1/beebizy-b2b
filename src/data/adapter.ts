@@ -30,6 +30,9 @@ import type {
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  Deposit,
+  DepositDraft,
+  DepositPatch,
   Event,
   EventDraft,
   EventFilter,
@@ -56,6 +59,16 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RaffleTicket,
+  Rfp,
+  RfpDraft,
+  RfpPatch,
+  RfpResponse,
+  RfpResponseDraft,
+  RfpResponseStatus,
+  RfpWithResponses,
+  TeamHoursEntry,
+  TeamHoursDraft,
+  TeamHoursPatch,
   Registration,
   RegistrationDraft,
   RegistrationStatus,
@@ -140,6 +153,19 @@ export interface TicketsRepository extends EventScopedRepository<TicketType, Tic
   listAll(): Promise<TicketTypeWithEvent[]>;
   /** Public checkout against a share token. Fails if the allocation is exhausted. */
   purchase(shareToken: string, ticketTypeId: string, buyer: { name: string; contact: string; quantity: number }): Promise<void>;
+}
+
+/**
+ * RFPs and their replies.
+ *
+ * `list` returns each RFP with its responses already attached, because the tab has no
+ * view that shows an RFP without them and a per-RFP fetch would be N+1 for nothing.
+ */
+export interface RfpsRepository extends EventScopedRepository<Rfp, RfpDraft, RfpPatch> {
+  list(eventId: string): Promise<RfpWithResponses[]>;
+  addResponse(eventId: string, rfpId: string, draft: RfpResponseDraft): Promise<RfpResponse>;
+  setResponseStatus(eventId: string, rfpId: string, responseId: string, status: RfpResponseStatus): Promise<RfpResponse>;
+  removeResponse(eventId: string, rfpId: string, responseId: string): Promise<void>;
 }
 
 export interface TemplatesRepository {
@@ -246,6 +272,9 @@ export interface DataAdapter {
   auction: EventScopedRepository<AuctionItem, AuctionItemDraft, AuctionItemPatch>;
   raffle: RaffleRepository;
   sponsorships: EventScopedRepository<Sponsorship, SponsorshipDraft, SponsorshipPatch>;
+  rfps: RfpsRepository;
+  deposits: EventScopedRepository<Deposit, DepositDraft, DepositPatch>;
+  teamHours: EventScopedRepository<TeamHoursEntry, TeamHoursDraft, TeamHoursPatch>;
   templates: TemplatesRepository;
   canvases: CanvasesRepository;
   settings: SettingsRepository;

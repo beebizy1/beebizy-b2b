@@ -1,127 +1,134 @@
 /**
  * Application chrome.
  *
- * Fixes from the previous shell, all of which were real bugs rather than taste:
- *   - `Sidebar` was declared inside the layout component, so it remounted on every
- *     render and lost focus and scroll position. It is a module-level component now.
- *   - The auth gate lived in an effect, which flashed the dashboard before redirecting.
- *     `RequireSession` handles it during render instead.
- *   - Fourteen flat nav items became six grouped destinations with live counters, so
- *     the sidebar tells you where the work is rather than just listing tables.
+ * The rail is the whole chrome: a 256px white sidebar carrying the brand lockup, the
+ * workspace it is customised for, twelve flat destinations, and sign-out. There is no
+ * top bar — no search field, no avatar menu — so the content canvas starts at the top
+ * of the viewport and every screen owns its own header.
+ *
+ * Two things survive from the previous shell because they were fixes, not taste:
+ *   - `SidebarContent` stays a module-level component. Declared inline it remounted on
+ *     every render and lost focus and scroll position.
+ *   - The auth gate runs during render via `RequireSession`, not in an effect, so the
+ *     dashboard never flashes before redirecting.
+ *
+ * The demo and beta notices moved into the content column. They used to sit in the
+ * header, which no longer exists.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { BookOpen, Clock3, LockKeyhole, LogOut, Menu, Search, Settings, TriangleAlert } from "lucide-react";
+import { Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { BrandLogoLink } from "@/components/BrandLogo";
+import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
-import { useAttention, useMe, useVendors } from "@/data/hooks";
+import { useMe } from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
 import type { Identity } from "@/data/adapter";
 import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { isNavActive, NAV_ITEMS, type NavItem } from "./nav";
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
+/**
+ * The workspace a signed-in rail is customised for.
+ *
+ * Two named workspaces have their own artwork; everything else renders its name in the
+ * same slot rather than borrowing another customer's logo.
+ */
+function WorkspaceMark({ label }: { label: string }) {
+  const key = label.toLowerCase();
+
+  if (key.includes("hwood")) {
+    return <img src="/hwood-group-logo.png" alt="Hwood Group" className="max-h-10 max-w-[180px] object-contain object-left" />;
+  }
+
+  if (key.includes("campbell")) {
+    return (
+      <div className="flex items-center gap-2">
+        <img src="/campbell-hall-seal.png" alt="" aria-hidden="true" className="size-8 object-contain" />
+        <img
+          src="/campbell-hall-logo.png"
+          alt="Campbell Hall"
+          className="h-6 w-auto object-contain"
+          style={{ filter: "invert(1) brightness(0.2)" }}
+        />
+      </div>
+    );
+  }
+
+  return <p className="truncate text-base font-semibold text-foreground">{label}</p>;
 }
 
-function NavRow({
-  item,
-  active,
-  count,
-  onNavigate,
-}: {
-  item: NavItem;
-  active: boolean;
-  count: number;
-  onNavigate?: () => void;
-}) {
+function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; onNavigate?: () => void }) {
   return (
     <Link
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+        "group flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors",
         active
-          ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-          : "font-medium text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
       )}
     >
       <item.icon
-        className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}
+        className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")}
         aria-hidden="true"
       />
-      <span className="flex-1 truncate">{item.label}</span>
-      {count > 0 ? (
-        <span
-          data-numeric
-          className={cn(
-            "min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] font-bold",
-            item.badge === "attention" ? "bg-danger text-danger-foreground" : "bg-info text-info-foreground",
-          )}
-        >
-          {count > 99 ? "99+" : count}
-        </span>
-      ) : null}
+      <span className="truncate">{item.label}</span>
     </Link>
   );
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const [pathname] = useLocation();
-  const { user } = useSession();
-  const { data: attention } = useAttention();
-  const { data: vendors } = useVendors();
-
-  const counts = useMemo(() => {
-    const urgent = attention?.filter((item) => item.level === "urgent").length ?? 0;
-    const unread = vendors?.reduce((sum, vendor) => sum + vendor.unreadCount, 0) ?? 0;
-    return { attention: urgent, unread };
-  }, [attention, vendors]);
+  const { user, signOut } = useSession();
 
   return (
-    <div className="flex h-full flex-col bg-sidebar">
-      <div className="border-b border-sidebar-border px-5 py-5">
-        <BrandLogoLink to="/app" size="lg" />
-        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Private beta workspace</p>
-        <p className="mt-1 truncate text-sm font-semibold text-foreground">{user?.name ?? "Beebizy Studio"}</p>
+    <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
+      <div className="mb-4 flex flex-col gap-3 p-4">
+        <BrandLogoLink to="/app" size="sm" />
+        <div className="border-t border-sidebar-border pt-3">
+          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Customized for
+          </p>
+          <WorkspaceMark label={user?.name ?? "Beebizy Studio"} />
+        </div>
       </div>
 
-      <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3">
         {NAV_ITEMS.map((item) => (
-          <NavRow
-            key={item.href}
-            item={item}
-            active={isNavActive(item.href, pathname)}
-            count={item.badge ? counts[item.badge] : 0}
-            onNavigate={onNavigate}
-          />
+          <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} onNavigate={onNavigate} />
         ))}
       </nav>
 
-      <div className="border-t border-sidebar-border p-3">
+      <div className="space-y-2 border-t border-sidebar-border p-4">
+        {/* Settings used to live in the account menu. Removing the top bar took that
+            menu with it, so the only way in is the footer. */}
         <Link
-          href="/about"
+          href="/app/settings"
           onClick={onNavigate}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+          className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <BookOpen className="size-4" aria-hidden="true" />
-          About Beebizy
+          <Settings className="size-4" aria-hidden="true" />
+          Settings
+        </Link>
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="flex w-full cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-destructive"
+        >
+          <LogOut className="size-4" aria-hidden="true" />
+          Sign out
+        </button>
+        <Link
+          href="/marketing-preview"
+          onClick={onNavigate}
+          className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          ← Back to site
         </Link>
       </div>
     </div>
@@ -213,43 +220,6 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
   );
 }
 
-function UserMenu() {
-  const { user, isDemo, signOut } = useSession();
-  const name = user?.name ?? "Signed out";
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
-          <Avatar className="size-8 border border-hairline">
-            {user?.photoURL ? <AvatarImage src={user.photoURL} alt="" /> : null}
-            <AvatarFallback className="text-xs font-semibold">{initials(name)}</AvatarFallback>
-          </Avatar>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel className="space-y-0.5">
-          <p className="truncate text-sm font-semibold">{name}</p>
-          {user?.email ? <p className="truncate text-xs font-normal text-muted-foreground">{user.email}</p> : null}
-          {isDemo ? <p className="text-xs font-normal text-warning-text">Demo session</p> : null}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/app/settings">
-            <Settings className="mr-2 size-4" />
-            Settings
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void signOut()}>
-          <LogOut className="mr-2 size-4" />
-          {isDemo ? "Exit demo" : "Sign out"}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 export function AppShell({ children }: { children: ReactNode }) {
   const { open, setOpen } = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -272,58 +242,37 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="flex min-h-dvh bg-background">
       <a href="#main" className="skip-link">
         Skip to content
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-sidebar-border lg:block xl:w-72 2xl:w-80">
+      <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 md:block">
         <SidebarContent />
       </aside>
 
-      <div className="lg:pl-64 xl:pl-72 2xl:pl-80">
-        <header className="sticky top-0 z-30 border-b border-hairline bg-background/85 backdrop-blur">
-          <div className="flex h-14 items-center gap-2 px-4 sm:px-6">
-            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
-                  <Menu className="size-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-64 p-0">
-                <SheetTitle className="sr-only">Navigation</SheetTitle>
-                <SidebarContent onNavigate={() => setMobileOpen(false)} />
-              </SheetContent>
-            </Sheet>
-
-            <div className="lg:hidden">
-              <BrandLogoLink to="/app" size="md" />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              className="ml-auto flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-sm text-muted-foreground shadow-xs transition-colors hover:text-foreground lg:ml-0 lg:w-72"
-            >
-              <Search className="size-4 shrink-0" aria-hidden="true" />
-              <span className="hidden truncate lg:inline">Search or jump to…</span>
-              <kbd className="ml-auto hidden rounded border border-hairline bg-surface-sunken px-1.5 font-mono text-[10px] font-semibold lg:inline">
-                ⌘K
-              </kbd>
-            </button>
-
-            <div className="ml-auto flex items-center gap-1 lg:ml-0 lg:flex-1 lg:justify-end">
-              <UserMenu />
-            </div>
-          </div>
-          <DemoBanner />
-          {mode === "live" ? <BetaBanner access={identity?.access} /> : null}
-        </header>
-
-        <main id="main" className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:py-8 xl:px-8">
-          {children}
-        </main>
+      <div className="fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-border bg-background px-4 md:hidden">
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon" className="mr-2" aria-label="Open navigation">
+              <Menu className="size-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-64 p-0">
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          </SheetContent>
+        </Sheet>
+        <BrandLogo size="sm" />
       </div>
+
+      <main id="main" className="flex min-h-dvh min-w-0 flex-1 flex-col pt-16 md:ml-64 md:pt-0">
+        <DemoBanner />
+        {mode === "live" ? <BetaBanner access={identity?.access} /> : null}
+        {/* Screens return bare content; the canvas inset lives here, uncapped, so the
+            page fills the width left of the rail the way the reference design does. */}
+        <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</div>
+      </main>
 
       <CommandPalette open={open} onOpenChange={setOpen} />
     </div>

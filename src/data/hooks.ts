@@ -53,6 +53,14 @@ import type {
   RunOfShowItemPatch,
   SponsorshipDraft,
   SponsorshipPatch,
+  RfpDraft,
+  RfpPatch,
+  RfpResponseDraft,
+  RfpResponseStatus,
+  DepositDraft,
+  DepositPatch,
+  TeamHoursDraft,
+  TeamHoursPatch,
   TemplateContents,
   TemplateDraft,
   TicketTypeDraft,
@@ -104,6 +112,9 @@ export const qk = {
   raffle: (eventId: string) => ["raffle", eventId] as const,
   raffleTickets: (eventId: string, raffleItemId: string) => ["raffle", eventId, raffleItemId, "tickets"] as const,
   sponsorships: (eventId: string) => ["sponsorships", eventId] as const,
+  rfps: (eventId: string) => ["rfps", eventId] as const,
+  deposits: (eventId: string) => ["deposits", eventId] as const,
+  teamHours: (eventId: string) => ["teamHours", eventId] as const,
 
   templates: ["templates"] as const,
   template: (id: string) => ["templates", "detail", id] as const,
@@ -695,6 +706,113 @@ export function useRemoveSponsorship() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.sponsorships.remove(vars.eventId, vars.id),
     (vars) => [qk.sponsorships(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+/* ---------------------------------------------------------------------- rfps */
+
+export function useRfps(eventId: string) {
+  return useAdapterQuery(qk.rfps(eventId), (a) => a.rfps.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: RfpDraft }) => a.rfps.create(vars.eventId, vars.draft),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useUpdateRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: RfpPatch }) => a.rfps.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useRemoveRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.rfps.remove(vars.eventId, vars.id),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useAddRfpResponse() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; draft: RfpResponseDraft }) =>
+      a.rfps.addResponse(vars.eventId, vars.rfpId, vars.draft),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useSetRfpResponseStatus() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; responseId: string; status: RfpResponseStatus }) =>
+      a.rfps.setResponseStatus(vars.eventId, vars.rfpId, vars.responseId, vars.status),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useRemoveRfpResponse() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; responseId: string }) =>
+      a.rfps.removeResponse(vars.eventId, vars.rfpId, vars.responseId),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+/* ------------------------------------------------------------------ deposits */
+
+export function useDeposits(eventId: string) {
+  return useAdapterQuery(qk.deposits(eventId), (a) => a.deposits.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddDeposit() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: DepositDraft }) => a.deposits.create(vars.eventId, vars.draft),
+    (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useUpdateDeposit() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: DepositPatch }) =>
+      a.deposits.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useRemoveDeposit() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.deposits.remove(vars.eventId, vars.id),
+    (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+/* ---------------------------------------------------------------- team hours */
+
+export function useTeamHours(eventId: string) {
+  return useAdapterQuery(qk.teamHours(eventId), (a) => a.teamHours.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddTeamHours() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: TeamHoursDraft }) => a.teamHours.create(vars.eventId, vars.draft),
+    (vars) => [qk.teamHours(vars.eventId)],
+  );
+}
+
+export function useUpdateTeamHours() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: TeamHoursPatch }) =>
+      a.teamHours.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.teamHours(vars.eventId)],
+  );
+}
+
+export function useRemoveTeamHours() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.teamHours.remove(vars.eventId, vars.id),
+    (vars) => [qk.teamHours(vars.eventId)],
   );
 }
 
