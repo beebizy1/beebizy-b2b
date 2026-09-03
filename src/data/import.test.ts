@@ -206,3 +206,52 @@ describe("services become checklist tasks", () => {
     expect(plan.checklist.map((i) => i.sortOrder)).toEqual([0, 1]);
   });
 });
+
+describe("a single unnamed sheet, as Google Sheets always sends", () => {
+  // The server names every Google Sheet import "Google Sheet", so name matching can
+  // never classify it. Before headers were consulted, all of these imported nothing.
+  const asGoogleSheet = (csv: string) => buildEventImportPlan([parseCsvTable(csv, "Google Sheet")], "Google Sheet");
+
+  it("imports a checklist", () => {
+    const plan = asGoogleSheet("Task,Owner,Due Date\nBook the venue,Maria,2026-10-01\nConfirm catering,Dana,2026-10-05");
+    expect(plan.checklist.map((i) => i.title)).toEqual(["Book the venue", "Confirm catering"]);
+    expect(plan.checklist[0]!.assignedTo).toBe("Maria");
+  });
+
+  it("imports services, and turns each into a task", () => {
+    const plan = asGoogleSheet("Vendor,Category,Fee\nGolden Gate Catering,Catering,28400\nApex AV,AV & Tech,11250");
+    expect(plan.vendors.map((v) => v.vendor.name)).toEqual(["Golden Gate Catering", "Apex AV"]);
+    expect(plan.checklist.map((i) => i.title)).toEqual(["Confirm Golden Gate Catering", "Confirm Apex AV"]);
+  });
+
+  it("imports a guest list", () => {
+    const plan = asGoogleSheet("Guest Name,Email\nPriya Raghunathan,priya@example.com");
+    expect(plan.guests.map((g) => g.name)).toEqual(["Priya Raghunathan"]);
+  });
+
+  it("imports a run of show", () => {
+    const plan = asGoogleSheet("Start Time,Activity,Duration\n18:00,Drinks reception,60");
+    expect(plan.runOfShow.map((c) => c.title)).toEqual(["Drinks reception"]);
+  });
+
+  it("imports a budget", () => {
+    const plan = asGoogleSheet("Line Item,Estimated\nVenue hire,38000");
+    expect(plan.budget.map((b) => b.name)).toEqual(["Venue hire"]);
+  });
+
+  it("still warns when the columns mean nothing", () => {
+    const plan = asGoogleSheet("Song,Artist\nSomething,Someone");
+    expect(plan.warnings.join(" ")).toContain("not recognised");
+  });
+
+  it("never lets a header guess override an explicitly named tab", () => {
+    const plan = buildEventImportPlan(
+      [
+        parseCsvTable("Task\nThe real checklist", "Checklist"),
+        parseCsvTable("Task\nA stray column elsewhere", "Random Notes"),
+      ],
+      "x.xlsx",
+    );
+    expect(plan.checklist.map((i) => i.title)).toEqual(["The real checklist"]);
+  });
+});

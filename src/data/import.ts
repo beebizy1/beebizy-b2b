@@ -136,6 +136,76 @@ function tableNamed(tables: SpreadsheetTable[], patterns: RegExp[], required?: r
   );
 }
 
+/**
+ * What a sheet is, judged by its columns rather than its name.
+ *
+ * A Google Sheets import is always a single tab the server names "Google Sheet", so
+ * name matching alone can never classify it — a perfectly good checklist imported as
+ * nothing. Headers are the only signal left, so each role declares the columns that
+ * only it would have. "Name" and "Notes" are deliberately absent: they appear on
+ * every kind of sheet and would match all of them.
+ */
+const ROLE_SIGNATURES = {
+  checklist: ["task", "checklist item", "to do", "todo", "action"],
+  runOfShow: ["start time", "cue", "cue time", "agenda item", "activity"],
+  vendors: ["vendor", "vendor name", "supplier", "supplier name", "service", "service provider"],
+  budget: ["budget item", "line item", "estimated", "estimate", "actual", "spent"],
+  guests: ["guest name", "attendee name", "rsvp", "guest email"],
+  moodBoard: ["image url", "reference", "image"],
+} as const;
+
+type TableRole = keyof typeof ROLE_SIGNATURES;
+
+const ALL_NAME_PATTERNS: RegExp[] = [
+  /^event(s| details| overview)?$/, /^overview$/,
+  /check\s*list/, /tasks?/, /to dos?/,
+  /run of show/, /schedule/, /agenda/, /timeline/,
+  /budget/, /expenses?/, /financials?/,
+  /mood/, /inspiration/, /references?/,
+  /guests?/, /attendees?/, /invitees?/,
+  /services?/, /vendors?/, /suppliers?/, /providers?/,
+];
+
+/** True when some role already claims this sheet by name, so headers needn't guess. */
+function nameIsMeaningful(table: SpreadsheetTable): boolean {
+  return ALL_NAME_PATTERNS.some((pattern) => pattern.test(normalize(table.name)));
+}
+
+/**
+ * The single best role for a sheet, by counting distinctive header hits. Ties go to
+ * nothing rather than to a coin flip: importing a budget as a guest list is worse than
+ * importing neither and saying so.
+ */
+export function classifyByHeaders(table: SpreadsheetTable): TableRole | null {
+  let best: TableRole | null = null;
+  let bestScore = 0;
+  let tied = false;
+
+  for (const [role, signature] of Object.entries(ROLE_SIGNATURES) as Array<[TableRole, readonly string[]]>) {
+    const score = signature.filter((header) => matchingHeader(table, [header])).length;
+    if (score === 0) continue;
+    if (score > bestScore) {
+      best = role;
+      bestScore = score;
+      tied = false;
+    } else if (score === bestScore) {
+      tied = true;
+    }
+  }
+  return tied ? null : best;
+}
+
+/**
+ * The sheet for a role: by name where the name says so, otherwise by columns. Only
+ * sheets whose name means nothing are classified by header, so an explicitly named tab
+ * is never overridden by a lucky column match elsewhere.
+ */
+function tableFor(tables: SpreadsheetTable[], role: TableRole, patterns: RegExp[]): SpreadsheetTable | null {
+  const named = tableNamed(tables, patterns);
+  if (named) return named;
+  return tables.find((table) => !nameIsMeaningful(table) && classifyByHeaders(table) === role) ?? null;
+}
+
 function dateTime(value: SpreadsheetValue, defaultHour: number): string | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
   const text = value === null || value === undefined ? "" : String(value).trim();
@@ -213,7 +283,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     category: (eventTable ? stringFrom(eventRow, eventTable, aliases.category) : "") || "Other",
   };
 
-  const checklistTable = tableNamed(tables, [/check\s*list/, /tasks?/, /to dos?/]);
+  const checklistTable = tableFor(tables, "checklist", [/check\s*list/, /tasks?/, /to dos?/]);
   const checklistFromSheet = (checklistTable?.rows ?? []).flatMap((row, index): ChecklistItemDraft[] => {
     const itemTitle = stringFrom(row, checklistTable!, aliases.task);
     if (!itemTitle) return [];
@@ -228,7 +298,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     }];
   });
 
-  const runTable = tableNamed(tables, [/run of show/, /schedule/, /agenda/, /timeline/]);
+  const runTable = tableFor(tables, "runOfShow", [/run of show/, /schedule/, /agenda/, /timeline/]);
   const runOfShow = (runTable?.rows ?? []).flatMap((row, index): RunOfShowItemDraft[] => {
     const cueTitle = stringFrom(row, runTable!, aliases.cueTitle);
     const startTime = clockTime(valueFrom(row, runTable!, aliases.startTime));
@@ -243,7 +313,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     }];
   });
 
-  const budgetTable = tableNamed(tables, [/budget/, /expenses?/, /financials?/]);
+  const budgetTable = tableFor(tables, "budget", [/budget/, /expenses?/, /financials?/]);
   const budget = (budgetTable?.rows ?? []).flatMap((row, index): BudgetItemDraft[] => {
     const name = stringFrom(row, budgetTable!, aliases.item);
     const estimatedCents = moneyCents(valueFrom(row, budgetTable!, aliases.estimated));
@@ -262,14 +332,14 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     }];
   });
 
-  const moodTable = tableNamed(tables, [/mood/, /inspiration/, /references?/]);
+  const moodTable = tableFor(tables, "moodBoard", [/mood/, /inspiration/, /references?/]);
   const moodBoard = (moodTable?.rows ?? []).flatMap((row): ImportedMoodReference[] => {
     const url = stringFrom(row, moodTable!, aliases.imageUrl);
     if (!/^https?:\/\//i.test(url)) return [];
     return [{ url, caption: stringFrom(row, moodTable!, aliases.caption) || null }];
   });
 
-  const guestTable = tableNamed(tables, [/guests?/, /attendees?/, /invitees?/]);
+  const guestTable = tableFor(tables, "guests", [/guests?/, /attendees?/, /invitees?/]);
   const guests = (guestTable?.rows ?? []).flatMap((row): GuestDraft[] => {
     const name = stringFrom(row, guestTable!, aliases.guestName);
     const contact = stringFrom(row, guestTable!, aliases.email);
@@ -279,7 +349,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
 
   /* ------------------------------------------------------------------ vendors */
 
-  const vendorTable = tableNamed(tables, [/services?/, /vendors?/, /suppliers?/, /providers?/]);
+  const vendorTable = tableFor(tables, "vendors", [/services?/, /vendors?/, /suppliers?/, /providers?/]);
   const vendors = (vendorTable?.rows ?? []).flatMap((row): ImportedVendor[] => {
     const name = stringFrom(row, vendorTable!, aliases.vendorName);
     if (!name) return [];
