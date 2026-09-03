@@ -11,6 +11,7 @@ import { Mail, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
 import {
@@ -25,6 +26,7 @@ import {
 } from "@/components/primitives";
 import {
   useGuests,
+  useCreateGuest,
   useCreateRegistration,
   useDeleteRegistration,
   useEventRegistrations,
@@ -32,11 +34,23 @@ import {
 } from "@/data/hooks";
 import { REGISTRATION_STATUSES, type Event, type RegistrationStatus } from "@/data/entities";
 
+/**
+ * Put someone on the guest list.
+ *
+ * Two ways in, because the address book starts empty. "New person" creates the guest and
+ * registers them in one step — the previous form could only pick an existing guest, so on
+ * a fresh workspace the only control on the page was a dropdown with nothing in it and no
+ * hint that Attendees was where you had to go first.
+ */
 function AddGuest({ event }: { event: Event }) {
   const { data: guests } = useGuests();
   const { data: registrations } = useEventRegistrations(event.id);
   const createRegistration = useCreateRegistration();
+  const createGuest = useCreateGuest();
+  const [mode, setMode] = useState<"new" | "existing">("new");
   const [guestId, setGuestId] = useState("");
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
   const [status, setStatus] = useState<"pending" | "confirmed">("pending");
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
@@ -46,49 +60,107 @@ function AddGuest({ event }: { event: Event }) {
   }, [guests, registrations]);
 
   const atCapacity = event.capacity !== null && event.registrationCount >= event.capacity;
+  const pending = createRegistration.isPending || createGuest.isPending;
+  const canSubmit = mode === "new" ? name.trim().length > 0 : guestId !== "";
+
+  const submit = async () => {
+    try {
+      const id =
+        mode === "existing"
+          ? guestId
+          : (await createGuest.mutateAsync({ name: name.trim(), contact: contact.trim() })).id;
+
+      await createRegistration.mutateAsync({ eventId: event.id, guestId: id, status });
+      setGuestId("");
+      setName("");
+      setContact("");
+    } catch (error) {
+      toast({
+        title: "Couldn't add them to the list",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
 
   return (
     <form
-      className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
+      className="space-y-2 border-b border-hairline px-5 py-3"
       onSubmit={(formEvent) => {
         formEvent.preventDefault();
-        if (!guestId) return;
-        createRegistration.mutate(
-          { eventId: event.id, guestId, status },
-          {
-            onSuccess: () => setGuestId(""),
-            onError: (error) => toast({ title: "Couldn't register", description: error.message }),
-          },
-        );
+        if (canSubmit) void submit();
       }}
     >
-      <Select value={guestId} onValueChange={setGuestId} disabled={available.length === 0}>
-        <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to invite">
-          <SelectValue placeholder={available.length === 0 ? "Everyone is already on the list" : "Choose a guest…"} />
-        </SelectTrigger>
-        <SelectContent>
-          {available.map((guest) => (
-            <SelectItem key={guest.id} value={guest.id}>
-              {guest.name} · {guest.contact}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
-        <SelectTrigger className="w-[178px]" aria-label="Invitation status">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="pending">Invite - awaiting RSVP</SelectItem>
-          <SelectItem value="confirmed">Add as confirmed</SelectItem>
-        </SelectContent>
-      </Select>
-      <Button type="submit" size="sm" disabled={!guestId || createRegistration.isPending}>
-        <UserPlus className="mr-1.5 size-3.5" />
-        {status === "pending" ? "Add invitation" : "Register"}
-      </Button>
+      <div className="flex gap-1">
+        {(["new", "existing"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => setMode(option)}
+            aria-pressed={mode === option}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              mode === option ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {option === "new" ? "New person" : `From address book${available.length ? ` (${available.length})` : ""}`}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {mode === "new" ? (
+          <>
+            <Input
+              value={name}
+              onChange={(inputEvent) => setName(inputEvent.target.value)}
+              placeholder="Full name"
+              aria-label="Guest name"
+              className="min-w-[10rem] flex-1"
+            />
+            <Input
+              type="email"
+              value={contact}
+              onChange={(inputEvent) => setContact(inputEvent.target.value)}
+              placeholder="Email (optional)"
+              aria-label="Guest email"
+              className="min-w-[10rem] flex-1"
+            />
+          </>
+        ) : (
+          <Select value={guestId} onValueChange={setGuestId} disabled={available.length === 0}>
+            <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to invite">
+              <SelectValue
+                placeholder={available.length === 0 ? "Nobody left in the address book" : "Choose a guest…"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {available.map((guest) => (
+                <SelectItem key={guest.id} value={guest.id}>
+                  {guest.name} · {guest.contact}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
+          <SelectTrigger className="w-[178px]" aria-label="Invitation status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Invite - awaiting RSVP</SelectItem>
+            <SelectItem value="confirmed">Add as confirmed</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Button type="submit" size="sm" disabled={!canSubmit || pending}>
+          <UserPlus className="mr-1.5 size-3.5" />
+          {status === "pending" ? "Add invitation" : "Register"}
+        </Button>
+      </div>
+
       {atCapacity ? (
-        <p className="w-full text-xs text-warning-text">
+        <p className="text-xs text-warning-text">
           This event is at capacity. Raise the capacity in Edit before adding more.
         </p>
       ) : null}

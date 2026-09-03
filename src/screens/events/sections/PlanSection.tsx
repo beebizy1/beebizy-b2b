@@ -122,7 +122,10 @@ export function ChecklistPanel({ event }: { event: Event }) {
   const add = useAddChecklistItem();
   const [title, setTitle] = useState("");
   const [area, setArea] = useState("General");
-  const [showCompleted, setShowCompleted] = useState(false);
+  // Completed items stay on the list. Hiding them made ticking a task look like it
+  // deleted the task — the row vanished and only the progress bar moved, so the tick
+  // you just earned was never visible.
+  const [showCompleted, setShowCompleted] = useState(true);
 
   const done = (items ?? []).filter((item) => item.completed).length;
   const total = items?.length ?? 0;
@@ -174,9 +177,9 @@ export function ChecklistPanel({ event }: { event: Event }) {
               existingTitles={existingTitles}
               nextOrder={nextOrder}
             />
-            {total > done ? (
+            {done > 0 ? (
               <Button variant="outline" size="sm" onClick={() => setShowCompleted((previous) => !previous)}>
-                {showCompleted ? "Hide done" : "Show done"}
+                {showCompleted ? `Hide done (${done})` : `Show done (${done})`}
               </Button>
             ) : null}
           </>
