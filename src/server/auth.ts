@@ -70,8 +70,16 @@ async function requireInternalUserId(request: Request): Promise<string> {
   let primaryEmail: string | null = null;
   try {
     const user = await clerk.users.getUser(userId);
-    primaryEmail =
-      user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId)?.emailAddress ?? null;
+    const primary = user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId);
+    /*
+     * Only a verified address counts. The allowlist is an identity check, and an
+     * unverified address is a claim rather than an identity: anyone can type a pilot
+     * customer's address at sign-up, and without this that claim alone would pass the
+     * check below. Clerk verifies email sign-ups by default, so this is the belt to that
+     * braces — it costs nothing and it is the difference between the allowlist being a
+     * lock and being a formality.
+     */
+    primaryEmail = primary?.verification?.status === "verified" ? primary.emailAddress : null;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("Clerk user lookup failed while verifying internal access.", error);
