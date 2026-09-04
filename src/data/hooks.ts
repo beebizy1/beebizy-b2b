@@ -352,6 +352,14 @@ export function useSetRegistrationStatus() {
   );
 }
 
+export function useSetRegistrationSegment() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; segment: string | null }) =>
+      a.registrations.setSegment(vars.id, vars.segment),
+    (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
 export function useDeleteRegistration() {
   return useAdapterMutation(
     (a, vars: { id: string; eventId: string }) => a.registrations.remove(vars.id),
@@ -905,13 +913,27 @@ export function useUpdateSettings() {
   return useAdapterMutation((a, patch: Partial<UserSettings>) => a.settings.update(patch), () => [qk.settings]);
 }
 
-export function useFloorplan(eventId: string): UseQueryResult<Floorplan | null, Error> {
-  return useAdapterQuery(qk.floorplan(eventId), (a) => a.floorplan.get(eventId), { enabled: !!eventId });
+export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {
+  return useAdapterQuery(qk.floorplan(eventId), (a) => a.floorplan.list(eventId), { enabled: !!eventId });
+}
+
+export function useCreateFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: FloorplanDraft }) => a.floorplan.create(vars.eventId, vars.draft),
+    (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
+  );
 }
 
 export function useSaveFloorplan() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.eventId, vars.draft),
+    (a, vars: { id: string; eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.id, vars.draft),
+    (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useDeleteFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string }) => a.floorplan.remove(vars.id),
     (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
   );
 }

@@ -12,14 +12,25 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GripVertical, LayoutGrid, RotateCcw, Save, Trash2 } from "lucide-react";
+import { GripVertical, LayoutGrid, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useFloorplan, useSaveFloorplan } from "@/data/hooks";
-import { FLOORPLAN_SHAPES, type Event, type FloorplanItem, type FloorplanShape } from "@/data/entities";
+import {
+  useCreateFloorplan,
+  useDeleteFloorplan,
+  useFloorplans,
+  useSaveFloorplan,
+} from "@/data/hooks";
+import {
+  FLOORPLAN_SHAPES,
+  type Event,
+  type Floorplan,
+  type FloorplanItem,
+  type FloorplanShape,
+} from "@/data/entities";
 
 interface ShapeSpec {
   label: string;
@@ -48,8 +59,11 @@ function newItemId(): string {
   return `fp-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
 }
 
-export default function FloorplanPanel({ event }: { event: Event }) {
-  const { data: saved, isLoading } = useFloorplan(event.id);
+/**
+ * One room's editor. Remounted per room by the panel below (via `key`), so the local
+ * unsaved state cannot leak from the terrace layout into the ballroom's.
+ */
+function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const savePlan = useSaveFloorplan();
 
   const [name, setName] = useState<string | null>(null);
@@ -228,7 +242,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
     <Panel>
       <PanelHeader
         title="Floorplan"
-        description={isLoading ? "Loading…" : capacityNote}
+        description={capacityNote}
         actions={
           <div className="flex items-center gap-2">
             {dirty ? <Pill tone="warning">unsaved</Pill> : null}
@@ -251,7 +265,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
               disabled={!dirty || savePlan.isPending}
               onClick={() =>
                 savePlan.mutate(
-                  { eventId: event.id, draft: { name: workingName, items: workingItems } },
+                  { id: saved.id, eventId: event.id, draft: { name: workingName, items: workingItems } },
                   {
                     onSuccess: () => {
                       setItems(null);
@@ -302,9 +316,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         ))}
       </div>
 
-      {isLoading ? (
-        <LoadingRows rows={4} className="p-4" />
-      ) : (
+      {(
         <>
           <div className="p-5">
             <div
@@ -407,5 +419,118 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         </>
       )}
     </Panel>
+  );
+}
+
+/**
+ * The rooms of an event.
+ *
+ * Most events are one room and should feel like it: a single room renders as it always
+ * did, with the tab strip only earning its space once there is a second. "Add a room" is
+ * what makes indoor/outdoor and upstairs/downstairs describable at all — before this an
+ * event had exactly one plan, so the second space simply had nowhere to live.
+ */
+export default function FloorplanPanel({ event }: { event: Event }) {
+  const { data: plans, isLoading } = useFloorplans(event.id);
+  const createPlan = useCreateFloorplan();
+  const deletePlan = useDeleteFloorplan();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const rooms = plans ?? [];
+  // Falls back to the first room whenever the selection is stale — after a delete, or
+  // before anything has been picked.
+  const current = rooms.find((room) => room.id === selectedId) ?? rooms[0] ?? null;
+
+  const addRoom = () => {
+    const name = `Room ${rooms.length + 1}`;
+    createPlan.mutate(
+      { eventId: event.id, draft: { name, items: [] } },
+      {
+        onSuccess: (created) => setSelectedId(created.id),
+        onError: (error) => toast({ title: "Couldn't add the room", description: error.message }),
+      },
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <Panel>
+        <PanelHeader title="Floorplan" description="Loading…" />
+        <LoadingRows rows={4} className="p-4" />
+      </Panel>
+    );
+  }
+
+  if (current === null) {
+    return (
+      <Panel>
+        <PanelHeader title="Floorplan" description="No rooms yet" />
+        <EmptyState
+          icon={LayoutGrid}
+          title="No floorplan yet"
+          description="Add a room to start placing tables, a stage, a bar and the rest."
+          action={
+            <Button size="sm" onClick={addRoom} disabled={createPlan.isPending}>
+              <Plus className="mr-1.5 size-3.5" />
+              Add a room
+            </Button>
+          }
+        />
+      </Panel>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {rooms.map((room) => (
+          <button
+            key={room.id}
+            type="button"
+            onClick={() => setSelectedId(room.id)}
+            aria-pressed={room.id === current.id}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              room.id === current.id
+                ? "border-primary bg-secondary text-secondary-foreground"
+                : "border-hairline text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {room.name}
+          </button>
+        ))}
+
+        <Button variant="outline" size="sm" onClick={addRoom} disabled={createPlan.isPending}>
+          <Plus className="mr-1.5 size-3.5" />
+          Add a room
+        </Button>
+
+        {rooms.length > 1 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={deletePlan.isPending}
+            onClick={() => {
+              // Deleting a drawn room loses work, so it is confirmed. The last room is
+              // never deletable — an event with no plan at all has no way back to one
+              // except through the empty state, and that is a worse place to land.
+              if (!window.confirm(`Delete "${current.name}" and everything drawn in it?`)) return;
+              deletePlan.mutate(
+                { id: current.id, eventId: event.id },
+                {
+                  onSuccess: () => setSelectedId(null),
+                  onError: (error) => toast({ title: "Couldn't delete the room", description: error.message }),
+                },
+              );
+            }}
+          >
+            <Trash2 className="mr-1.5 size-3.5" />
+            Delete room
+          </Button>
+        ) : null}
+      </div>
+
+      <RoomEditor key={current.id} event={event} plan={current} />
+    </div>
   );
 }

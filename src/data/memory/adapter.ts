@@ -634,6 +634,7 @@ const registrations: RegistrationsRepository = {
       eventTitle: event.title,
       guestId: draft.guestId,
       status: draft.status ?? "pending",
+      segment: draft.segment?.trim() || null,
       registeredAt: nowIso(),
       createdAt: nowIso(),
     };
@@ -650,6 +651,16 @@ const registrations: RegistrationsRepository = {
     registration.status = status;
     registration.updatedAt = nowIso();
     syncRegistrationCount(registration.eventId);
+    return copy(registration);
+  },
+  async setSegment(id, segment) {
+    await wait();
+    const registration = required(
+      store().registrations.find((r) => r.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    registration.segment = segment?.trim() || null;
+    registration.updatedAt = nowIso();
     return copy(registration);
   },
   async remove(id) {
@@ -985,6 +996,8 @@ const tickets: TicketsRepository = {
       eventId: event.id,
       eventTitle: event.title,
       guestId: guest.id,
+      // Bought a ticket rather than being invited, so no category until an organizer sets one.
+      segment: null,
       status: "confirmed",
       registeredAt: nowIso(),
       createdAt: nowIso(),
@@ -1348,35 +1361,78 @@ const canvases: CanvasesRepository = {
 
 /* --------------------------------------------------------------- floorplan */
 
+/** The event context every floorplan history entry carries, so a plan can be read back. */
+function floorplanContext(eventId: string) {
+  const event = requireEvent(eventId);
+  return {
+    locationId: event.locationId,
+    location: event.location,
+    guestCount: event.registrationCount,
+    capacity: event.capacity,
+  };
+}
+
 const floorplan: FloorplanRepository = {
-  async get(eventId) {
+  async list(eventId) {
     await wait();
-    return copy(store().floorplans.find((plan) => plan.eventId === eventId) ?? null);
+    return copy(store().floorplans.filter((plan) => plan.eventId === eventId));
   },
-  async save(eventId, draft: FloorplanDraft) {
+  async create(eventId, draft: FloorplanDraft) {
     await wait();
-    const event = requireEvent(eventId);
-    const state = store();
-    const record: Floorplan = { eventId, name: draft.name, items: copy(draft.items), updatedAt: nowIso() };
-    const existing = state.floorplans.find((plan) => plan.eventId === eventId);
-    const before = existing ? (copy(existing) as unknown as Record<string, unknown>) : null;
-    if (existing) Object.assign(existing, record);
-    else state.floorplans.push(record);
+    const context = floorplanContext(eventId);
+    const record: Floorplan = {
+      id: newId("fp"),
+      eventId,
+      name: draft.name,
+      items: copy(draft.items),
+      updatedAt: nowIso(),
+    };
+    store().floorplans.push(record);
     appendHistory({
       eventId,
       resource: "floorplan",
-      resourceId: eventId,
-      action: before ? "updated" : "created",
-      before,
-      after: {
-        ...copy(record),
-        locationId: event.locationId,
-        location: event.location,
-        guestCount: event.registrationCount,
-        capacity: event.capacity,
-      } as unknown as Record<string, unknown>,
+      resourceId: record.id,
+      action: "created",
+      before: null,
+      after: { ...copy(record), ...context } as unknown as Record<string, unknown>,
     });
     return copy(record);
+  },
+  async save(id, draft: FloorplanDraft) {
+    await wait();
+    const existing = required(
+      store().floorplans.find((plan) => plan.id === id),
+      `Floorplan ${id} no longer exists.`,
+    );
+    const context = floorplanContext(existing.eventId);
+    const before = copy(existing) as unknown as Record<string, unknown>;
+    existing.name = draft.name;
+    existing.items = copy(draft.items);
+    existing.updatedAt = nowIso();
+    appendHistory({
+      eventId: existing.eventId,
+      resource: "floorplan",
+      resourceId: id,
+      action: "updated",
+      before,
+      after: { ...copy(existing), ...context } as unknown as Record<string, unknown>,
+    });
+    return copy(existing);
+  },
+  async remove(id) {
+    await wait();
+    const state = store();
+    const index = state.floorplans.findIndex((plan) => plan.id === id);
+    if (index === -1) throw new DataError("not-found", `Floorplan ${id} no longer exists.`);
+    const [removed] = state.floorplans.splice(index, 1);
+    appendHistory({
+      eventId: removed!.eventId,
+      resource: "floorplan",
+      resourceId: id,
+      action: "deleted",
+      before: copy(removed!) as unknown as Record<string, unknown>,
+      after: null,
+    });
   },
 };
 

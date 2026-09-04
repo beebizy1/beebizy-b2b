@@ -133,6 +133,8 @@ export interface RegistrationsRepository {
   listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
+  /** Null clears the category. */
+  setSegment(id: string, segment: string | null): Promise<Registration>;
   remove(id: string): Promise<void>;
 }
 
@@ -194,8 +196,11 @@ export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft,
 }
 
 export interface FloorplanRepository {
-  get(eventId: string): Promise<Floorplan | null>;
-  save(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
+  /** Every room on the event, oldest first, so tab order is stable across reloads. */
+  list(eventId: string): Promise<Floorplan[]>;
+  create(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
+  save(id: string, draft: FloorplanDraft): Promise<Floorplan>;
+  remove(id: string): Promise<void>;
 }
 
 export interface EventHistoryRepository {

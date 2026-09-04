@@ -197,6 +197,20 @@ async function handlePublic(segments: string[], method: string, request: Request
 
 /* ------------------------------------------------------------- authed routes */
 
+/** Validation errors from the floorplan schema, reported as a readable 400 rather than a 500. */
+function readFloorplanDraft(body: Record<string, unknown>) {
+  try {
+    return parseFloorplanDraft(body);
+  } catch (error) {
+    if (!(error instanceof ZodError)) throw error;
+    const details = error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join(".") || "floorplan"}: ${issue.message}`)
+      .join("; ");
+    throw new HttpError(400, details);
+  }
+}
+
 async function handleAuthed(
   ctx: RequestContext,
   segments: string[],
@@ -292,19 +306,10 @@ async function handleAuthed(
 
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
-        if (b === "floorplan" && method === "GET") return json(await repos.floorplan.get(ctx, a));
-        if (b === "floorplan" && method === "PUT") {
-          try {
-            const draft = parseFloorplanDraft(body);
-            return json(await repos.floorplan.save(ctx, a, draft.name, draft.items));
-          } catch (error) {
-            if (!(error instanceof ZodError)) throw error;
-            const details = error.issues
-              .slice(0, 3)
-              .map((issue) => `${issue.path.join(".") || "floorplan"}: ${issue.message}`)
-              .join("; ");
-            throw new HttpError(400, details);
-          }
+        if (b === "floorplans" && !c && method === "GET") return json(await repos.floorplan.list(ctx, a));
+        if (b === "floorplans" && !c && method === "POST") {
+          const draft = readFloorplanDraft(body);
+          return json(await repos.floorplan.create(ctx, a, draft.name, draft.items), 201);
         }
         if (b === "roi" && method === "GET") return json(await repos.roi.get(ctx, a));
         if (b === "roi" && method === "PUT") return json(await repos.roi.save(ctx, a, body));
@@ -347,11 +352,24 @@ async function handleAuthed(
       return notFound();
     }
 
+    /* -------------------------------------------------------------- floorplans */
+    case "floorplans": {
+      if (a && method === "PUT") {
+        const draft = readFloorplanDraft(body);
+        return json(await repos.floorplan.save(ctx, a, draft.name, draft.items));
+      }
+      if (a && method === "DELETE") {
+        await repos.floorplan.remove(ctx, a);
+        return new Response(null, { status: 204 });
+      }
+      return notFound();
+    }
+
     /* ----------------------------------------------------------- registrations */
     case "registrations": {
       if (!a && method === "GET") return json(await repos.registrations.list(ctx));
       if (!a && method === "POST") return json(await repos.registrations.create(ctx, body), 201);
-      if (a && method === "PATCH") return json(await repos.registrations.setStatus(ctx, a, String(body.status ?? "pending")));
+      if (a && method === "PATCH") return json(await repos.registrations.update(ctx, a, body));
       if (a && method === "DELETE") {
         await repos.registrations.remove(ctx, a);
         return json({ ok: true });

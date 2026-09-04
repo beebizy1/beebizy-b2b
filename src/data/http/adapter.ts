@@ -215,6 +215,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
+      setSegment: (id, segment) => client.patch<Registration>(`/registrations/${id}`, { segment }),
       remove: async (id) => {
         await client.del(`/registrations/${id}`);
       },
@@ -307,8 +308,12 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     floorplan: {
-      get: (eventId) => client.get<Floorplan | null>(`/events/${eventId}/floorplan`),
-      save: (eventId, draft) => client.put<Floorplan>(`/events/${eventId}/floorplan`, draft),
+      list: (eventId) => client.get<Floorplan[]>(`/events/${eventId}/floorplans`),
+      create: (eventId, draft) => client.post<Floorplan>(`/events/${eventId}/floorplans`, draft),
+      save: (id, draft) => client.put<Floorplan>(`/floorplans/${id}`, draft),
+      remove: async (id) => {
+        await client.del(`/floorplans/${id}`);
+      },
     },
 
     history: {

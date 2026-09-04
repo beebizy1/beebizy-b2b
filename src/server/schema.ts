@@ -195,6 +195,8 @@ export const registrations = pgTable(
       .notNull()
       .references(() => guests.id, { onDelete: "cascade" }),
     status: registrationStatus("status").notNull().default("pending"),
+    /** Free text: the customer's own guest-list category. Null means uncategorised. */
+    segment: text("segment"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     /** Set when the seat was bought rather than added by an organizer. */
     ticketTypeId: text("ticket_type_id"),
@@ -372,18 +374,29 @@ export const moodBoardImages = pgTable(
   (table) => [index("mood_board_images_event_idx").on(table.eventId)],
 );
 
-export const floorplans = pgTable("floorplans", {
-  eventId: text("event_id")
-    .primaryKey()
-    .references(() => events.id, { onDelete: "cascade" }),
-  workspaceId: text("workspace_id")
-    .notNull()
-    .references(() => workspaces.id, { onDelete: "cascade" }),
-  name: text("name").notNull().default("Room layout"),
-  /** Typed objects, validated at the API boundary — not the opaque blob Firestore held. */
-  items: jsonb("items").$type<unknown[]>().notNull().default([]),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * Rooms, plural. `event_id` was the primary key when an event could only have one plan;
+ * it is an indexed foreign key now so indoor/outdoor and upstairs/downstairs can each be
+ * drawn separately, which is how the events actually run.
+ */
+export const floorplans = pgTable(
+  "floorplans",
+  {
+    id: id(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("Room layout"),
+    /** Typed objects, validated at the API boundary — not the opaque blob Firestore held. */
+    items: jsonb("items").$type<unknown[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("floorplans_event_idx").on(table.eventId)],
+);
 
 /**
  * Append-only planning history. `eventId` deliberately has no event foreign key: when

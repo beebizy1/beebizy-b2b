@@ -340,6 +340,17 @@ export function buildSeed(): MemoryDb {
 
   const registrations: Registration[] = [];
   let regSeq = 0;
+  /**
+   * A demo guest list is only useful segmented if the segments look like a real one: a
+   * few VIPs and sponsors against a bulk of general attendees, not an even split.
+   */
+  const demoSegment = (index: number): string | null => {
+    if (index % 11 === 0) return "VIP";
+    if (index % 7 === 0) return "Sponsor";
+    if (index % 5 === 0) return "Staff";
+    return "General";
+  };
+
   const register = (eventId: string, guestIndexes: number[], status: Registration["status"], dayOffset: number) => {
     const event = events.find((e) => e.id === eventId)!;
     for (const index of guestIndexes) {
@@ -351,6 +362,7 @@ export function buildSeed(): MemoryDb {
         eventTitle: event.title,
         guestId: guests[index]!.id,
         status,
+        segment: demoSegment(index),
         registeredAt: at(dayOffset, 11, regSeq % 60),
         createdAt: at(dayOffset, 11, regSeq % 60),
       });
@@ -1333,6 +1345,7 @@ export function buildSeed(): MemoryDb {
 
   const floorplans: Floorplan[] = [
     {
+      id: "fp-gala-ballroom",
       eventId: "evt-gala",
       name: "Ballroom — 30 tables",
       updatedAt: at(-14),
@@ -1354,6 +1367,22 @@ export function buildSeed(): MemoryDb {
         { id: "fp-t11", shape: "round-table", label: "11", x: 66, y: 66, seats: 10 },
         { id: "fp-auction", shape: "long-table", label: "Silent auction display", x: 50, y: 84, seats: null },
         { id: "fp-entry", shape: "entrance", label: "Entrance", x: 12, y: 92, seats: null },
+      ],
+    },
+    // A second room on the same event, because that is the case the single-plan model
+    // could not express and the one customers kept describing: drinks outside, dinner in.
+    {
+      id: "fp-gala-terrace",
+      eventId: "evt-gala",
+      name: "Terrace — arrival drinks",
+      updatedAt: at(-13),
+      items: [
+        { id: "fp-terr-entry", shape: "entrance", label: "From lobby", x: 14, y: 88, seats: null },
+        { id: "fp-terr-bar", shape: "bar", label: "Champagne bar", x: 50, y: 22, seats: null },
+        { id: "fp-terr-h1", shape: "booth", label: "High top 1", x: 26, y: 52, seats: 4 },
+        { id: "fp-terr-h2", shape: "booth", label: "High top 2", x: 44, y: 58, seats: 4 },
+        { id: "fp-terr-h3", shape: "booth", label: "High top 3", x: 62, y: 52, seats: 4 },
+        { id: "fp-terr-h4", shape: "booth", label: "High top 4", x: 78, y: 62, seats: 4 },
       ],
     },
   ];

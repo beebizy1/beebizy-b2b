@@ -30,9 +30,28 @@ import {
   useCreateRegistration,
   useDeleteRegistration,
   useEventRegistrations,
+  useSetRegistrationSegment,
   useSetRegistrationStatus,
 } from "@/data/hooks";
-import { REGISTRATION_STATUSES, type Event, type RegistrationStatus } from "@/data/entities";
+import {
+  REGISTRATION_SEGMENTS,
+  REGISTRATION_STATUSES,
+  type Event,
+  type RegistrationStatus,
+  type RegistrationWithGuest,
+} from "@/data/entities";
+
+/** No category is a real choice in a Select, and "" is not a usable option value. */
+const UNCATEGORISED = "__none__";
+
+/**
+ * Every category on offer: the suggested ones plus whatever this event already uses, so a
+ * label someone typed once is a one-click choice from then on.
+ */
+function segmentOptions(rows: RegistrationWithGuest[]): string[] {
+  const used = rows.map((row) => row.segment).filter((segment): segment is string => Boolean(segment));
+  return [...new Set([...REGISTRATION_SEGMENTS, ...used])].sort((a, b) => a.localeCompare(b));
+}
 
 /**
  * Put someone on the guest list.
@@ -52,6 +71,7 @@ function AddGuest({ event }: { event: Event }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [status, setStatus] = useState<"pending" | "confirmed">("pending");
+  const [segment, setSegment] = useState("");
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
   const available = useMemo(() => {
@@ -70,10 +90,18 @@ function AddGuest({ event }: { event: Event }) {
           ? guestId
           : (await createGuest.mutateAsync({ name: name.trim(), contact: contact.trim() })).id;
 
-      await createRegistration.mutateAsync({ eventId: event.id, guestId: id, status });
+      await createRegistration.mutateAsync({
+        eventId: event.id,
+        guestId: id,
+        status,
+        segment: segment.trim() || null,
+      });
       setGuestId("");
       setName("");
       setContact("");
+      // The category deliberately survives: guest lists are entered in runs of the same
+      // kind, so clearing it would mean retyping "Sponsor" twelve times.
+
     } catch (error) {
       toast({
         title: "Couldn't add them to the list",
@@ -143,6 +171,20 @@ function AddGuest({ event }: { event: Event }) {
           </Select>
         )}
 
+        <Input
+          value={segment}
+          onChange={(inputEvent) => setSegment(inputEvent.target.value)}
+          placeholder="Category (optional)"
+          aria-label="Guest category"
+          list="guest-segment-suggestions"
+          className="w-[150px]"
+        />
+        <datalist id="guest-segment-suggestions">
+          {segmentOptions(registrations ?? []).map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+
         <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
           <SelectTrigger className="w-[178px]" aria-label="Invitation status">
             <SelectValue />
@@ -171,8 +213,10 @@ function AddGuest({ event }: { event: Event }) {
 export default function GuestsSection({ event }: { event: Event }) {
   const { data: registrations, isLoading, isError, error, refetch } = useEventRegistrations(event.id);
   const setStatus = useSetRegistrationStatus();
+  const setSegment = useSetRegistrationSegment();
   const removeRegistration = useDeleteRegistration();
   const [search, setSearch] = useState("");
+  const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     const rows = registrations ?? [];
@@ -183,15 +227,37 @@ export default function GuestsSection({ event }: { event: Event }) {
     };
   }, [registrations]);
 
+  /**
+   * How the list breaks down, cancellations excluded — a cancelled sponsor is not a
+   * sponsor you are catering for, and counting them would overstate every segment.
+   */
+  const segments = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const row of registrations ?? []) {
+      if (row.status === "cancelled") continue;
+      const key = row.segment ?? UNCATEGORISED;
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+    return [...tally.entries()].sort(([a], [b]) =>
+      a === UNCATEGORISED ? 1 : b === UNCATEGORISED ? -1 : a.localeCompare(b),
+    );
+  }, [registrations]);
+
+  const options = useMemo(() => segmentOptions(registrations ?? []), [registrations]);
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return registrations ?? [];
-    return (registrations ?? []).filter((row) =>
-      [row.guest?.name ?? "", row.guest?.contact ?? "", row.guest?.notes ?? ""].some((field) =>
-        field.toLowerCase().includes(needle),
-      ),
-    );
-  }, [registrations, search]);
+    return (registrations ?? []).filter((row) => {
+      if (segmentFilter !== null) {
+        const key = row.segment ?? UNCATEGORISED;
+        if (key !== segmentFilter) return false;
+      }
+      if (!needle) return true;
+      return [row.guest?.name ?? "", row.guest?.contact ?? "", row.guest?.notes ?? "", row.segment ?? ""].some(
+        (field) => field.toLowerCase().includes(needle),
+      );
+    });
+  }, [registrations, search, segmentFilter]);
 
   return (
     <div className="space-y-6">
@@ -226,10 +292,51 @@ export default function GuestsSection({ event }: { event: Event }) {
         </Panel>
       ) : null}
 
+      {segments.length > 0 ? (
+        <Panel className="p-4">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Segments</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSegmentFilter(null)}
+              aria-pressed={segmentFilter === null}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                segmentFilter === null
+                  ? "border-primary bg-secondary text-secondary-foreground"
+                  : "border-hairline text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Everyone · {segments.reduce((total, [, count]) => total + count, 0)}
+            </button>
+            {segments.map(([key, count]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSegmentFilter(segmentFilter === key ? null : key)}
+                aria-pressed={segmentFilter === key}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                  segmentFilter === key
+                    ? "border-primary bg-secondary text-secondary-foreground"
+                    : "border-hairline text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {key === UNCATEGORISED ? "Uncategorised" : key} · {count}
+              </button>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+
       <Panel>
         <PanelHeader
           title="Invites & registrations"
-          description={`${registrations?.length ?? 0} on the list`}
+          description={
+            segmentFilter === null
+              ? `${registrations?.length ?? 0} on the list`
+              : `${visible.length} in ${segmentFilter === UNCATEGORISED ? "Uncategorised" : segmentFilter}`
+          }
           actions={
             <>
               <Input
@@ -254,9 +361,13 @@ export default function GuestsSection({ event }: { event: Event }) {
         ) : visible.length === 0 ? (
           <EmptyState
             icon={Users}
-            title={search ? "No guests match that search" : "Nobody registered yet"}
+            title={
+              search || segmentFilter !== null ? "No guests match that filter" : "Nobody registered yet"
+            }
             description={
-              search ? "Try a name or an email address." : "Register someone above, or share the ticket link from Share."
+              search || segmentFilter !== null
+                ? "Try a different category, or clear the search."
+                : "Register someone above, or share the ticket link from Share."
             }
           />
         ) : (
@@ -285,6 +396,31 @@ export default function GuestsSection({ event }: { event: Event }) {
                     </a>
                   </Button>
                 ) : null}
+
+                <Select
+                  value={row.segment ?? UNCATEGORISED}
+                  onValueChange={(value) =>
+                    setSegment.mutate(
+                      { id: row.id, eventId: event.id, segment: value === UNCATEGORISED ? null : value },
+                      {
+                        onError: (mutationError) =>
+                          toast({ title: "Couldn't change category", description: mutationError.message }),
+                      },
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-8 w-[136px]" aria-label={`Category for ${row.guest?.name ?? "guest"}`}>
+                    <SelectValue placeholder="No category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UNCATEGORISED}>No category</SelectItem>
+                    {options.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
                 <Select
                   value={row.status}

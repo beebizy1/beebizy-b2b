@@ -141,6 +141,35 @@ describe("registrations", () => {
     expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(event.registrationCount);
   });
 
+  it("carries a segment through creation and lets it be changed or cleared", async () => {
+    const guests = await memoryAdapter.guests.list();
+    const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
+    const guest = guests.find((candidate) => !taken.has(candidate.id))!;
+
+    const created = await memoryAdapter.registrations.create({
+      eventId: "evt-atlas",
+      guestId: guest.id,
+      // Whitespace is the realistic input, and it must not become a second category
+      // that looks identical to "Sponsor" in the picker.
+      segment: "  Sponsor  ",
+    });
+    expect(created.segment).toBe("Sponsor");
+
+    expect((await memoryAdapter.registrations.setSegment(created.id, "VIP")).segment).toBe("VIP");
+    expect((await memoryAdapter.registrations.setSegment(created.id, null)).segment).toBeNull();
+    // An empty string is the same intent as null, not a category named "".
+    await memoryAdapter.registrations.setSegment(created.id, "VIP");
+    expect((await memoryAdapter.registrations.setSegment(created.id, "   ")).segment).toBeNull();
+  });
+
+  it("defaults to no segment when none was given", async () => {
+    const guests = await memoryAdapter.guests.list();
+    const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
+    const guest = guests.find((candidate) => !taken.has(candidate.id))!;
+    const created = await memoryAdapter.registrations.create({ eventId: "evt-atlas", guestId: guest.id });
+    expect(created.segment).toBeNull();
+  });
+
   it("refuses a duplicate registration", async () => {
     const existing = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "confirmed")!;
     await expect(
@@ -328,21 +357,21 @@ describe("analytics", () => {
 });
 
 describe("floorplan", () => {
-  it("reads the seeded plan and totals its seats", async () => {
-    const plan = await memoryAdapter.floorplan.get("evt-gala");
-    expect(plan).not.toBeNull();
-    expect(plan!.items.length).toBeGreaterThan(10);
-    const seats = plan!.items.reduce((total, item) => total + (item.seats ?? 0), 0);
+  it("reads the seeded rooms and totals the ballroom's seats", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    expect(plans.length).toBeGreaterThan(1);
+    const ballroom = plans.find((plan) => plan.name.startsWith("Ballroom"))!;
+    expect(ballroom.items.length).toBeGreaterThan(10);
     // Eleven ten-seat tables in the seed.
-    expect(seats).toBe(110);
+    expect(ballroom.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(110);
   });
 
-  it("returns null for an event with no plan", async () => {
-    expect(await memoryAdapter.floorplan.get("evt-cab")).toBeNull();
+  it("returns an empty list for an event with no rooms", async () => {
+    expect(await memoryAdapter.floorplan.list("evt-cab")).toEqual([]);
   });
 
-  it("round-trips a saved plan", async () => {
-    const saved = await memoryAdapter.floorplan.save("evt-cab", {
+  it("round-trips a saved room", async () => {
+    const created = await memoryAdapter.floorplan.create("evt-cab", {
       name: "U-shape, 24 seats",
       items: [
         { id: "a", shape: "long-table", label: "Top", x: 50, y: 20, seats: 8 },
@@ -350,32 +379,64 @@ describe("floorplan", () => {
         { id: "c", shape: "long-table", label: "Right", x: 80, y: 50, seats: 8 },
       ],
     });
-    expect(saved.name).toBe("U-shape, 24 seats");
+    expect(created.name).toBe("U-shape, 24 seats");
 
-    const reread = await memoryAdapter.floorplan.get("evt-cab");
+    const [reread] = await memoryAdapter.floorplan.list("evt-cab");
     expect(reread!.items).toHaveLength(3);
     expect(reread!.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(24);
   });
 
-  it("overwrites rather than appending a second plan", async () => {
-    await memoryAdapter.floorplan.save("evt-cab", { name: "First", items: [] });
-    await memoryAdapter.floorplan.save("evt-cab", { name: "Second", items: [] });
-    expect((await memoryAdapter.floorplan.get("evt-cab"))!.name).toBe("Second");
+  it("adds rooms alongside each other rather than overwriting", async () => {
+    // The whole point of the change: a second room used to replace the first, so
+    // indoor-plus-outdoor was impossible to describe.
+    await memoryAdapter.floorplan.create("evt-cab", { name: "Indoors", items: [] });
+    await memoryAdapter.floorplan.create("evt-cab", { name: "Garden", items: [] });
+    expect((await memoryAdapter.floorplan.list("evt-cab")).map((plan) => plan.name)).toEqual([
+      "Indoors",
+      "Garden",
+    ]);
+  });
+
+  it("saves one room without touching its neighbours", async () => {
+    const indoors = await memoryAdapter.floorplan.create("evt-cab", { name: "Indoors", items: [] });
+    await memoryAdapter.floorplan.create("evt-cab", { name: "Garden", items: [] });
+    await memoryAdapter.floorplan.save(indoors.id, { name: "Indoors — revised", items: [] });
+    expect((await memoryAdapter.floorplan.list("evt-cab")).map((plan) => plan.name)).toEqual([
+      "Indoors — revised",
+      "Garden",
+    ]);
+  });
+
+  it("removes a single room and leaves the rest", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    await memoryAdapter.floorplan.remove(plans[0]!.id);
+    const remaining = await memoryAdapter.floorplan.list("evt-gala");
+    expect(remaining).toHaveLength(plans.length - 1);
+    expect(remaining.some((plan) => plan.id === plans[0]!.id)).toBe(false);
   });
 
   it("hands back a detached copy", async () => {
-    const plan = await memoryAdapter.floorplan.get("evt-gala");
+    const [plan] = await memoryAdapter.floorplan.list("evt-gala");
     plan!.items[0]!.label = "Mutated";
-    expect((await memoryAdapter.floorplan.get("evt-gala"))!.items[0]!.label).not.toBe("Mutated");
+    const [reread] = await memoryAdapter.floorplan.list("evt-gala");
+    expect(reread!.items[0]!.label).not.toBe("Mutated");
   });
 
   it("goes away when the event is deleted", async () => {
     await memoryAdapter.events.remove("evt-gala");
-    expect(await memoryAdapter.floorplan.get("evt-gala")).toBeNull();
+    expect(await memoryAdapter.floorplan.list("evt-gala")).toEqual([]);
   });
 
-  it("refuses a plan for an event that does not exist", async () => {
-    await expect(memoryAdapter.floorplan.save("nope", { name: "x", items: [] })).rejects.toThrow(/no longer exists/i);
+  it("refuses a room on an event that does not exist", async () => {
+    await expect(memoryAdapter.floorplan.create("nope", { name: "x", items: [] })).rejects.toThrow(
+      /no longer exists/i,
+    );
+  });
+
+  it("refuses to save a room that no longer exists", async () => {
+    await expect(memoryAdapter.floorplan.save("nope", { name: "x", items: [] })).rejects.toThrow(
+      /no longer exists/i,
+    );
   });
 });
 

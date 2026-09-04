@@ -133,12 +133,37 @@ export type GuestPatch = Partial<GuestDraft>;
 export const REGISTRATION_STATUSES = ["pending", "confirmed", "cancelled"] as const;
 export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
 
+/**
+ * Starting points for categorising a guest list, not a fixed set.
+ *
+ * A segment is stored as free text because the useful categories are the customer's, not
+ * ours: one runs "Bride's side" and "Groom's side", another runs "Table 1".."Table 12".
+ * These are what the picker offers before anyone has invented their own, and the picker
+ * also offers whatever is already in use on the event — so a custom label typed once
+ * becomes a one-click choice for everyone after.
+ */
+export const REGISTRATION_SEGMENTS = [
+  "VIP",
+  "Sponsor",
+  "Speaker",
+  "Staff",
+  "Press",
+  "Family",
+  "General",
+] as const;
+
 export interface Registration extends OwnedRecord {
   eventId: string;
   /** Denormalized so the registrations list renders without joining events. */
   eventTitle: string;
   guestId: string;
   status: RegistrationStatus;
+  /**
+   * Which part of the guest list this person belongs to, scoped to this event. It lives
+   * on the registration rather than the guest because the same person is a sponsor at the
+   * gala and a staff member at the training — one label per person would force a lie.
+   */
+  segment: string | null;
   registeredAt: IsoDateTime;
 }
 
@@ -150,6 +175,7 @@ export interface RegistrationDraft {
   eventId: string;
   guestId: string;
   status?: RegistrationStatus;
+  segment?: string | null;
 }
 
 /* -------------------------------------------------------------------- vendors */
@@ -441,7 +467,13 @@ export interface FloorplanItem {
   seats: number | null;
 }
 
+/**
+ * One room. An event has as many as it needs — indoor and outdoor, upstairs and
+ * downstairs — which is why this is keyed by its own id rather than by the event: a
+ * single plan per event could not describe a party that spills onto a terrace.
+ */
 export interface Floorplan {
+  id: string;
   eventId: string;
   name: string;
   items: FloorplanItem[];

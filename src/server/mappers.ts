@@ -114,6 +114,7 @@ export function toRegistration(
     eventTitle,
     guestId: row.guestId,
     status: row.status,
+    segment: row.segment,
     registeredAt: isoRequired(row.registeredAt),
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
@@ -379,6 +380,7 @@ export function toCanvas(row: InferSelectModel<typeof s.canvases>): Canvas {
 
 export function toFloorplan(row: InferSelectModel<typeof s.floorplans>): Floorplan {
   return {
+    id: row.id,
     eventId: row.eventId,
     name: row.name,
     items: row.items as FloorplanItem[],

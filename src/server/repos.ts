@@ -42,6 +42,7 @@ import type {
   Vendor,
   HistoryResource,
 } from "../data/entities.ts";
+import { REGISTRATION_STATUSES } from "../data/entities.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
@@ -641,6 +642,20 @@ async function joinRegistrations(where: ReturnType<typeof and>): Promise<Registr
   }));
 }
 
+/**
+ * A guest-list category, normalised. Free text, so it is trimmed and bounded here rather
+ * than trusted: the picker offers existing values back to the user, and an untrimmed
+ * "VIP " would sit alongside "VIP" as a second, identical-looking category.
+ */
+function segmentFrom(body: Body): string | null {
+  const value = optStr(body, "segment");
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length > 60) throw new HttpError(400, "segment must be 60 characters or fewer.");
+  return trimmed;
+}
+
 export const registrations = {
   list: (ctx: RequestContext) => joinRegistrations(eq(s.registrations.workspaceId, ctx.workspaceId)),
   listForEvent: (ctx: RequestContext, eventId: string) =>
@@ -675,6 +690,7 @@ export const registrations = {
         eventId,
         guestId,
         status: (optStr(body, "status") ?? "pending") as "pending",
+        segment: segmentFrom(body),
       });
     } catch (error) {
       if (String(error).includes("registrations_event_guest_idx")) {
@@ -686,10 +702,25 @@ export const registrations = {
     return map.toRegistration(row!, event.title);
   },
 
-  async setStatus(ctx: RequestContext, id: string, status: string): Promise<Registration> {
+  /**
+   * Applies whichever of status and segment the client sent. One method rather than two
+   * endpoints because they are edited from the same row and often in the same breath, and
+   * because a patch that only assigns what it was given cannot blank the other field.
+   */
+  async update(ctx: RequestContext, id: string, body: Body): Promise<Registration> {
+    const patch: { status?: "pending"; segment?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+    if ("status" in body) {
+      const status = str(body, "status");
+      if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
+        throw new HttpError(400, `status must be one of ${REGISTRATION_STATUSES.join(", ")}.`);
+      }
+      patch.status = status as "pending";
+    }
+    if ("segment" in body) patch.segment = segmentFrom(body);
+
     const updated = await db
       .update(s.registrations)
-      .set({ status: status as "pending", updatedAt: new Date() })
+      .set(patch)
       .where(and(eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)))
       .returning();
     if (updated.length === 0) throw new HttpError(404, "That registration no longer exists.");
@@ -1593,48 +1624,100 @@ export const canvases = {
   },
 };
 
+/** The event context a floorplan history entry carries, so the plan can be read back. */
+async function floorplanContext(ctx: RequestContext, eventId: string) {
+  const event = await events.get(ctx, eventId);
+  if (!event) throw new HttpError(404, "That event no longer exists.");
+  return {
+    locationId: event.locationId,
+    location: event.location,
+    guestCount: event.registrationCount,
+    capacity: event.capacity,
+  };
+}
+
+async function ownedFloorplan(ctx: RequestContext, id: string) {
+  const [row] = await db
+    .select()
+    .from(s.floorplans)
+    .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
+    .limit(1);
+  if (!row) throw new HttpError(404, "That floorplan no longer exists.");
+  return row;
+}
+
 export const floorplan = {
-  async get(ctx: RequestContext, eventId: string): Promise<Floorplan | null> {
-    const [row] = await db
+  async list(ctx: RequestContext, eventId: string): Promise<Floorplan[]> {
+    const rows = await db
       .select()
       .from(s.floorplans)
       .where(and(eq(s.floorplans.eventId, eventId), eq(s.floorplans.workspaceId, ctx.workspaceId)))
-      .limit(1);
-    return row ? map.toFloorplan(row) : null;
+      .orderBy(asc(s.floorplans.createdAt));
+    return rows.map(map.toFloorplan);
   },
-  async save(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
-    const event = await events.get(ctx, eventId);
-    if (!event) throw new HttpError(404, "That event no longer exists.");
-    const before = await floorplan.get(ctx, eventId);
+
+  async create(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+    const context = await floorplanContext(ctx, eventId);
+    const id = newId("fp");
     const updatedAt = new Date();
     const [saved] = await db.batch([
       db
         .insert(s.floorplans)
-        .values({ eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
-        .onConflictDoUpdate({ target: s.floorplans.eventId, set: { name, items, updatedAt } })
+        .values({ id, eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
         .returning(),
       db.insert(s.eventHistory).values(
         historyValues(ctx, {
           eventId,
           resource: "floorplan",
-          resourceId: eventId,
-          action: before ? "updated" : "created",
-          before: before as unknown as Record<string, unknown> | null,
-          after: {
-            eventId,
-            name,
-            items,
-            updatedAt: updatedAt.toISOString(),
-            locationId: event.locationId,
-            location: event.location,
-            guestCount: event.registrationCount,
-            capacity: event.capacity,
-          },
+          resourceId: id,
+          action: "created",
+          before: null,
+          after: { id, eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
         }),
       ),
     ]);
-    const [row] = saved;
-    return map.toFloorplan(row!);
+    return map.toFloorplan(saved[0]!);
+  },
+
+  async save(ctx: RequestContext, id: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+    const before = await ownedFloorplan(ctx, id);
+    const context = await floorplanContext(ctx, before.eventId);
+    const updatedAt = new Date();
+    const [saved] = await db.batch([
+      db
+        .update(s.floorplans)
+        .set({ name, items, updatedAt })
+        .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
+        .returning(),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: before.eventId,
+          resource: "floorplan",
+          resourceId: id,
+          action: "updated",
+          before: map.toFloorplan(before) as unknown as Record<string, unknown>,
+          after: { id, eventId: before.eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
+        }),
+      ),
+    ]);
+    return map.toFloorplan(saved[0]!);
+  },
+
+  async remove(ctx: RequestContext, id: string): Promise<void> {
+    const before = await ownedFloorplan(ctx, id);
+    await db.batch([
+      db.delete(s.floorplans).where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId))),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: before.eventId,
+          resource: "floorplan",
+          resourceId: id,
+          action: "deleted",
+          before: map.toFloorplan(before) as unknown as Record<string, unknown>,
+          after: null,
+        }),
+      ),
+    ]);
   },
 };
 
@@ -1675,16 +1758,16 @@ export const planningMemory = {
 
     return selected.map(({ event }) => {
       const eventStart = new Date(event.date).getTime();
-      const floorplan = planRows.find((row) => row.eventId === event.id);
-      let floorplanShapes: PastEventPlanningRecord["floorplanShapes"] = [];
-      if (floorplan) {
+      // Every room, not just the first: an event laid out across a ballroom and a
+      // terrace used both, and planning from one of them describes half the evening.
+      const floorplanShapes: PastEventPlanningRecord["floorplanShapes"] = [];
+      for (const row of planRows.filter((plan) => plan.eventId === event.id)) {
         try {
-          const parsed = parseFloorplanDraft({ name: floorplan.name, items: floorplan.items });
-          floorplanShapes = parsed.items.map((item) => item.shape);
+          const parsed = parseFloorplanDraft({ name: row.name, items: row.items });
+          floorplanShapes.push(...parsed.items.map((item) => item.shape));
         } catch {
           // Older opaque layouts should not prevent the rest of the event evidence
           // from informing a new plan.
-          floorplanShapes = [];
         }
       }
       return {
