@@ -115,6 +115,7 @@ export function toRegistration(
     guestId: row.guestId,
     status: row.status,
     segment: row.segment,
+    organization: row.organization,
     registeredAt: isoRequired(row.registeredAt),
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,

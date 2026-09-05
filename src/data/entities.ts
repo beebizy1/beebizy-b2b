@@ -164,6 +164,14 @@ export interface Registration extends OwnedRecord {
    * gala and a staff member at the training — one label per person would force a lie.
    */
   segment: string | null;
+  /**
+   * Where this person is from — the fund, firm, school or company they represent.
+   *
+   * Separate from the segment because a university reporting on its demo day needs both
+   * halves: how many investors attended, *and* which funds they came from. One field
+   * collapsing "Investor · Sequoia" would make neither countable.
+   */
+  organization: string | null;
   registeredAt: IsoDateTime;
 }
 
@@ -176,6 +184,7 @@ export interface RegistrationDraft {
   guestId: string;
   status?: RegistrationStatus;
   segment?: string | null;
+  organization?: string | null;
 }
 
 /* -------------------------------------------------------------------- vendors */

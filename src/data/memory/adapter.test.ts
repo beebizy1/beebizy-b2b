@@ -162,12 +162,34 @@ describe("registrations", () => {
     expect((await memoryAdapter.registrations.setSegment(created.id, "   ")).segment).toBeNull();
   });
 
+  it("records which organization a guest represents, and clears it", async () => {
+    // Santa Clara's ask: not just how many investors, but which funds they came from.
+    const guests = await memoryAdapter.guests.list();
+    const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
+    const guest = guests.find((candidate) => !taken.has(candidate.id))!;
+
+    const created = await memoryAdapter.registrations.create({
+      eventId: "evt-atlas",
+      guestId: guest.id,
+      segment: "Investor",
+      organization: "  Sequoia Capital  ",
+    });
+    expect(created.segment).toBe("Investor");
+    expect(created.organization).toBe("Sequoia Capital");
+
+    expect((await memoryAdapter.registrations.setOrganization(created.id, "Kleiner Perkins")).organization).toBe(
+      "Kleiner Perkins",
+    );
+    expect((await memoryAdapter.registrations.setOrganization(created.id, "  ")).organization).toBeNull();
+  });
+
   it("defaults to no segment when none was given", async () => {
     const guests = await memoryAdapter.guests.list();
     const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
     const guest = guests.find((candidate) => !taken.has(candidate.id))!;
     const created = await memoryAdapter.registrations.create({ eventId: "evt-atlas", guestId: guest.id });
     expect(created.segment).toBeNull();
+    expect(created.organization).toBeNull();
   });
 
   it("refuses a duplicate registration", async () => {

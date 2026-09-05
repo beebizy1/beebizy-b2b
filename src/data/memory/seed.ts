@@ -351,6 +351,23 @@ export function buildSeed(): MemoryDb {
     return "General";
   };
 
+  /**
+   * Who each guest represents. Paired with the segment, this is the report a university
+   * demo day actually needs: how many investors came, and from which funds.
+   */
+  const DEMO_ORGS = [
+    "Sequoia Capital",
+    "Andreessen Horowitz",
+    "Bessemer Venture Partners",
+    "Kleiner Perkins",
+    "Lightspeed",
+    "Santa Clara University",
+    "Stripe",
+    "Figma",
+  ];
+  const demoOrganization = (index: number): string | null =>
+    index % 4 === 3 ? null : DEMO_ORGS[index % DEMO_ORGS.length]!;
+
   const register = (eventId: string, guestIndexes: number[], status: Registration["status"], dayOffset: number) => {
     const event = events.find((e) => e.id === eventId)!;
     for (const index of guestIndexes) {
@@ -363,6 +380,7 @@ export function buildSeed(): MemoryDb {
         guestId: guests[index]!.id,
         status,
         segment: demoSegment(index),
+        organization: demoOrganization(index),
         registeredAt: at(dayOffset, 11, regSeq % 60),
         createdAt: at(dayOffset, 11, regSeq % 60),
       });

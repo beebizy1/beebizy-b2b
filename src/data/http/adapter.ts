@@ -216,6 +216,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       create: (draft) => client.post<Registration>("/registrations", draft),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
       setSegment: (id, segment) => client.patch<Registration>(`/registrations/${id}`, { segment }),
+      setOrganization: (id, organization) =>
+        client.patch<Registration>(`/registrations/${id}`, { organization }),
       remove: async (id) => {
         await client.del(`/registrations/${id}`);
       },

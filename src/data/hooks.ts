@@ -360,6 +360,14 @@ export function useSetRegistrationSegment() {
   );
 }
 
+export function useSetRegistrationOrganization() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; organization: string | null }) =>
+      a.registrations.setOrganization(vars.id, vars.organization),
+    (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
 export function useDeleteRegistration() {
   return useAdapterMutation(
     (a, vars: { id: string; eventId: string }) => a.registrations.remove(vars.id),

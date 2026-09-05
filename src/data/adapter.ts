@@ -135,6 +135,8 @@ export interface RegistrationsRepository {
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
   /** Null clears the category. */
   setSegment(id: string, segment: string | null): Promise<Registration>;
+  /** Null clears the organization. */
+  setOrganization(id: string, organization: string | null): Promise<Registration>;
   remove(id: string): Promise<void>;
 }
 

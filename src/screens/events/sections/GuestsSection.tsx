@@ -6,7 +6,7 @@
  * the old registration form did.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Mail, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ import {
   useCreateRegistration,
   useDeleteRegistration,
   useEventRegistrations,
+  useSetRegistrationOrganization,
   useSetRegistrationSegment,
   useSetRegistrationStatus,
 } from "@/data/hooks";
@@ -53,6 +54,12 @@ function segmentOptions(rows: RegistrationWithGuest[]): string[] {
   return [...new Set([...REGISTRATION_SEGMENTS, ...used])].sort((a, b) => a.localeCompare(b));
 }
 
+/** Organizations already on the event, offered back as suggestions so spelling stays consistent. */
+function organizationOptions(rows: RegistrationWithGuest[]): string[] {
+  const used = rows.map((row) => row.organization).filter((name): name is string => Boolean(name));
+  return [...new Set(used)].sort((a, b) => a.localeCompare(b));
+}
+
 /**
  * Put someone on the guest list.
  *
@@ -72,6 +79,7 @@ function AddGuest({ event }: { event: Event }) {
   const [contact, setContact] = useState("");
   const [status, setStatus] = useState<"pending" | "confirmed">("pending");
   const [segment, setSegment] = useState("");
+  const [organization, setOrganization] = useState("");
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
   const available = useMemo(() => {
@@ -95,6 +103,7 @@ function AddGuest({ event }: { event: Event }) {
         guestId: id,
         status,
         segment: segment.trim() || null,
+        organization: organization.trim() || null,
       });
       setGuestId("");
       setName("");
@@ -185,6 +194,20 @@ function AddGuest({ event }: { event: Event }) {
           ))}
         </datalist>
 
+        <Input
+          value={organization}
+          onChange={(inputEvent) => setOrganization(inputEvent.target.value)}
+          placeholder="Organization (optional)"
+          aria-label="Guest organization"
+          list="guest-organization-suggestions"
+          className="w-[170px]"
+        />
+        <datalist id="guest-organization-suggestions">
+          {organizationOptions(registrations ?? []).map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+
         <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
           <SelectTrigger className="w-[178px]" aria-label="Invitation status">
             <SelectValue />
@@ -210,6 +233,65 @@ function AddGuest({ event }: { event: Event }) {
   );
 }
 
+/**
+ * A row's organization, edited in place.
+ *
+ * Free text with too many possible values for a picker, so it is a plain field that
+ * saves when it loses focus — typing in it must not fire a request per keystroke.
+ */
+function OrganizationCell({
+  row,
+  eventId,
+  options,
+}: {
+  row: RegistrationWithGuest;
+  eventId: string;
+  options: string[];
+}) {
+  const setOrganization = useSetRegistrationOrganization();
+  const [draft, setDraft] = useState(row.organization ?? "");
+
+  // The stored value wins when it changes underneath us — another edit, or a refetch.
+  useEffect(() => setDraft(row.organization ?? ""), [row.organization]);
+
+  const commit = () => {
+    const next = draft.trim() || null;
+    if (next === (row.organization ?? null)) return;
+    setOrganization.mutate(
+      { id: row.id, eventId, organization: next },
+      {
+        onError: (error) => {
+          setDraft(row.organization ?? "");
+          toast({ title: "Couldn't change organization", description: error.message });
+        },
+      },
+    );
+  };
+
+  return (
+    <>
+      <Input
+        value={draft}
+        onChange={(inputEvent) => setDraft(inputEvent.target.value)}
+        onBlur={commit}
+        onKeyDown={(keyEvent) => {
+          if (keyEvent.key === "Enter") keyEvent.currentTarget.blur();
+          if (keyEvent.key === "Escape") setDraft(row.organization ?? "");
+        }}
+        placeholder="Organization"
+        aria-label={`Organization for ${row.guest?.name ?? "guest"}`}
+        list="guest-organization-suggestions"
+        className="h-8 w-[150px]"
+      />
+      <datalist id="guest-organization-suggestions">
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 export default function GuestsSection({ event }: { event: Event }) {
   const { data: registrations, isLoading, isError, error, refetch } = useEventRegistrations(event.id);
   const setStatus = useSetRegistrationStatus();
@@ -217,6 +299,7 @@ export default function GuestsSection({ event }: { event: Event }) {
   const removeRegistration = useDeleteRegistration();
   const [search, setSearch] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
+  const [organizationFilter, setOrganizationFilter] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     const rows = registrations ?? [];
@@ -243,21 +326,42 @@ export default function GuestsSection({ event }: { event: Event }) {
     );
   }, [registrations]);
 
+  /**
+   * Which organizations are represented — counted *within* the chosen segment, because the
+   * question a university is answering is "how many investors, and from which funds",
+   * not the two lists side by side.
+   */
+  const organizations = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const row of registrations ?? []) {
+      if (row.status === "cancelled") continue;
+      if (segmentFilter !== null && (row.segment ?? UNCATEGORISED) !== segmentFilter) continue;
+      const key = row.organization ?? UNCATEGORISED;
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+    return [...tally.entries()].sort(([a, countA], [b, countB]) =>
+      a === UNCATEGORISED ? 1 : b === UNCATEGORISED ? -1 : countB - countA || a.localeCompare(b),
+    );
+  }, [registrations, segmentFilter]);
+
   const options = useMemo(() => segmentOptions(registrations ?? []), [registrations]);
+  const orgOptions = useMemo(() => organizationOptions(registrations ?? []), [registrations]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return (registrations ?? []).filter((row) => {
-      if (segmentFilter !== null) {
-        const key = row.segment ?? UNCATEGORISED;
-        if (key !== segmentFilter) return false;
-      }
+      if (segmentFilter !== null && (row.segment ?? UNCATEGORISED) !== segmentFilter) return false;
+      if (organizationFilter !== null && (row.organization ?? UNCATEGORISED) !== organizationFilter) return false;
       if (!needle) return true;
-      return [row.guest?.name ?? "", row.guest?.contact ?? "", row.guest?.notes ?? "", row.segment ?? ""].some(
-        (field) => field.toLowerCase().includes(needle),
-      );
+      return [
+        row.guest?.name ?? "",
+        row.guest?.contact ?? "",
+        row.guest?.notes ?? "",
+        row.segment ?? "",
+        row.organization ?? "",
+      ].some((field) => field.toLowerCase().includes(needle));
     });
-  }, [registrations, search, segmentFilter]);
+  }, [registrations, search, segmentFilter, organizationFilter]);
 
   return (
     <div className="space-y-6">
@@ -298,7 +402,10 @@ export default function GuestsSection({ event }: { event: Event }) {
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
-              onClick={() => setSegmentFilter(null)}
+              onClick={() => {
+                setSegmentFilter(null);
+                setOrganizationFilter(null);
+              }}
               aria-pressed={segmentFilter === null}
               className={cn(
                 "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
@@ -313,7 +420,10 @@ export default function GuestsSection({ event }: { event: Event }) {
               <button
                 key={key}
                 type="button"
-                onClick={() => setSegmentFilter(segmentFilter === key ? null : key)}
+                onClick={() => {
+                  setSegmentFilter(segmentFilter === key ? null : key);
+                  setOrganizationFilter(null);
+                }}
                 aria-pressed={segmentFilter === key}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
@@ -326,6 +436,34 @@ export default function GuestsSection({ event }: { event: Event }) {
               </button>
             ))}
           </div>
+
+          {organizations.length > 0 ? (
+            <>
+              <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">
+                {segmentFilter === null || segmentFilter === UNCATEGORISED
+                  ? "Organizations"
+                  : `Organizations — ${segmentFilter}`}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {organizations.map(([key, count]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setOrganizationFilter(organizationFilter === key ? null : key)}
+                    aria-pressed={organizationFilter === key}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                      organizationFilter === key
+                        ? "border-primary bg-secondary text-secondary-foreground"
+                        : "border-hairline text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {key === UNCATEGORISED ? "Not given" : key} · {count}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
         </Panel>
       ) : null}
 
@@ -396,6 +534,8 @@ export default function GuestsSection({ event }: { event: Event }) {
                     </a>
                   </Button>
                 ) : null}
+
+                <OrganizationCell row={row} eventId={event.id} options={orgOptions} />
 
                 <Select
                   value={row.segment ?? UNCATEGORISED}

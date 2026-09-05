@@ -647,12 +647,12 @@ async function joinRegistrations(where: ReturnType<typeof and>): Promise<Registr
  * than trusted: the picker offers existing values back to the user, and an untrimmed
  * "VIP " would sit alongside "VIP" as a second, identical-looking category.
  */
-function segmentFrom(body: Body): string | null {
-  const value = optStr(body, "segment");
+function labelFrom(body: Body, key: string, limit = 60): string | null {
+  const value = optStr(body, key);
   if (value === null) return null;
   const trimmed = value.trim();
   if (trimmed === "") return null;
-  if (trimmed.length > 60) throw new HttpError(400, "segment must be 60 characters or fewer.");
+  if (trimmed.length > limit) throw new HttpError(400, `${key} must be ${limit} characters or fewer.`);
   return trimmed;
 }
 
@@ -690,7 +690,8 @@ export const registrations = {
         eventId,
         guestId,
         status: (optStr(body, "status") ?? "pending") as "pending",
-        segment: segmentFrom(body),
+        segment: labelFrom(body, "segment"),
+        organization: labelFrom(body, "organization", 120),
       });
     } catch (error) {
       if (String(error).includes("registrations_event_guest_idx")) {
@@ -708,7 +709,12 @@ export const registrations = {
    * because a patch that only assigns what it was given cannot blank the other field.
    */
   async update(ctx: RequestContext, id: string, body: Body): Promise<Registration> {
-    const patch: { status?: "pending"; segment?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+    const patch: {
+      status?: "pending";
+      segment?: string | null;
+      organization?: string | null;
+      updatedAt: Date;
+    } = { updatedAt: new Date() };
     if ("status" in body) {
       const status = str(body, "status");
       if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
@@ -716,7 +722,8 @@ export const registrations = {
       }
       patch.status = status as "pending";
     }
-    if ("segment" in body) patch.segment = segmentFrom(body);
+    if ("segment" in body) patch.segment = labelFrom(body, "segment");
+    if ("organization" in body) patch.organization = labelFrom(body, "organization", 120);
 
     const updated = await db
       .update(s.registrations)

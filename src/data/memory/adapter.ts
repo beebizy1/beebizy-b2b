@@ -635,6 +635,7 @@ const registrations: RegistrationsRepository = {
       guestId: draft.guestId,
       status: draft.status ?? "pending",
       segment: draft.segment?.trim() || null,
+      organization: draft.organization?.trim() || null,
       registeredAt: nowIso(),
       createdAt: nowIso(),
     };
@@ -660,6 +661,16 @@ const registrations: RegistrationsRepository = {
       `Registration ${id} no longer exists.`,
     );
     registration.segment = segment?.trim() || null;
+    registration.updatedAt = nowIso();
+    return copy(registration);
+  },
+  async setOrganization(id, organization) {
+    await wait();
+    const registration = required(
+      store().registrations.find((r) => r.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    registration.organization = organization?.trim() || null;
     registration.updatedAt = nowIso();
     return copy(registration);
   },
@@ -998,6 +1009,7 @@ const tickets: TicketsRepository = {
       guestId: guest.id,
       // Bought a ticket rather than being invited, so no category until an organizer sets one.
       segment: null,
+      organization: null,
       status: "confirmed",
       registeredAt: nowIso(),
       createdAt: nowIso(),

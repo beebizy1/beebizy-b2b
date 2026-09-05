@@ -197,6 +197,8 @@ export const registrations = pgTable(
     status: registrationStatus("status").notNull().default("pending"),
     /** Free text: the customer's own guest-list category. Null means uncategorised. */
     segment: text("segment"),
+    /** Free text: the fund, firm or school this person represents. */
+    organization: text("organization"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     /** Set when the seat was bought rather than added by an organizer. */
     ticketTypeId: text("ticket_type_id"),
