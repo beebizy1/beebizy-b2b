@@ -505,15 +505,16 @@ export default function FloorplanPanel({ event }: { event: Event }) {
           Add a room
         </Button>
 
-        {rooms.length > 1 ? (
+        {(
           <Button
             variant="outline"
             size="sm"
             disabled={deletePlan.isPending}
             onClick={() => {
               // Deleting a drawn room loses work, so it is confirmed. The last room is
-              // never deletable — an event with no plan at all has no way back to one
-              // except through the empty state, and that is a worse place to land.
+              // deletable too: a room added by mistake would otherwise be stuck on the
+              // event forever, and removing it lands on the empty state, which offers to
+              // add one straight back.
               if (!window.confirm(`Delete "${current.name}" and everything drawn in it?`)) return;
               deletePlan.mutate(
                 { id: current.id, eventId: event.id },
@@ -527,7 +528,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
             <Trash2 className="mr-1.5 size-3.5" />
             Delete room
           </Button>
-        ) : null}
+        )}
       </div>
 
       <RoomEditor key={current.id} event={event} plan={current} />
