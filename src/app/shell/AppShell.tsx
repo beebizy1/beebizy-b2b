@@ -17,7 +17,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 import { Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -224,7 +224,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { open, setOpen } = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { mode } = useDataMode();
-  const { data: identity, isLoading: identityLoading } = useMe();
+  const { data: identity, isLoading: identityLoading, error: identityError } = useMe();
 
   if (mode === "live" && identityLoading) {
     return (
@@ -235,6 +235,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  /*
+   * The server refused. That is the only authority on whether this account may be here —
+   * it is the side that can see both the operator allowlist and any outstanding invite.
+   */
+  if (mode === "live" && identityError) {
+    return <Redirect to="/access-denied" replace />;
   }
 
   if (mode === "live" && identity && !["beta", "active"].includes(identity.access.status)) {

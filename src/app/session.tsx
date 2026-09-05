@@ -19,7 +19,6 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
 import { isClerkConfigured } from "@/lib/clerk";
-import { hasInternalAccess } from "@/lib/internalAccess";
 import { endDemoSession } from "./demo";
 
 export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous" | "unauthorized";
@@ -70,9 +69,16 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
       photoURL: user.imageUrl || null,
     };
 
-    return hasInternalAccess(email, import.meta.env.VITE_BETA_ACCESS_EMAILS)
-      ? { status: "authenticated", isDemo: false, signOut, user: sessionUser }
-      : { status: "unauthorized", isDemo: false, signOut, user: sessionUser };
+    /*
+     * Signed in is as much as this can know. Access is the server's to decide, because
+     * only the server can see an invite: this list is baked into the bundle at build
+     * time, so gating on it turned every invited colleague away before the API was ever
+     * asked — the invite was honoured by the server and never reached it.
+     *
+     * The allowlist still runs, but only to keep the obvious case fast; anyone it does
+     * not recognise is passed through and judged by the API.
+     */
+    return { status: "authenticated", isDemo: false, signOut, user: sessionUser };
   }, [isLoaded, isSignedIn, user, clerk]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
