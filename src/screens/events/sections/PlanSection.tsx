@@ -254,7 +254,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
         />
         <datalist id="task-assignee-suggestions">
           {(members ?? []).map((member) => (
-            <option key={member.userId} value={member.name ?? member.email ?? member.userId} />
+            <option key={member.userId ?? member.email} value={member.name ?? member.email ?? ""} />
           ))}
         </datalist>
         <Select value={area} onValueChange={setArea}>

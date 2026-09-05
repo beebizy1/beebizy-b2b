@@ -100,6 +100,7 @@ import type {
   VendorDraft,
   VendorMessage,
   VendorPatch,
+  WorkspaceMember,
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
 import { describeHistoryChange } from "../history";
@@ -1455,6 +1456,9 @@ const floorplan: FloorplanRepository = {
  * mutations refuse rather than pretending: a workspace of one has no role to change and
  * nobody to remove, and silently succeeding would teach the UI the wrong lesson.
  */
+/** Demo invites live for the life of the tab; there is no server to persist them to. */
+const invited: WorkspaceMember[] = [];
+
 const members: MembersRepository = {
   async list() {
     await wait();
@@ -1462,12 +1466,37 @@ const members: MembersRepository = {
       {
         userId: DEMO_OWNER_ID,
         role: "owner",
+        status: "active",
         name: "Demo organiser",
         email: "demo@beebizy.com",
         isSelf: true,
         joinedAt: nowIso(),
       },
+      ...invited,
     ];
+  },
+  async invite(email, role) {
+    await wait();
+    const normalized = email.trim().toLowerCase();
+    const member: WorkspaceMember = {
+      userId: null,
+      role,
+      status: "invited",
+      name: null,
+      email: normalized,
+      isSelf: false,
+      joinedAt: nowIso(),
+    };
+    const existing = invited.findIndex((row) => row.email === normalized);
+    if (existing === -1) invited.push(member);
+    else invited[existing] = member;
+    return copy(member);
+  },
+  async revokeInvite(email) {
+    await wait();
+    const normalized = email.trim().toLowerCase();
+    const index = invited.findIndex((row) => row.email === normalized);
+    if (index !== -1) invited.splice(index, 1);
   },
   async setRole() {
     await wait();

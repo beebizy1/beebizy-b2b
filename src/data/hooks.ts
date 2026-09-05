@@ -927,6 +927,17 @@ export function useMembers() {
   return useAdapterQuery(qk.members, (a) => a.members.list());
 }
 
+export function useInviteMember() {
+  return useAdapterMutation(
+    (a, vars: { email: string; role: WorkspaceRole }) => a.members.invite(vars.email, vars.role),
+    () => [qk.members],
+  );
+}
+
+export function useRevokeInvite() {
+  return useAdapterMutation((a, vars: { email: string }) => a.members.revokeInvite(vars.email), () => [qk.members]);
+}
+
 export function useSetMemberRole() {
   return useAdapterMutation(
     (a, vars: { userId: string; role: WorkspaceRole }) => a.members.setRole(vars.userId, vars.role),

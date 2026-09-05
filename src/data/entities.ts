@@ -825,13 +825,17 @@ export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
  * permission system was invisible. This is the missing half.
  */
 export interface WorkspaceMember {
-  userId: string;
+  /** Null until an invited person signs in for the first time. */
+  userId: string | null;
   role: WorkspaceRole;
+  /** `invited` means the seat is granted but unclaimed — they have never signed in. */
+  status: "active" | "invited";
   /** From the identity provider; null when the account has since been deleted there. */
   name: string | null;
   email: string | null;
   /** So the UI can stop someone locking themselves out of their own workspace. */
   isSelf: boolean;
+  /** When they joined, or when they were invited if they have not yet. */
   joinedAt: IsoDateTime;
 }
 

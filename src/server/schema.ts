@@ -95,6 +95,36 @@ export const workspaceMembers = pgTable(
   ],
 );
 
+/**
+ * Someone invited but not yet signed in.
+ *
+ * Access used to be an environment variable, so adding a colleague meant a redeploy and
+ * they landed in a brand new empty workspace of their own. An invite is a row: it grants
+ * entry, carries the role they should get, and names the workspace they join — which is
+ * what makes a team share one set of events instead of three private copies.
+ */
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Lower-cased on write, because an invite that only matches one casing is a bug. */
+    email: text("email").notNull(),
+    role: workspaceRole("role").notNull().default("member"),
+    invitedBy: text("invited_by").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedUserId: text("accepted_user_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    // One live invite per address, so two workspaces cannot both claim the same person.
+    uniqueIndex("workspace_invites_email_idx").on(table.email),
+    index("workspace_invites_workspace_idx").on(table.workspaceId),
+  ],
+);
+
 export const userSettings = pgTable("user_settings", {
   /** Clerk user id. */
   userId: text("user_id").primaryKey(),

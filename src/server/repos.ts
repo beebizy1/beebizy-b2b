@@ -1795,23 +1795,117 @@ export const floorplan = {
  * is unrecoverable without support.
  */
 export const members = {
+  /** Everyone with a seat: those who have signed in, and those still holding an invite. */
   async list(ctx: RequestContext): Promise<WorkspaceMember[]> {
-    const rows = await db
-      .select()
-      .from(s.workspaceMembers)
-      .where(eq(s.workspaceMembers.workspaceId, ctx.workspaceId))
-      .orderBy(asc(s.workspaceMembers.createdAt));
+    const [rows, invites] = await Promise.all([
+      db
+        .select()
+        .from(s.workspaceMembers)
+        .where(eq(s.workspaceMembers.workspaceId, ctx.workspaceId))
+        .orderBy(asc(s.workspaceMembers.createdAt)),
+      db
+        .select()
+        .from(s.workspaceInvites)
+        .where(and(eq(s.workspaceInvites.workspaceId, ctx.workspaceId), isNull(s.workspaceInvites.acceptedAt)))
+        .orderBy(asc(s.workspaceInvites.createdAt)),
+    ]);
 
     // One call for the whole page rather than one per member.
     const directory = await lookupUsers(rows.map((row) => row.userId));
-    return rows.map((row) => ({
+    const active: WorkspaceMember[] = rows.map((row) => ({
       userId: row.userId,
       role: row.role,
+      status: "active",
       name: directory.get(row.userId)?.name ?? null,
       email: directory.get(row.userId)?.email ?? null,
       isSelf: row.userId === ctx.userId,
       joinedAt: row.createdAt.toISOString(),
     }));
+
+    const pending: WorkspaceMember[] = invites.map((invite) => ({
+      userId: null,
+      role: invite.role,
+      status: "invited",
+      name: null,
+      email: invite.email,
+      isSelf: false,
+      joinedAt: invite.createdAt.toISOString(),
+    }));
+
+    return [...active, ...pending];
+  },
+
+  /**
+   * Grants someone a seat before they have ever signed in.
+   *
+   * The invite is what lets them through the door *and* what puts them in this workspace
+   * with the intended role. Without it a new address is refused outright, and an address
+   * that is somehow let through lands in a fresh empty workspace of its own.
+   */
+  async invite(ctx: RequestContext, rawEmail: string, role: string): Promise<WorkspaceMember> {
+    requireRole(ctx, ["owner"]);
+    const email = rawEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "That is not a valid email address.");
+    if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+      throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
+    }
+
+    const [existing] = await db
+      .select()
+      .from(s.workspaceInvites)
+      .where(eq(s.workspaceInvites.email, email))
+      .limit(1);
+    if (existing && existing.acceptedAt === null) {
+      if (existing.workspaceId !== ctx.workspaceId) {
+        throw new HttpError(409, "That address already has a pending invite to another workspace.");
+      }
+      // Re-inviting is how the role on an unclaimed seat is corrected.
+      const [updated] = await db
+        .update(s.workspaceInvites)
+        .set({ role: role as "member" })
+        .where(eq(s.workspaceInvites.id, existing.id))
+        .returning();
+      return {
+        userId: null,
+        role: updated!.role,
+        status: "invited",
+        name: null,
+        email,
+        isSelf: false,
+        joinedAt: updated!.createdAt.toISOString(),
+      };
+    }
+    if (existing) throw new HttpError(409, "That address has already joined a workspace.");
+
+    const [created] = await db
+      .insert(s.workspaceInvites)
+      .values({ id: newId("inv"), workspaceId: ctx.workspaceId, email, role: role as "member", invitedBy: ctx.userId })
+      .returning();
+
+    return {
+      userId: null,
+      role: created!.role,
+      status: "invited",
+      name: null,
+      email,
+      isSelf: false,
+      joinedAt: created!.createdAt.toISOString(),
+    };
+  },
+
+  /** Takes back an unclaimed seat. */
+  async revokeInvite(ctx: RequestContext, rawEmail: string): Promise<void> {
+    requireRole(ctx, ["owner"]);
+    const email = rawEmail.trim().toLowerCase();
+    await db
+      .delete(s.workspaceInvites)
+      .where(
+        and(
+          eq(s.workspaceInvites.email, email),
+          eq(s.workspaceInvites.workspaceId, ctx.workspaceId),
+          isNull(s.workspaceInvites.acceptedAt),
+        ),
+      );
   },
 
   async setRole(ctx: RequestContext, userId: string, role: string): Promise<WorkspaceMember> {
@@ -1832,6 +1926,7 @@ export const members = {
     return {
       userId,
       role: updated[0]!.role,
+      status: "active",
       name: directory.get(userId)?.name ?? null,
       email: directory.get(userId)?.email ?? null,
       isSelf: userId === ctx.userId,

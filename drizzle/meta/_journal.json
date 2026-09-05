@@ -57,6 +57,13 @@
       "when": 1788584135360,
       "tag": "0007_square_arachne",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788617887947,
+      "tag": "0008_odd_mantis",
+      "breakpoints": true
     }
   ]
 }

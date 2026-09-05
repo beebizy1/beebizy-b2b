@@ -353,6 +353,17 @@ async function handleAuthed(
     }
 
     /* ----------------------------------------------------------------- members */
+    case "invites": {
+      if (!a && method === "POST") {
+        return json(await repos.members.invite(ctx, String(body.email ?? ""), String(body.role ?? "member")), 201);
+      }
+      if (a && method === "DELETE") {
+        await repos.members.revokeInvite(ctx, decodeURIComponent(a));
+        return new Response(null, { status: 204 });
+      }
+      return notFound();
+    }
+
     case "members": {
       if (!a && method === "GET") return json(await repos.members.list(ctx));
       if (a && method === "PATCH") return json(await repos.members.setRole(ctx, a, String(body.role ?? "")));

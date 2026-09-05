@@ -257,6 +257,9 @@ export interface SpreadsheetImportsRepository {
 
 export interface MembersRepository {
   list(): Promise<WorkspaceMember[]>;
+  /** Grants a seat to someone who has never signed in. */
+  invite(email: string, role: WorkspaceRole): Promise<WorkspaceMember>;
+  revokeInvite(email: string): Promise<void>;
   setRole(userId: string, role: WorkspaceRole): Promise<WorkspaceMember>;
   remove(userId: string): Promise<void>;
 }

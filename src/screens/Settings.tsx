@@ -7,16 +7,28 @@
  * in a code comment.
  */
 
+import { useState } from "react";
 import { Link } from "wouter";
-import { Database } from "lucide-react";
+import { Database, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { ErrorNotice, KeyValue, LoadingRows, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
 import {
+  useInviteMember,
   useMe,
   useMembers,
+  useRevokeInvite,
   useRemoveMember,
   useSetMemberRole,
   useSettings,
@@ -66,11 +78,104 @@ const TIME_ZONES = [
  * sees the list read-only, which is deliberate: knowing who has access is not a privilege,
  * but granting it is.
  */
+/** The "+ Add team member" flow: an address and the role they should get. */
+function InviteMemberDialog() {
+  const invite = useInviteMember();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<WorkspaceRole>("member");
+
+  const submit = () => {
+    invite.mutate(
+      { email: email.trim(), role },
+      {
+        onSuccess: () => {
+          setOpen(false);
+          setEmail("");
+          setRole("member");
+          toast({
+            title: "Invite added",
+            description: "They get access as soon as they sign in with that address.",
+          });
+        },
+        onError: (error) => toast({ title: "Couldn't add them", description: error.message }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="mr-1.5 size-3.5" />
+          Add team member
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add a team member</DialogTitle>
+          <DialogDescription>
+            They join this workspace with the role you choose, the first time they sign in with this address.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="space-y-3"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            if (email.trim()) submit();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-email">Email address</Label>
+            <Input
+              id="invite-email"
+              type="email"
+              value={email}
+              onChange={(inputEvent) => setEmail(inputEvent.target.value)}
+              placeholder="colleague@company.com"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-role">Role</Label>
+            <Select value={role} onValueChange={(value) => setRole(value as WorkspaceRole)}>
+              <SelectTrigger id="invite-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">Member — can view and edit, cannot delete</SelectItem>
+                <SelectItem value="admin">Admin — can also delete records</SelectItem>
+                <SelectItem value="owner">Owner — can also manage the team</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            No invitation email is sent yet, so tell them to sign in at this address themselves.
+          </p>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={!email.trim() || invite.isPending}>
+              Add
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TeamPanel() {
   const { data: identity } = useMe();
   const { data: members, isLoading, isError, error, refetch } = useMembers();
   const setRole = useSetMemberRole();
   const removeMember = useRemoveMember();
+  const revokeInvite = useRevokeInvite();
   const isOwner = identity?.role === "owner";
 
   return (
@@ -82,6 +187,7 @@ function TeamPanel() {
             ? "Owners manage access. Admins can delete records; members cannot."
             : "Only an owner can change roles or remove people."
         }
+        actions={isOwner ? <InviteMemberDialog /> : undefined}
       />
 
       {isError ? (
@@ -90,72 +196,90 @@ function TeamPanel() {
         <LoadingRows rows={3} className="p-4" />
       ) : (
         <ul className="divide-y divide-hairline">
-          {(members ?? []).map((member) => (
-            <li key={member.userId} className="flex flex-wrap items-center gap-3 px-5 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {member.name ?? member.email ?? member.userId}
-                  {member.isSelf ? <span className="ml-1.5 text-xs text-muted-foreground">(you)</span> : null}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">{member.email ?? "No email on file"}</p>
-              </div>
+          {(members ?? []).map((member) => {
+            const label = member.name ?? member.email ?? member.userId ?? "Unknown";
+            return (
+              <li key={member.userId ?? member.email} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {label}
+                    {member.isSelf ? <span className="ml-1.5 text-xs text-muted-foreground">(you)</span> : null}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {member.status === "invited"
+                      ? `${member.email} · hasn't signed in yet`
+                      : (member.email ?? "No email on file")}
+                  </p>
+                </div>
 
-              {isOwner && !member.isSelf ? (
-                <Select
-                  value={member.role}
-                  onValueChange={(value) =>
-                    setRole.mutate(
-                      { userId: member.userId, role: value as WorkspaceRole },
-                      {
-                        onError: (mutationError) =>
-                          toast({ title: "Couldn't change the role", description: mutationError.message }),
-                      },
-                    )
-                  }
-                >
-                  <SelectTrigger className="h-8 w-[132px]" aria-label={`Role for ${member.name ?? member.userId}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {WORKSPACE_ROLES.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {role}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Pill tone={member.role === "owner" ? "success" : "neutral"}>{member.role}</Pill>
-              )}
+                {member.status === "invited" ? <Pill tone="warning">invited</Pill> : null}
 
-              {isOwner && !member.isSelf ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (!window.confirm(`Remove ${member.name ?? member.email ?? "this person"} from the workspace?`)) {
-                      return;
+                {/* An unclaimed seat has no user to update, so its role is changed by re-inviting. */}
+                {isOwner && !member.isSelf && member.status === "active" && member.userId ? (
+                  <Select
+                    value={member.role}
+                    onValueChange={(value) =>
+                      setRole.mutate(
+                        { userId: member.userId!, role: value as WorkspaceRole },
+                        {
+                          onError: (mutationError) =>
+                            toast({ title: "Couldn't change the role", description: mutationError.message }),
+                        },
+                      )
                     }
-                    removeMember.mutate(
-                      { userId: member.userId },
-                      {
-                        onError: (mutationError) =>
-                          toast({ title: "Couldn't remove them", description: mutationError.message }),
-                      },
-                    );
-                  }}
-                >
-                  Remove
-                </Button>
-              ) : null}
-            </li>
-          ))}
+                  >
+                    <SelectTrigger className="h-8 w-[132px]" aria-label={`Role for ${label}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {WORKSPACE_ROLES.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Pill tone={member.role === "owner" ? "success" : "neutral"}>{member.role}</Pill>
+                )}
+
+                {isOwner && !member.isSelf ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (member.status === "invited" && member.email) {
+                        revokeInvite.mutate(
+                          { email: member.email },
+                          {
+                            onError: (mutationError) =>
+                              toast({ title: "Couldn't cancel the invite", description: mutationError.message }),
+                          },
+                        );
+                        return;
+                      }
+                      if (!window.confirm(`Remove ${label} from the workspace?`)) return;
+                      removeMember.mutate(
+                        { userId: member.userId! },
+                        {
+                          onError: (mutationError) =>
+                            toast({ title: "Couldn't remove them", description: mutationError.message }),
+                        },
+                      );
+                    }}
+                  >
+                    {member.status === "invited" ? "Cancel" : "Remove"}
+                  </Button>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
 
       <p className="border-t border-hairline px-5 py-3 text-xs text-muted-foreground">
-        People join by signing in with an approved email. Adding someone means adding their address to the
-        access list — there is no invitation email yet.
+        An invited person joins this workspace the first time they sign in with that address. No invitation
+        email goes out yet, so send them the link yourself.
       </p>
     </Panel>
   );

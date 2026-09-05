@@ -13,11 +13,11 @@
  */
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { hasInternalAccess } from "../lib/internalAccess.ts";
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
-import { workspaceMembers, workspaces } from "./schema.ts";
+import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -50,7 +50,7 @@ const secretKey = process.env.CLERK_SECRET_KEY;
 const clerk = secretKey ? createClerkClient({ secretKey }) : null;
 
 /** Verifies the bearer token and confirms the user is an approved Studio operator or beta tester. */
-async function requireInternalUserId(request: Request): Promise<string> {
+async function requireInternalUser(request: Request): Promise<{ userId: string; email: string | null }> {
   if (!secretKey || !clerk) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
 
   const header = request.headers.get("authorization") ?? "";
@@ -86,11 +86,23 @@ async function requireInternalUserId(request: Request): Promise<string> {
     throw new HttpError(503, `Unable to verify internal access: ${detail}`);
   }
 
-  if (!hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS)) {
+  // Two ways in: the operator allowlist, or an invite someone with a workspace issued.
+  // The second is what makes adding a colleague a click rather than a redeploy.
+  if (!hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) && !(await hasPendingInvite(primaryEmail))) {
     throw new HttpError(403, "This account does not have access to Beebizy Studio.");
   }
 
-  return userId;
+  return { userId, email: primaryEmail };
+}
+
+async function hasPendingInvite(email: string | null): Promise<boolean> {
+  if (!email) return false;
+  const [invite] = await db
+    .select({ id: workspaceInvites.id })
+    .from(workspaceInvites)
+    .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
+    .limit(1);
+  return Boolean(invite);
 }
 
 function newId(prefix: string): string {
@@ -118,6 +130,7 @@ function accessForWorkspace(workspace: typeof workspaces.$inferSelect): Workspac
 async function resolveWorkspace(
   userId: string,
   clerkOrgId: string | null,
+  email: string | null,
 ): Promise<{ workspaceId: string; role: Role; access: WorkspaceAccess }> {
   if (clerkOrgId) {
     const [existing] = await db.select().from(workspaces).where(eq(workspaces.clerkOrgId, clerkOrgId)).limit(1);
@@ -147,6 +160,36 @@ async function resolveWorkspace(
     return { workspaceId: membership.workspaceId, role: membership.role, access: accessForWorkspace(workspace) };
   }
 
+  /*
+   * An unclaimed invite is claimed here, on the first request after signing in. This runs
+   * before the new-workspace path deliberately: without it an invited colleague would be
+   * handed their own empty workspace and would see none of the events they were invited
+   * to, which reads as data loss rather than as a bug.
+   */
+  if (email) {
+    const [invite] = await db
+      .select()
+      .from(workspaceInvites)
+      .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
+      .limit(1);
+    if (invite) {
+      const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
+      if (workspace) {
+        await db.batch([
+          db
+            .insert(workspaceMembers)
+            .values({ workspaceId: invite.workspaceId, userId, role: invite.role })
+            .onConflictDoNothing(),
+          db
+            .update(workspaceInvites)
+            .set({ acceptedAt: new Date(), acceptedUserId: userId })
+            .where(eq(workspaceInvites.id, invite.id)),
+        ]);
+        return { workspaceId: invite.workspaceId, role: invite.role, access: accessForWorkspace(workspace) };
+      }
+    }
+  }
+
   const workspaceId = newId("ws");
   const [workspace] = await db
     .insert(workspaces)
@@ -162,11 +205,12 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(403, "Beebizy Studio beta access is available only at the private preview link.");
   }
 
-  const userId = await requireInternalUserId(request);
+  const { userId, email } = await requireInternalUser(request);
   const orgHeader = request.headers.get("x-clerk-org-id");
   const { workspaceId, role, access } = await resolveWorkspace(
     userId,
     orgHeader && orgHeader !== "null" ? orgHeader : null,
+    email,
   );
 
   const url = new URL(request.url);
