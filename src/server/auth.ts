@@ -13,7 +13,7 @@
  */
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { hasInternalAccess } from "../lib/internalAccess.ts";
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
@@ -149,22 +149,14 @@ async function resolveWorkspace(
     }
   }
 
-  const [membership] = await db
-    .select()
-    .from(workspaceMembers)
-    .where(eq(workspaceMembers.userId, userId))
-    .limit(1);
-  if (membership) {
-    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, membership.workspaceId)).limit(1);
-    if (!workspace) throw new HttpError(403, "Your workspace is no longer available.");
-    return { workspaceId: membership.workspaceId, role: membership.role, access: accessForWorkspace(workspace) };
-  }
-
   /*
-   * An unclaimed invite is claimed here, on the first request after signing in. This runs
-   * before the new-workspace path deliberately: without it an invited colleague would be
-   * handed their own empty workspace and would see none of the events they were invited
-   * to, which reads as data loss rather than as a bug.
+   * An unclaimed invite is claimed before anything else.
+   *
+   * It used to be checked only after an existing membership, which meant anyone who had
+   * ever signed in — and so already had a workspace of their own — could never be joined
+   * to the team that invited them. They stayed in their private empty workspace while the
+   * owner watched the invite sit "pending" forever. Being invited is a deliberate act by
+   * someone with authority over that workspace, so it takes precedence.
    */
   if (email) {
     const [invite] = await db
@@ -188,6 +180,21 @@ async function resolveWorkspace(
         return { workspaceId: invite.workspaceId, role: invite.role, access: accessForWorkspace(workspace) };
       }
     }
+  }
+
+  const [membership] = await db
+    .select()
+    .from(workspaceMembers)
+    .where(eq(workspaceMembers.userId, userId))
+    // Most recently joined wins. Someone can hold their own workspace and later be
+    // invited into a team's; without an order the tie is arbitrary and they flip between
+    // the two on consecutive requests.
+    .orderBy(desc(workspaceMembers.createdAt))
+    .limit(1);
+  if (membership) {
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, membership.workspaceId)).limit(1);
+    if (!workspace) throw new HttpError(403, "Your workspace is no longer available.");
+    return { workspaceId: membership.workspaceId, role: membership.role, access: accessForWorkspace(workspace) };
   }
 
   const workspaceId = newId("ws");
