@@ -71,6 +71,8 @@ import type {
   TeamHoursPatch,
   Registration,
   RegistrationDraft,
+  WorkspaceMember,
+  WorkspaceRole,
   RegistrationStatus,
   RegistrationWithGuest,
   RunOfShowItem,
@@ -253,6 +255,12 @@ export interface SpreadsheetImportsRepository {
   loadGoogleSheet(url: string): Promise<{ name: string; csv: string }>;
 }
 
+export interface MembersRepository {
+  list(): Promise<WorkspaceMember[]>;
+  setRole(userId: string, role: WorkspaceRole): Promise<WorkspaceMember>;
+  remove(userId: string): Promise<void>;
+}
+
 /** Identity and authorization as the server sees them. */
 export interface Identity {
   userId: string;
@@ -292,6 +300,7 @@ export interface DataAdapter {
   canvases: CanvasesRepository;
   settings: SettingsRepository;
   floorplan: FloorplanRepository;
+  members: MembersRepository;
   history: EventHistoryRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;

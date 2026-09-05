@@ -19,7 +19,7 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
 import * as s from "./schema.ts";
-import { HttpError, newId, requireRole, type RequestContext } from "./auth.ts";
+import { HttpError, lookupUsers, newId, requireRole, type RequestContext } from "./auth.ts";
 import * as map from "./mappers.ts";
 import { parseDate, parseOptionalDate } from "./mappers.ts";
 import type {
@@ -41,8 +41,9 @@ import type {
   UserSettings,
   Vendor,
   HistoryResource,
+  WorkspaceMember,
 } from "../data/entities.ts";
-import { REGISTRATION_STATUSES } from "../data/entities.ts";
+import { REGISTRATION_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
@@ -1727,6 +1728,81 @@ export const floorplan = {
     ]);
   },
 };
+
+/* ----------------------------------------------------------------- members */
+
+/**
+ * Who can do what in this workspace.
+ *
+ * Only an owner changes roles or removes people — the "super admin" of the request. An
+ * owner cannot demote or remove the last owner, because a workspace nobody can administer
+ * is unrecoverable without support.
+ */
+export const members = {
+  async list(ctx: RequestContext): Promise<WorkspaceMember[]> {
+    const rows = await db
+      .select()
+      .from(s.workspaceMembers)
+      .where(eq(s.workspaceMembers.workspaceId, ctx.workspaceId))
+      .orderBy(asc(s.workspaceMembers.createdAt));
+
+    // One call for the whole page rather than one per member.
+    const directory = await lookupUsers(rows.map((row) => row.userId));
+    return rows.map((row) => ({
+      userId: row.userId,
+      role: row.role,
+      name: directory.get(row.userId)?.name ?? null,
+      email: directory.get(row.userId)?.email ?? null,
+      isSelf: row.userId === ctx.userId,
+      joinedAt: row.createdAt.toISOString(),
+    }));
+  },
+
+  async setRole(ctx: RequestContext, userId: string, role: string): Promise<WorkspaceMember> {
+    requireRole(ctx, ["owner"]);
+    if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+      throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
+    }
+    await guardLastOwner(ctx, userId, role === "owner" ? "keep" : "drop");
+
+    const updated = await db
+      .update(s.workspaceMembers)
+      .set({ role: role as "member" })
+      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)))
+      .returning();
+    if (updated.length === 0) throw new HttpError(404, "That person is not in this workspace.");
+
+    const directory = await lookupUsers([userId]);
+    return {
+      userId,
+      role: updated[0]!.role,
+      name: directory.get(userId)?.name ?? null,
+      email: directory.get(userId)?.email ?? null,
+      isSelf: userId === ctx.userId,
+      joinedAt: updated[0]!.createdAt.toISOString(),
+    };
+  },
+
+  async remove(ctx: RequestContext, userId: string): Promise<void> {
+    requireRole(ctx, ["owner"]);
+    await guardLastOwner(ctx, userId, "drop");
+    await db
+      .delete(s.workspaceMembers)
+      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)));
+  },
+};
+
+/** Refuses a change that would leave the workspace with no owner. */
+async function guardLastOwner(ctx: RequestContext, userId: string, intent: "keep" | "drop"): Promise<void> {
+  if (intent === "keep") return;
+  const owners = await db
+    .select({ userId: s.workspaceMembers.userId })
+    .from(s.workspaceMembers)
+    .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.role, "owner")));
+  if (owners.length <= 1 && owners.some((owner) => owner.userId === userId)) {
+    throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+  }
+}
 
 export const history = {
   async list(ctx: RequestContext, eventId: string): Promise<EventHistoryEntry[]> {

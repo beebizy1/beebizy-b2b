@@ -803,6 +803,29 @@ export interface DepositDraft {
 
 export type DepositPatch = Partial<DepositDraft>;
 
+/* --------------------------------------------------------------- workspace team */
+
+export const WORKSPACE_ROLES = ["owner", "admin", "member"] as const;
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
+
+/**
+ * Someone with access to the workspace.
+ *
+ * Roles have existed since the schema was written and the API has always enforced them,
+ * but nothing could ever assign one — so every member sat at the default and the
+ * permission system was invisible. This is the missing half.
+ */
+export interface WorkspaceMember {
+  userId: string;
+  role: WorkspaceRole;
+  /** From the identity provider; null when the account has since been deleted there. */
+  name: string | null;
+  email: string | null;
+  /** So the UI can stop someone locking themselves out of their own workspace. */
+  isSelf: boolean;
+  joinedAt: IsoDateTime;
+}
+
 /* ----------------------------------------------------------------- team hours */
 
 /** Staff time booked against an event, the labour half of what an event really cost. */

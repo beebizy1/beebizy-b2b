@@ -51,6 +51,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  WorkspaceMember,
 } from "../entities";
 import type { PlanningBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
@@ -315,6 +316,14 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       save: (id, draft) => client.put<Floorplan>(`/floorplans/${id}`, draft),
       remove: async (id) => {
         await client.del(`/floorplans/${id}`);
+      },
+    },
+
+    members: {
+      list: () => client.get<WorkspaceMember[]>("/members"),
+      setRole: (userId, role) => client.patch<WorkspaceMember>(`/members/${userId}`, { role }),
+      remove: async (userId) => {
+        await client.del(`/members/${userId}`);
       },
     },
 

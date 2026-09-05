@@ -352,6 +352,17 @@ async function handleAuthed(
       return notFound();
     }
 
+    /* ----------------------------------------------------------------- members */
+    case "members": {
+      if (!a && method === "GET") return json(await repos.members.list(ctx));
+      if (a && method === "PATCH") return json(await repos.members.setRole(ctx, a, String(body.role ?? "")));
+      if (a && method === "DELETE") {
+        await repos.members.remove(ctx, a);
+        return new Response(null, { status: 204 });
+      }
+      return notFound();
+    }
+
     /* -------------------------------------------------------------- floorplans */
     case "floorplans": {
       if (a && method === "PUT") {

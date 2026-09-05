@@ -184,6 +184,33 @@ export async function authorize(request: Request): Promise<RequestContext> {
 }
 
 /** Writes are closed to `member` on the destructive operations. */
+/**
+ * Names and emails for a set of user ids, in one call to the identity provider.
+ *
+ * Membership lives in our database and identity lives in Clerk, so a team list has to
+ * join the two. A lookup failure degrades to ids rather than failing the page — knowing
+ * someone is an admin is more useful than an error, even without their name.
+ */
+export async function lookupUsers(
+  userIds: string[],
+): Promise<Map<string, { name: string | null; email: string | null }>> {
+  const directory = new Map<string, { name: string | null; email: string | null }>();
+  if (!clerk || userIds.length === 0) return directory;
+
+  try {
+    const { data } = await clerk.users.getUserList({ userId: userIds, limit: userIds.length });
+    for (const user of data) {
+      const email =
+        user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId)?.emailAddress ?? null;
+      const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
+      directory.set(user.id, { name, email });
+    }
+  } catch (error) {
+    console.warn("MEMBER_DIRECTORY_LOOKUP_FAILED", error instanceof Error ? error.message : String(error));
+  }
+  return directory;
+}
+
 export function requireRole(context: RequestContext, allowed: Role[]): void {
   if (!allowed.includes(context.role)) {
     throw new HttpError(403, `Your role (${context.role}) can't perform that action.`);

@@ -16,6 +16,7 @@ import type {
   EventScopedRepository,
   EventsRepository,
   FloorplanRepository,
+  MembersRepository,
   EventHistoryRepository,
   OwnedRepository,
   RaffleRepository,
@@ -1448,6 +1449,35 @@ const floorplan: FloorplanRepository = {
   },
 };
 
+/**
+ * Demo mode has exactly one person, so the team list shows them and nothing else. The
+ * mutations refuse rather than pretending: a workspace of one has no role to change and
+ * nobody to remove, and silently succeeding would teach the UI the wrong lesson.
+ */
+const members: MembersRepository = {
+  async list() {
+    await wait();
+    return [
+      {
+        userId: DEMO_OWNER_ID,
+        role: "owner",
+        name: "Demo organiser",
+        email: "demo@beebizy.com",
+        isSelf: true,
+        joinedAt: nowIso(),
+      },
+    ];
+  },
+  async setRole() {
+    await wait();
+    throw new DataError("conflict", "A workspace needs at least one owner. Make someone else an owner first.");
+  },
+  async remove() {
+    await wait();
+    throw new DataError("conflict", "A workspace needs at least one owner. Make someone else an owner first.");
+  },
+};
+
 const history: EventHistoryRepository = {
   async list(eventId) {
     await wait();
@@ -1670,6 +1700,7 @@ export const memoryAdapter: DataAdapter = {
   canvases,
   settings,
   floorplan,
+  members,
   history,
   roi,
   analytics,

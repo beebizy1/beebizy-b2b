@@ -13,12 +13,19 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { KeyValue, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
-import { useMe, useSettings, useUpdateSettings } from "@/data/hooks";
+import { ErrorNotice, KeyValue, LoadingRows, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
+import {
+  useMe,
+  useMembers,
+  useRemoveMember,
+  useSetMemberRole,
+  useSettings,
+  useUpdateSettings,
+} from "@/data/hooks";
 import { useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
-import type { UserSettings } from "@/data/entities";
+import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
@@ -51,6 +58,108 @@ const TIME_ZONES = [
   "Pacific/Auckland",
   "UTC",
 ];
+
+/**
+ * Who is in the workspace, and what they may do.
+ *
+ * Only an owner can change this — that is the "super admin" of the request. Everyone else
+ * sees the list read-only, which is deliberate: knowing who has access is not a privilege,
+ * but granting it is.
+ */
+function TeamPanel() {
+  const { data: identity } = useMe();
+  const { data: members, isLoading, isError, error, refetch } = useMembers();
+  const setRole = useSetMemberRole();
+  const removeMember = useRemoveMember();
+  const isOwner = identity?.role === "owner";
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Team & permissions"
+        description={
+          isOwner
+            ? "Owners manage access. Admins can delete records; members cannot."
+            : "Only an owner can change roles or remove people."
+        }
+      />
+
+      {isError ? (
+        <ErrorNotice error={error} onRetry={() => void refetch()} className="m-4" />
+      ) : isLoading ? (
+        <LoadingRows rows={3} className="p-4" />
+      ) : (
+        <ul className="divide-y divide-hairline">
+          {(members ?? []).map((member) => (
+            <li key={member.userId} className="flex flex-wrap items-center gap-3 px-5 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {member.name ?? member.email ?? member.userId}
+                  {member.isSelf ? <span className="ml-1.5 text-xs text-muted-foreground">(you)</span> : null}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">{member.email ?? "No email on file"}</p>
+              </div>
+
+              {isOwner && !member.isSelf ? (
+                <Select
+                  value={member.role}
+                  onValueChange={(value) =>
+                    setRole.mutate(
+                      { userId: member.userId, role: value as WorkspaceRole },
+                      {
+                        onError: (mutationError) =>
+                          toast({ title: "Couldn't change the role", description: mutationError.message }),
+                      },
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-8 w-[132px]" aria-label={`Role for ${member.name ?? member.userId}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WORKSPACE_ROLES.map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {role}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Pill tone={member.role === "owner" ? "success" : "neutral"}>{member.role}</Pill>
+              )}
+
+              {isOwner && !member.isSelf ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!window.confirm(`Remove ${member.name ?? member.email ?? "this person"} from the workspace?`)) {
+                      return;
+                    }
+                    removeMember.mutate(
+                      { userId: member.userId },
+                      {
+                        onError: (mutationError) =>
+                          toast({ title: "Couldn't remove them", description: mutationError.message }),
+                      },
+                    );
+                  }}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="border-t border-hairline px-5 py-3 text-xs text-muted-foreground">
+        People join by signing in with an approved email. Adding someone means adding their address to the
+        access list — there is no invitation email yet.
+      </p>
+    </Panel>
+  );
+}
 
 export default function Settings() {
   const { user, isDemo } = useSession();
@@ -144,6 +253,8 @@ export default function Settings() {
           </div>
         </div>
       </Panel>
+
+      <TeamPanel />
 
       <Panel>
         <PanelHeader title="Account" />
