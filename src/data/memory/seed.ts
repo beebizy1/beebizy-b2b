@@ -727,6 +727,8 @@ export function buildSeed(): MemoryDb {
       completed,
       dueDate: dueDayOffset === null ? null : at(dueDayOffset, 17),
       assignedTo,
+      // Seeded names are not workspace members, so there is nobody to notify.
+      assignedEmail: null,
       category,
       sortOrder: clSeq,
       createdAt: at(-40),
@@ -1219,6 +1221,7 @@ export function buildSeed(): MemoryDb {
       completed: false,
       dueDate: null,
       assignedTo: null,
+      assignedEmail: null,
       category,
       sortOrder: i + 1,
       createdAt: at(-365),

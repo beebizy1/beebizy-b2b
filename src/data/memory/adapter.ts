@@ -809,6 +809,7 @@ const checklist = eventScoped<ChecklistItem, ChecklistItemDraft, ChecklistItemPa
     completed: draft.completed ?? false,
     dueDate: draft.dueDate ?? null,
     assignedTo: draft.assignedTo ?? null,
+    assignedEmail: draft.assignedEmail ?? null,
     category: draft.category ?? "General",
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),

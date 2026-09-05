@@ -315,6 +315,8 @@ export const checklistItems = pgTable(
     completed: boolean("completed").notNull().default(false),
     dueDate: timestamp("due_date", { withTimezone: true }),
     assignedTo: text("assigned_to"),
+    /** Where to notify the assignee. Null when the name belongs to nobody in the workspace. */
+    assignedEmail: text("assigned_email"),
     category: text("category").notNull().default("General"),
   },
   (table) => [

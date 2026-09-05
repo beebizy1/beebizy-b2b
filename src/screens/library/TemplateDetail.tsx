@@ -229,6 +229,7 @@ export default function TemplateDetail({ id }: { id: string }) {
                     completed: false,
                     dueDate: null,
                     assignedTo: null,
+                  assignedEmail: null,
                     category: taskArea,
                     sortOrder: working.checklistItems.length + 1,
                     createdAt: nowIso(),

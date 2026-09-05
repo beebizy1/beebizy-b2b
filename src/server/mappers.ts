@@ -194,6 +194,7 @@ export function toChecklistItem(row: InferSelectModel<typeof s.checklistItems>):
     completed: row.completed,
     dueDate: iso(row.dueDate),
     assignedTo: row.assignedTo,
+    assignedEmail: row.assignedEmail,
     category: row.category,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),

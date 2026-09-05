@@ -38,9 +38,25 @@ import {
   useRemoveRunOfShowItem,
   useRunOfShow,
   useUpdateChecklistItem,
+  useMembers,
   useUpdateRunOfShowItem,
 } from "@/data/hooks";
-import type { ChecklistItem, Event, RunOfShowItem } from "@/data/entities";
+import type { ChecklistItem, Event, RunOfShowItem, WorkspaceMember } from "@/data/entities";
+
+/**
+ * The teammate a typed name refers to, if any.
+ *
+ * Assignment stays free text — plenty of tasks belong to a caterer or a volunteer with no
+ * login — but when the name does match someone in the workspace their address is captured
+ * too, because that is the difference between a task that can notify and one that cannot.
+ */
+function matchMember(members: WorkspaceMember[] | undefined, typed: string): WorkspaceMember | undefined {
+  const needle = typed.trim().toLowerCase();
+  if (!needle) return undefined;
+  return (members ?? []).find(
+    (member) => member.name?.toLowerCase() === needle || member.email?.toLowerCase() === needle,
+  );
+}
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -120,6 +136,7 @@ function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem 
 export function ChecklistPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useChecklist(event.id);
   const add = useAddChecklistItem();
+  const { data: members } = useMembers();
   const [title, setTitle] = useState("");
   const [area, setArea] = useState("General");
   const [owner, setOwner] = useState("");
@@ -162,7 +179,14 @@ export function ChecklistPanel({ event }: { event: Event }) {
         eventId: event.id,
         // An unowned task is the one nobody does, so the owner is captured up front
         // rather than through a second edit nobody makes.
-        draft: { title: trimmed, category: area, assignedTo: owner.trim() || null },
+        draft: {
+          title: trimmed,
+          category: area,
+          assignedTo: owner.trim() || null,
+          // Matching a teammate is what makes the assignment notifiable. A name matching
+          // nobody is still a valid assignment — it just cannot be emailed.
+          assignedEmail: matchMember(members, owner)?.email ?? null,
+        },
       },
       {
         onSuccess: () => {
@@ -225,8 +249,14 @@ export function ChecklistPanel({ event }: { event: Event }) {
           onChange={(inputEvent) => setOwner(inputEvent.target.value)}
           placeholder="Who's responsible?"
           aria-label="Assign this task to someone"
+          list="task-assignee-suggestions"
           className="w-[172px]"
         />
+        <datalist id="task-assignee-suggestions">
+          {(members ?? []).map((member) => (
+            <option key={member.userId} value={member.name ?? member.email ?? member.userId} />
+          ))}
+        </datalist>
         <Select value={area} onValueChange={setArea}>
           <SelectTrigger className="w-[150px]" aria-label="Task area">
             <SelectValue />

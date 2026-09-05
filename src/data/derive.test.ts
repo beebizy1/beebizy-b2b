@@ -56,6 +56,7 @@ function task(overrides: Partial<ChecklistItem> = {}): ChecklistItem {
     completed: false,
     dueDate: null,
     assignedTo: null,
+    assignedEmail: null,
     category: "General",
     sortOrder: 1,
     createdAt: iso(-30),

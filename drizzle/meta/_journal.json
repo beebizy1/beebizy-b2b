@@ -50,6 +50,13 @@
       "when": 1788583411530,
       "tag": "0006_far_husk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788584135360,
+      "tag": "0007_square_arachne",
+      "breakpoints": true
     }
   ]
 }

@@ -41,6 +41,7 @@ import type {
   UserSettings,
   Vendor,
   HistoryResource,
+  ChecklistItem,
   WorkspaceMember,
 } from "../data/entities.ts";
 import { REGISTRATION_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
@@ -48,6 +49,17 @@ import { buildAttention, computeEventHealth, computePortfolio } from "../data/de
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 import { parseFloorplanDraft } from "../data/floorplan.ts";
+import { notifyTaskAssignment } from "./notify.ts";
+import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
+
+/**
+ * Where a notification should send someone. Configurable because the private-beta origin
+ * is a stopgap: an email is the one place a stale URL is permanent, since it outlives the
+ * deployment that sent it.
+ */
+function appOrigin(): string {
+  return process.env.APP_ORIGIN ?? PRIVATE_BETA_ORIGIN;
+}
 import { selectSimilarPastEvents, type PastEventPlanningRecord } from "../data/planner.ts";
 
 type Body = Record<string, unknown>;
@@ -886,6 +898,12 @@ function eventScoped<Entity>(config: {
   idPrefix: string;
   order?: "sortOrder" | "startTime" | "lotNumber" | "createdAt";
   historyResource?: HistoryResource;
+  /**
+   * Runs after a successful write, for side effects that must not be able to fail it —
+   * notifying an assignee, for instance. Awaited so the request does not return before it
+   * settles, but its own errors are swallowed by the implementer, not thrown here.
+   */
+  afterWrite?: (ctx: RequestContext, eventId: string, after: Entity, before: Entity | null) => Promise<void>;
 }) {
   const table = config.table as unknown as typeof s.checklistItems;
   const orderColumn = () => {
@@ -943,7 +961,9 @@ function eventScoped<Entity>(config: {
         await insert;
       }
       const [row] = await db.select().from(table).where(eq(table.id, id)).limit(1);
-      return config.mapper(row as never);
+      const created = config.mapper(row as never);
+      await config.afterWrite?.(ctx, eventId, created, null);
+      return created;
     },
 
     async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Entity> {
@@ -956,15 +976,20 @@ function eventScoped<Entity>(config: {
           .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
           .returning();
       let updated;
-      if (config.historyResource) {
+      let previous: Entity | null = null;
+      // The prior row is read when history needs it, and also when a post-write hook does
+      // — notifying on assignment requires knowing whether the assignee actually changed.
+      if (config.historyResource || config.afterWrite) {
         const [current] = await db
           .select()
           .from(table)
           .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
           .limit(1);
         if (!current) throw new HttpError(404, "That record no longer exists.");
-        const before = config.mapper(current as never) as Record<string, unknown>;
-        [updated] = await db.batch([
+        previous = config.mapper(current as never);
+        const before = previous as Record<string, unknown>;
+        [updated] = config.historyResource
+          ? await db.batch([
           buildUpdate(),
           db.insert(s.eventHistory).values(
             historyValues(ctx, {
@@ -976,12 +1001,15 @@ function eventScoped<Entity>(config: {
               after: config.mapper({ ...current, ...patch, updatedAt } as never) as Record<string, unknown>,
             }),
           ),
-        ]);
+        ])
+          : [await buildUpdate()];
       } else {
         updated = await buildUpdate();
       }
       if (updated.length === 0) throw new HttpError(404, "That record no longer exists.");
-      return config.mapper(updated[0] as never);
+      const after = config.mapper(updated[0] as never);
+      await config.afterWrite?.(ctx, eventId, after, previous);
+      return after;
     },
 
     async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
@@ -1031,6 +1059,7 @@ export const checklist = eventScoped({
     completed: Boolean(body.completed),
     dueDate: parseOptionalDate(body.dueDate, "dueDate"),
     assignedTo: optStr(body, "assignedTo"),
+    assignedEmail: labelFrom(body, "assignedEmail", 320),
     category: str(body, "category", "General"),
     sortOrder,
   }),
@@ -1040,8 +1069,35 @@ export const checklist = eventScoped({
     completed: (b) => Boolean(b.completed),
     dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
     assignedTo: (b) => optStr(b, "assignedTo"),
+    assignedEmail: (b) => labelFrom(b, "assignedEmail", 320),
     category: (b) => str(b, "category", "General"),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+
+  /**
+   * Tells a newly assigned person the task is theirs.
+   *
+   * Only when the address actually changed, so editing a due date does not re-notify, and
+   * never for a task assigned to a name that belongs to nobody in the workspace — there
+   * is no address to send to. Failures are logged inside the notifier and swallowed here:
+   * an assignment must not fail because email is unconfigured or the provider is down.
+   */
+  afterWrite: async (ctx, eventId, after, before) => {
+    const item = after as ChecklistItem;
+    const previous = before as ChecklistItem | null;
+    if (!item.assignedEmail || item.assignedEmail === previous?.assignedEmail) return;
+
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+
+    await notifyTaskAssignment({
+      to: item.assignedEmail,
+      assigneeName: item.assignedTo,
+      taskTitle: item.title,
+      eventTitle: event.title,
+      dueDate: item.dueDate,
+      url: `${appOrigin()}/app/events/${eventId}/checklist`,
+    });
   },
 });
 

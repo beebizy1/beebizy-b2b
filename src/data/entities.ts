@@ -294,6 +294,14 @@ export interface ChecklistItem {
   completed: boolean;
   dueDate: IsoDateTime | null;
   assignedTo: string | null;
+  /**
+   * Where to reach the assignee.
+   *
+   * Separate from `assignedTo`, which is a name and always has been. A name cannot be
+   * notified, so assigning from the team list records the address alongside it; typing a
+   * name that belongs to nobody in the workspace leaves this null and sends nothing.
+   */
+  assignedEmail: string | null;
   category: string;
   sortOrder: number;
   createdAt: IsoDateTime;
@@ -305,6 +313,7 @@ export interface ChecklistItemDraft {
   completed?: boolean;
   dueDate?: IsoDateTime | null;
   assignedTo?: string | null;
+  assignedEmail?: string | null;
   category?: string;
   sortOrder?: number;
 }
