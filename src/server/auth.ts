@@ -86,13 +86,34 @@ async function requireInternalUser(request: Request): Promise<{ userId: string; 
     throw new HttpError(503, `Unable to verify internal access: ${detail}`);
   }
 
-  // Two ways in: the operator allowlist, or an invite someone with a workspace issued.
-  // The second is what makes adding a colleague a click rather than a redeploy.
-  if (!hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) && !(await hasPendingInvite(primaryEmail))) {
+  /*
+   * Three ways in, and the third is the one that is easy to forget: already belonging to
+   * a workspace.
+   *
+   * An invite only counts while it is unclaimed, so checking the first two alone let an
+   * invited colleague through exactly once — the request that claimed the invite — and
+   * refused every request after it. They were a member of the workspace and locked out
+   * of it at the same time.
+   */
+  const allowed =
+    hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) ||
+    (await isWorkspaceMember(userId)) ||
+    (await hasPendingInvite(primaryEmail));
+  if (!allowed) {
     throw new HttpError(403, "This account does not have access to Beebizy Studio.");
   }
 
   return { userId, email: primaryEmail };
+}
+
+/** Membership is itself proof of access: someone put this account in a workspace. */
+async function isWorkspaceMember(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: workspaceMembers.userId })
+    .from(workspaceMembers)
+    .where(eq(workspaceMembers.userId, userId))
+    .limit(1);
+  return Boolean(row);
 }
 
 async function hasPendingInvite(email: string | null): Promise<boolean> {
