@@ -14,13 +14,23 @@ import { plannerModel } from "./model.ts";
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 
+/**
+ * Optional-and-nullable, deliberately.
+ *
+ * `.nullable()` still requires the key to be present, and providers routinely omit a
+ * field they have nothing to say about rather than sending an explicit null. One missing
+ * `description` on one checklist row then fails the entire plan into the rule-based one,
+ * with "response did not match schema" as the only clue.
+ */
+const optionalText = (max: number) => z.string().max(max).nullish();
+
 const generatedPlanSchema = z.object({
   summary: z.string().min(20).max(500),
   checklist: z
     .array(
       z.object({
         title: z.string().min(3).max(140),
-        description: z.string().max(300).nullable(),
+        description: optionalText(300),
         category: z.string().min(2).max(50),
         dueDaysBefore: z.number().int().min(0).max(365),
       }),
@@ -31,10 +41,10 @@ const generatedPlanSchema = z.object({
     .array(
       z.object({
         startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-        duration: z.number().int().min(0).max(720).nullable(),
+        duration: z.number().int().min(0).max(720).nullish(),
         title: z.string().min(3).max(140),
-        description: z.string().max(300).nullable(),
-        responsible: z.string().max(100).nullable(),
+        description: optionalText(300),
+        responsible: optionalText(100),
       }),
     )
     .min(6)
@@ -44,7 +54,13 @@ const generatedPlanSchema = z.object({
       z.object({
         name: z.string().min(3).max(100),
         description: z.string().min(20).max(400),
-        palette: z.tuple([hexColor, hexColor, hexColor, hexColor]),
+        /*
+         * A fixed-length array, not a tuple. Tuples become `prefixItems` in JSON Schema
+         * and Google's structured output rejects the request outright — "Proto field is
+         * not repeating" — which fails the whole plan, silently, into the rule-based one.
+         * Length is still four; only the way it is expressed changed.
+         */
+        palette: z.array(hexColor).length(4),
         keywords: z.array(z.string().min(2).max(60)).min(3).max(8),
       }),
     )
@@ -126,6 +142,8 @@ export async function generatePlanningSuggestions(
 
         "Mood concepts should be three genuinely different directions, not one idea in three shades, and each palette must suit the stated theme.",
 
+        "Two formats are load-bearing and are not enforced for you, so get them right or the whole plan is discarded. Every palette entry must be a six-digit hex colour code starting with # — \"#1A2B3C\", never \"Champagne Gold\". Every run-of-show startTime must be 24-hour HH:MM — \"18:30\", never \"6:30 PM\".",
+
         "Vendors: name the categories this event actually needs given its type and size, and say in one line why each is needed here. Never claim a specific vendor is available, priced, or recommended — you have no such knowledge.",
 
         "Do not change the supplied budget amounts; they are calculated elsewhere and are not yours to adjust. Do not invent facts about the venue, the city or the date beyond what the reference data states.",
@@ -134,6 +152,9 @@ export async function generatePlanningSuggestions(
       ].join("\n\n"),
       prompt: `Build a review-ready event plan from the following JSON reference data:\n${JSON.stringify(eventContext)}`,
       abortSignal: AbortSignal.timeout(45_000),
+      // A rate limit is not a transient fault. Retrying it three times spends three
+      // times the allowance to fail anyway, and delays the fallback the user is waiting on.
+      maxRetries: 1,
       providerOptions: configured.providerOptions,
     });
 
@@ -143,15 +164,23 @@ export async function generatePlanningSuggestions(
       summary: output.summary,
       checklist: output.checklist.map((item, index) => ({
         ...item,
-        description: item.description,
+        description: item.description ?? null,
         sortOrder: index,
       })),
       runOfShow: output.runOfShow.map((item, index) => ({
         ...item,
+        duration: item.duration ?? null,
+        description: item.description ?? null,
+        responsible: item.responsible ?? null,
         sortOrder: index,
       })),
       moodConcepts: output.moodConcepts.map(
-        (concept): MoodConcept => ({ ...concept, palette: concept.palette }),
+        // The schema guarantees four entries; this restores the tuple type the rest of
+        // the app is written against.
+        (concept): MoodConcept => ({
+          ...concept,
+          palette: concept.palette as MoodConcept["palette"],
+        }),
       ),
       vendors: output.vendors.map((vendor) => ({
         ...vendor,
@@ -209,7 +238,11 @@ export async function continuePlanningChat(
 
         "Your only job in this conversation is to establish four things, then hand off: what kind of event it is, how many people are expected, the total budget, and the look or feel they want. You do not produce the plan itself — a separate step does that once you have all four.",
 
-        "Ask for at most one missing thing per reply, and keep replies to two sentences. Acknowledge what they just told you before asking for the next thing, so it is obvious you heard them.",
+        "Ask for at most one missing thing per reply, and keep replies to two sentences.",
+
+        "Show you heard them the way a person would — a few words, then the next question. Do not restate their answer back as a full sentence: 'You are planning a company dinner. How many guests do you anticipate?' reads like a form confirming a field. 'A company dinner — how many people are you expecting?' is the same information and sounds like a colleague. Vary how you open; do not begin every reply the same way.",
+
+        "Your final message, once all four are established, should confirm the brief in one line and say what happens next: the plan being drafted covers the budget breakdown, checklist, run of show and a vendor shortlist, and nothing is added to their event until they approve it.",
 
         "Take everything they give you, whenever they give it. If one message answers three of the four, record all three and ask only for what is left. Never ask again for something already established, in any phrasing — repeating a question you have the answer to is the single worst thing you can do here.",
 
@@ -228,6 +261,7 @@ export async function continuePlanningChat(
         establishedSoFar: fallback.collected,
       })}`,
       abortSignal: AbortSignal.timeout(25_000),
+      maxRetries: 1,
       providerOptions: configured.providerOptions,
     });
 

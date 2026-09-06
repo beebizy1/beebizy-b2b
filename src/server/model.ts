@@ -39,10 +39,15 @@ const MODEL = "claude-opus-5";
 /**
  * The free-tier stand-in.
  *
- * Flash rather than Pro because the free tier is where this earns its place, and the
- * planner's two jobs — asking one short question, and filling a fixed schema — are well
- * within it. It is a stopgap: free tiers may train on what is sent, so this is for demos
- * and development, not for customer briefs.
+ * Flash, not Flash Lite. Lite is the obvious pick for a rate-limited tier — cheaper
+ * requests, more of them — and it was tried and rejected: it loses track of what has
+ * already been established and asks for the budget again after being told the theme.
+ * That is the exact failure this whole exercise exists to fix, so the cheaper request is
+ * not cheaper at all.
+ *
+ * The free tier allows a handful of requests a minute. Real use spreads across that
+ * comfortably, because a person is typing between turns; several people demoing at once
+ * will not, and will drop to the deterministic script for a turn.
  */
 const FREE_MODEL = "gemini-2.5-flash";
 
