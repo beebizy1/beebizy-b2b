@@ -6,12 +6,17 @@
  * Vercel account — which is why the gateway path had never actually run: it refuses
  * without one, and every planner call quietly fell back to the deterministic answer.
  *
- * The gateway is kept as the second choice so a deployment configured that way keeps
- * working. With neither credential this returns null and the caller uses its rule-based
- * path, which is the only reason the feature has looked like it worked so far.
+ * Google's free tier is the second choice, for demos and development while the Anthropic
+ * account is still being sorted. The gateway is third, so a deployment configured that
+ * way keeps working. With no credential at all this returns null and the caller uses its
+ * rule-based path, which is the only reason the feature has looked like it worked so far.
+ *
+ * Order matters: the first credential present wins, so a broken key higher up the list
+ * silently shadows a working one below it.
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
 import type { generateText, LanguageModel } from "ai";
 
 /** `ai` declares this shape but does not export it, so it is taken from the call it feeds. */
@@ -30,6 +35,16 @@ export interface PlannerModel {
 }
 
 const MODEL = "claude-opus-5";
+
+/**
+ * The free-tier stand-in.
+ *
+ * Flash rather than Pro because the free tier is where this earns its place, and the
+ * planner's two jobs — asking one short question, and filling a fixed schema — are well
+ * within it. It is a stopgap: free tiers may train on what is sent, so this is for demos
+ * and development, not for customer briefs.
+ */
+const FREE_MODEL = "gemini-2.5-flash";
 
 /**
  * An identity-linked key belongs to a person rather than to a workspace, so it cannot act
@@ -69,6 +84,15 @@ export function plannerModel({
        * structured reply the planner depends on.
        */
       providerOptions: { anthropic: { effort } },
+    };
+  }
+
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return {
+      model: google(FREE_MODEL),
+      // No effort dial here — that is an Anthropic control, and sending it to another
+      // provider is how a request starts failing for a reason nobody can see.
+      providerOptions: {},
     };
   }
 
