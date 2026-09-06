@@ -361,8 +361,16 @@ export default function Settings() {
                 ))}
               </SelectContent>
             </Select>
+            {/*
+              The old hint said what it applied to and not what it did, so the question it
+              left unanswered was the important one: whether switching re-prices anything.
+              It does not — this is formatting, and nothing in the app converts between
+              currencies — and a budget silently reinterpreted as pounds would be a much
+              worse surprise than a wordy label.
+            */}
             <p className="text-xs text-muted-foreground">
-              Every amount in the app, e.g. {prefs.money(150_000)}.
+              The symbol and formatting for every amount — budgets, tickets, deposits. Right now that reads{" "}
+              {prefs.money(150_000)}. It reformats only: a 1,500 budget stays 1,500, shown with the new symbol.
             </p>
           </div>
 
