@@ -527,12 +527,18 @@ export async function handleRequest(request: Request): Promise<Response> {
     const ctx = await authorize(request);
     return await handleAuthed(ctx, segments, method, request, url);
   } catch (error) {
+    // An HttpError is a message someone wrote for a person to read, so it is returned as
+    // written. Anything else is a bug, and its message is written for us, not for them.
     if (error instanceof HttpError) return json({ error: error.message }, error.status);
-    // Log the detail, return the message. A stack trace is not the client's business, but
-    // "Something went wrong" makes a permission failure indistinguishable from a bug.
+
+    /*
+     * Never return the raw error. A failed database write reports itself as the entire
+     * SQL statement plus its parameters, and that went straight to the screen: a user
+     * adding a duplicate email saw an insert statement, their workspace id and the
+     * address they had typed. The detail belongs in the log, where we can read it.
+     */
     console.error("[api]", error);
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
-    return json({ error: message }, 500);
+    return json({ error: "Something went wrong on our end. Try again, or tell us if it keeps happening." }, 500);
   }
 }
 

@@ -108,6 +108,24 @@ function historyValues(
   };
 }
 
+/**
+ * Whether a failed write was this unique index rejecting a duplicate.
+ *
+ * The name is not in the error's message. Drizzle reports "Failed query: insert into
+ * ..." and hangs the driver's error off `cause`, where Postgres puts the SQLSTATE and the
+ * constraint. Matching on the message alone therefore never matched, and a duplicate
+ * email came back to the user as a 500 with the raw SQL in it.
+ */
+function isUniqueViolation(error: unknown, constraint: string): boolean {
+  for (let current: unknown = error, depth = 0; current != null && depth < 5; depth += 1) {
+    const candidate = current as { code?: string; constraint?: string; message?: string; cause?: unknown };
+    if (candidate.constraint === constraint) return true;
+    if (typeof candidate.message === "string" && candidate.message.includes(constraint)) return true;
+    current = candidate.cause;
+  }
+  return false;
+}
+
 async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
   const [row] = await db
     .select({ id: s.events.id })
@@ -611,7 +629,7 @@ export const guests = {
       });
     } catch (error) {
       // The unique index on (workspace, contact) is what makes this a real rule.
-      if (String(error).includes("guests_workspace_contact_idx")) {
+      if (isUniqueViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, `Someone with the email ${contact} is already in your people list.`);
       }
       throw error;
@@ -707,7 +725,7 @@ export const registrations = {
         organization: labelFrom(body, "organization", 120),
       });
     } catch (error) {
-      if (String(error).includes("registrations_event_guest_idx")) {
+      if (isUniqueViolation(error, "registrations_event_guest_idx")) {
         throw new HttpError(409, "That guest is already registered for this event.");
       }
       throw error;
@@ -1293,7 +1311,7 @@ export const eventVendors = {
         ),
       ]);
     } catch (error) {
-      if (String(error).includes("event_vendors_event_vendor_idx")) {
+      if (isUniqueViolation(error, "event_vendors_event_vendor_idx")) {
         throw new HttpError(409, "That vendor is already booked on this event.");
       }
       throw error;
