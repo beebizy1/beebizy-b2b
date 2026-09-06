@@ -71,6 +71,7 @@ import type {
   TeamHoursPatch,
   Registration,
   RegistrationDraft,
+  InviteResult,
   WorkspaceMember,
   WorkspaceRole,
   RegistrationStatus,
@@ -257,8 +258,8 @@ export interface SpreadsheetImportsRepository {
 
 export interface MembersRepository {
   list(): Promise<WorkspaceMember[]>;
-  /** Grants a seat to someone who has never signed in. */
-  invite(email: string, role: WorkspaceRole): Promise<WorkspaceMember>;
+  /** Grants a seat to someone who has never signed in, and emails them a sign-in link. */
+  invite(email: string, role: WorkspaceRole): Promise<InviteResult>;
   revokeInvite(email: string): Promise<void>;
   setRole(userId: string, role: WorkspaceRole): Promise<WorkspaceMember>;
   remove(userId: string): Promise<void>;

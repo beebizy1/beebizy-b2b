@@ -1490,7 +1490,8 @@ const members: MembersRepository = {
     const existing = invited.findIndex((row) => row.email === normalized);
     if (existing === -1) invited.push(member);
     else invited[existing] = member;
-    return copy(member);
+    // Demo mode has no identity provider behind it, so nothing is emailed and it says so.
+    return { member: copy(member), emailSent: false };
   },
   async revokeInvite(email) {
     await wait();

@@ -839,6 +839,18 @@ export interface WorkspaceMember {
   joinedAt: IsoDateTime;
 }
 
+/**
+ * The result of inviting someone.
+ *
+ * `emailSent` is reported rather than assumed: the seat is granted by the invite whether
+ * or not the mail goes out, and telling an owner "we emailed them" when we did not is how
+ * a colleague ends up waiting for a message that never arrives.
+ */
+export interface InviteResult {
+  member: WorkspaceMember;
+  emailSent: boolean;
+}
+
 /* ----------------------------------------------------------------- team hours */
 
 /** Staff time booked against an event, the labour half of what an event really cost. */

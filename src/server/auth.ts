@@ -283,6 +283,48 @@ export async function lookupUsers(
   return directory;
 }
 
+/**
+ * Emails an invitation, using the identity provider that already sends this workspace's
+ * sign-in codes.
+ *
+ * No separate email service is involved on purpose: Clerk owns the sign-in flow, so it is
+ * the one thing that can send a link which actually signs the person in. `ignoreExisting`
+ * covers the case where they already have an account — they do not need a sign-up link,
+ * and failing the invite over that would be perverse.
+ *
+ * Returns whether the mail went. The invite itself does not depend on it: access is
+ * granted by the row in our database, and someone who never got the email can still sign
+ * in normally. The caller says which happened rather than claiming an email was sent.
+ */
+export async function sendInvitationEmail(email: string, redirectUrl: string): Promise<boolean> {
+  if (!clerk) return false;
+  try {
+    await clerk.invitations.createInvitation({
+      emailAddress: email,
+      redirectUrl,
+      ignoreExisting: true,
+      notify: true,
+    });
+    return true;
+  } catch (error) {
+    console.warn("INVITE_EMAIL_NOT_SENT", email, error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+/** Best effort: an unsent revocation must not stop the seat being taken back. */
+export async function revokeInvitationEmail(email: string): Promise<void> {
+  if (!clerk) return;
+  try {
+    const { data } = await clerk.invitations.getInvitationList({ query: email, status: "pending" });
+    for (const invitation of data) {
+      if (invitation.emailAddress.toLowerCase() === email) await clerk.invitations.revokeInvitation(invitation.id);
+    }
+  } catch (error) {
+    console.warn("INVITE_REVOKE_FAILED", email, error instanceof Error ? error.message : String(error));
+  }
+}
+
 export function requireRole(context: RequestContext, allowed: Role[]): void {
   if (!allowed.includes(context.role)) {
     throw new HttpError(403, `Your role (${context.role}) can't perform that action.`);

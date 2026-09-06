@@ -51,6 +51,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  InviteResult,
   WorkspaceMember,
 } from "../entities";
 import type { PlanningBrief, PlanningSuggestions } from "../planner";
@@ -321,7 +322,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     members: {
       list: () => client.get<WorkspaceMember[]>("/members"),
-      invite: (email, role) => client.post<WorkspaceMember>("/invites", { email, role }),
+      invite: (email, role) => client.post<InviteResult>("/invites", { email, role }),
       revokeInvite: async (email) => {
         await client.del(`/invites/${encodeURIComponent(email)}`);
       },

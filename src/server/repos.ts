@@ -19,7 +19,15 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
 import * as s from "./schema.ts";
-import { HttpError, lookupUsers, newId, requireRole, type RequestContext } from "./auth.ts";
+import {
+  HttpError,
+  lookupUsers,
+  newId,
+  requireRole,
+  revokeInvitationEmail,
+  sendInvitationEmail,
+  type RequestContext,
+} from "./auth.ts";
 import * as map from "./mappers.ts";
 import { parseDate, parseOptionalDate } from "./mappers.ts";
 import type {
@@ -42,6 +50,7 @@ import type {
   Vendor,
   HistoryResource,
   ChecklistItem,
+  InviteResult,
   WorkspaceMember,
 } from "../data/entities.ts";
 import { REGISTRATION_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
@@ -1860,7 +1869,7 @@ export const members = {
    * with the intended role. Without it a new address is refused outright, and an address
    * that is somehow let through lands in a fresh empty workspace of its own.
    */
-  async invite(ctx: RequestContext, rawEmail: string, role: string): Promise<WorkspaceMember> {
+  async invite(ctx: RequestContext, rawEmail: string, role: string): Promise<InviteResult> {
     requireRole(ctx, ["owner"]);
     const email = rawEmail.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "That is not a valid email address.");
@@ -1884,13 +1893,18 @@ export const members = {
         .where(eq(s.workspaceInvites.id, existing.id))
         .returning();
       return {
-        userId: null,
-        role: updated!.role,
-        status: "invited",
-        name: null,
-        email,
-        isSelf: false,
-        joinedAt: updated!.createdAt.toISOString(),
+        member: {
+          userId: null,
+          role: updated!.role,
+          status: "invited",
+          name: null,
+          email,
+          isSelf: false,
+          joinedAt: updated!.createdAt.toISOString(),
+        },
+        // Re-inviting corrects a role on a seat already offered; mailing them again to
+        // say so would be noise.
+        emailSent: false,
       };
     }
     if (existing) throw new HttpError(409, "That address has already joined a workspace.");
@@ -1900,14 +1914,19 @@ export const members = {
       .values({ id: newId("inv"), workspaceId: ctx.workspaceId, email, role: role as "member", invitedBy: ctx.userId })
       .returning();
 
+    const emailSent = await sendInvitationEmail(email, `${appOrigin()}/login`);
+
     return {
-      userId: null,
-      role: created!.role,
-      status: "invited",
-      name: null,
-      email,
-      isSelf: false,
-      joinedAt: created!.createdAt.toISOString(),
+      member: {
+        userId: null,
+        role: created!.role,
+        status: "invited",
+        name: null,
+        email,
+        isSelf: false,
+        joinedAt: created!.createdAt.toISOString(),
+      },
+      emailSent,
     };
   },
 
@@ -1924,6 +1943,8 @@ export const members = {
           isNull(s.workspaceInvites.acceptedAt),
         ),
       );
+    // Otherwise the link in their inbox still works after the seat was taken back.
+    await revokeInvitationEmail(email);
   },
 
   async setRole(ctx: RequestContext, userId: string, role: string): Promise<WorkspaceMember> {

@@ -89,14 +89,24 @@ function InviteMemberDialog() {
     invite.mutate(
       { email: email.trim(), role },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           setOpen(false);
+          const invitedAddress = email.trim();
           setEmail("");
           setRole("member");
-          toast({
-            title: "Invite added",
-            description: "They get access as soon as they sign in with that address.",
-          });
+          // Says which actually happened. Claiming an email was sent when it was not is
+          // how someone ends up waiting for a message that never arrives.
+          toast(
+            result.emailSent
+              ? {
+                  title: "Invite sent",
+                  description: `${invitedAddress} has an email with a link to sign in.`,
+                }
+              : {
+                  title: "Invite added",
+                  description: `We couldn't email ${invitedAddress}. They still have access — send them the link yourself.`,
+                },
+          );
         },
         onError: (error) => toast({ title: "Couldn't add them", description: error.message }),
       },
@@ -153,7 +163,8 @@ function InviteMemberDialog() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            No invitation email is sent yet, so tell them to sign in at this address themselves.
+            They get an email with a link to sign in. Access is granted either way, so they can also just
+            sign in with this address.
           </p>
 
           <div className="flex justify-end gap-2 pt-1">
@@ -278,8 +289,7 @@ function TeamPanel() {
       )}
 
       <p className="border-t border-hairline px-5 py-3 text-xs text-muted-foreground">
-        An invited person joins this workspace the first time they sign in with that address. No invitation
-        email goes out yet, so send them the link yourself.
+        An invited person joins this workspace the first time they sign in with that address.
       </p>
     </Panel>
   );
