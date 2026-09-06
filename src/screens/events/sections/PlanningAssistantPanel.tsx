@@ -214,6 +214,16 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
       <div className="border-b border-hairline">
         <PlanningChat
           eventId={event.id}
+          onProgress={(collected) => {
+            // Mirror the conversation as it happens, so the two never disagree on screen.
+            if (collected.headcount != null) setHeadcount(String(collected.headcount));
+            if (collected.totalBudgetCents != null) {
+              setBudget(centsToInput(collected.totalBudgetCents));
+              // Stops the headcount watcher overwriting a figure they actually named.
+              setBudgetEdited(true);
+            }
+            if (collected.theme != null) setTheme(collected.theme);
+          }}
           onBrief={(brief) => {
             setHeadcount(String(brief.headcount));
             setBudget(centsToInput(brief.totalBudgetCents));

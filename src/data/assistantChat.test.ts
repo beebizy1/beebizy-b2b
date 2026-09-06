@@ -129,6 +129,42 @@ describe("agreeing with the assistant", () => {
     }
   });
 
+  it("accepts a bare number as the budget", () => {
+    // The reported failure: answering the budget question with "50000" was not
+    // understood, so the same question came back verbatim, twice.
+    for (const reply of ["50000", "50,000", "$50,000", "50k", "around 50000"]) {
+      const collected = collectBrief([user("a gala for 300"), suggested, user(reply)]);
+      expect(collected.totalBudgetCents, reply).toBe(5_000_000);
+    }
+  });
+
+  it("finishes the interview when the budget was a bare number", () => {
+    const turn = nextTurn([
+      user("a gala for 300"),
+      suggested,
+      user("50000"),
+      bee("What vibe are you going for?"),
+      user("black tie and classic"),
+    ]);
+    expect(turn.reply).not.toMatch(/does that sound right/i);
+    expect(turn.brief).toEqual({
+      headcount: 300,
+      totalBudgetCents: 5_000_000,
+      theme: "black tie and classic",
+    });
+  });
+
+  it("does not read the headcount answer as a budget", () => {
+    // "300" answers "how many people", and the question before it is what decides.
+    const collected = collectBrief([
+      user("a gala"),
+      bee("Roughly how many people are you expecting?"),
+      user("300"),
+    ]);
+    expect(collected.headcount).toBe(300);
+    expect(collected.totalBudgetCents).toBeNull();
+  });
+
   it("still prefers a number they name over the one suggested", () => {
     const collected = collectBrief([user("a gala for 300"), suggested, user("more like $90k")]);
     expect(collected.totalBudgetCents).toBe(9_000_000);

@@ -119,6 +119,28 @@ export function extractBudgetCents(text: string): number | null {
 const AFFIRMATIVE =
   /^(?:yes|yep|yeah|yup|sure|ok|okay|sounds? (?:good|right|about right)|that works|works for me|perfect|great|fine|correct|agreed|go ahead|lets? do (?:that|it))\b/i;
 
+/** The assistant asking what the budget is — the only place a bare number means money. */
+function asksAboutBudget(content: string): boolean {
+  return /budget|number in mind/i.test(content);
+}
+
+/**
+ * A plain number, read as dollars.
+ *
+ * Only ever applied to the reply to the budget question. "50000" carries no currency
+ * symbol and no magnitude suffix, so nothing else could tell it apart from a headcount —
+ * but answering "what is your budget" with a number is the most natural thing a person
+ * can do, and refusing to understand it left the assistant asking the same question
+ * forever.
+ */
+function bareAmountCents(text: string): number | null {
+  const match = text.trim().match(/^(?:about|around|roughly|maybe|approx\.?|approximately)?\s*(\d[\d,]*(?:\.\d+)?)\b/i);
+  if (!match?.[1]) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return Math.round(amount * 100);
+}
+
 /** The figure the assistant itself put on the table, so agreeing to it can be honoured. */
 function suggestedBudgetInAssistantMessage(content: string): number | null {
   const match = content.match(/budget around\s*\$?([\d,]+)/i);
@@ -168,12 +190,22 @@ export function collectBrief(messages: AssistantChatMessage[]): PartialBrief {
    */
   if (collected.totalBudgetCents == null) {
     for (const [index, message] of messages.entries()) {
-      if (message.role !== "assistant") continue;
-      const suggestion = suggestedBudgetInAssistantMessage(message.content);
-      if (suggestion == null) continue;
+      if (message.role !== "assistant" || !asksAboutBudget(message.content)) continue;
       const answer = messages[index + 1];
-      if (answer?.role === "user" && AFFIRMATIVE.test(answer.content.trim())) {
+      if (answer?.role !== "user") continue;
+      const said = answer.content.trim();
+
+      // Agreeing to the figure the assistant suggested counts as naming it.
+      const suggestion = suggestedBudgetInAssistantMessage(message.content);
+      if (suggestion != null && AFFIRMATIVE.test(said)) {
         collected.totalBudgetCents = suggestion;
+        break;
+      }
+
+      // Otherwise take what they typed — with a currency symbol, a suffix, or neither.
+      const named = extractBudgetCents(said) ?? bareAmountCents(said);
+      if (named != null) {
+        collected.totalBudgetCents = named;
         break;
       }
     }

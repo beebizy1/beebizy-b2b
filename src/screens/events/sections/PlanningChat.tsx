@@ -45,10 +45,19 @@ function Progress({ collected }: { collected: PartialBrief }) {
 export default function PlanningChat({
   eventId,
   onBrief,
+  onProgress,
 }: {
   eventId: string;
   /** Fired once, when the interview has everything the planner needs. */
   onBrief: (brief: { headcount: number; totalBudgetCents: number; theme: string }) => void;
+  /**
+   * Fired every turn, with whatever is known so far.
+   *
+   * The brief below used to fill in only when the interview finished, so mid-conversation
+   * it showed its own defaults — a form claiming 200 people directly under a chat message
+   * saying 300, which reads as the assistant not listening.
+   */
+  onProgress?: (collected: PartialBrief) => void;
 }) {
   const chat = useAssistantChat();
   const [messages, setMessages] = useState<AssistantChatMessage[]>([OPENING]);
@@ -83,6 +92,7 @@ export default function PlanningChat({
         onSuccess: (turn) => {
           setMessages((current) => [...current, { role: "assistant", content: turn.reply }]);
           setCollected(turn.collected);
+          onProgress?.(turn.collected);
           if (turn.brief && !handedOff) {
             setHandedOff(true);
             onBrief(turn.brief);
