@@ -8,6 +8,7 @@
  */
 
 import type { ComponentProps, ReactNode } from "react";
+import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -108,6 +109,7 @@ export function StatTile({
   icon: Icon,
   tone = "neutral",
   loading = false,
+  href,
 }: {
   label: string;
   value: ReactNode;
@@ -115,9 +117,11 @@ export function StatTile({
   icon?: LucideIcon;
   tone?: Tone;
   loading?: boolean;
+  /** Where the number came from. A figure worth showing is usually worth opening. */
+  href?: string;
 }) {
-  return (
-    <Panel className="p-4">
+  const tile = (
+    <Panel className={cn("h-full p-4", href && "transition-colors hover:border-primary/50 hover:bg-accent/40")}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         {Icon ? (
@@ -135,6 +139,20 @@ export function StatTile({
       )}
       {sublabel ? <p className="mt-1 text-xs text-muted-foreground">{sublabel}</p> : null}
     </Panel>
+  );
+
+  if (!href) return tile;
+
+  return (
+    <Link
+      href={href}
+      // The label carries the destination for anyone not seeing the layout — "Total
+      // events, 11" alone does not say that following it goes to the events list.
+      aria-label={`${label}: open`}
+      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+    >
+      {tile}
+    </Link>
   );
 }
 

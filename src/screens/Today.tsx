@@ -122,25 +122,40 @@ export default function Today() {
       {isError ? <ErrorNotice error={error} title="Couldn't load events" onRetry={() => void refetch()} /> : null}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3 lg:grid-cols-5">
-        <StatTile label="Total Events" value={String(all.length)} icon={Calendar} loading={eventsLoading} />
+        <StatTile
+          label="Total Events"
+          value={String(all.length)}
+          icon={Calendar}
+          loading={eventsLoading}
+          href="/app/events"
+        />
         <StatTile
           label="Total Locations"
           value={String(locations?.length ?? 0)}
           icon={MapPin}
           loading={locationsLoading}
+          href="/app/locations"
         />
-        <StatTile label="Total Attendees" value={String(guests?.length ?? 0)} icon={Users} loading={guestsLoading} />
+        <StatTile
+          label="Total Attendees"
+          value={String(guests?.length ?? 0)}
+          icon={Users}
+          loading={guestsLoading}
+          href="/app/attendees"
+        />
         <StatTile
           label="Total Registrations"
           value={String(registrations?.length ?? 0)}
           icon={Ticket}
           loading={registrationsLoading}
+          href="/app/registrations"
         />
         <StatTile
           label="Confirmed Registrations"
           value={String(confirmed)}
           icon={Activity}
           loading={registrationsLoading}
+          href="/app/registrations"
         />
       </div>
 
