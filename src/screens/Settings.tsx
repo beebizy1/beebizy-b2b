@@ -309,7 +309,12 @@ export default function Settings() {
 
       <Panel>
         <PanelHeader title="Defaults" description="How lists, dates and money are presented" />
-        <div className="grid gap-4 p-5 sm:grid-cols-2">
+        {/*
+          One setting per row. Side by side, "Group events by" sat immediately left of
+          "Currency" and the pair read as a single sentence — "group events by currency" —
+          which is a feature that does not and should not exist.
+        */}
+        <div className="grid gap-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="grouping">Group events by</Label>
             <Select
@@ -351,7 +356,7 @@ export default function Settings() {
             </p>
           </div>
 
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="space-y-1.5">
             <Label htmlFor="timezone">Time zone</Label>
             <Select
               value={settings?.timeZone ?? "America/Los_Angeles"}

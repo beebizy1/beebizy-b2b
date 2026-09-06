@@ -18,7 +18,7 @@ import { ErrorNotice, PageHeader, Panel, PanelHeader, StatTile } from "@/compone
 import { usePreferences } from "@/app/preferences";
 import { useEvents, useGuests, useLocations, useRegistrations } from "@/data/hooks";
 import { eventLocationLabel } from "./events/calendar";
-import type { Event } from "@/data/entities";
+import type { Event, UserSettings } from "@/data/entities";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -75,8 +75,30 @@ function BreakdownList({
   );
 }
 
+/** The heading an event sits under, for each thing the preference can group by. */
+const GROUP_LABEL: Record<UserSettings["homeGrouping"], { title: string; of: (event: Event) => string }> = {
+  location: { title: "venue", of: (event) => eventLocationLabel(event) },
+  category: { title: "category", of: (event) => event.category || "Uncategorised" },
+  status: { title: "status", of: (event) => event.status },
+};
+
+/** Groups in the order the events already appear, so the soonest group stays first. */
+function groupEvents(
+  events: Event[],
+  by: UserSettings["homeGrouping"],
+): Array<[string, Event[]]> {
+  const groups = new Map<string, Event[]>();
+  for (const event of events) {
+    const key = GROUP_LABEL[by].of(event);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(event);
+    else groups.set(key, [event]);
+  }
+  return [...groups.entries()];
+}
+
 export default function Today() {
-  const { date: formatDate } = usePreferences();
+  const { date: formatDate, grouping } = usePreferences();
   const { data: events, isLoading: eventsLoading, isError, error, refetch } = useEvents();
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const { data: guests, isLoading: guestsLoading } = useGuests();
@@ -84,6 +106,7 @@ export default function Today() {
 
   const all = useMemo(() => events ?? [], [events]);
   const upcoming = useMemo(() => upcomingWithin30Days(all), [all]);
+  const upcomingGroups = useMemo(() => groupEvents(upcoming, grouping), [upcoming, grouping]);
   const byCategory = useMemo(() => countBy(all, (event) => event.category || "Uncategorised"), [all]);
   const byLocation = useMemo(
     () => countBy(all.filter((event) => event.locationId !== null), eventLocationLabel),
@@ -123,7 +146,10 @@ export default function Today() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <Panel>
-          <PanelHeader title="Upcoming Events (Next 30 Days)" />
+          <PanelHeader
+            title="Upcoming Events (Next 30 Days)"
+            description={upcomingGroups.length > 1 ? `Grouped by ${GROUP_LABEL[grouping].title}` : undefined}
+          />
           {eventsLoading ? (
             <div className="space-y-4 p-5">
               {[0, 1, 2].map((i) => (
@@ -135,8 +161,17 @@ export default function Today() {
               No upcoming events in the next 30 days.
             </p>
           ) : (
-            <div className="space-y-4 p-5">
-              {upcoming.map((event) => (
+            <div className="space-y-5 p-5">
+              {upcomingGroups.map(([groupName, groupEventList]) => (
+                <div key={groupName} className="space-y-2">
+                  {/* Only worth a heading when there is more than one group to tell apart. */}
+                  {upcomingGroups.length > 1 ? (
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {groupName}
+                    </p>
+                  ) : null}
+                  <div className="space-y-3">
+              {groupEventList.map((event) => (
                 <Link
                   key={event.id}
                   href={`/app/events/${event.id}`}
@@ -155,6 +190,9 @@ export default function Today() {
                     {event.registrationCount} / {event.capacity ?? "∞"} registered
                   </span>
                 </Link>
+              ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
