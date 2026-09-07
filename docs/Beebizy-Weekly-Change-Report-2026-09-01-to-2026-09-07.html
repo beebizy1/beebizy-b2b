@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beebizy Weekly Change Report | September 1-7, 2026</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #5d6678;
+      --line: #dfe3ea;
+      --paper: #ffffff;
+      --canvas: #f5f6f8;
+      --brand: #f4c928;
+      --brand-soft: #fff8d8;
+      --navy: #233456;
+      --green: #157347;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font: 15px/1.65 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(980px, calc(100% - 32px));
+      margin: 36px auto;
+      padding: 64px 72px 80px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-top: 10px solid var(--brand);
+      border-radius: 18px;
+      box-shadow: 0 18px 55px rgba(35, 52, 86, 0.10);
+    }
+    h1, h2, h3 { color: var(--navy); line-height: 1.18; letter-spacing: -0.025em; }
+    h1 { margin: 0 0 22px; font-size: 42px; }
+    h2 { margin: 48px 0 18px; padding-bottom: 10px; border-bottom: 2px solid var(--brand); font-size: 26px; }
+    h3 { margin: 30px 0 12px; font-size: 20px; }
+    p { margin: 10px 0 16px; }
+    h1 + p { color: var(--muted); }
+    a { color: #2357a5; text-underline-offset: 2px; }
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #f0f2f6;
+      color: #8a3c1d;
+      font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    ul, ol { padding-left: 24px; }
+    li { margin: 6px 0; }
+    table { width: 100%; margin: 20px 0 26px; border-collapse: collapse; font-size: 14px; }
+    th { background: var(--navy); color: #fff; text-align: left; }
+    th, td { padding: 11px 12px; border: 1px solid var(--line); vertical-align: top; }
+    tbody tr:nth-child(even) { background: #f8f9fb; }
+    tbody tr:hover { background: var(--brand-soft); }
+    strong { color: var(--navy); }
+    blockquote { margin: 20px 0; padding: 14px 18px; background: var(--brand-soft); border-left: 4px solid var(--brand); }
+    @media (max-width: 700px) {
+      main { width: 100%; margin: 0; padding: 36px 22px 56px; border-radius: 0; border-left: 0; border-right: 0; }
+      h1 { font-size: 32px; }
+      table { display: block; overflow-x: auto; }
+    }
+    @media print {
+      @page { margin: 0.65in; }
+      body { background: #fff; font-size: 10.5pt; }
+      main { width: auto; margin: 0; padding: 0; border: 0; box-shadow: none; }
+      h1 { font-size: 28pt; }
+      h2 { break-after: avoid; font-size: 18pt; }
+      h3 { break-after: avoid; font-size: 14pt; }
+      table, ul, ol { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main><h1>Beebizy Weekly Change Report</h1>
+<p><strong>Reporting period:</strong> September 1-7, 2026<br><strong>Prepared:</strong> September 7, 2026<br><strong>Product:</strong> Beebizy Studio<br><strong>Repository:</strong> <code>beebizy1/beebizy-b2b</code><br><strong>Working branch:</strong> <code>Beebizy-test</code><br><strong>Stable preview:</strong> <a href="https://beebizy-studio-preview.vercel.app">https://beebizy-studio-preview.vercel.app</a></p>
+<h2>Executive summary</h2>
+<p>This week moved Beebizy Studio from a broad event-management MVP toward a more complete event operations product. The largest changes were a reference-led interface rebuild, a conversational AI planner, richer spreadsheet imports, multi-room floorplans, guest segmentation, team access and invitations, task assignment notifications, and a stronger set of fundraising and operational screens.</p>
+<p>The client feedback received this week is substantially implemented. The AI planner now proposes an editable checklist, run of show, mood board, and budget before anything is added to an event. It can use relevant completed events from the same workspace as planning evidence. CSV, Excel, and public Google Sheets can be reviewed and converted into events, including guests, services, vendors, budgets, and follow-up tasks. The floorplan starts as a blank space with drag-and-drop objects and now supports multiple rooms.</p>
+<p>There is one design-direction conflict to resolve. The September 1 implementation removed true black in favor of warm espresso tones. The September 2 reference-design pass then intentionally changed the product to a yellow and ink-black palette. The current product therefore contains black. If the no-black request remains active, a new approved palette should replace the current reference palette.</p>
+<h2>Week at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Commits in the reporting period</td>
+<td>34</td>
+</tr>
+<tr>
+<td>Files changed</td>
+<td>114</td>
+</tr>
+<tr>
+<td>Reported source changes</td>
+<td>28,138 insertions and 1,419 deletions</td>
+</tr>
+<tr>
+<td>Automated tests</td>
+<td>213 passing across 17 test files</td>
+</tr>
+<tr>
+<td>TypeScript</td>
+<td>Passing</td>
+</tr>
+<tr>
+<td>ESLint</td>
+<td>0 errors and 4 existing Fast Refresh warnings</td>
+</tr>
+<tr>
+<td>Production build</td>
+<td>Passing</td>
+</tr>
+<tr>
+<td>Preview deployment</td>
+<td>Ready for the verified application commit</td>
+</tr>
+<tr>
+<td>Marketing-site changes this week</td>
+<td>None</td>
+</tr>
+</tbody></table>
+<p>The source-change total includes generated Drizzle migration snapshots and document assets, so it should not be treated as a direct measure of handwritten application code.</p>
+<h2>Client feedback and delivery status</h2>
+<table>
+<thead>
+<tr>
+<th>Client request</th>
+<th>Status</th>
+<th>What was delivered</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AI should suggest a checklist</td>
+<td>Complete</td>
+<td>The generated checklist is shown as a draft. Items can be edited, added, or removed before approval.</td>
+</tr>
+<tr>
+<td>AI should suggest a mood board</td>
+<td>Complete</td>
+<td>Mood directions and palette colors are editable before they are written to an event.</td>
+</tr>
+<tr>
+<td>AI should suggest a run of show</td>
+<td>Complete</td>
+<td>Timeline cues, timing, owners, and descriptions are editable before approval.</td>
+</tr>
+<tr>
+<td>Planner should learn from past events</td>
+<td>Complete with an important distinction</td>
+<td>Relevant completed events in the same workspace are retrieved and supplied as planning evidence. This is retrieval-based learning, not permanent model fine-tuning.</td>
+</tr>
+<tr>
+<td>Floorplan should be a blank drag-and-drop space</td>
+<td>Complete</td>
+<td>A blank gridded canvas accepts tables and venue objects through pointer drag-and-drop, click placement, and keyboard movement.</td>
+</tr>
+<tr>
+<td>Support more than one room</td>
+<td>Complete</td>
+<td>Events can have multiple named floorplan rooms with tabs, add-room, and delete-room flows.</td>
+</tr>
+<tr>
+<td>Remove black from the interface</td>
+<td>Superseded by later reference direction</td>
+<td>Black was removed on September 1, then restored as ink black during the September 2 reference-design alignment. The current UI uses black and yellow.</td>
+</tr>
+<tr>
+<td>Upload an existing Excel or Google Sheet and create an event</td>
+<td>Complete</td>
+<td>CSV, <code>.xlsx</code>, and public Google Sheets are parsed into a review screen before event creation. Import now recognizes mixed layouts, services, vendors, guests, budgets, schedules, and checklists.</td>
+</tr>
+</tbody></table>
+<h2>Changes completed this week</h2>
+<h3>1. Product shell and reference-design rebuild</h3>
+<ul>
+<li>Rebuilt the authenticated Studio shell around a 256-pixel white sidebar and destination-based navigation.</li>
+<li>Expanded the navigation to cover the operating areas shown in the product reference, including dashboard, events, calendar, tasks, vendor hub, reports, messages, templates, team, and settings.</li>
+<li>Rebuilt the Events index as a searchable table with filters and grouping.</li>
+<li>Expanded the event workspace to 17 functional destinations.</li>
+<li>Added or substantially rebuilt Analytics, Fundraising, Live Auction presenter, RFP, Deposits, Locations, Registrations, Ticket Sales, and Post-Event Summary screens.</li>
+<li>Removed a misleading hard-coded dashboard revenue example and made financial summaries depend on real event data.</li>
+<li>Made dashboard metric cards open the page containing the records they count.</li>
+<li>Made the dashboard&#39;s “Group events by” setting actually group events by venue, category, or status.</li>
+<li>Kept completed checklist items visible with a struck-through treatment and added a control to hide them when needed.</li>
+<li>Added inline guest creation and registration from the event guest workflow.</li>
+<li>Added task-owner capture during checklist creation and spreadsheet import.</li>
+</ul>
+<h3>2. Conversational AI planner</h3>
+<ul>
+<li>Replaced the form-only experience with an interview that asks one useful question at a time.</li>
+<li>Kept the expert form available for people who prefer direct entry.</li>
+<li>Added support for answers containing several details at once so the planner does not repeat questions it already has enough information to answer.</li>
+<li>Made the planner interpret short numeric replies in the context of the last question, including a bare budget amount.</li>
+<li>Expanded event-type recognition to include dinners, awards programs, expos, seminars, holiday parties, openings, and the client&#39;s own wording when no predefined category fits.</li>
+<li>Improved the interview prompt so it can handle uncertainty, preserve known answers, and avoid repetitive questioning.</li>
+<li>Improved plan-generation guidance so checklists are sequenced by when work should begin, run-of-show drafts include load-in and strike, and vendor claims are not invented.</li>
+<li>Added stronger structured-output normalization so a partially malformed model response does not discard the entire plan.</li>
+<li>Kept the budget, checklist, run of show, mood board, and vendor suggestions behind explicit section-by-section approval.</li>
+<li>Preserved deterministic fallback planning so the workflow remains usable when a model provider is unavailable.</li>
+</ul>
+<h3>3. Learning from completed events</h3>
+<ul>
+<li>Added workspace-scoped retrieval of similar completed events.</li>
+<li>Prioritized evidence by event category, capacity similarity, and recency.</li>
+<li>Used actual budget results to guide new budget allocations while keeping the requested total exact.</li>
+<li>Reused proven checklist and run-of-show patterns, shifted to fit the new event timing.</li>
+<li>Included mood-board and floorplan signals in the planning evidence packet.</li>
+<li>Displayed which past events influenced a proposal.</li>
+<li>Kept client data isolated to its own workspace.</li>
+</ul>
+<p>This approach gives Beebizy useful learning immediately without training a separate model on private event records. It is easier to audit, update, and remove than fine-tuning. A later fine-tuning or evaluation program would require a larger, consented, quality-labeled dataset and a defined privacy policy.</p>
+<h3>4. Spreadsheet and Google Sheets import</h3>
+<ul>
+<li>Added CSV, multi-sheet Excel, and public Google Sheets import.</li>
+<li>Added a review-before-create flow so the client can correct event details and remove unwanted records.</li>
+<li>Classified generically named tabs by their column headers instead of relying only on sheet names.</li>
+<li>Avoided dangerous guesses when classifications tie and surfaced a warning instead.</li>
+<li>Added support for wide sheets that mix event details with lists of services.</li>
+<li>Used the uploaded document name as the event name when the sheet does not provide a better one.</li>
+<li>Imported services and vendors into the workspace directory and created event bookings.</li>
+<li>Mapped agreed vendor fees into the event budget.</li>
+<li>Created a follow-up checklist item for each imported service, with category mapping and duplicate prevention.</li>
+<li>Reported the names of ignored sheets so the client can see what was not imported.</li>
+<li>Preserved authenticated workspace routing, timeouts, response-size limits, and review approval before writes.</li>
+</ul>
+<h3>5. Guests and floorplans</h3>
+<ul>
+<li>Added an event-specific segment to each guest.</li>
+<li>Added guest-list filtering and segment breakdowns.</li>
+<li>Added organization as a separate guest field so company or affiliation is not confused with invitation segment.</li>
+<li>Added organization summaries within the selected segment.</li>
+<li>Saved guest organization edits on blur.</li>
+<li>Converted floorplans from one layout per event to multiple named rooms.</li>
+<li>Added room tabs plus add-room and delete-room workflows.</li>
+<li>Preserved existing floorplan data through the schema migration.</li>
+<li>Allowed the last room to be deleted, returning the event to a clean add-room empty state.</li>
+<li>Updated planner learning to read layout evidence from all rooms.</li>
+</ul>
+<h3>6. Team access, roles, and invitations</h3>
+<ul>
+<li>Added a team settings area that lists workspace members and their roles.</li>
+<li>Allowed workspace owners to change roles or remove members.</li>
+<li>Protected the final workspace owner from removal or demotion.</li>
+<li>Kept membership controls read-only for non-owners.</li>
+<li>Added invitation by email with the intended role.</li>
+<li>Made the invitation database record grant access and determine the invited person&#39;s workspace and role.</li>
+<li>Ensured re-inviting a pending email updates its role rather than creating duplicate live invitations.</li>
+<li>Fixed invite claiming so it happens before an existing fallback workspace is selected.</li>
+<li>Preserved the invited membership after the claim completes.</li>
+<li>Moved access decisions to the server and required a verified email before access is granted.</li>
+<li>Connected Clerk invitation emails so an invited person receives a sign-in link.</li>
+<li>Made invitation cancellation revoke the associated Clerk link.</li>
+</ul>
+<h3>7. Tasks, vendors, and communications</h3>
+<ul>
+<li>Added task assignment using members from the current workspace.</li>
+<li>Stored the assignee email separately so assignments remain reliable even when display names change.</li>
+<li>Sent an assignment notification only when the assignee address changes.</li>
+<li>Included the task, due date, event, and link in the notification.</li>
+<li>Kept task assignment successful even if the email provider is unavailable, with the skipped delivery recorded for operations.</li>
+<li>Added a vendor-first path from Messages so a user can select a vendor and begin a conversation.</li>
+<li>Routed the no-vendor empty state to the vendor-creation flow.</li>
+</ul>
+<h3>8. AI provider and reliability work</h3>
+<ul>
+<li>Centralized planner model selection behind a provider abstraction.</li>
+<li>Added direct Anthropic support to avoid depending only on the Vercel AI Gateway.</li>
+<li>Added Google Flash free tier as a temporary fallback when the paid provider was not configured.</li>
+<li>Documented that the free tier is a stopgap and should not be used for real client data without an approved data-handling decision.</li>
+<li>Used lower reasoning effort for interview turns and more reasoning for final plan generation.</li>
+<li>Sanitized database failures so clients do not see raw SQL or internal schema details.</li>
+<li>Returned a friendly conflict response for recognized duplicate records.</li>
+<li>Logged unexpected internal failures on the server while returning a safe client message.</li>
+<li>Clarified in Settings that the currency preference changes symbols and number formatting only. It does not convert stored amounts or exchange rates.</li>
+</ul>
+<h2>Data and schema changes</h2>
+<p>Four database migrations support this week&#39;s product work:</p>
+<table>
+<thead>
+<tr>
+<th>Migration</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>0005</code></td>
+<td>Adds floorplan room identity and guest segments while preserving existing layouts.</td>
+</tr>
+<tr>
+<td><code>0006</code></td>
+<td>Separates guest organization from guest segment.</td>
+</tr>
+<tr>
+<td><code>0007</code></td>
+<td>Adds checklist assignee email for reliable team assignment and notification.</td>
+</tr>
+<tr>
+<td><code>0008</code></td>
+<td>Adds workspace invitations and their role, status, and claim lifecycle.</td>
+</tr>
+</tbody></table>
+<p>The migrations are committed to the branch. This documentation pass did not independently verify that every migration has been applied to the target hosted database, so that should be confirmed before onboarding additional clients.</p>
+<h2>Current design direction</h2>
+<p>The current application uses the later September 2 reference palette:</p>
+<ul>
+<li>Yellow for primary brand and action surfaces</li>
+<li>Ink black for navigation, typography, and high-contrast controls</li>
+<li>Green for completed or ready states</li>
+<li>Red for outstanding or risk states</li>
+<li>White and light neutrals for work surfaces</li>
+</ul>
+<p>This replaced the short-lived warm espresso, no-black treatment introduced on September 1. The team should choose one final direction before the next visual polish pass so the code and client expectation do not drift again.</p>
+<h2>Verification and deployment status</h2>
+<p>The final weekly code state was verified on September 7, 2026:</p>
+<ul>
+<li><code>npm run typecheck</code>: passed</li>
+<li><code>npm run lint</code>: passed with 0 errors and 4 existing Fast Refresh warnings</li>
+<li><code>npm test</code>: 213 tests passed across 17 files</li>
+<li><code>npm run build</code>: passed</li>
+<li>Vercel stable preview: Ready for the verified application commit</li>
+<li>Stable preview URL: <a href="https://beebizy-studio-preview.vercel.app">https://beebizy-studio-preview.vercel.app</a></li>
+<li>Verified application commit: <code>25655ac79276b16a1329f6321a82193062979cac</code></li>
+<li>Preview branch: synchronized with <code>origin/Beebizy-test</code></li>
+</ul>
+<p>The documentation-only commit containing this report may trigger a newer preview deployment without application code changes.</p>
+<p>The build still reports non-blocking source-map warnings from generated Radix UI modules and a large JavaScript bundle warning. These do not currently block the preview, but bundle splitting should be addressed before a broader launch.</p>
+<p>The working branch is 66 commits ahead of and 3 commits behind <code>origin/main</code>. It should be reconciled with <code>main</code> through a reviewed merge or pull request rather than assumed to be release-ready solely because the preview is green.</p>
+<h2>Decisions and tradeoffs recorded this week</h2>
+<h3>Editable AI drafts instead of automatic writes</h3>
+<p>Generated work stays in a review layer until the user approves it. This adds one step, but it protects live event data and gives the client control over operational details.</p>
+<h3>Retrieval-based learning instead of fine-tuning</h3>
+<p>Beebizy retrieves relevant completed events from the current workspace and supplies them as evidence for each plan. This is more transparent and easier to keep current than fine-tuning. It also avoids mixing one client&#39;s event history into another client&#39;s planning context.</p>
+<h3>Review-before-create imports</h3>
+<p>Spreadsheet import does not immediately write every inferred row. Users can correct core event information, inspect record counts, remove unwanted rows, and see ignored sheets before creation. This reduces the risk of a malformed workbook creating an unusable event.</p>
+<h3>Access remains database-backed even when email delivery fails</h3>
+<p>The workspace invitation is the source of access. Clerk provides the sign-in email and link, but a delivery problem does not corrupt the invitation record or the intended role.</p>
+<h3>Temporary AI provider fallback</h3>
+<p>Google Flash free tier was added to keep development moving when paid-provider configuration was unavailable. It is not the preferred production configuration for real client information. Direct Anthropic should be configured and validated before client onboarding.</p>
+<h2>Remaining follow-up</h2>
+<ol>
+<li>Resolve the palette decision: keep the current reference-led black and yellow system, or approve a replacement with no black.</li>
+<li>Confirm migrations <code>0005</code> through <code>0008</code> are applied to the hosted database used by the preview.</li>
+<li>Configure and validate the preferred Anthropic workspace for client data, then remove or disable the temporary Google free-tier fallback in production.</li>
+<li>Test team invitation delivery and claim behavior end to end using a real external email address in the intended Clerk production environment.</li>
+<li>Reconcile <code>Beebizy-test</code> with <code>origin/main</code> and perform a reviewed release merge.</li>
+<li>Split the largest JavaScript bundle and clear the remaining Fast Refresh and source-map warnings.</li>
+<li>Run structured client acceptance tests on planner editing, spreadsheet import, team invitations, and multi-room floorplans using real event data.</li>
+</ol>
+<h2>Commit appendix</h2>
+<h3>September 6</h3>
+<ul>
+<li><code>25655ac</code> Say what the currency setting actually does</li>
+<li><code>edf9201</code> Email an invited person a link to sign in</li>
+</ul>
+<h3>September 5</h3>
+<ul>
+<li><code>7e94e9b</code> Make the dashboard numbers open the thing they count</li>
+<li><code>207ad95</code> Stop showing people the SQL that failed</li>
+<li><code>26e4cc9</code> Make the generated plan survive contact with the model</li>
+<li><code>7f1bbdf</code> Give the planner prompts something to work with</li>
+<li><code>ca0abbd</code> Add Google&#39;s free tier as a stand-in model</li>
+<li><code>965d9f5</code> Understand a budget typed as a plain number</li>
+<li><code>e65ae09</code> Make “Group events by” actually group events</li>
+<li><code>56c031e</code> Keep an invited member in after their invite is claimed</li>
+<li><code>e4986dc</code> Claim an invite before falling back to an existing workspace</li>
+<li><code>9360d4b</code> Let the server decide who has access</li>
+<li><code>b2047a3</code> Start a vendor conversation from the inbox</li>
+<li><code>94de815</code> Add a team member by email, with the role they should get</li>
+</ul>
+<h3>September 4</h3>
+<ul>
+<li><code>103f607</code> Notify a teammate when a task becomes theirs</li>
+<li><code>4dae9c9</code> Let an owner see and change who has access</li>
+<li><code>e7befbe</code> Record which organization a guest represents</li>
+<li><code>e2c2c31</code> Let the last room be deleted</li>
+<li><code>836dc41</code> Segment a guest list, and give an event more than one room</li>
+<li><code>c02d4fa</code> Require a verified email before granting access</li>
+<li><code>6835642</code> Call Claude directly rather than through the gateway</li>
+</ul>
+<h3>September 3</h3>
+<ul>
+<li><code>754de5d</code> Believe what the planner is told about the event</li>
+<li><code>bc323a7</code> Import a wide sheet that mixes event details with a list of services</li>
+<li><code>19e109a</code> Classify an imported sheet by its columns when its name says nothing</li>
+<li><code>27385a5</code> Turn each imported service into a checklist task</li>
+</ul>
+<h3>September 2</h3>
+<ul>
+<li><code>1ec34e4</code> Make the AI planner a conversation rather than a form</li>
+<li><code>c4949f4</code> Import services and vendors, and name any sheet that was ignored</li>
+<li><code>c5ddeae</code> Replace the brown palette, green the completion signals, own every task</li>
+<li><code>8b9b9ed</code> Provision and seed a workspace for a user who has never signed in</li>
+<li><code>b9dcbf9</code> Add a reversible demo-content seed for live workspaces</li>
+<li><code>8635e4f</code> Keep completed tasks on the checklist, and let a guest be created inline</li>
+<li><code>f600037</code> Rebuild the product screens against the reference design</li>
+<li><code>d51bf24</code> Match the Studio shell and data layer to the reference design</li>
+</ul>
+<h3>September 1</h3>
+<ul>
+<li><code>67d511f</code> Add learned planning and spreadsheet imports</li>
+</ul>
+<h2>Scope note</h2>
+<p>This report covers commits made in <code>beebizy-b2b</code> from September 1 through September 7, 2026. No commits were made in <code>beebizy-landing</code> during this reporting period. The report describes code and verification evidence available in the repositories and deployment metadata; it does not claim that every hosted database migration, external email delivery, or real-client workflow has been independently acceptance-tested.</p>
+</main>
+</body>
+</html>
