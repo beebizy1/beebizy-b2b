@@ -146,9 +146,6 @@ export function StatTile({
   return (
     <Link
       href={href}
-      // The label carries the destination for anyone not seeing the layout — "Total
-      // events, 11" alone does not say that following it goes to the events list.
-      aria-label={`${label}: open`}
       className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
       {tile}

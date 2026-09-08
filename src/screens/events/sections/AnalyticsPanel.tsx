@@ -17,6 +17,7 @@ import {
   useSponsorships,
 } from "@/data/hooks";
 import type { Event } from "@/data/entities";
+import { eventTabHref } from "@/app/shell/nav";
 
 function percent(part: number, whole: number): number {
   if (whole <= 0) return 0;
@@ -65,12 +66,14 @@ export default function AnalyticsPanel({ event }: { event: Event }) {
           tone="success"
           sublabel={event.capacity ? `of ${event.capacity} capacity` : "No capacity set"}
           loading={registrationsLoading}
+          href={eventTabHref(event.id, "registrations")}
         />
         <StatTile
           label="Readiness"
           value={`${health?.readiness ?? 0}%`}
           icon={BarChart2}
           sublabel="Checklist weighted by how close the event is"
+          href={eventTabHref(event.id, "checklist")}
         />
         <StatTile
           label="Raised"
@@ -78,12 +81,14 @@ export default function AnalyticsPanel({ event }: { event: Event }) {
           icon={HandCoins}
           sublabel={raised > confirmedRaised ? `${formatMoney(raised)} including pledged` : "Confirmed sponsorship"}
           loading={sponsorshipsLoading}
+          href={eventTabHref(event.id, "fundraising")}
         />
         <StatTile
           label="Spend vs plan"
           value={`${percent(actual, planned)}%`}
           sublabel={`${formatMoney(actual)} of ${formatMoney(planned)}`}
           loading={budgetLoading}
+          href={eventTabHref(event.id, "budget")}
         />
       </div>
 
