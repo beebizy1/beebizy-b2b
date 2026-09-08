@@ -376,7 +376,7 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
       </div>
 
       <form
-        className="grid gap-4 border-b border-hairline p-5 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto] lg:items-end"
+        className="grid gap-4 border-b border-hairline p-5 lg:grid-cols-[160px_190px_minmax(0,1fr)_auto] lg:items-start"
         onSubmit={(formEvent) => {
           formEvent.preventDefault();
           if (!Number.isFinite(parsedHeadcount) || parsedHeadcount < 1 || parsedBudget === null || parsedBudget < 100) return;
@@ -424,10 +424,15 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
             maxLength={PLANNING_LIMITS.maxThemeLength}
           />
         </div>
-        <Button type="submit" disabled={generate.isPending || parsedBudget === null || parsedHeadcount < 1}>
-          <Bot className="mr-1.5 size-4" />
-          {generate.isPending ? "Building…" : "Build plan"}
-        </Button>
+        <div className="space-y-1.5">
+          <span aria-hidden="true" className="invisible hidden text-sm font-medium leading-none lg:block">
+            Action
+          </span>
+          <Button type="submit" disabled={generate.isPending || parsedBudget === null || parsedHeadcount < 1}>
+            <Bot className="mr-1.5 size-4" />
+            {generate.isPending ? "Building…" : "Build plan"}
+          </Button>
+        </div>
       </form>
 
       {suggestions ? (
