@@ -246,6 +246,33 @@ export function buildBudgetSuggestions(totalBudgetCents: number): SuggestedBudge
   });
 }
 
+/**
+ * Keeps the shape of an existing expense budget while changing its total.
+ *
+ * Fractional cents go to the lines with the largest remainders, so the result always
+ * reconciles to the exact amount without making any line negative. An all-zero budget
+ * is split evenly.
+ */
+export function reallocateBudgetAmounts(currentAmounts: number[], targetTotalCents: number): number[] {
+  if (currentAmounts.length === 0) return [];
+  const target = Math.max(0, Math.round(targetTotalCents));
+  const safeAmounts = currentAmounts.map((amount) => Math.max(0, Number.isFinite(amount) ? amount : 0));
+  const currentTotal = safeAmounts.reduce((sum, amount) => sum + amount, 0);
+  const weights = currentTotal > 0 ? safeAmounts : safeAmounts.map(() => 1);
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  const exact = weights.map((weight) => (target * weight) / weightTotal);
+  const amounts = exact.map(Math.floor);
+  const remaining = target - amounts.reduce((sum, amount) => sum + amount, 0);
+  const byLargestRemainder = exact
+    .map((amount, index) => ({ index, remainder: amount - Math.floor(amount) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+
+  for (let index = 0; index < remaining; index += 1) {
+    amounts[byLargestRemainder[index].index] += 1;
+  }
+  return amounts;
+}
+
 export function marketplaceSearchUrl(query: string): string {
   return `https://app.beebizy.com/client-app/search-v2?q=${encodeURIComponent(query.trim())}`;
 }

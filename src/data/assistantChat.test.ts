@@ -53,6 +53,16 @@ describe("extractEventType", () => {
     expect(extractEventType("team away day")).toBe("Offsite");
   });
 
+  it("recognises community, school and nonprofit events", () => {
+    expect(extractEventType("a community festival for 900 people")).toBe("Community Event");
+    expect(extractEventType("a school graduation ceremony")).toBe("School Event");
+    expect(extractEventType("a nonprofit donor reception")).toBe("Nonprofit Event");
+  });
+
+  it("does not classify words that merely contain an event-type abbreviation", () => {
+    expect(extractEventType("a bingo night")).toBeNull();
+  });
+
   it("returns null when nothing matches", () => {
     expect(extractEventType("not sure yet")).toBeNull();
   });

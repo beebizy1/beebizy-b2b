@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   ArrowRight,
@@ -26,21 +26,20 @@ import {
   useAddRunOfShowItem,
   useCreateEvent,
 } from "@/data/hooks";
-import { formatMoney } from "@/data/money";
+import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
 import {
   buildBudgetSuggestions,
   marketplaceSearchUrl,
   moodConceptDataUrl,
+  PLANNING_LIMITS,
   suggestedTotalBudgetCents,
 } from "@/data/planner";
 import { toast } from "@/hooks/use-toast";
 import { formatClockTime } from "@/lib/datetime";
-import type { ChecklistItemDraft, EventCategory, RunOfShowItemDraft } from "@/data/entities";
+import { EVENT_CATEGORIES, type ChecklistItemDraft, type EventCategory, type RunOfShowItemDraft } from "@/data/entities";
 import SpreadsheetImporter from "@/screens/import/SpreadsheetImporter";
 
 type PlannerMode = "choose" | "agent" | "plan" | "import";
-
-const eventTypes = ["Conference", "Gala", "Workshop", "Fundraiser", "Product launch", "Company offsite"];
 
 const themeDirections = {
   "Modern garden": {
@@ -119,19 +118,32 @@ export default function AIPlanner() {
   const addMood = useAddMoodBoardImage();
   const addRunOfShow = useAddRunOfShowItem();
   const [mode, setMode] = useState<PlannerMode>("choose");
-  const [eventType, setEventType] = useState(eventTypes[0]);
+  const [eventType, setEventType] = useState<string>(EVENT_CATEGORIES[0]);
   const [headcount, setHeadcount] = useState("200");
+  const [budgetInput, setBudgetInput] = useState(() => centsToInput(suggestedTotalBudgetCents(200)));
+  const [budgetEdited, setBudgetEdited] = useState(false);
   const [theme, setTheme] = useState<ThemeName>("Modern garden");
   const [city, setCity] = useState("San Francisco");
   const [eventDate, setEventDate] = useState(() => isoDateIn(45));
   const [isSaving, setIsSaving] = useState(false);
 
   const guests = Math.max(1, Number.parseInt(headcount, 10) || 1);
-  const budget = useMemo(() => buildBudgetSuggestions(suggestedTotalBudgetCents(guests)), [guests]);
-  const totalBudget = budget.reduce((sum, line) => sum + line.estimatedCents, 0);
+  const parsedBudget = centsFromInput(budgetInput);
+  const budgetIsValid =
+    parsedBudget !== null &&
+    parsedBudget >= PLANNING_LIMITS.minBudgetCents &&
+    parsedBudget <= PLANNING_LIMITS.maxBudgetCents;
+  const totalBudget = budgetIsValid ? parsedBudget : suggestedTotalBudgetCents(guests);
+  const budget = useMemo(() => buildBudgetSuggestions(totalBudget), [totalBudget]);
   const direction = themeDirections[theme];
 
+  useEffect(() => {
+    if (budgetEdited) return;
+    setBudgetInput(centsToInput(suggestedTotalBudgetCents(guests)));
+  }, [budgetEdited, guests]);
+
   const createWorkingEvent = async () => {
+    if (!budgetIsValid) return;
     setIsSaving(true);
     try {
       const created = await createEvent.mutateAsync({
@@ -168,7 +180,7 @@ export default function AIPlanner() {
           ? `${writes.length - failed} suggestions were added. Review the event workspace for anything missing.`
           : "Budget, checklist and run of show are ready to edit.",
       });
-      navigate(`/app/events/${created.id}/plan`);
+      navigate(`/app/events/${created.id}/budget`);
     } catch (error) {
       toast({ title: "Couldn't create the event", description: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -272,22 +284,42 @@ export default function AIPlanner() {
             actions={<Pill tone="warning">Draft only</Pill>}
           />
           <form
-            className="grid gap-5 p-5 sm:grid-cols-2 lg:grid-cols-5"
+            className="grid gap-5 p-5 sm:grid-cols-2 lg:grid-cols-6"
             onSubmit={(event) => {
               event.preventDefault();
+              if (!budgetIsValid) return;
               setMode("plan");
             }}
           >
             <div className="space-y-2">
-              <Label>Event type</Label>
+              <Label htmlFor="planner-event-type">Event type</Label>
               <Select value={eventType} onValueChange={setEventType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{eventTypes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                <SelectTrigger id="planner-event-type"><SelectValue /></SelectTrigger>
+                <SelectContent className="max-h-80">
+                  {EVENT_CATEGORIES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="planner-headcount">Headcount</Label>
               <Input id="planner-headcount" type="number" min={1} value={headcount} onChange={(event) => setHeadcount(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="planner-budget">Total budget</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">$</span>
+                <Input
+                  id="planner-budget"
+                  inputMode="decimal"
+                  value={budgetInput}
+                  onChange={(event) => {
+                    setBudgetEdited(true);
+                    setBudgetInput(event.target.value);
+                  }}
+                  className="pl-7"
+                  aria-invalid={!budgetIsValid}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Theme direction</Label>
@@ -304,8 +336,8 @@ export default function AIPlanner() {
               <Label htmlFor="planner-date">Event date</Label>
               <Input id="planner-date" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />
             </div>
-            <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-5">
-              <Button type="submit"><Sparkles className="mr-1.5 size-4" />Build my plan</Button>
+            <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-6">
+              <Button type="submit" disabled={!budgetIsValid}><Sparkles className="mr-1.5 size-4" />Build my plan</Button>
               <Button type="button" variant="outline" onClick={() => setMode("choose")}>Back</Button>
             </div>
           </form>
@@ -321,7 +353,7 @@ export default function AIPlanner() {
                 <h2 className="mt-3 text-3xl font-extrabold tracking-tight">{eventType} for {guests} guests</h2>
                 <p className="mt-2 max-w-2xl text-sm text-brand-muted">{theme} in {city}. {direction.description}</p>
               </div>
-              <Button onClick={() => void createWorkingEvent()} disabled={isSaving}>
+              <Button onClick={() => void createWorkingEvent()} disabled={isSaving || !budgetIsValid}>
                 {isSaving ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Sparkles className="mr-1.5 size-4" />}
                 Create working event
               </Button>
@@ -330,10 +362,32 @@ export default function AIPlanner() {
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <Panel>
-              <PanelHeader title="Suggested budget" description={`Based on ${guests} guests · ${formatMoney(35_000)} per guest`} actions={<Coins className="size-5 text-primary-text" />} />
+              <PanelHeader
+                title="Editable budget"
+                description={`Based on ${guests} guests · ${formatMoney(Math.round(totalBudget / guests))} per guest`}
+                actions={<Coins className="size-5 text-primary-text" />}
+              />
               <div className="border-b border-hairline bg-primary-wash px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary-text">Suggested total</p>
-                <p data-numeric className="mt-1 text-3xl font-extrabold text-foreground">{formatMoney(totalBudget)}</p>
+                <Label htmlFor="planner-budget-review" className="text-xs font-semibold uppercase tracking-wide text-primary-text">
+                  Total budget
+                </Label>
+                <div className="relative mt-2 max-w-64">
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">$</span>
+                  <Input
+                    id="planner-budget-review"
+                    inputMode="decimal"
+                    value={budgetInput}
+                    onChange={(event) => {
+                      setBudgetEdited(true);
+                      setBudgetInput(event.target.value);
+                    }}
+                    className="h-11 pl-7 text-lg font-bold"
+                    aria-invalid={!budgetIsValid}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Change the total here. Bee reallocates every budget line immediately.
+                </p>
               </div>
               <dl className="divide-y divide-hairline">
                 {budget.map((line) => (
@@ -418,7 +472,7 @@ export default function AIPlanner() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void createWorkingEvent()} disabled={isSaving}>
+            <Button onClick={() => void createWorkingEvent()} disabled={isSaving || !budgetIsValid}>
               {isSaving ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Sparkles className="mr-1.5 size-4" />}
               Create working event
             </Button>

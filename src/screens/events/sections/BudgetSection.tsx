@@ -6,7 +6,7 @@
  * you had to answer by hand. Every amount here is integer cents end to end.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Coins, Copy, ExternalLink, Gavel, Handshake, Pencil, Plus, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,7 @@ import {
   useUpdateTicketType,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
-import { buildBudgetSuggestions, suggestedTotalBudgetCents } from "@/data/planner";
+import { buildBudgetSuggestions, reallocateBudgetAmounts, suggestedTotalBudgetCents } from "@/data/planner";
 import { usePreferences } from "@/app/preferences";
 import {
   BOOKING_STATUSES,
@@ -76,6 +76,8 @@ function MoneyCell({
   className?: string;
 }) {
   const [draft, setDraft] = useState(centsToInput(value));
+
+  useEffect(() => setDraft(centsToInput(value)), [value]);
 
   return (
     <Input
@@ -285,11 +287,14 @@ function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
 export function BudgetPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useBudget(event.id);
   const add = useAddBudgetItem();
+  const update = useUpdateBudgetItem();
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<BudgetLineType>("expense");
   const [category, setCategory] = useState("General");
   const [notes, setNotes] = useState("");
+  const [adjustingTotal, setAdjustingTotal] = useState(false);
+  const [totalDraft, setTotalDraft] = useState("");
 
   const expenses = (items ?? []).filter((item) => item.type === "expense");
   const revenue = (items ?? []).filter((item) => item.type === "revenue");
@@ -324,6 +329,38 @@ export function BudgetPanel({ event }: { event: Event }) {
     });
   };
 
+  const saveAdjustedTotal = async () => {
+    const target = centsFromInput(totalDraft);
+    if (target === null || target < 0 || expenses.length === 0) return;
+    const amounts = reallocateBudgetAmounts(
+      expenses.map((item) => item.estimatedCents),
+      target,
+    );
+    const results = await Promise.allSettled(
+      expenses.map((item, index) =>
+        update.mutateAsync({
+          eventId: event.id,
+          id: item.id,
+          patch: { estimatedCents: amounts[index] ?? 0 },
+        }),
+      ),
+    );
+    const failed = results.filter((result) => result.status === "rejected").length;
+    await refetch();
+    if (failed === 0) {
+      setAdjustingTotal(false);
+      toast({
+        title: "Planned budget updated",
+        description: `${formatMoney(target)} was reallocated across ${expenses.length} expense lines.`,
+      });
+    } else {
+      toast({
+        title: "Budget only partially updated",
+        description: `${results.length - failed} of ${results.length} lines were saved. Review the refreshed amounts and try again.`,
+      });
+    }
+  };
+
   return (
     <Panel>
       <PanelHeader
@@ -335,9 +372,57 @@ export function BudgetPanel({ event }: { event: Event }) {
               <Sparkles className="mr-1.5 size-3.5 text-primary-text" />
               Suggest {formatMoney(suggestedTotal, { compact: true })} for {headcount} guests
             </Button>
-          ) : null
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTotalDraft(centsToInput(plannedSpend));
+                setAdjustingTotal(true);
+              }}
+            >
+              <Pencil className="mr-1.5 size-3.5" />
+              Adjust total
+            </Button>
+          )
         }
       />
+
+      {adjustingTotal ? (
+        <form
+          className="flex flex-wrap items-end gap-3 border-b border-hairline bg-primary-wash px-5 py-4"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            void saveAdjustedTotal();
+          }}
+        >
+          <div className="space-y-1.5">
+            <label htmlFor="planned-budget-total" className="text-xs font-semibold text-foreground">
+              Planned expense budget
+            </label>
+            <div className="relative w-48">
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">$</span>
+              <Input
+                id="planned-budget-total"
+                value={totalDraft}
+                onChange={(inputEvent) => setTotalDraft(inputEvent.target.value)}
+                inputMode="decimal"
+                className="pl-7 text-right font-semibold"
+                autoFocus
+              />
+            </div>
+          </div>
+          <Button type="submit" size="sm" disabled={centsFromInput(totalDraft) === null || update.isPending}>
+            Save new total
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setAdjustingTotal(false)}>
+            Cancel
+          </Button>
+          <p className="w-full text-xs text-muted-foreground">
+            The new total is reallocated across the current expense lines. You can still edit any line individually below.
+          </p>
+        </form>
+      ) : null}
 
       {plannedSpend > 0 ? (
         <div className="border-b border-hairline px-5 py-3">

@@ -5,6 +5,7 @@ import {
   buildRuleBasedSuggestions,
   marketplaceSearchUrl,
   moodConceptDataUrl,
+  reallocateBudgetAmounts,
   suggestedTotalBudgetCents,
   type PastEventPlanningRecord,
 } from "./planner";
@@ -38,6 +39,13 @@ describe("planning suggestions", () => {
     expect(lines.map((line) => line.name).slice(0, 3)).toEqual(["Venue", "Catering", "Entertainment"]);
     expect(lines.slice(0, 3).map((line) => line.estimatedCents)).toEqual([3_000_000, 1_000_000, 500_000]);
     expect(lines.reduce((sum, line) => sum + line.estimatedCents, 0)).toBe(7_000_000);
+  });
+
+  it("reallocates an existing budget to an edited total", () => {
+    expect(reallocateBudgetAmounts([60_00, 30_00, 10_00], 25_000)).toEqual([15_000, 7_500, 2_500]);
+    expect(reallocateBudgetAmounts([0, 0, 0], 10_000)).toEqual([3_334, 3_333, 3_333]);
+    expect(reallocateBudgetAmounts([], 10_000)).toEqual([]);
+    expect(reallocateBudgetAmounts([1, 1, 1, 1], 2)).toEqual([1, 1, 0, 0]);
   });
 
   it("builds a complete reviewable plan", () => {

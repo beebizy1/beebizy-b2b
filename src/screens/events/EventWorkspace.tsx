@@ -8,7 +8,7 @@
  * old page never said: how ready this event is and what is wrong with it.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import {
   ArrowLeft,
@@ -48,7 +48,7 @@ import {
   ReadinessRing,
   RiskPill,
 } from "@/components/primitives";
-import { useDeleteEvent, useEvent, useEventHealth, useSaveEventAsTemplate } from "@/data/hooks";
+import { useChecklist, useDeleteEvent, useEvent, useEventHealth, useSaveEventAsTemplate } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
 import { EVENT_TABS, eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, type EventTabId } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
@@ -301,6 +301,37 @@ function WorkspaceHeader({
   );
 }
 
+function ChecklistWorkspace({ event }: { event: Event }) {
+  const { data: checklist } = useChecklist(event.id);
+  const [showPlanningAssistant, setShowPlanningAssistant] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (checklist === undefined) return;
+    setShowPlanningAssistant((current) => current ?? checklist.length === 0);
+  }, [checklist]);
+
+  return (
+    <div className="space-y-6">
+      {showPlanningAssistant ? (
+        <PlanningAssistantPanel event={event} />
+      ) : showPlanningAssistant === false ? (
+        <Panel className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Need a new AI draft?</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Your saved checklist stays below. Open Bee only when you want new suggestions.
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setShowPlanningAssistant(true)}>
+            Open AI planner
+          </Button>
+        </Panel>
+      ) : null}
+      <ChecklistPanel event={event} />
+    </div>
+  );
+}
+
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
   const { data: health } = useEventHealth(id);
@@ -342,12 +373,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
-      {active === "checklist" ? (
-        <div className="space-y-6">
-          <PlanningAssistantPanel event={event} />
-          <ChecklistPanel event={event} />
-        </div>
-      ) : null}
+      {active === "checklist" ? <ChecklistWorkspace key={event.id} event={event} /> : null}
       {active === "vendors" ? (
         <div className="space-y-6">
           <VendorsPanel event={event} />

@@ -17,6 +17,7 @@ import {
   useMoodBoard,
   usePlanningSuggestions,
   useRunOfShow,
+  useUpdateBudgetItem,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
 import {
@@ -29,6 +30,65 @@ import {
 import type { Event } from "@/data/entities";
 
 type AppliedSection = "budget" | "checklist" | "runOfShow" | "mood";
+
+interface StoredPlanningDraft {
+  savedAt: number;
+  suggestions: PlanningSuggestions | null;
+  applied: AppliedSection[];
+  inputs: {
+    headcount: string;
+    budget: string;
+    theme: string;
+    budgetEdited: boolean;
+  };
+}
+
+const PLANNING_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function planningDraftStorageKey(event: Event): string {
+  return `beebizy:planner-draft:${event.ownerId}:${event.id}`;
+}
+
+function readStoredPlanningDraft(event: Event): StoredPlanningDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = planningDraftStorageKey(event);
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredPlanningDraft>;
+    const suggestions = parsed.suggestions;
+    if (
+      typeof parsed.savedAt !== "number" ||
+      Date.now() - parsed.savedAt > PLANNING_DRAFT_MAX_AGE_MS ||
+      !parsed.inputs ||
+      typeof parsed.inputs.headcount !== "string" ||
+      typeof parsed.inputs.budget !== "string" ||
+      typeof parsed.inputs.theme !== "string" ||
+      typeof parsed.inputs.budgetEdited !== "boolean" ||
+      !Array.isArray(parsed.applied) ||
+      (suggestions !== null &&
+        suggestions !== undefined &&
+        (!Array.isArray(suggestions.budget) ||
+          !Array.isArray(suggestions.checklist) ||
+          !Array.isArray(suggestions.runOfShow) ||
+          !Array.isArray(suggestions.moodConcepts) ||
+          !Array.isArray(suggestions.vendors)))
+    ) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    return {
+      savedAt: parsed.savedAt,
+      suggestions: suggestions ?? null,
+      applied: parsed.applied.filter((section): section is AppliedSection =>
+        ["budget", "checklist", "runOfShow", "mood"].includes(section),
+      ),
+      inputs: parsed.inputs,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function dueDateFor(eventDate: string, daysBefore: number): string | null {
   const due = new Date(eventDate);
@@ -53,18 +113,60 @@ function ApplyButton({
   );
 }
 
+function DraftMoneyInput({
+  value,
+  label,
+  onCommit,
+}: {
+  value: number;
+  label: string;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(centsToInput(value));
+
+  useEffect(() => setDraft(centsToInput(value)), [value]);
+
+  const commit = () => {
+    const next = centsFromInput(draft);
+    if (next !== null && next >= 0 && next !== value) onCommit(next);
+    else setDraft(centsToInput(value));
+  };
+
+  return (
+    <div className="relative w-32 shrink-0">
+      <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-xs text-muted-foreground">$</span>
+      <Input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        inputMode="decimal"
+        aria-label={label}
+        className="h-8 pl-6 text-right text-sm font-semibold"
+      />
+    </div>
+  );
+}
+
 export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const initialHeadcount = event.capacity ?? 200;
-  const [headcount, setHeadcount] = useState(String(initialHeadcount));
-  const [budget, setBudget] = useState(centsToInput(suggestedTotalBudgetCents(initialHeadcount)));
-  const [theme, setTheme] = useState("");
-  const [budgetEdited, setBudgetEdited] = useState(false);
-  const [suggestions, setSuggestions] = useState<PlanningSuggestions | null>(null);
-  const [applied, setApplied] = useState<Set<AppliedSection>>(() => new Set());
+  const storageKey = planningDraftStorageKey(event);
+  const [restoredDraft] = useState(() => readStoredPlanningDraft(event));
+  const [headcount, setHeadcount] = useState(restoredDraft?.inputs.headcount ?? String(initialHeadcount));
+  const [budget, setBudget] = useState(
+    restoredDraft?.inputs.budget ?? centsToInput(suggestedTotalBudgetCents(initialHeadcount)),
+  );
+  const [theme, setTheme] = useState(restoredDraft?.inputs.theme ?? "");
+  const [budgetEdited, setBudgetEdited] = useState(restoredDraft?.inputs.budgetEdited ?? false);
+  const [suggestions, setSuggestions] = useState<PlanningSuggestions | null>(restoredDraft?.suggestions ?? null);
+  const [applied, setApplied] = useState<Set<AppliedSection>>(() => new Set(restoredDraft?.applied ?? []));
   const [applying, setApplying] = useState<AppliedSection | null>(null);
 
   const generate = usePlanningSuggestions();
   const addBudget = useAddBudgetItem();
+  const updateBudget = useUpdateBudgetItem();
   const addChecklist = useAddChecklistItem();
   const addCue = useAddRunOfShowItem();
   const addMood = useAddMoodBoardImage();
@@ -77,13 +179,30 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const parsedBudget = centsFromInput(budget);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          savedAt: Date.now(),
+          suggestions,
+          applied: [...applied],
+          inputs: { headcount, budget, theme, budgetEdited },
+        } satisfies StoredPlanningDraft),
+      );
+    } catch {
+      // Storage can be disabled or full. The planner still works for this page.
+    }
+  }, [applied, budget, budgetEdited, headcount, storageKey, suggestions, theme]);
+
+  useEffect(() => {
     if (budgetEdited || !Number.isFinite(parsedHeadcount) || parsedHeadcount < 1) return;
     setBudget(centsToInput(suggestedTotalBudgetCents(parsedHeadcount)));
   }, [budgetEdited, parsedHeadcount]);
 
   const existing = useMemo(
     () => ({
-      budget: new Set((existingBudget ?? []).map((item) => item.name.trim().toLowerCase())),
+      budget: new Map((existingBudget ?? []).map((item) => [item.name.trim().toLowerCase(), item])),
       checklist: new Set((existingChecklist ?? []).map((item) => item.title.trim().toLowerCase())),
       runOfShow: new Set((existingCues ?? []).map((item) => `${item.startTime}|${item.title.trim().toLowerCase()}`)),
       mood: new Set((existingMood ?? []).map((item) => item.caption?.split(" · ")[0]?.trim().toLowerCase())),
@@ -111,11 +230,30 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const applyBudget = async () => {
     if (!suggestions) return;
     setApplying("budget");
-    const pending = suggestions.budget.filter((item) => !existing.budget.has(item.name.trim().toLowerCase()));
     try {
-      await Promise.all(pending.map((draft) => addBudget.mutateAsync({ eventId: event.id, draft })));
+      await Promise.all(
+        suggestions.budget.map((draft) => {
+          const current = existing.budget.get(draft.name.trim().toLowerCase());
+          return current
+            ? updateBudget.mutateAsync({
+                eventId: event.id,
+                id: current.id,
+                patch: {
+                  category: draft.category,
+                  type: draft.type,
+                  estimatedCents: draft.estimatedCents,
+                  notes: draft.notes,
+                  sortOrder: draft.sortOrder,
+                },
+              })
+            : addBudget.mutateAsync({ eventId: event.id, draft });
+        }),
+      );
       markApplied("budget");
-      toast({ title: "Budget added", description: `${pending.length} new budget lines are ready for review.` });
+      toast({
+        title: existing.budget.size > 0 ? "Budget updated" : "Budget added",
+        description: `${suggestions.budget.length} budget lines now match the edited plan.`,
+      });
     } catch (error) {
       setApplying(null);
       toast({ title: "Couldn't add the budget", description: error instanceof Error ? error.message : String(error) });
@@ -214,6 +352,9 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
       <div className="border-b border-hairline">
         <PlanningChat
           eventId={event.id}
+          storageScope={event.ownerId}
+          rebuildPlanOnRestore={!restoredDraft?.suggestions}
+          planningDraftSavedAt={restoredDraft?.savedAt}
           onProgress={(collected) => {
             // Mirror the conversation as it happens, so the two never disagree on screen.
             if (collected.headcount != null) setHeadcount(String(collected.headcount));
@@ -254,17 +395,22 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="ai-budget">Total budget</Label>
-          <Input
-            id="ai-budget"
-            inputMode="decimal"
-            value={budget}
-            onChange={(inputEvent) => {
-              setBudgetEdited(true);
-              setBudget(inputEvent.target.value);
-            }}
-            placeholder="70000"
-          />
+          <Label htmlFor="ai-budget">Total budget (editable)</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">$</span>
+            <Input
+              id="ai-budget"
+              inputMode="decimal"
+              value={budget}
+              onChange={(inputEvent) => {
+                setBudgetEdited(true);
+                setBudget(inputEvent.target.value);
+              }}
+              placeholder="70000"
+              className="pl-7"
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">Change this total, then build the plan to reallocate it.</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ai-theme">Theme or direction</Label>
@@ -332,7 +478,22 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                       <p className="text-sm font-medium text-foreground">{line.name}</p>
                       <p className="text-xs text-muted-foreground">{line.rationale}</p>
                     </div>
-                    <span data-numeric className="shrink-0 text-sm font-semibold text-foreground">{formatMoney(line.estimatedCents)}</span>
+                    <DraftMoneyInput
+                      value={line.estimatedCents}
+                      label={`Suggested amount for ${line.name}`}
+                      onCommit={(next) =>
+                        reviseSuggestions("budget", (current) => {
+                          const nextBudget = current.budget.map((draft) =>
+                            draft.name === line.name ? { ...draft, estimatedCents: next } : draft,
+                          );
+                          return {
+                            ...current,
+                            budget: nextBudget,
+                            totalBudgetCents: nextBudget.reduce((sum, draft) => sum + draft.estimatedCents, 0),
+                          };
+                        })
+                      }
+                    />
                   </li>
                 ))}
               </ul>

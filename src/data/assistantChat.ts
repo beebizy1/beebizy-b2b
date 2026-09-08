@@ -42,6 +42,9 @@ export const EMPTY_BRIEF: PartialBrief = {
 };
 
 const EVENT_TYPES: Array<[RegExp, string]> = [
+  [/\b(?:non[- ]?profits?|ngo|foundation events?)\b/i, "Nonprofit Event"],
+  [/\b(?:school|pta|pso|campus|graduation|homecoming|prom)\b/i, "School Event"],
+  [/\b(?:community|neighbou?rhood|street fair|festival|block party)\b/i, "Community Event"],
   [/\bgala|fundrais|charit|benefit|auction\b/i, "Gala"],
   [/\bconferenc|summit|symposium\b/i, "Conference"],
   [/\bkick\s?off|sales meeting\b/i, "Summit"],
@@ -227,10 +230,13 @@ export function collectBrief(messages: AssistantChatMessage[]): PartialBrief {
 }
 
 const OPENER =
-  "Hi, I'm Bee. I'll help you shape this event — what kind of event are you planning? A gala, a conference, a launch, a team offsite, something else?";
+  "Hi, I'm Bee. I'll help you shape this event — what kind of event are you planning? A community, school, nonprofit, corporate or social event?";
 
 /** Suggested spend per head, used only when someone declines to name a budget. */
 const PER_HEAD_CENTS: Record<string, number> = {
+  "Community Event": 25_000,
+  "School Event": 18_000,
+  "Nonprofit Event": 30_000,
   Gala: 40_000,
   Conference: 32_000,
   "Product Launch": 45_000,
@@ -264,7 +270,7 @@ export function nextTurn(messages: AssistantChatMessage[]): AssistantTurn {
     return {
       ...rules,
       reply:
-        "Got it. What kind of event is it — a gala or fundraiser, a conference, a product launch, a training day, or a team offsite?",
+        "Got it. Is it a community event, school event, nonprofit event, gala, conference, launch, training day or team offsite?",
       brief: null,
     };
   }

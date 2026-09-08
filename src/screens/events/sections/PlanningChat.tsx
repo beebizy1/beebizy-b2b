@@ -5,9 +5,9 @@
  * feel. At that point it hands the brief up and the existing planner does the drafting —
  * the conversation gathers, it does not generate.
  *
- * The transcript lives here rather than on the server, so every turn sends the whole
- * conversation. That keeps the API stateless and means a reload loses the chat rather
- * than resuming half of one.
+ * Every turn sends the whole conversation, which keeps the API stateless. The browser
+ * also keeps an event-scoped draft so navigating away or reloading does not discard a
+ * planning interview that has not been applied yet.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -18,9 +18,60 @@ import { cn } from "@/lib/utils";
 import { Pill } from "@/components/primitives";
 import { formatMoney } from "@/data/money";
 import { useAssistantChat } from "@/data/hooks";
-import { ASSISTANT_OPENER, type AssistantChatMessage, type PartialBrief } from "@/data/assistantChat";
+import { ASSISTANT_OPENER, EMPTY_BRIEF, type AssistantChatMessage, type PartialBrief } from "@/data/assistantChat";
 
 const OPENING: AssistantChatMessage = { role: "assistant", content: ASSISTANT_OPENER };
+
+interface StoredConversation {
+  savedAt: number;
+  collectedAt: number;
+  messages: AssistantChatMessage[];
+  collected: PartialBrief;
+  draft: string;
+  handedOff: boolean;
+}
+
+const CONVERSATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function conversationStorageKey(storageScope: string, eventId: string): string {
+  return `beebizy:planner-chat:${storageScope}:${eventId}`;
+}
+
+function readStoredConversation(storageScope: string, eventId: string): StoredConversation | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = conversationStorageKey(storageScope, eventId);
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredConversation>;
+    if (
+      typeof parsed.savedAt !== "number" ||
+      typeof parsed.collectedAt !== "number" ||
+      Date.now() - parsed.savedAt > CONVERSATION_MAX_AGE_MS ||
+      !Array.isArray(parsed.messages) ||
+      !parsed.messages.every(
+        (message) =>
+          message &&
+          (message.role === "assistant" || message.role === "user") &&
+          typeof message.content === "string",
+      ) ||
+      !parsed.collected
+    ) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    return {
+      savedAt: parsed.savedAt,
+      collectedAt: parsed.collectedAt,
+      messages: parsed.messages.length > 0 ? parsed.messages : [OPENING],
+      collected: { ...EMPTY_BRIEF, ...parsed.collected },
+      draft: typeof parsed.draft === "string" ? parsed.draft : "",
+      handedOff: parsed.handedOff === true,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /** What the interview still needs, so the progress is visible rather than guessed at. */
 function Progress({ collected }: { collected: PartialBrief }) {
@@ -44,10 +95,16 @@ function Progress({ collected }: { collected: PartialBrief }) {
 
 export default function PlanningChat({
   eventId,
+  storageScope,
+  rebuildPlanOnRestore,
+  planningDraftSavedAt,
   onBrief,
   onProgress,
 }: {
   eventId: string;
+  storageScope: string;
+  rebuildPlanOnRestore: boolean;
+  planningDraftSavedAt?: number;
   /** Fired once, when the interview has everything the planner needs. */
   onBrief: (brief: { headcount: number; totalBudgetCents: number; theme: string }) => void;
   /**
@@ -60,16 +117,38 @@ export default function PlanningChat({
   onProgress?: (collected: PartialBrief) => void;
 }) {
   const chat = useAssistantChat();
-  const [messages, setMessages] = useState<AssistantChatMessage[]>([OPENING]);
-  const [collected, setCollected] = useState<PartialBrief>({
-    eventType: null,
-    headcount: null,
-    totalBudgetCents: null,
-    theme: null,
-  });
-  const [draft, setDraft] = useState("");
-  const [handedOff, setHandedOff] = useState(false);
+  const [restored] = useState(() => readStoredConversation(storageScope, eventId));
+  const [messages, setMessages] = useState<AssistantChatMessage[]>(restored?.messages ?? [OPENING]);
+  const [collected, setCollected] = useState<PartialBrief>(restored?.collected ?? EMPTY_BRIEF);
+  const [collectedAt, setCollectedAt] = useState(restored?.collectedAt ?? Date.now());
+  const [draft, setDraft] = useState(restored?.draft ?? "");
+  const [handedOff, setHandedOff] = useState(restored?.handedOff ?? false);
   const scroller = useRef<HTMLDivElement>(null);
+  const restoredProgress = useRef(false);
+
+  useEffect(() => {
+    if (!restored || restoredProgress.current) return;
+    restoredProgress.current = true;
+    if (planningDraftSavedAt == null || planningDraftSavedAt < restored.collectedAt) {
+      onProgress?.(restored.collected);
+    }
+    const { headcount, totalBudgetCents, theme } = restored.collected;
+    if (rebuildPlanOnRestore && restored.handedOff && headcount != null && totalBudgetCents != null && theme) {
+      onBrief({ headcount, totalBudgetCents, theme });
+    }
+  }, [onBrief, onProgress, planningDraftSavedAt, rebuildPlanOnRestore, restored]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        conversationStorageKey(storageScope, eventId),
+        JSON.stringify({ savedAt: Date.now(), collectedAt, messages, collected, draft, handedOff } satisfies StoredConversation),
+      );
+    } catch {
+      // Storage can be disabled or full. The planner still works for the current page.
+    }
+  }, [collected, collectedAt, draft, eventId, handedOff, messages, storageScope]);
 
   // Keep the newest turn in view without yanking the whole page around.
   useEffect(() => {
@@ -92,6 +171,7 @@ export default function PlanningChat({
         onSuccess: (turn) => {
           setMessages((current) => [...current, { role: "assistant", content: turn.reply }]);
           setCollected(turn.collected);
+          setCollectedAt(Date.now());
           onProgress?.(turn.collected);
           if (turn.brief && !handedOff) {
             setHandedOff(true);
@@ -113,7 +193,8 @@ export default function PlanningChat({
 
   const restart = () => {
     setMessages([OPENING]);
-    setCollected({ eventType: null, headcount: null, totalBudgetCents: null, theme: null });
+    setCollected(EMPTY_BRIEF);
+    setCollectedAt(Date.now());
     setDraft("");
     setHandedOff(false);
   };
@@ -196,7 +277,7 @@ export default function PlanningChat({
 
       {messages.length === 1 ? (
         <div className="flex flex-wrap gap-1.5">
-          {["A gala for 300", "A conference for 450", "A team offsite for 40"].map((suggestion) => (
+          {["A community event for 900", "A school event for 500", "A nonprofit event for 300"].map((suggestion) => (
             <button
               key={suggestion}
               type="button"
