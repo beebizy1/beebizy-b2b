@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FEEDBACK_CATEGORIES, FEEDBACK_LIMITS } from "./entities";
+import { FEEDBACK_CATEGORIES, FEEDBACK_LIMITS } from "./entities.ts";
 
 /** One validation contract shared by the browser, demo adapter, API, and database repository. */
 export const feedbackDraftSchema = z.object({
