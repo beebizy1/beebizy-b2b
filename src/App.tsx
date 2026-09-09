@@ -25,6 +25,7 @@ import { AppShell } from "@/app/shell/AppShell";
 import LandingPage from "@/pages/LandingPage";
 import AboutPage from "@/pages/AboutPage";
 import LoginPage from "@/pages/LoginPage";
+import AcceptInvitationPage from "@/pages/AcceptInvitationPage";
 import AccessDeniedPage from "@/pages/AccessDeniedPage";
 import SubscriptionRequiredPage from "@/pages/SubscriptionRequiredPage";
 import NotFound from "@/pages/not-found";
@@ -57,6 +58,7 @@ import Settings from "@/screens/Settings";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
+import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -132,6 +134,7 @@ function Routes() {
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
+      <Route path={INVITATION_ACCEPTANCE_PATH} component={AcceptInvitationPage} />
       <Route path="/access-denied" component={AccessDeniedPage} />
       <Route path="/subscription-required" component={SubscriptionRequiredPage} />
       <Route path="/signup">{() => <Redirect to="/access-denied" replace />}</Route>

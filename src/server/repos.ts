@@ -60,6 +60,7 @@ import { daysBetweenInZone } from "../lib/datetime.ts";
 import { parseFloorplanDraft } from "../data/floorplan.ts";
 import { notifyTaskAssignment } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
+import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -1914,7 +1915,7 @@ export const members = {
       .values({ id: newId("inv"), workspaceId: ctx.workspaceId, email, role: role as "member", invitedBy: ctx.userId })
       .returning();
 
-    const emailSent = await sendInvitationEmail(email, `${appOrigin()}/login`);
+    const emailSent = await sendInvitationEmail(email, invitationAcceptanceUrl(appOrigin()));
 
     return {
       member: {
