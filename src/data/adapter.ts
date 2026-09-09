@@ -54,6 +54,8 @@ import type {
   MenuItemPatch,
   OpenTask,
   PortfolioSummary,
+  ProductFeedback,
+  ProductFeedbackDraft,
   PublicEventPayload,
   RaffleItem,
   RaffleItemDraft,
@@ -265,6 +267,12 @@ export interface MembersRepository {
   remove(userId: string): Promise<void>;
 }
 
+export interface FeedbackRepository {
+  /** Feedback belongs to the signed-in user, newest first. */
+  list(): Promise<ProductFeedback[]>;
+  create(draft: ProductFeedbackDraft): Promise<ProductFeedback>;
+}
+
 /** Identity and authorization as the server sees them. */
 export interface Identity {
   userId: string;
@@ -305,6 +313,7 @@ export interface DataAdapter {
   settings: SettingsRepository;
   floorplan: FloorplanRepository;
   members: MembersRepository;
+  feedback: FeedbackRepository;
   history: EventHistoryRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;

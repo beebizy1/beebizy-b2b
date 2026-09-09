@@ -17,6 +17,7 @@ import { continuePlanningChat, generatePlanningSuggestions } from "../src/server
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
 import { PLANNING_LIMITS } from "../src/data/planner.ts";
 import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
+import { feedbackDraftSchema, feedbackValidationMessage } from "../src/data/feedback.ts";
 import { z, ZodError } from "zod";
 
 export const config = { runtime: "nodejs" };
@@ -469,6 +470,19 @@ async function handleAuthed(
     case "settings": {
       if (method === "GET") return json(await repos.settings.get(ctx));
       if (method === "PATCH") return json(await repos.settings.update(ctx, body));
+      return notFound();
+    }
+
+    /* ---------------------------------------------------------- product feedback */
+    case "feedback": {
+      if (method === "GET") return json(await repos.feedback.list(ctx));
+      if (method === "POST") {
+        const parsed = feedbackDraftSchema.safeParse(body);
+        if (!parsed.success) {
+          throw new HttpError(400, feedbackValidationMessage(parsed.error));
+        }
+        return json(await repos.feedback.create(ctx, parsed.data), 201);
+      }
       return notFound();
     }
 

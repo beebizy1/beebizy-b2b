@@ -32,6 +32,7 @@ import type {
   MenuItem,
   OpenTask,
   PortfolioSummary,
+  ProductFeedback,
   PublicEventPayload,
   RaffleItem,
   RaffleTicket,
@@ -330,6 +331,11 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       remove: async (userId) => {
         await client.del(`/members/${userId}`);
       },
+    },
+
+    feedback: {
+      list: () => client.get<ProductFeedback[]>("/feedback"),
+      create: (draft) => client.post<ProductFeedback>("/feedback", draft),
     },
 
     history: {

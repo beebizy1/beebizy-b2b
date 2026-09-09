@@ -945,6 +945,35 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   timeZone: "America/Los_Angeles",
 };
 
+/* ----------------------------------------------------------- product feedback */
+
+export const FEEDBACK_CATEGORIES = ["general", "bug", "idea", "praise"] as const;
+export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
+export const DEFAULT_FEEDBACK_CATEGORY: FeedbackCategory = "general";
+export const FEEDBACK_LIMITS = {
+  minMessageLength: 3,
+  maxMessageLength: 2_000,
+  maxPagePathLength: 500,
+} as const;
+
+/** One note submitted through the signed-in feedback conversation. */
+export interface ProductFeedback {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  category: FeedbackCategory;
+  message: string;
+  /** The product page the user was viewing when they sent the note. */
+  pagePath: string | null;
+  createdAt: IsoDateTime;
+}
+
+export interface ProductFeedbackDraft {
+  category: FeedbackCategory;
+  message: string;
+  pagePath?: string | null;
+}
+
 /* ----------------------------------------------------------------- derived */
 
 /**

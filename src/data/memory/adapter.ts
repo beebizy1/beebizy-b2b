@@ -18,6 +18,7 @@ import type {
   FloorplanRepository,
   MembersRepository,
   EventHistoryRepository,
+  FeedbackRepository,
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
@@ -107,6 +108,7 @@ import { describeHistoryChange } from "../history";
 import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../planner";
 import { nextTurn } from "../assistantChat";
 import { googleSheetCsvUrl } from "../import";
+import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -1509,6 +1511,35 @@ const members: MembersRepository = {
   },
 };
 
+const feedback: FeedbackRepository = {
+  async list() {
+    await wait();
+    return copy(
+      store().feedback.sort(
+        (a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+      ),
+    );
+  },
+  async create(draft) {
+    await wait();
+    const parsed = feedbackDraftSchema.safeParse(draft);
+    if (!parsed.success) throw new DataError("invalid", feedbackValidationMessage(parsed.error));
+    const { message, category, pagePath } = parsed.data;
+
+    const record = {
+      id: newId("feedback"),
+      workspaceId: DEMO_OWNER_ID,
+      userId: DEMO_OWNER_ID,
+      category,
+      message,
+      pagePath,
+      createdAt: nowIso(),
+    };
+    store().feedback.push(record);
+    return copy(record);
+  },
+};
+
 const history: EventHistoryRepository = {
   async list(eventId) {
     await wait();
@@ -1732,6 +1763,7 @@ export const memoryAdapter: DataAdapter = {
   settings,
   floorplan,
   members,
+  feedback,
   history,
   roi,
   analytics,

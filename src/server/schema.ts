@@ -34,6 +34,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
+import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES } from "../data/entities.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -49,6 +50,7 @@ export const sponsorshipTier = pgEnum("sponsorship_tier", ["gold", "silver", "br
 export const messageDirection = pgEnum("message_direction", ["inbound", "outbound"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "paid", "refunded", "failed"]);
 export const subscriptionStatus = pgEnum("subscription_status", ["beta", "active", "past_due", "cancelled"]);
+export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -133,6 +135,26 @@ export const userSettings = pgTable("user_settings", {
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
   updatedAt: updatedAt(),
 });
+
+export const productFeedback = pgTable(
+  "product_feedback",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Clerk user id, so a person's feedback follows them across sessions. */
+    userId: text("user_id").notNull(),
+    category: feedbackCategory("category").notNull().default(DEFAULT_FEEDBACK_CATEGORY),
+    message: text("message").notNull(),
+    pagePath: text("page_path"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("product_feedback_user_idx").on(table.userId, table.createdAt),
+    index("product_feedback_workspace_idx").on(table.workspaceId, table.createdAt),
+  ],
+);
 
 /* -------------------------------------------------------------------- locations */
 

@@ -42,6 +42,8 @@ import type {
   Location,
   OpenTask,
   PortfolioSummary,
+  ProductFeedback,
+  ProductFeedbackDraft,
   Registration,
   RegistrationWithGuest,
   TemplateContents,
@@ -54,6 +56,7 @@ import type {
   WorkspaceMember,
 } from "../data/entities.ts";
 import { REGISTRATION_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
@@ -2130,6 +2133,43 @@ export const settings = {
       .onConflictDoUpdate({ target: s.userSettings.userId, set: { ...patch, updatedAt: new Date() } })
       .returning();
     return map.toUserSettings(row!);
+  },
+};
+
+/* ----------------------------------------------------------- product feedback */
+
+export const feedback = {
+  async list(ctx: RequestContext): Promise<ProductFeedback[]> {
+    const rows = await db
+      .select()
+      .from(s.productFeedback)
+      .where(
+        and(
+          eq(s.productFeedback.workspaceId, ctx.workspaceId),
+          eq(s.productFeedback.userId, ctx.userId),
+        ),
+      )
+      .orderBy(desc(s.productFeedback.createdAt));
+    return rows.map(map.toProductFeedback);
+  },
+
+  async create(ctx: RequestContext, draft: ProductFeedbackDraft): Promise<ProductFeedback> {
+    const parsed = feedbackDraftSchema.safeParse(draft);
+    if (!parsed.success) throw new HttpError(400, feedbackValidationMessage(parsed.error));
+    const { message, category, pagePath } = parsed.data;
+
+    const [row] = await db
+      .insert(s.productFeedback)
+      .values({
+        id: newId("feedback"),
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        category,
+        message,
+        pagePath,
+      })
+      .returning();
+    return map.toProductFeedback(row!);
   },
 };
 

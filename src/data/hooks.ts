@@ -40,6 +40,7 @@ import type {
   EventVendorPatch,
   Floorplan,
   OpenTask,
+  ProductFeedbackDraft,
   FloorplanDraft,
   LocationDraft,
   LocationPatch,
@@ -96,6 +97,7 @@ export const qk = {
   registrations: ["registrations"] as const,
   eventRegistrations: (eventId: string) => ["registrations", "byEvent", eventId] as const,
   members: ["members"] as const,
+  feedback: (userId: string) => ["feedback", userId] as const,
 
   vendors: ["vendors"] as const,
   vendor: (id: string) => ["vendors", "detail", id] as const,
@@ -947,6 +949,17 @@ export function useSetMemberRole() {
 
 export function useRemoveMember() {
   return useAdapterMutation((a, vars: { userId: string }) => a.members.remove(vars.userId), () => [qk.members]);
+}
+
+export function useFeedback(userId: string) {
+  return useAdapterQuery(qk.feedback(userId), (a) => a.feedback.list());
+}
+
+export function useSubmitFeedback(userId: string) {
+  return useAdapterMutation(
+    (a, draft: ProductFeedbackDraft) => a.feedback.create(draft),
+    () => [qk.feedback(userId)],
+  );
 }
 
 export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {

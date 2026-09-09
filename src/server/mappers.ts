@@ -23,6 +23,7 @@ import type {
   Event,
   EventHistoryEntry,
   MoodBoardImage,
+  ProductFeedback,
   EventRoi,
   EventVendor,
   Floorplan,
@@ -421,6 +422,18 @@ export function toUserSettings(row: InferSelectModel<typeof s.userSettings>): Us
     homeGrouping: row.homeGrouping as UserSettings["homeGrouping"],
     currency: row.currency,
     timeZone: row.timeZone,
+  };
+}
+
+export function toProductFeedback(row: InferSelectModel<typeof s.productFeedback>): ProductFeedback {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    userId: row.userId,
+    category: row.category,
+    message: row.message,
+    pagePath: row.pagePath,
+    createdAt: isoRequired(row.createdAt),
   };
 }
 

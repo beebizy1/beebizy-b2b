@@ -25,6 +25,7 @@ import type {
   Floorplan,
   Location,
   MenuItem,
+  ProductFeedback,
   RaffleItem,
   RaffleTicket,
   Registration,
@@ -71,6 +72,7 @@ export interface MemoryDb {
   history: EventHistoryEntry[];
   roi: EventRoi[];
   settings: UserSettings;
+  feedback: ProductFeedback[];
 }
 
 export const DEMO_OWNER_ID = "demo-owner";
@@ -1703,5 +1705,6 @@ export function buildSeed(): MemoryDb {
     history,
     roi,
     settings: { ...DEFAULT_USER_SETTINGS },
+    feedback: [],
   };
 }

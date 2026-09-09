@@ -24,10 +24,13 @@ vi.mock("./repos", () => {
     eventVendors: child,
     tickets: child,
     raffle: child,
+    feedback: { list: vi.fn(), create: vi.fn() },
   };
 });
 
 const { handleRequest } = await import("../../api/router");
+const { authorize } = await import("./auth");
+const { feedback } = await import("./repos");
 
 function leadRequest(method: string, body?: unknown): Request {
   return new Request("http://localhost/api/lead", {
@@ -91,5 +94,66 @@ describe("public lead endpoint", () => {
     sendEmail.mockRestore();
     error.mockRestore();
     log.mockRestore();
+  });
+});
+
+describe("feedback endpoint", () => {
+  const context = {
+    userId: "user-pilot",
+    workspaceId: "workspace-school",
+    role: "member" as const,
+    access: {
+      status: "beta" as const,
+      betaStartedAt: "2026-09-01T00:00:00.000Z",
+      betaEndsAt: "2026-12-01T00:00:00.000Z",
+    },
+  };
+
+  it("stores valid feedback for the authorized user", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(feedback.create).mockResolvedValue({
+      id: "feedback-1",
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      category: "idea",
+      message: "Add a better timeline view.",
+      pagePath: "/app/events/event-1",
+      createdAt: "2026-09-09T20:00:00.000Z",
+    });
+
+    const response = await handleRequest(
+      new Request("http://localhost/api/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          category: "idea",
+          message: "  Add a better timeline view.  ",
+          pagePath: "/app/events/event-1",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(feedback.create).toHaveBeenCalledWith(context, {
+      category: "idea",
+      message: "Add a better timeline view.",
+      pagePath: "/app/events/event-1",
+    });
+  });
+
+  it("rejects malformed feedback before it reaches storage", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(feedback.create).mockClear();
+
+    const response = await handleRequest(
+      new Request("http://localhost/api/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ category: "idea", message: "x", pagePath: "https://example.com" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(feedback.create).not.toHaveBeenCalled();
   });
 });

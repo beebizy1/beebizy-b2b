@@ -64,6 +64,13 @@
       "when": 1788617887947,
       "tag": "0008_odd_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788984002329,
+      "tag": "0009_bumpy_franklin_storm",
+      "breakpoints": true
     }
   ]
 }

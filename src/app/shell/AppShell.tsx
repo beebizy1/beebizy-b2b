@@ -28,6 +28,7 @@ import { useDataMode } from "@/data/provider";
 import type { Identity } from "@/data/adapter";
 import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
+import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, NAV_ITEMS, type NavItem } from "./nav";
 
 /**
@@ -157,7 +158,7 @@ function DemoBanner() {
   );
 }
 
-function BetaBanner({ access }: { access: Identity["access"] | undefined }) {
+function BetaBanner({ access, onFeedback }: { access: Identity["access"] | undefined; onFeedback: () => void }) {
   if (!access || access.status !== "beta") return null;
   const end = new Date(access.betaEndsAt);
   const remaining = Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86_400_000));
@@ -170,9 +171,9 @@ function BetaBanner({ access }: { access: Identity["access"] | undefined }) {
         <span data-numeric>{remaining} {remaining === 1 ? "day" : "days"}</span> remaining. Free access ends{" "}
         <span data-numeric>{new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(end)}</span>.
       </p>
-      <a href="mailto:hello@beebizy.com?subject=Beebizy%20Studio%20beta%20feedback" className="font-semibold text-primary-text underline underline-offset-2">
+      <button type="button" onClick={onFeedback} className="font-semibold text-primary-text underline underline-offset-2">
         Send feedback
-      </a>
+      </button>
     </div>
   );
 }
@@ -223,6 +224,7 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const { open, setOpen } = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { mode } = useDataMode();
   const { data: identity, isLoading: identityLoading, error: identityError } = useMe();
 
@@ -276,13 +278,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main id="main" className="flex min-h-dvh min-w-0 flex-1 flex-col pt-16 md:ml-64 md:pt-0">
         <DemoBanner />
-        {mode === "live" ? <BetaBanner access={identity?.access} /> : null}
+        {mode === "live" ? <BetaBanner access={identity?.access} onFeedback={() => setFeedbackOpen(true)} /> : null}
         {/* Screens return bare content; the canvas inset lives here, uncapped, so the
             page fills the width left of the rail the way the reference design does. */}
         <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</div>
       </main>
 
       <CommandPalette open={open} onOpenChange={setOpen} />
+      {mode === "live" && identity ? (
+        <FeedbackBot userId={identity.userId} open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+      ) : null}
     </div>
   );
 }

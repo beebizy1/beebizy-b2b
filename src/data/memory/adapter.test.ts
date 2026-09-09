@@ -677,6 +677,25 @@ describe("team hours", () => {
   });
 });
 
+describe("product feedback", () => {
+  it("stores feedback for the signed-in user and returns it newest first", async () => {
+    const first = await memoryAdapter.feedback.create({
+      category: "idea",
+      message: "Let me duplicate an event from the calendar.",
+      pagePath: "/app/calendar",
+    });
+    const second = await memoryAdapter.feedback.create({
+      category: "bug",
+      message: "The checklist did not keep my filter.",
+      pagePath: "/app/events/evt-gala/checklist",
+    });
+
+    expect(first.userId).toBe("demo-owner");
+    expect(first.workspaceId).toBe("demo-owner");
+    expect(await memoryAdapter.feedback.list()).toEqual([second, first]);
+  });
+});
+
 describe("event deletion", () => {
   it("cascades into rfps, deposits and team hours", async () => {
     await memoryAdapter.events.remove("evt-gala");
