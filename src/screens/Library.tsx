@@ -41,12 +41,14 @@ import {
   useDeleteTemplate,
   useEvents,
   useLocations,
+  useMe,
   useTemplates,
   useUpdateLocation,
 } from "@/data/hooks";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import type { Location } from "@/data/entities";
+import { effectivePlan, planHasCapability } from "@/data/plans";
 
 function TemplatesPanel() {
   const { data: templates, isLoading, isError, error, refetch } = useTemplates();
@@ -489,18 +491,27 @@ function VenuesPanel() {
 }
 
 export default function Library() {
+  const { data: identity } = useMe();
+  const plan = effectivePlan(identity?.access);
+  const canUseBoards = planHasCapability(plan, "inspirationBoards");
+  const canUseVenues = planHasCapability(plan, "multiLocation");
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="What you reuse"
-        description="Templates, boards and venues. Set these up once and every future event starts further along."
+        description={
+          canUseBoards || canUseVenues
+            ? "Templates, boards and venues. Set these up once and every future event starts further along."
+            : "Reusable templates help every future event start further along."
+        }
       />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      <div className={canUseVenues ? "grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : "space-y-6"}>
         <div className="space-y-6">
           <TemplatesPanel />
-          <BoardsPanel />
+          {canUseBoards ? <BoardsPanel /> : null}
         </div>
-        <VenuesPanel />
+        {canUseVenues ? <VenuesPanel /> : null}
       </div>
     </div>
   );

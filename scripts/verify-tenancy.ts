@@ -26,7 +26,12 @@ const bob: RequestContext = { userId: `user_bob_${suffix}`, workspaceId: `ws_bob
 
 async function main() {
   for (const ctx of [alice, bob]) {
-    await db.insert(s.workspaces).values({ id: ctx.workspaceId, name: `${ctx.userId} workspace` });
+    await db.insert(s.workspaces).values({
+      id: ctx.workspaceId,
+      name: `${ctx.userId} workspace`,
+      subscriptionStatus: ctx === alice ? "active" : "beta",
+      subscriptionPlan: ctx === alice ? "solo" : null,
+    });
     await db.insert(s.workspaceMembers).values({ workspaceId: ctx.workspaceId, userId: ctx.userId, role: "owner" });
   }
 
@@ -41,6 +46,50 @@ async function main() {
     locationId: venue.id,
   });
   check("event persists with its venue joined", event.locationRecord?.name === "Alice Hall", event.locationRecord?.name);
+  let soloLimitEnforced = false;
+  try {
+    await repos.events.create(alice, {
+      title: "Second event in the same year",
+      date: new Date(event.date).toISOString(),
+      status: "draft",
+      category: "Summit",
+    });
+  } catch (error) {
+    soloLimitEnforced = /one event/i.test(String(error));
+  }
+  check("Solo refuses a second event in the same calendar year", soloLimitEnforced);
+
+  const nextYearDate = new Date(event.date);
+  nextYearDate.setUTCFullYear(nextYearDate.getUTCFullYear() + 1);
+  const nextYearEvent = await repos.events.create(alice, {
+    title: "Next year's event",
+    date: nextYearDate.toISOString(),
+    status: "draft",
+    category: "Summit",
+  });
+  let dateMoveDenied = false;
+  try {
+    await repos.events.update(alice, nextYearEvent.id, { date: event.date });
+  } catch (error) {
+    dateMoveDenied = /already has an event/i.test(String(error));
+  }
+  check("Solo cannot move two events into the same calendar year", dateMoveDenied);
+  await repos.events.remove(alice, nextYearEvent.id);
+
+  const concurrentDate = new Date(event.date);
+  concurrentDate.setUTCFullYear(concurrentDate.getUTCFullYear() + 2);
+  const concurrentCreates = await Promise.allSettled([
+    repos.events.create(alice, { title: "Concurrent A", date: concurrentDate.toISOString(), category: "Summit" }),
+    repos.events.create(alice, { title: "Concurrent B", date: concurrentDate.toISOString(), category: "Summit" }),
+  ]);
+  const concurrentSuccesses = concurrentCreates.filter(
+    (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof repos.events.create>>> => result.status === "fulfilled",
+  );
+  check(
+    "Solo concurrent creates claim only one calendar-year slot",
+    concurrentSuccesses.length === 1 && concurrentCreates.filter((result) => result.status === "rejected").length === 1,
+  );
+  if (concurrentSuccesses[0]) await repos.events.remove(alice, concurrentSuccesses[0].value.id);
   await repos.checklist.create(alice, event.id, { title: "Confirm catering", category: "Catering" });
   await repos.runOfShow.create(alice, event.id, { startTime: "09:00", title: "Doors open", duration: 30 });
   await repos.budget.create(alice, event.id, {
@@ -79,7 +128,7 @@ async function main() {
   ]);
   await repos.registrations.create(alice, { eventId: event.id, guestId: a1!.id, status: "confirmed" });
   await repos.registrations.create(alice, { eventId: event.id, guestId: a2!.id, status: "confirmed" });
-  await repos.floorplan.save(alice, event.id, "Two-seat test room", [
+  await repos.floorplan.create(alice, event.id, "Two-seat test room", [
     { id: "table-1", shape: "long-table", label: "Table 1", x: 50, y: 50, seats: 2 },
   ]);
 
@@ -159,4 +208,11 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  for (const ctx of [alice, bob]) {
+    await db.delete(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId));
+  }
+  throw error;
+}

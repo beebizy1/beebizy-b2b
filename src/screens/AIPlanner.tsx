@@ -25,6 +25,7 @@ import {
   useAddMoodBoardImage,
   useAddRunOfShowItem,
   useCreateEvent,
+  useMe,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
 import {
@@ -38,6 +39,7 @@ import { toast } from "@/hooks/use-toast";
 import { formatClockTime } from "@/lib/datetime";
 import { EVENT_CATEGORIES, type ChecklistItemDraft, type EventCategory, type RunOfShowItemDraft } from "@/data/entities";
 import SpreadsheetImporter from "@/screens/import/SpreadsheetImporter";
+import { effectivePlan, planHasCapability } from "@/data/plans";
 
 type PlannerMode = "choose" | "agent" | "plan" | "import";
 
@@ -97,7 +99,6 @@ const checklistDraft: ChecklistItemDraft[] = [
   { title: "Send guest invitations", category: "Marketing", sortOrder: 2 },
   { title: "Confirm AV, staging and show caller", category: "AV", sortOrder: 3 },
   { title: "Review final run of show with every vendor", category: "Programme", sortOrder: 4 },
-  { title: "Prepare weather and contingency plan", category: "Logistics", sortOrder: 5 },
 ];
 
 const runOfShowDraft: RunOfShowItemDraft[] = [
@@ -117,6 +118,7 @@ export default function AIPlanner() {
   const addChecklist = useAddChecklistItem();
   const addMood = useAddMoodBoardImage();
   const addRunOfShow = useAddRunOfShowItem();
+  const { data: identity } = useMe();
   const [mode, setMode] = useState<PlannerMode>("choose");
   const [eventType, setEventType] = useState<string>(EVENT_CATEGORIES[0]);
   const [headcount, setHeadcount] = useState("200");
@@ -136,6 +138,7 @@ export default function AIPlanner() {
   const totalBudget = budgetIsValid ? parsedBudget : suggestedTotalBudgetCents(guests);
   const budget = useMemo(() => buildBudgetSuggestions(totalBudget), [totalBudget]);
   const direction = themeDirections[theme];
+  const canSaveMoodBoard = planHasCapability(effectivePlan(identity?.access), "inspirationBoards");
 
   useEffect(() => {
     if (budgetEdited) return;
@@ -160,18 +163,20 @@ export default function AIPlanner() {
         ...budget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
         ...checklistDraft.map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
         ...runOfShowDraft.map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
-        ...direction.variations.map((variation) =>
-          addMood.mutateAsync({
-            eventId: created.id,
-            url: moodConceptDataUrl({
-              name: variation.name,
-              description: variation.note,
-              palette: [variation.colors[0], variation.colors[1], variation.colors[2], "#ffffff"],
-              keywords: [theme, variation.name, eventType],
-            }),
-            caption: `${variation.name} · ${variation.note}`,
-          }),
-        ),
+        ...(canSaveMoodBoard
+          ? direction.variations.map((variation) =>
+              addMood.mutateAsync({
+                eventId: created.id,
+                url: moodConceptDataUrl({
+                  name: variation.name,
+                  description: variation.note,
+                  palette: [variation.colors[0], variation.colors[1], variation.colors[2], "#ffffff"],
+                  keywords: [theme, variation.name, eventType],
+                }),
+                caption: `${variation.name} · ${variation.note}`,
+              }),
+            )
+          : []),
       ]);
       const failed = writes.filter((result) => result.status === "rejected").length;
       toast({
@@ -211,7 +216,11 @@ export default function AIPlanner() {
               Tell Bee about the event and get an editable budget, checklist, run of show, theme directions and vendor shortlist.
             </p>
             <ul className="mt-5 space-y-2 text-sm text-foreground">
-              {["Budget based on headcount", "Theme and mood board variations", "Working event plan in one click"].map((item) => (
+              {[
+                "Budget based on headcount",
+                canSaveMoodBoard ? "Theme and mood board variations" : "Editable theme direction ideas",
+                "Working event plan in one click",
+              ].map((item) => (
                 <li key={item} className="flex items-center gap-2">
                   <CheckCircle2 className="size-4 text-success-text" aria-hidden="true" />
                   {item}

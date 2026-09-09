@@ -18,6 +18,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { ClerkGate } from "@/app/ClerkGate";
 import { DataProvider } from "@/data/provider";
 import { FEEDBACK_INBOX_PATH } from "@/data/entities";
+import { useMe } from "@/data/hooks";
+import { effectivePlan, planHasCapability, type PlanCapability } from "@/data/plans";
 import { isDataError } from "@/data/adapter";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { RequireSession, SessionProvider } from "@/app/session";
@@ -29,6 +31,8 @@ import LoginPage from "@/pages/LoginPage";
 import AcceptInvitationPage from "@/pages/AcceptInvitationPage";
 import AccessDeniedPage from "@/pages/AccessDeniedPage";
 import SubscriptionRequiredPage from "@/pages/SubscriptionRequiredPage";
+import PricingPage from "@/pages/PricingPage";
+import BillingSuccessPage from "@/pages/BillingSuccessPage";
 import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
@@ -42,6 +46,7 @@ import VendorsIndex from "@/screens/vendors/VendorsIndex";
 import VendorDetail from "@/screens/vendors/VendorDetail";
 import VendorForm from "@/screens/vendors/VendorForm";
 import Budget from "@/screens/Budget";
+import Reporting from "@/screens/Reporting";
 import History from "@/screens/History";
 import Messages from "@/screens/Messages";
 import Tasks from "@/screens/Tasks";
@@ -61,6 +66,13 @@ import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
+
+function PlanGate({ capability, children }: { capability: PlanCapability; children: React.ReactNode }) {
+  const { data: identity, isLoading } = useMe();
+  if (isLoading || !identity) return null;
+  if (!planHasCapability(effectivePlan(identity.access), capability)) return <Redirect to="/pricing" replace />;
+  return <>{children}</>;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,26 +107,25 @@ function AppRoutes() {
           <Route path="/app/events/:id">{(params) => <EventWorkspace id={params.id} />}</Route>
           <Route path="/app/attendees" component={Guests} />
           <Route path="/app/attendees/new" component={Guests} />
-          <Route path="/app/locations" component={LocationsIndex} />
-          <Route path="/app/locations/new">{() => <LocationForm />}</Route>
-          <Route path="/app/locations/:id/edit">{(params) => <LocationForm id={params.id} />}</Route>
-          <Route path="/app/locations/:id">{(params) => <LocationDetail id={params.id} />}</Route>
+          <Route path="/app/locations">{() => <PlanGate capability="multiLocation"><LocationsIndex /></PlanGate>}</Route>
+          <Route path="/app/locations/new">{() => <PlanGate capability="multiLocation"><LocationForm /></PlanGate>}</Route>
+          <Route path="/app/locations/:id/edit">{(params) => <PlanGate capability="multiLocation"><LocationForm id={params.id} /></PlanGate>}</Route>
+          <Route path="/app/locations/:id">{(params) => <PlanGate capability="multiLocation"><LocationDetail id={params.id} /></PlanGate>}</Route>
           <Route path="/app/registrations" component={RegistrationsIndex} />
           <Route path="/app/registrations/new">{() => <RegistrationForm />}</Route>
-          <Route path="/app/vendors" component={VendorsIndex} />
-          <Route path="/app/vendors/new">{() => <VendorForm />}</Route>
-          <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
+          <Route path="/app/vendors">{() => <PlanGate capability="vendorManagement"><VendorsIndex /></PlanGate>}</Route>
+          <Route path="/app/vendors/new">{() => <PlanGate capability="vendorManagement"><VendorForm /></PlanGate>}</Route>
+          <Route path="/app/vendors/:id">{(params) => <PlanGate capability="vendorManagement"><VendorDetail id={params.id} /></PlanGate>}</Route>
           <Route path="/app/budget">{() => <Budget />}</Route>
           <Route path="/app/history" component={History} />
           <Route path="/app/reporting">
             {() => (
-              <Budget
-                title="Portfolio performance, event by event"
-                description="Track spend, revenue and return across every event, with the underlying event detail one click away."
-              />
+              <PlanGate capability="customReporting">
+                <Reporting />
+              </PlanGate>
             )}
           </Route>
-          <Route path="/app/messages" component={Messages} />
+          <Route path="/app/messages">{() => <PlanGate capability="vendorManagement"><Messages /></PlanGate>}</Route>
           <Route path="/app/tasks" component={Tasks} />
           <Route path="/app/tickets" component={TicketSales} />
           <Route path="/app/templates" component={Library} />
@@ -140,6 +151,8 @@ function Routes() {
       <Route path={INVITATION_ACCEPTANCE_PATH} component={AcceptInvitationPage} />
       <Route path="/access-denied" component={AccessDeniedPage} />
       <Route path="/subscription-required" component={SubscriptionRequiredPage} />
+      <Route path="/pricing" component={PricingPage} />
+      <Route path="/billing/success" component={BillingSuccessPage} />
       <Route path="/signup">{() => <Redirect to="/access-denied" replace />}</Route>
       <Route path="/signup/*">{() => <Redirect to="/access-denied" replace />}</Route>
 

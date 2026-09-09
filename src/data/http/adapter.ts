@@ -20,6 +20,7 @@ import type {
   Canvas,
   CanvasCard,
   ChecklistItem,
+  CustomReportRow,
   Deposit,
   Event,
   EventHealth,
@@ -158,6 +159,11 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     cacheScope: options.cacheScope,
 
     me: () => client.get<Identity>("/me"),
+
+    billing: {
+      checkout: (interval) => client.post<{ url: string }>("/billing/checkout", { interval }),
+      portal: () => client.post<{ url: string }>("/billing/portal"),
+    },
 
     assistant: {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
@@ -358,6 +364,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     analytics: {
+      customReport: () => client.get<CustomReportRow[]>("/analytics/custom-report"),
       portfolio: () => client.get<PortfolioSummary>("/analytics/portfolio"),
       health: (eventIds) =>
         client.get<EventHealth[]>(`/analytics/health${eventIds?.length ? `?eventIds=${eventIds.join(",")}` : ""}`),

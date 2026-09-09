@@ -71,6 +71,12 @@ function HeaderMenu() {
           >
             About Us
           </a>
+          <a
+            href="/pricing"
+            className="block rounded-xl px-4 py-3 text-sm font-bold text-gray-900 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+          >
+            Pricing
+          </a>
         </nav>
       ) : null}
     </div>
@@ -323,6 +329,10 @@ export function LandingPage() {
       aboutLink.href = "/about";
       aboutLink.textContent = "About Us";
       featuresLink.after(aboutLink);
+      const pricingLink = featuresLink.cloneNode(true) as HTMLAnchorElement;
+      pricingLink.href = "/pricing";
+      pricingLink.textContent = "Pricing";
+      aboutLink.after(pricingLink);
     });
 
     return () => {

@@ -59,3 +59,42 @@
 - [x] Keep the build restricted to the private Vercel preview host.
 
 final result: passed
+
+## Pricing page review
+
+## Reference
+
+- Source: the user-provided ChatGPT pricing screenshot.
+- Product constraint: preserve Beebizy's existing light yellow-and-white design system and remove the black page treatment.
+- Content source: the user-provided Solo, Team (Hive), and Enterprise tier document.
+
+## Comparison review
+
+- Compared the reference pricing hierarchy with the implementation in the in-app browser.
+- The implementation preserves the reference's centered pricing introduction, segmented billing control, equal plan cards, prominent price and CTA, dividers, and scannable feature lists.
+- The dark reference palette was intentionally translated to Beebizy's semantic light tokens, yellow primary actions, white cards, and navy text.
+- The four-column reference becomes three columns because Beebizy has three tiers.
+
+## Responsive and interaction checks
+
+- Mobile viewport checked at approximately 461 by 738 pixels.
+- Header actions remain on one line and readable.
+- Heading wraps without clipping or horizontal overflow.
+- Billing toggle remains fully visible and touch-friendly.
+- Pricing cards stack to one column with readable price, CTA, and feature spacing.
+- Monthly and yearly controls update Solo pricing and savings copy.
+- Solo CTA sends anonymous users to sign in and returns them to pricing.
+- Checkout cancellation confirms that no payment was taken.
+- Team and Enterprise CTAs open a pre-addressed sales email.
+
+## Accessibility checks
+
+- Billing controls expose pressed state and a group label.
+- Plan collection and error messages have accessible labels.
+- Icons are decorative where text already carries the meaning.
+- Buttons and links use the existing focus-visible treatment.
+- Muted copy and primary text use the existing contrast-corrected design tokens.
+
+## Result
+
+Passed. The page matches the reference structure, uses Beebizy's requested non-black visual system, and keeps the full selection and conversion path functional.

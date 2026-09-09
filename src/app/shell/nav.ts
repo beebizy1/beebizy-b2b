@@ -13,6 +13,7 @@ import {
   Calendar,
   CalendarDays,
   ClipboardList,
+  CloudRain,
   Clock,
   DollarSign,
   FileText,
@@ -34,6 +35,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
+import { planHasCapability, type PlanCapability, type PlanId } from "@/data/plans";
 
 export interface NavItem {
   label: string;
@@ -41,6 +43,7 @@ export interface NavItem {
   icon: LucideIcon;
   /** One line, shown in the command palette. */
   hint: string;
+  capability?: PlanCapability;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -79,18 +82,21 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/app/locations",
     icon: MapPin,
     hint: "Venues and the events booked into them",
+    capability: "multiLocation",
   },
   {
     label: "Vendors",
     href: "/app/vendors",
     icon: Store,
     hint: "Your vendors and Beebizy marketplace suggestions",
+    capability: "vendorManagement",
   },
   {
     label: "Messages",
     href: "/app/messages",
     icon: MessageSquare,
     hint: "All vendor conversations in one inbox",
+    capability: "vendorManagement",
   },
   {
     label: "Attendees",
@@ -109,6 +115,7 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/app/reporting",
     icon: PieChart,
     hint: "Portfolio spend, revenue, attendance and ROI",
+    capability: "customReporting",
   },
   {
     label: "Historical Data",
@@ -125,8 +132,9 @@ const FEEDBACK_REVIEW_NAV_ITEM: NavItem = {
   hint: "Private feedback inbox for the Beebizy product team",
 };
 
-export function visibleNavItems(canReviewFeedback: boolean): NavItem[] {
-  return canReviewFeedback ? [...NAV_ITEMS, FEEDBACK_REVIEW_NAV_ITEM] : NAV_ITEMS;
+export function visibleNavItems(canReviewFeedback: boolean, plan: PlanId = "enterprise"): NavItem[] {
+  const planItems = NAV_ITEMS.filter((item) => !item.capability || planHasCapability(plan, item.capability));
+  return canReviewFeedback ? [...planItems, FEEDBACK_REVIEW_NAV_ITEM] : planItems;
 }
 
 export interface EventTab {
@@ -136,6 +144,7 @@ export interface EventTab {
   slug: string;
   icon: LucideIcon | null;
   hint: string;
+  capability?: PlanCapability;
 }
 
 export type EventTabId =
@@ -143,6 +152,7 @@ export type EventTabId =
   | "registrations"
   | "run-of-show"
   | "checklist"
+  | "contingency"
   | "vendors"
   | "budget"
   | "floorplan"
@@ -171,12 +181,20 @@ export const EVENT_TABS: EventTab[] = [
   { id: "registrations", label: "Registrations", slug: "registrations", icon: Users, hint: "Invitations, registrations and capacity" },
   { id: "run-of-show", label: "Run of Show", slug: "run-of-show", icon: Clock, hint: "Cue-by-cue schedule for the day" },
   { id: "checklist", label: "Checklist", slug: "checklist", icon: ClipboardList, hint: "Everything still to do, and who owns it" },
-  { id: "vendors", label: "Vendors", slug: "vendors", icon: Store, hint: "Bookings and confirmations" },
+  {
+    id: "contingency",
+    label: "Contingency",
+    slug: "contingency",
+    icon: CloudRain,
+    hint: "Weather triggers, backup plans and communications",
+    capability: "contingencyPlanning",
+  },
+  { id: "vendors", label: "Vendors", slug: "vendors", icon: Store, hint: "Bookings and confirmations", capability: "vendorManagement" },
   { id: "budget", label: "Budget & ROI", slug: "budget", icon: DollarSign, hint: "Planned against actual, and the return" },
   { id: "floorplan", label: "Floorplan", slug: "floorplan", icon: LayoutGrid, hint: "Room layout, tables and zones" },
-  { id: "inspiration", label: "Inspiration", slug: "inspiration", icon: Sparkles, hint: "Mood board for decor, staging and lighting" },
+  { id: "inspiration", label: "Inspiration", slug: "inspiration", icon: Sparkles, hint: "Mood board for decor, staging and lighting", capability: "inspirationBoards" },
   { id: "fundraising", label: "Fundraising", slug: "fundraising", icon: HandCoins, hint: "Sponsorships and what they brought in" },
-  { id: "analytics", label: "Analytics", slug: "analytics", icon: BarChart2, hint: "How the event performed" },
+  { id: "analytics", label: "Analytics", slug: "analytics", icon: BarChart2, hint: "How the event performed", capability: "customReporting" },
   { id: "menu", label: "Menu", slug: "menu", icon: UtensilsCrossed, hint: "Courses, dietary requirements and covers" },
   { id: "tickets", label: "Tickets", slug: "tickets", icon: Ticket, hint: "Ticket types, allocation and sales" },
   { id: "raffle", label: "Raffle", slug: "raffle", icon: Trophy, hint: "Raffle prizes, tickets sold and the draw" },
@@ -185,6 +203,10 @@ export const EVENT_TABS: EventTab[] = [
   { id: "rfp", label: "RFP", slug: "rfp", icon: FileText, hint: "Briefs out to vendors and the quotes back" },
   { id: "deposits", label: "Deposits", slug: "deposits", icon: Banknote, hint: "Money committed to vendors before the day" },
 ];
+
+export function visibleEventTabs(plan: PlanId = "enterprise"): EventTab[] {
+  return EVENT_TABS.filter((tab) => !tab.capability || planHasCapability(plan, tab.capability));
+}
 
 /**
  * Publishing is an action taken from the header, not a tab someone browses to, so it

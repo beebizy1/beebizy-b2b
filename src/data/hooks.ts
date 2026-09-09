@@ -209,6 +209,10 @@ export function usePortfolio() {
   return useAdapterQuery(qk.portfolio, (a) => a.analytics.portfolio());
 }
 
+export function useCustomReport() {
+  return useAdapterQuery(["analytics", "custom-report"], (a) => a.analytics.customReport());
+}
+
 export function useAttention(): UseQueryResult<AttentionItem[], Error> {
   return useAdapterQuery(qk.attention, (a) => a.analytics.attention());
 }

@@ -15,6 +15,11 @@ import { isClerkConfigured } from "@/lib/clerk";
 import { clerkAppearance } from "@/app/clerkAppearance";
 
 export default function LoginPage() {
+  const requestedReturn = new URLSearchParams(window.location.search).get("returnTo");
+  const returnTo = requestedReturn && (requestedReturn === "/pricing" || requestedReturn.startsWith("/app"))
+    ? requestedReturn
+    : "/app";
+
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-6 py-12">
       <div className="flex w-full max-w-md flex-col items-center gap-8">
@@ -27,8 +32,8 @@ export default function LoginPage() {
             appearance={clerkAppearance}
             withSignUp={false}
             transferable={false}
-            forceRedirectUrl="/app"
-            fallbackRedirectUrl="/app"
+            forceRedirectUrl={returnTo}
+            fallbackRedirectUrl={returnTo}
           />
         ) : (
           <div className="w-full space-y-4 rounded-xl border border-card-border bg-card p-6 text-center shadow-xs">

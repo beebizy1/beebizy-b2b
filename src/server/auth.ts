@@ -13,7 +13,7 @@
  */
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import {
   canAccessOperatorFeedbackInbox,
   hasInternalAccess,
@@ -22,6 +22,7 @@ import {
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
+import { effectivePlan, type PlanId } from "../data/plans.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -29,8 +30,12 @@ export type WorkspaceAccessStatus = "beta" | "active" | "expired" | "past_due" |
 
 export interface WorkspaceAccess {
   status: WorkspaceAccessStatus;
+  plan: PlanId | null;
   betaStartedAt: string;
   betaEndsAt: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  billingPortalAvailable?: boolean;
 }
 
 export interface RequestContext {
@@ -156,9 +161,58 @@ function accessForWorkspace(workspace: typeof workspaces.$inferSelect): Workspac
     stored === "beta" && workspace.betaEndsAt.getTime() <= Date.now() ? "expired" : stored;
   return {
     status,
+    plan: workspace.subscriptionPlan,
     betaStartedAt: workspace.betaStartedAt.toISOString(),
     betaEndsAt: workspace.betaEndsAt.toISOString(),
+    currentPeriodEnd: workspace.subscriptionCurrentPeriodEnd?.toISOString() ?? null,
+    cancelAtPeriodEnd: workspace.subscriptionCancelAtPeriodEnd,
+    billingPortalAvailable: Boolean(workspace.stripeCustomerId),
   };
+}
+
+/**
+ * Serializes seat creation with Solo activation and checks the plan from the database,
+ * not from a request context that may have been authorized before a webhook ran.
+ */
+async function addWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+  role: Role,
+): Promise<boolean> {
+  const entitlementLock = db
+    .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${workspaceId}))` })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+  const memberInsert = db
+    .insert(workspaceMembers)
+    .select(
+      db
+        .select({
+          workspaceId: workspaces.id,
+          userId: sql<string>`${userId}::text`.as("user_id"),
+          role: sql<Role>`${role}::workspace_role`.as("role"),
+        })
+        .from(workspaces)
+        .where(
+          and(
+            eq(workspaces.id, workspaceId),
+            isNull(workspaces.stripeCheckoutSessionId),
+            or(ne(workspaces.subscriptionStatus, "active"), ne(workspaces.subscriptionPlan, "solo")),
+          ),
+        ),
+    )
+    .onConflictDoNothing()
+    .returning({ userId: workspaceMembers.userId });
+
+  const [, inserted] = await db.batch([entitlementLock, memberInsert]);
+  if (inserted.length > 0) return true;
+  const [existing] = await db
+    .select({ userId: workspaceMembers.userId })
+    .from(workspaceMembers)
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)))
+    .limit(1);
+  return Boolean(existing);
 }
 
 async function resolveWorkspace(
@@ -176,7 +230,9 @@ async function resolveWorkspace(
         .limit(1);
       // Being in the Clerk org is the source of truth; mirror it into membership once.
       if (!membership) {
-        await db.insert(workspaceMembers).values({ workspaceId: existing.id, userId, role: "member" });
+        if (!(await addWorkspaceMember(existing.id, userId, "member"))) {
+          throw new HttpError(403, "This workspace's Solo plan does not include another user.");
+        }
         return { workspaceId: existing.id, role: "member", access: accessForWorkspace(existing) };
       }
       return { workspaceId: existing.id, role: membership.role, access: accessForWorkspace(existing) };
@@ -201,16 +257,17 @@ async function resolveWorkspace(
     if (invite) {
       const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
       if (workspace) {
-        await db.batch([
-          db
-            .insert(workspaceMembers)
-            .values({ workspaceId: invite.workspaceId, userId, role: invite.role })
-            .onConflictDoNothing(),
-          db
-            .update(workspaceInvites)
-            .set({ acceptedAt: new Date(), acceptedUserId: userId })
-            .where(eq(workspaceInvites.id, invite.id)),
-        ]);
+        const invitedAccess = accessForWorkspace(workspace);
+        if (invitedAccess.status === "active" && effectivePlan(invitedAccess) === "solo") {
+          throw new HttpError(403, "This workspace's Solo plan does not include another user.");
+        }
+        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role))) {
+          throw new HttpError(403, "This workspace's Solo plan does not include another user.");
+        }
+        await db
+          .update(workspaceInvites)
+          .set({ acceptedAt: new Date(), acceptedUserId: userId })
+          .where(eq(workspaceInvites.id, invite.id));
         return { workspaceId: invite.workspaceId, role: invite.role, access: accessForWorkspace(workspace) };
       }
     }
@@ -257,13 +314,27 @@ export async function authorize(request: Request): Promise<RequestContext> {
   const url = new URL(request.url);
   const route = url.searchParams.get("__path") ?? url.pathname.replace(/^\/api\/?/, "");
   const operatorFeedbackInbox = canAccessOperatorFeedbackInbox(route, email);
-  if (access.status !== "beta" && access.status !== "active" && route !== "me" && !operatorFeedbackInbox) {
+  const billingRecoveryRoute = route === "billing/checkout" || route === "billing/portal";
+  if (access.status === "active" && !access.plan && route !== "me" && !operatorFeedbackInbox) {
+    throw new HttpError(402, "Your workspace plan is not assigned yet. Ask Beebizy support to finish activation.");
+  }
+  if (
+    access.status !== "beta" &&
+    access.status !== "active" &&
+    route !== "me" &&
+    !billingRecoveryRoute &&
+    !operatorFeedbackInbox
+  ) {
     const message = access.status === "past_due"
       ? "Your Beebizy Studio payment is past due. Update the subscription to continue."
       : access.status === "cancelled"
         ? "Your Beebizy Studio subscription is cancelled. Reactivate it to continue."
         : "Your three-month Beebizy Studio beta has ended. Activate a subscription to continue.";
     throw new HttpError(402, message);
+  }
+
+  if (access.status === "active" && effectivePlan(access) === "solo" && role !== "owner") {
+    throw new HttpError(403, "The Solo plan includes one workspace owner. Upgrade to add collaborators.");
   }
 
   return { userId, email, workspaceId, role, access };

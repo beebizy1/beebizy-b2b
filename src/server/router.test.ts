@@ -25,13 +25,24 @@ vi.mock("./repos", () => {
     eventVendors: child,
     tickets: child,
     raffle: child,
+    vendors: { list: vi.fn() },
+    locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
+    members: { list: vi.fn().mockResolvedValue([]) },
+    canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
+    analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
     feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn() },
   };
 });
+vi.mock("./billing", () => ({
+  createCheckoutSession: vi.fn(),
+  createPortalSession: vi.fn(),
+  handleStripeWebhook: vi.fn(),
+}));
 
-const { handleRequest } = await import("../../api/router");
+const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { feedback } = await import("./repos");
+const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
   return new Request("http://localhost/api/lead", {
@@ -106,8 +117,11 @@ describe("feedback endpoint", () => {
     role: "member" as const,
     access: {
       status: "beta" as const,
+      plan: null,
       betaStartedAt: "2026-09-01T00:00:00.000Z",
       betaEndsAt: "2026-12-01T00:00:00.000Z",
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
     },
   };
 
@@ -176,5 +190,65 @@ describe("feedback endpoint", () => {
     const denied = await handleRequest(new Request("http://localhost/api/feedback/inbox"));
     expect(denied.status).toBe(403);
     expect(feedback.listInbox).not.toHaveBeenCalled();
+  });
+});
+
+describe("billing endpoints", () => {
+  const owner = {
+    userId: "user-owner",
+    workspaceId: "workspace-paid",
+    email: "owner@example.com",
+    role: "owner" as const,
+    access: {
+      status: "active" as const,
+      plan: "solo" as const,
+      betaStartedAt: "2026-01-01T00:00:00.000Z",
+      betaEndsAt: "2026-04-01T00:00:00.000Z",
+      currentPeriodEnd: "2026-10-01T00:00:00.000Z",
+      cancelAtPeriodEnd: false,
+    },
+  };
+
+  it("creates checkout from the server-selected interval and ignores client price ids", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    vi.mocked(createCheckoutSession).mockResolvedValue({ url: "https://checkout.stripe.com/test" });
+    const request = new Request("http://localhost/api/billing/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ interval: "year", priceId: "price_attacker_supplied" }),
+    });
+
+    const response = await handleRequest(request);
+
+    expect(response.status).toBe(200);
+    expect(createCheckoutSession).toHaveBeenCalledWith(owner, "year", request);
+  });
+
+  it("accepts the signed Stripe webhook without a user session", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(handleStripeWebhook).mockResolvedValue({ received: true });
+    const request = new Request("http://localhost/api/billing/webhook", { method: "POST", body: "signed" });
+
+    expect((await handleRequest(request)).status).toBe(200);
+    expect(handleStripeWebhook).toHaveBeenCalledWith(request);
+    expect(authorize).not.toHaveBeenCalled();
+    expect(config.api.bodyParser).toBe(false);
+  });
+
+  it("keeps Solo core reads working while enforcing premium writes", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    for (const path of ["locations", "members", "analytics/portfolio"]) {
+      expect((await handleRequest(new Request(`http://localhost/api/${path}`))).status).toBe(200);
+    }
+    expect((await handleRequest(new Request("http://localhost/api/boards"))).status).toBe(403);
+    for (const path of ["boards", "locations"]) {
+      expect((await handleRequest(new Request(`http://localhost/api/${path}`, { method: "POST" }))).status).toBe(403);
+    }
+    expect((await handleRequest(new Request("http://localhost/api/analytics/custom-report"))).status).toBe(403);
+    expect((await handleRequest(new Request("http://localhost/api/vendors"))).status).toBe(403);
+
+    vi.mocked(authorize).mockResolvedValue({ ...owner, access: { ...owner.access, plan: "enterprise" } });
+    expect((await handleRequest(new Request("http://localhost/api/boards"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/analytics/custom-report"))).status).toBe(200);
   });
 });

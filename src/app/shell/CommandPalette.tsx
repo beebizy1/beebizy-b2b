@@ -23,6 +23,7 @@ import {
 import { useEvents } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import { visibleNavItems } from "./nav";
+import { planHasCapability, type PlanId } from "@/data/plans";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
   const [open, setOpen] = useState(false);
@@ -71,10 +72,12 @@ function score(value: string, search: string): number {
 
 export function CommandPalette({
   canReviewFeedback,
+  plan,
   open,
   onOpenChange,
 }: {
   canReviewFeedback: boolean;
+  plan: PlanId;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -116,10 +119,12 @@ export function CommandPalette({
                 <Plus className="mr-2 size-4" aria-hidden="true" />
                 New event
               </CommandItem>
-              <CommandItem value="new vendor supplier create" onSelect={() => go("/app/vendors/new")}>
-                <Store className="mr-2 size-4" aria-hidden="true" />
-                New vendor
-              </CommandItem>
+              {planHasCapability(plan, "vendorManagement") ? (
+                <CommandItem value="new vendor supplier create" onSelect={() => go("/app/vendors/new")}>
+                  <Store className="mr-2 size-4" aria-hidden="true" />
+                  New vendor
+                </CommandItem>
+              ) : null}
               <CommandItem value="new guest person create" onSelect={() => go("/app/guests/new")}>
                 <UserPlus className="mr-2 size-4" aria-hidden="true" />
                 New guest
@@ -129,7 +134,7 @@ export function CommandPalette({
             <CommandSeparator />
 
             <CommandGroup heading="Go to">
-              {visibleNavItems(canReviewFeedback).map((item) => (
+              {visibleNavItems(canReviewFeedback, plan).map((item) => (
                 <CommandItem key={item.href} value={`${item.label} ${item.hint}`} onSelect={() => go(item.href)}>
                   <item.icon className="mr-2 size-4" aria-hidden="true" />
                   <span>{item.label}</span>

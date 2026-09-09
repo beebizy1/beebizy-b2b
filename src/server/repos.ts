@@ -16,7 +16,7 @@
  *     race past.
  */
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
 import * as s from "./schema.ts";
 import {
@@ -34,6 +34,7 @@ import { parseDate, parseOptionalDate } from "./mappers.ts";
 import type {
   Canvas,
   CanvasCard,
+  CustomReportRow,
   Event,
   EventHealth,
   EventHistoryChange,
@@ -78,6 +79,12 @@ function appOrigin(): string {
 import { selectSimilarPastEvents, type PastEventPlanningRecord } from "../data/planner.ts";
 
 type Body = Record<string, unknown>;
+
+function isQuotaConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return candidate.code === "23505" || String(candidate.message ?? "").includes("event_quota_slots");
+}
 
 const str = (body: Body, key: string, fallback?: string): string => {
   const value = body[key];
@@ -245,19 +252,49 @@ export const events = {
       shareToken: null,
       createdAt: createdAt.toISOString(),
     };
-    await db.batch([
-      db.insert(s.events).values(values),
-      db.insert(s.eventHistory).values(
-        historyValues(ctx, {
-          eventId: id,
-          resource: "event",
-          resourceId: id,
-          action: "created",
-          before: null,
-          after: after as unknown as Record<string, unknown>,
-        }),
-      ),
-    ]);
+    const eventInsert = db.insert(s.events).values(values);
+    const historyInsert = db.insert(s.eventHistory).values(
+      historyValues(ctx, {
+        eventId: id,
+        resource: "event",
+        resourceId: id,
+        action: "created",
+        before: null,
+        after: after as unknown as Record<string, unknown>,
+      }),
+    );
+    const entitlementLock = db.select({
+      locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))`,
+    }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const quotaInsert = db.insert(s.eventQuotaSlots).select(
+      db
+        .select({
+          workspaceId: s.workspaces.id,
+          calendarYear: sql<number>`${values.startsAt.getUTCFullYear()}::integer`.as("calendar_year"),
+          eventId: sql<string>`${id}::text`.as("event_id"),
+        })
+        .from(s.workspaces)
+        .where(
+          and(
+            eq(s.workspaces.id, ctx.workspaceId),
+            or(
+              and(
+                eq(s.workspaces.subscriptionStatus, "active"),
+                eq(s.workspaces.subscriptionPlan, "solo"),
+              ),
+              isNotNull(s.workspaces.stripeCheckoutSessionId),
+            ),
+          ),
+        ),
+    );
+    try {
+      await db.batch([entitlementLock, eventInsert, quotaInsert, historyInsert]);
+    } catch (error) {
+      if (isQuotaConflict(error)) {
+        throw new HttpError(403, `The Solo plan includes one event in ${values.startsAt.getUTCFullYear()}. Upgrade to create another.`);
+      }
+      throw error;
+    }
     const created = await events.get(ctx, id);
     if (!created) throw new HttpError(500, "Event was created but could not be read back.");
     return created;
@@ -300,23 +337,60 @@ export const events = {
 
     const updatedAt = new Date();
     after.updatedAt = updatedAt.toISOString();
-    const [updated] = await db.batch([
+    const eventUpdate = db
+      .update(s.events)
+      .set({ ...patch, updatedAt })
+      .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
+      .returning({ id: s.events.id });
+    const historyInsert = db.insert(s.eventHistory).values(
+      historyValues(ctx, {
+        eventId: id,
+        resource: "event",
+        resourceId: id,
+        action: "updated",
+        before: before as unknown as Record<string, unknown>,
+        after: after as unknown as Record<string, unknown>,
+      }),
+    );
+    const entitlementLock = db.select({
+      locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))`,
+    }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const quotaInsert = db.insert(s.eventQuotaSlots).select(
       db
-        .update(s.events)
-        .set({ ...patch, updatedAt })
-        .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
-        .returning({ id: s.events.id }),
-      db.insert(s.eventHistory).values(
-        historyValues(ctx, {
-          eventId: id,
-          resource: "event",
-          resourceId: id,
-          action: "updated",
-          before: before as unknown as Record<string, unknown>,
-          after: after as unknown as Record<string, unknown>,
-        }),
-      ),
-    ]);
+        .select({
+          workspaceId: s.workspaces.id,
+          calendarYear: sql<number>`${new Date(after.date).getUTCFullYear()}::integer`.as("calendar_year"),
+          eventId: sql<string>`${id}::text`.as("event_id"),
+        })
+        .from(s.workspaces)
+        .where(
+          and(
+            eq(s.workspaces.id, ctx.workspaceId),
+            or(
+              and(
+                eq(s.workspaces.subscriptionStatus, "active"),
+                eq(s.workspaces.subscriptionPlan, "solo"),
+              ),
+              isNotNull(s.workspaces.stripeCheckoutSessionId),
+            ),
+          ),
+        ),
+    );
+    let updated: { id: string }[];
+    try {
+      [, updated] = await db.batch([
+        entitlementLock,
+        eventUpdate,
+        db.delete(s.eventQuotaSlots).where(eq(s.eventQuotaSlots.eventId, id)),
+        quotaInsert,
+        historyInsert,
+      ]);
+    } catch (error) {
+      if (isQuotaConflict(error)) {
+        throw new HttpError(403, `The Solo plan already has an event in ${new Date(after.date).getUTCFullYear()}.`);
+      }
+      throw error;
+    }
     if (updated.length === 0) throw new HttpError(404, "That event no longer exists.");
 
     const result = await events.get(ctx, id);
@@ -1915,10 +1989,36 @@ export const members = {
     }
     if (existing) throw new HttpError(409, "That address has already joined a workspace.");
 
-    const [created] = await db
+    const inviteId = newId("inv");
+    const entitlementLock = db
+      .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
+      .from(s.workspaces)
+      .where(eq(s.workspaces.id, ctx.workspaceId))
+      .limit(1);
+    const inviteInsert = db
       .insert(s.workspaceInvites)
-      .values({ id: newId("inv"), workspaceId: ctx.workspaceId, email, role: role as "member", invitedBy: ctx.userId })
+      .select(
+        db
+          .select({
+            id: sql<string>`${inviteId}::text`.as("id"),
+            workspaceId: s.workspaces.id,
+            email: sql<string>`${email}::text`.as("email"),
+            role: sql<"owner" | "admin" | "member">`${role}::workspace_role`.as("role"),
+            invitedBy: sql<string>`${ctx.userId}::text`.as("invited_by"),
+          })
+          .from(s.workspaces)
+          .where(
+            and(
+              eq(s.workspaces.id, ctx.workspaceId),
+              isNull(s.workspaces.stripeCheckoutSessionId),
+              or(ne(s.workspaces.subscriptionStatus, "active"), ne(s.workspaces.subscriptionPlan, "solo")),
+            ),
+          ),
+      )
       .returning();
+    const [, createdRows] = await db.batch([entitlementLock, inviteInsert]);
+    const created = createdRows[0];
+    if (!created) throw new HttpError(403, "The Solo plan includes one workspace owner. Upgrade to invite teammates.");
 
     const emailSent = await sendInvitationEmail(email, invitationAcceptanceUrl(appOrigin()));
 
@@ -2259,6 +2359,29 @@ async function facts(ctx: RequestContext) {
 }
 
 export const analytics = {
+  async customReport(ctx: RequestContext): Promise<CustomReportRow[]> {
+    const [eventRows, healthRows] = await Promise.all([events.list(ctx), analytics.health(ctx)]);
+    const healthByEvent = new Map(healthRows.map((health) => [health.eventId, health]));
+    return eventRows.map((event) => {
+      const health = healthByEvent.get(event.id);
+      return {
+        eventId: event.id,
+        title: event.title,
+        date: event.date,
+        status: event.status,
+        category: event.category,
+        location: event.location,
+        capacity: event.capacity,
+        registrations: event.registrationCount,
+        readiness: health?.readiness ?? 0,
+        budgetPlannedCents: health?.budgetPlannedCents ?? 0,
+        budgetSpentCents: health?.budgetSpentCents ?? 0,
+        revenueCents: (health?.ticketRevenueCents ?? 0) + (health?.fundraisingCents ?? 0),
+        riskCount: health?.risks.length ?? 0,
+      };
+    });
+  },
+
   async health(ctx: RequestContext, eventIds?: string[]): Promise<EventHealth[]> {
     const f = await facts(ctx);
     const targets = eventIds ? f.eventRows.filter((event) => eventIds.includes(event.id)) : f.eventRows;

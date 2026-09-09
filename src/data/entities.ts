@@ -1015,6 +1015,22 @@ export interface EventHealth {
   risks: EventRisk[];
 }
 
+export interface CustomReportRow {
+  eventId: string;
+  title: string;
+  date: IsoDateTime;
+  status: EventStatus;
+  category: string;
+  location: string | null;
+  capacity: number | null;
+  registrations: number;
+  readiness: number;
+  budgetPlannedCents: Cents;
+  budgetSpentCents: Cents;
+  revenueCents: Cents;
+  riskCount: number;
+}
+
 export type EventSectionId = "overview" | "plan" | "guests" | "vendors" | "budget" | "share";
 
 /** A single row in the home page's "needs you today" list. */

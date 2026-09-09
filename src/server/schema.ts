@@ -50,6 +50,7 @@ export const sponsorshipTier = pgEnum("sponsorship_tier", ["gold", "silver", "br
 export const messageDirection = pgEnum("message_direction", ["inbound", "outbound"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "paid", "refunded", "failed"]);
 export const subscriptionStatus = pgEnum("subscription_status", ["beta", "active", "past_due", "cancelled"]);
+export const subscriptionPlan = pgEnum("subscription_plan", ["solo", "team", "enterprise"]);
 export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
 
 /* ------------------------------------------------------------------ workspaces */
@@ -66,6 +67,17 @@ export const workspaces = pgTable("workspaces", {
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
   subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
+  subscriptionPlan: subscriptionPlan("subscription_plan"),
+  stripeCustomerId: text("stripe_customer_id").unique(),
+  stripeSubscriptionId: text("stripe_subscription_id").unique(),
+  stripePriceId: text("stripe_price_id"),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+  stripeCheckoutInterval: text("stripe_checkout_interval"),
+  stripeCheckoutLockedAt: timestamp("stripe_checkout_locked_at", { withTimezone: true }),
+  stripeLastEventCreated: bigint("stripe_last_event_created", { mode: "number" }),
+  stripeTerminalSubscriptionId: text("stripe_terminal_subscription_id"),
+  subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end", { withTimezone: true }),
+  subscriptionCancelAtPeriodEnd: boolean("subscription_cancel_at_period_end").notNull().default(false),
   betaStartedAt: timestamp("beta_started_at", { withTimezone: true }).notNull().defaultNow(),
   betaEndsAt: timestamp("beta_ends_at", { withTimezone: true })
     .notNull()
@@ -208,6 +220,27 @@ export const events = pgTable(
     index("events_workspace_starts_idx").on(table.workspaceId, table.startsAt),
     index("events_workspace_status_idx").on(table.workspaceId, table.status),
     index("events_location_idx").on(table.locationId),
+  ],
+);
+
+/**
+ * One calendar-year slot per Solo workspace. The unique primary key is the concurrency
+ * guard: two simultaneous event creates cannot both claim the same year.
+ */
+export const eventQuotaSlots = pgTable(
+  "event_quota_slots",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    calendarYear: integer("calendar_year").notNull(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.calendarYear] }),
+    uniqueIndex("event_quota_slots_event_idx").on(table.eventId),
   ],
 );
 

@@ -1620,6 +1620,29 @@ function healthFor(eventIds?: string[]): EventHealth[] {
 }
 
 const analytics: AnalyticsRepository = {
+  async customReport() {
+    await wait();
+    const state = store();
+    const healthByEvent = new Map(healthFor().map((health) => [health.eventId, health]));
+    return state.events.map((event) => {
+      const health = healthByEvent.get(event.id);
+      return {
+        eventId: event.id,
+        title: event.title,
+        date: event.date,
+        status: event.status,
+        category: event.category,
+        location: event.location,
+        capacity: event.capacity,
+        registrations: event.registrationCount,
+        readiness: health?.readiness ?? 0,
+        budgetPlannedCents: health?.budgetPlannedCents ?? 0,
+        budgetSpentCents: health?.budgetSpentCents ?? 0,
+        revenueCents: (health?.ticketRevenueCents ?? 0) + (health?.fundraisingCents ?? 0),
+        riskCount: health?.risks.length ?? 0,
+      };
+    });
+  },
   async portfolio() {
     await wait();
     const state = store();
@@ -1690,8 +1713,19 @@ export const memoryAdapter: DataAdapter = {
       workspaceId: DEMO_OWNER_ID,
       role: "owner",
       canReviewFeedback: false,
-      access: { status: "beta", betaStartedAt: started.toISOString(), betaEndsAt: ends.toISOString() },
+      access: {
+        status: "beta",
+        plan: null,
+        betaStartedAt: started.toISOString(),
+        betaEndsAt: ends.toISOString(),
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+      },
     };
+  },
+  billing: {
+    checkout: async () => ({ url: "/pricing?demo=true" }),
+    portal: async () => ({ url: "/pricing?demo=true" }),
   },
   assistant: {
     chat: async ({ messages }) => {

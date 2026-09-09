@@ -30,6 +30,7 @@ import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
+import { effectivePlan, type PlanId } from "@/data/plans";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -85,9 +86,11 @@ function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; 
 
 function SidebarContent({
   canReviewFeedback,
+  plan,
   onNavigate,
 }: {
   canReviewFeedback: boolean;
+  plan: PlanId;
   onNavigate?: () => void;
 }) {
   const [pathname] = useLocation();
@@ -106,7 +109,7 @@ function SidebarContent({
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3">
-        {visibleNavItems(canReviewFeedback).map((item) => (
+        {visibleNavItems(canReviewFeedback, plan).map((item) => (
           <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} onNavigate={onNavigate} />
         ))}
       </nav>
@@ -191,18 +194,15 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
     ? {
         title: "Your Studio payment is past due",
         description: "Your workspace and event history are preserved. Update the subscription to restore access.",
-        subject: "Update Beebizy Studio subscription",
       }
     : access.status === "cancelled"
       ? {
           title: "Your Studio subscription is cancelled",
           description: "Your workspace and event history are preserved. Contact Beebizy to reactivate access.",
-          subject: "Reactivate Beebizy Studio",
         }
       : {
           title: "Your Studio beta has ended",
-          description: `Your three-month beta period ended on ${ended}. Your workspace and event history are preserved. Contact Beebizy to activate paid access.`,
-          subject: "Activate Beebizy Studio",
+          description: `Your three-month beta period ended on ${ended}. Your workspace and event history are preserved. Choose a plan to continue.`,
         };
 
   return (
@@ -217,7 +217,7 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{copy.description}</p>
           <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
             <Button asChild>
-              <a href={`mailto:hello@beebizy.com?subject=${encodeURIComponent(copy.subject)}`}>Manage subscription</a>
+              <Link href="/pricing">View plans</Link>
             </Button>
             <Button variant="outline" onClick={() => void signOut()}>Sign out</Button>
           </div>
@@ -233,6 +233,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { mode } = useDataMode();
   const { data: identity, isLoading: identityLoading, error: identityError } = useMe();
+  const plan = effectivePlan(identity?.access);
 
   if (mode === "live" && identityLoading) {
     return (
@@ -264,7 +265,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 md:block">
-        <SidebarContent canReviewFeedback={identity?.canReviewFeedback ?? false} />
+        <SidebarContent canReviewFeedback={identity?.canReviewFeedback ?? false} plan={plan} />
       </aside>
 
       <div className="fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-border bg-background px-4 md:hidden">
@@ -278,6 +279,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <SidebarContent
               canReviewFeedback={identity?.canReviewFeedback ?? false}
+              plan={plan}
               onNavigate={() => setMobileOpen(false)}
             />
           </SheetContent>
@@ -295,6 +297,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <CommandPalette
         canReviewFeedback={identity?.canReviewFeedback ?? false}
+        plan={plan}
         open={open}
         onOpenChange={setOpen}
       />

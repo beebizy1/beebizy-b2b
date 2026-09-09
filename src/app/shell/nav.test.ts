@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNavActive, NAV_ITEMS, visibleNavItems } from "./nav";
+import { isNavActive, NAV_ITEMS, visibleEventTabs, visibleNavItems } from "./nav";
 
 describe("product navigation", () => {
   it("lists the twelve destinations in the reference order", () => {
@@ -33,5 +33,15 @@ describe("product navigation", () => {
   it("shows the feedback inbox only to approved reviewers", () => {
     expect(visibleNavItems(false)).toEqual(NAV_ITEMS);
     expect(visibleNavItems(true).at(-1)).toMatchObject({ label: "Pilot feedback", href: "/app/feedback" });
+  });
+
+  it("removes team and enterprise destinations from the Solo plan", () => {
+    expect(visibleNavItems(false, "solo").map((item) => item.label)).not.toEqual(
+      expect.arrayContaining(["Locations", "Vendors", "Messages", "Reporting"]),
+    );
+    expect(visibleNavItems(false, "team").map((item) => item.label)).toContain("Vendors");
+    expect(visibleNavItems(false, "team").map((item) => item.label)).not.toContain("Reporting");
+    expect(visibleEventTabs("solo").map((item) => item.label)).not.toContain("Contingency");
+    expect(visibleEventTabs("team").map((item) => item.label)).toContain("Contingency");
   });
 });

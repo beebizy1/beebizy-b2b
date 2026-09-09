@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { Link } from "wouter";
-import { Database, Plus } from "lucide-react";
+import { CreditCard, Database, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,10 +34,11 @@ import {
   useSettings,
   useUpdateSettings,
 } from "@/data/hooks";
-import { useDataMode } from "@/data/provider";
+import { useData, useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
 import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
+import { effectivePlan, PLAN_NAMES, planHasCapability } from "@/data/plans";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
@@ -295,6 +296,58 @@ function TeamPanel() {
   );
 }
 
+function BillingPanel() {
+  const { data: identity } = useMe();
+  const data = useData();
+  const [loading, setLoading] = useState(false);
+  const plan = effectivePlan(identity?.access);
+  const access = identity?.access;
+  const canManage = identity?.role === "owner" && access?.billingPortalAvailable === true;
+
+  const openPortal = async () => {
+    setLoading(true);
+    try {
+      const { url } = await data.billing.portal();
+      window.location.assign(url);
+    } catch (error) {
+      toast({ title: "Couldn't open billing", description: error instanceof Error ? error.message : "Try again." });
+      setLoading(false);
+    }
+  };
+
+  const renewal = access?.currentPeriodEnd
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date(access.currentPeriodEnd))
+    : null;
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Plan & billing"
+        description={access?.status === "beta" ? "Your private pilot access is free." : "Subscription access for this workspace."}
+        actions={<CreditCard className="size-4 text-muted-foreground" aria-hidden="true" />}
+      />
+      <dl className="divide-y divide-hairline px-5 py-2">
+        <KeyValue label="Plan">{access?.status === "beta" ? "Private pilot" : PLAN_NAMES[plan]}</KeyValue>
+        <KeyValue label="Status"><Pill tone={access?.status === "active" || access?.status === "beta" ? "success" : "warning"}>{access?.status ?? "loading"}</Pill></KeyValue>
+        {renewal ? <KeyValue label={access?.cancelAtPeriodEnd ? "Access ends" : "Renews"}>{renewal}</KeyValue> : null}
+      </dl>
+      <div className="flex flex-wrap gap-2 border-t border-hairline px-5 py-4">
+        <Button asChild variant={canManage ? "outline" : "default"} size="sm">
+          <Link href="/pricing">View plans</Link>
+        </Button>
+        {canManage ? (
+          <Button variant="outline" size="sm" onClick={() => void openPortal()} disabled={loading}>
+            {loading ? "Opening…" : "Manage billing"}
+          </Button>
+        ) : null}
+        {identity?.role === "owner" && access?.status === "active" && !access.billingPortalAvailable ? (
+          <p className="self-center text-xs text-muted-foreground">Your invoiced plan is managed directly with Beebizy.</p>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
 export default function Settings() {
   const { user, isDemo } = useSession();
   const { data: me } = useMe();
@@ -302,6 +355,7 @@ export default function Settings() {
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
   const prefs = usePreferences();
+  const plan = effectivePlan(me?.access);
 
   const save = (patch: Partial<UserSettings>, message: string) => {
     updateSettings.mutate(patch, {
@@ -401,7 +455,18 @@ export default function Settings() {
         </div>
       </Panel>
 
-      <TeamPanel />
+      <BillingPanel />
+
+      {planHasCapability(plan, "collaboration") ? (
+        <TeamPanel />
+      ) : (
+        <Panel>
+          <PanelHeader title="Team & permissions" description="Multi-user collaboration is available on the Team plan." />
+          <div className="p-5">
+            <Button asChild size="sm"><Link href="/pricing">Compare plans</Link></Button>
+          </div>
+        </Panel>
+      )}
 
       <Panel>
         <PanelHeader title="Account" />

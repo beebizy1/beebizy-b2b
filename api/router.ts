@@ -19,9 +19,11 @@ import { PLANNING_LIMITS } from "../src/data/planner.ts";
 import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../src/data/feedback.ts";
 import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
+import { effectivePlan, planHasCapability, type PlanCapability } from "../src/data/plans.ts";
+import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
 import { z, ZodError } from "zod";
 
-export const config = { runtime: "nodejs" };
+export const config = { runtime: "nodejs", api: { bodyParser: false } };
 
 /* ------------------------------------------------------------------- bridge */
 
@@ -38,7 +40,6 @@ interface NodeRequest {
   url?: string;
   method?: string;
   headers: Record<string, string | string[] | undefined>;
-  body?: unknown;
   on(event: string, listener: (chunk?: unknown) => void): void;
 }
 
@@ -48,7 +49,7 @@ interface NodeResponse {
   end(body?: string): void;
 }
 
-function toWebRequest(req: NodeRequest, rawBody: string): Request {
+function toWebRequest(req: NodeRequest, rawBody: Uint8Array): Request {
   const host = (Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host) ?? "localhost";
   const proto = (Array.isArray(req.headers["x-forwarded-proto"]) ? req.headers["x-forwarded-proto"][0] : req.headers["x-forwarded-proto"]) ?? "http";
   const url = new URL(req.url ?? "/", `${proto}://${host}`);
@@ -63,22 +64,21 @@ function toWebRequest(req: NodeRequest, rawBody: string): Request {
   return new Request(url, {
     method,
     headers,
-    body: method === "GET" || method === "HEAD" ? undefined : rawBody,
+    body: method === "GET" || method === "HEAD" ? undefined : (rawBody as BodyInit),
   });
 }
 
-async function readRawBody(req: NodeRequest): Promise<string> {
-  // Vercel may have parsed the body already; if so, don't try to read a consumed stream.
-  if (typeof req.body === "string") return req.body;
-  if (req.body && typeof req.body === "object") return JSON.stringify(req.body);
-
-  return new Promise<string>((resolve) => {
-    let data = "";
+async function readRawBody(req: NodeRequest): Promise<Uint8Array> {
+  // Do not touch Vercel's lazy `req.body` helper. Accessing it parses JSON and destroys
+  // the exact byte sequence Stripe signed. Reading the stream preserves that signature.
+  return new Promise<Uint8Array>((resolve) => {
+    const chunks: Uint8Array[] = [];
     req.on("data", (chunk) => {
-      data += String(chunk);
+      if (chunk instanceof Uint8Array) chunks.push(chunk);
+      else if (typeof chunk === "string") chunks.push(Buffer.from(chunk));
     });
-    req.on("end", () => resolve(data));
-    req.on("error", () => resolve(""));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", () => resolve(new Uint8Array()));
   });
 }
 
@@ -171,6 +171,11 @@ async function handlePublic(segments: string[], method: string, request: Request
     return handleLead(request);
   }
 
+  if (segments[0] === "billing" && segments[1] === "webhook") {
+    if (method !== "POST") return json({ error: "Method not allowed" }, 405);
+    return json(await handleStripeWebhook(request));
+  }
+
   // GET /api/public/events/:token
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET") {
     const shared = await eventByShareToken(segments[2]);
@@ -185,14 +190,6 @@ async function handlePublic(segments: string[], method: string, request: Request
     // agenda and tickets ride along because the guest has no session to fetch them with.
     return json({ event: shared.event, agenda, tickets, timeZone: shared.timeZone });
   }
-
-  /*
-    Paid checkout and the Stripe webhook are not mounted yet. The Stripe Marketplace
-    integration stops on a terms acceptance that has to happen in a browser, so there are
-    no keys to talk to — and an endpoint that took an order without charging for it would
-    be worse than no endpoint. `ticket_orders` and its unique `stripe_session_id` are
-    already in the schema for it.
-  */
 
   return null;
 }
@@ -210,6 +207,12 @@ function readFloorplanDraft(body: Record<string, unknown>) {
       .map((issue) => `${issue.path.join(".") || "floorplan"}: ${issue.message}`)
       .join("; ");
     throw new HttpError(400, details);
+  }
+}
+
+function requireCapability(ctx: RequestContext, capability: PlanCapability): void {
+  if (!planHasCapability(effectivePlan(ctx.access), capability)) {
+    throw new HttpError(403, "Your workspace plan does not include this feature.");
   }
 }
 
@@ -232,6 +235,16 @@ async function handleAuthed(
         canReviewFeedback: isBeebizyOperator(ctx.email),
         access: ctx.access,
       });
+
+    /* ---------------------------------------------------------------- billing */
+    case "billing": {
+      if (a === "checkout" && method === "POST") {
+        const input = z.object({ interval: z.enum(["month", "year"]) }).parse(body);
+        return json(await createCheckoutSession(ctx, input.interval, request));
+      }
+      if (a === "portal" && method === "POST") return json(await createPortalSession(ctx, request));
+      return notFound();
+    }
 
     /* -------------------------------------------------------------- assistant */
     case "assistant": {
@@ -303,6 +316,8 @@ async function handleAuthed(
       if (a && b) {
         const child = eventChildren[b];
         if (child) {
+          if (b === "vendors") requireCapability(ctx, "vendorManagement");
+          if (b === "mood-board") requireCapability(ctx, "inspirationBoards");
           if (!c && method === "GET") return json(await child.list(ctx, a));
           if (!c && method === "POST") return json(await child.create(ctx, a, body), 201);
           if (c && method === "PATCH") return json(await child.update(ctx, a, c, body));
@@ -338,8 +353,9 @@ async function handleAuthed(
     /* --------------------------------------------------------------- locations */
     case "locations": {
       if (!a && method === "GET") return json(await repos.locations.list(ctx));
-      if (!a && method === "POST") return json(await repos.locations.create(ctx, body), 201);
       if (a && method === "GET") return json(await repos.locations.get(ctx, a));
+      requireCapability(ctx, "multiLocation");
+      if (!a && method === "POST") return json(await repos.locations.create(ctx, body), 201);
       if (a && method === "PATCH") return json(await repos.locations.update(ctx, a, body));
       if (a && method === "DELETE") {
         await repos.locations.remove(ctx, a);
@@ -362,6 +378,7 @@ async function handleAuthed(
 
     /* ----------------------------------------------------------------- members */
     case "invites": {
+      requireCapability(ctx, "collaboration");
       if (!a && method === "POST") {
         return json(await repos.members.invite(ctx, String(body.email ?? ""), String(body.role ?? "member")), 201);
       }
@@ -374,6 +391,7 @@ async function handleAuthed(
 
     case "members": {
       if (!a && method === "GET") return json(await repos.members.list(ctx));
+      requireCapability(ctx, "collaboration");
       if (a && method === "PATCH") return json(await repos.members.setRole(ctx, a, String(body.role ?? "")));
       if (a && method === "DELETE") {
         await repos.members.remove(ctx, a);
@@ -409,6 +427,7 @@ async function handleAuthed(
 
     /* ----------------------------------------------------------------- vendors */
     case "vendors": {
+      requireCapability(ctx, "vendorManagement");
       if (!a && method === "GET") return json(await repos.vendors.list(ctx));
       if (!a && method === "POST") return json(await repos.vendors.create(ctx, body), 201);
       if (a && !b && method === "GET") return json(await repos.vendors.get(ctx, a));
@@ -452,9 +471,10 @@ async function handleAuthed(
 
     /* ------------------------------------------------------------------ boards */
     case "boards": {
+      requireCapability(ctx, "inspirationBoards");
       if (!a && method === "GET") return json(await repos.canvases.list(ctx));
-      if (!a && method === "POST") return json(await repos.canvases.create(ctx, body), 201);
       if (a && !b && method === "GET") return json(await repos.canvases.get(ctx, a));
+      if (!a && method === "POST") return json(await repos.canvases.create(ctx, body), 201);
       if (a && !b && method === "PATCH") return json(await repos.canvases.update(ctx, a, body));
       if (a && !b && method === "DELETE") {
         await repos.canvases.remove(ctx, a);
@@ -499,6 +519,10 @@ async function handleAuthed(
 
     /* --------------------------------------------------------------- analytics */
     case "analytics": {
+      if (a === "custom-report" && method === "GET") {
+        requireCapability(ctx, "customReporting");
+        return json(await repos.analytics.customReport(ctx));
+      }
       if (a === "portfolio" && method === "GET") return json(await repos.analytics.portfolio(ctx));
       if (a === "attention" && method === "GET") return json(await repos.analytics.attention(ctx));
       if (a === "open-tasks" && method === "GET") return json(await repos.analytics.openTasks(ctx));

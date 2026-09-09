@@ -34,6 +34,7 @@ import type {
   DepositDraft,
   DepositPatch,
   Event,
+  CustomReportRow,
   EventDraft,
   EventFilter,
   EventHealth,
@@ -100,6 +101,7 @@ import type {
   VendorMessageDraft,
   VendorPatch,
 } from "./entities";
+import type { BillingInterval, PlanId } from "./plans";
 import type { PlanningBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 
@@ -242,6 +244,8 @@ export interface AnalyticsRepository {
    * dashboard shipped.
    */
   openTasks(): Promise<OpenTask[]>;
+  /** Enterprise-only event-level dataset used for filters and CSV export. */
+  customReport(): Promise<CustomReportRow[]>;
 }
 
 export interface PlanningAssistantRepository {
@@ -276,6 +280,11 @@ export interface FeedbackRepository {
   create(draft: ProductFeedbackDraft): Promise<ProductFeedback>;
 }
 
+export interface BillingRepository {
+  checkout(interval: BillingInterval): Promise<{ url: string }>;
+  portal(): Promise<{ url: string }>;
+}
+
 /** Identity and authorization as the server sees them. */
 export interface Identity {
   userId: string;
@@ -284,8 +293,12 @@ export interface Identity {
   canReviewFeedback: boolean;
   access: {
     status: "beta" | "active" | "expired" | "past_due" | "cancelled";
+    plan: PlanId | null;
     betaStartedAt: string;
     betaEndsAt: string;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    billingPortalAvailable?: boolean;
   };
 }
 
@@ -320,6 +333,7 @@ export interface DataAdapter {
   floorplan: FloorplanRepository;
   members: MembersRepository;
   feedback: FeedbackRepository;
+  billing: BillingRepository;
   history: EventHistoryRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;
