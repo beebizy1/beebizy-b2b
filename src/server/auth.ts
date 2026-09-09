@@ -14,7 +14,11 @@
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { hasInternalAccess } from "../lib/internalAccess.ts";
+import {
+  canAccessOperatorFeedbackInbox,
+  hasInternalAccess,
+  isBeebizyOperator,
+} from "../lib/internalAccess.ts";
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
@@ -31,6 +35,8 @@ export interface WorkspaceAccess {
 
 export interface RequestContext {
   userId: string;
+  /** Verified primary Clerk email. Never taken from a request payload. */
+  email: string | null;
   workspaceId: string;
   role: Role;
   access?: WorkspaceAccess;
@@ -43,6 +49,13 @@ export class HttpError extends Error {
   ) {
     super(message);
     this.name = "HttpError";
+  }
+}
+
+/** Stops cross-workspace feedback reads unless the verified email is on the operator list. */
+export function requireBeebizyOperator(email: string | null | undefined): void {
+  if (!isBeebizyOperator(email)) {
+    throw new HttpError(403, "Only the Beebizy product team can review pilot feedback.");
   }
 }
 
@@ -243,7 +256,8 @@ export async function authorize(request: Request): Promise<RequestContext> {
 
   const url = new URL(request.url);
   const route = url.searchParams.get("__path") ?? url.pathname.replace(/^\/api\/?/, "");
-  if (access.status !== "beta" && access.status !== "active" && route !== "me") {
+  const operatorFeedbackInbox = canAccessOperatorFeedbackInbox(route, email);
+  if (access.status !== "beta" && access.status !== "active" && route !== "me" && !operatorFeedbackInbox) {
     const message = access.status === "past_due"
       ? "Your Beebizy Studio payment is past due. Update the subscription to continue."
       : access.status === "cancelled"
@@ -252,7 +266,7 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(402, message);
   }
 
-  return { userId, workspaceId, role, access };
+  return { userId, email, workspaceId, role, access };
 }
 
 /** Writes are closed to `member` on the destructive operations. */

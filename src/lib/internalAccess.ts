@@ -7,6 +7,17 @@ export const INTERNAL_ACCESS_EMAILS = [
 
 const internalAccessEmailSet = new Set<string>(INTERNAL_ACCESS_EMAILS);
 
+/** True only for Beebizy's three internal operators, never for invited pilot users. */
+export function isBeebizyOperator(email: string | null | undefined): boolean {
+  if (typeof email !== "string") return false;
+  return internalAccessEmailSet.has(email.trim().toLowerCase());
+}
+
+/** Internal reviewers retain inbox access independently of customer subscription state. */
+export function canAccessOperatorFeedbackInbox(route: string, email: string | null | undefined): boolean {
+  return route === "feedback/inbox" && isBeebizyOperator(email);
+}
+
 export function configuredBetaAccessEmails(value: string | null | undefined): Set<string> {
   return new Set(
     (value ?? "")
@@ -19,5 +30,5 @@ export function configuredBetaAccessEmails(value: string | null | undefined): Se
 export function hasInternalAccess(email: string | null | undefined, configuredEmails?: string | null): boolean {
   if (typeof email !== "string") return false;
   const normalized = email.trim().toLowerCase();
-  return internalAccessEmailSet.has(normalized) || configuredBetaAccessEmails(configuredEmails).has(normalized);
+  return isBeebizyOperator(normalized) || configuredBetaAccessEmails(configuredEmails).has(normalized);
 }

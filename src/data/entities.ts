@@ -950,6 +950,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
 export const FEEDBACK_CATEGORIES = ["general", "bug", "idea", "praise"] as const;
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 export const DEFAULT_FEEDBACK_CATEGORY: FeedbackCategory = "general";
+export const FEEDBACK_INBOX_PATH = "/app/feedback";
 export const FEEDBACK_LIMITS = {
   minMessageLength: 3,
   maxMessageLength: 2_000,
@@ -972,6 +973,13 @@ export interface ProductFeedbackDraft {
   category: FeedbackCategory;
   message: string;
   pagePath?: string | null;
+}
+
+/** Feedback enriched for the private Beebizy team inbox. */
+export interface FeedbackInboxItem extends ProductFeedback {
+  userName: string | null;
+  userEmail: string | null;
+  workspaceName: string;
 }
 
 /* ----------------------------------------------------------------- derived */

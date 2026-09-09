@@ -17,6 +17,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { ClerkGate } from "@/app/ClerkGate";
 import { DataProvider } from "@/data/provider";
+import { FEEDBACK_INBOX_PATH } from "@/data/entities";
 import { isDataError } from "@/data/adapter";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { RequireSession, SessionProvider } from "@/app/session";
@@ -55,6 +56,7 @@ import RegistrationForm from "@/screens/registrations/RegistrationForm";
 import PostEventSummary from "@/screens/events/PostEventSummary";
 import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
+import FeedbackInbox from "@/screens/FeedbackInbox";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
@@ -119,6 +121,7 @@ function AppRoutes() {
           <Route path="/app/templates/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
           <Route path="/app/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
+          <Route path={FEEDBACK_INBOX_PATH} component={FeedbackInbox} />
           <Route component={NotFound} />
         </Switch>
       </AppShell>

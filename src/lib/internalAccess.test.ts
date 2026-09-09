@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { hasInternalAccess, INTERNAL_ACCESS_EMAILS } from "./internalAccess";
+import {
+  canAccessOperatorFeedbackInbox,
+  hasInternalAccess,
+  INTERNAL_ACCESS_EMAILS,
+  isBeebizyOperator,
+} from "./internalAccess";
 
 describe("internal access allowlist", () => {
   it("contains only the three approved Beebizy operators", () => {
@@ -27,5 +32,19 @@ describe("internal access allowlist", () => {
     expect(hasInternalAccess("partner@example.com", invited)).toBe(true);
     expect(hasInternalAccess("designer@example.org", invited)).toBe(true);
     expect(hasInternalAccess("not-invited@example.com", invited)).toBe(false);
+  });
+
+  it("grants feedback review only to the three Beebizy operators", () => {
+    expect(isBeebizyOperator(" LAILA@BEEBIZY.COM ")).toBe(true);
+    expect(isBeebizyOperator("mary@beebizy.com")).toBe(true);
+    expect(isBeebizyOperator("tarang@beebizy.com")).toBe(true);
+    expect(isBeebizyOperator("partner@example.com")).toBe(false);
+    expect(isBeebizyOperator(null)).toBe(false);
+  });
+
+  it("allows only operators to bypass customer billing for the feedback inbox", () => {
+    expect(canAccessOperatorFeedbackInbox("feedback/inbox", "laila@beebizy.com")).toBe(true);
+    expect(canAccessOperatorFeedbackInbox("feedback/inbox", "partner@example.com")).toBe(false);
+    expect(canAccessOperatorFeedbackInbox("events", "laila@beebizy.com")).toBe(false);
   });
 });

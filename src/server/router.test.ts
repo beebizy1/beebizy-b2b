@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./auth", () => ({
   authorize: vi.fn(),
+  requireBeebizyOperator: vi.fn(),
   HttpError: class HttpError extends Error {
     constructor(public status: number, message: string) {
       super(message);
@@ -24,12 +25,12 @@ vi.mock("./repos", () => {
     eventVendors: child,
     tickets: child,
     raffle: child,
-    feedback: { list: vi.fn(), create: vi.fn() },
+    feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn() },
   };
 });
 
 const { handleRequest } = await import("../../api/router");
-const { authorize } = await import("./auth");
+const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { feedback } = await import("./repos");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -101,6 +102,7 @@ describe("feedback endpoint", () => {
   const context = {
     userId: "user-pilot",
     workspaceId: "workspace-school",
+    email: "pilot@school.org",
     role: "member" as const,
     access: {
       status: "beta" as const,
@@ -155,5 +157,24 @@ describe("feedback endpoint", () => {
 
     expect(response.status).toBe(400);
     expect(feedback.create).not.toHaveBeenCalled();
+  });
+
+  it("allows only the three Beebizy operators to review all feedback", async () => {
+    vi.mocked(feedback.listInbox).mockResolvedValue([]);
+    vi.mocked(requireBeebizyOperator).mockReturnValue(undefined);
+    vi.mocked(authorize).mockResolvedValue({ ...context, email: "tarang@beebizy.com" });
+
+    const allowed = await handleRequest(new Request("http://localhost/api/feedback/inbox"));
+    expect(allowed.status).toBe(200);
+    expect(feedback.listInbox).toHaveBeenCalledOnce();
+
+    vi.mocked(feedback.listInbox).mockClear();
+    vi.mocked(requireBeebizyOperator).mockImplementationOnce(() => {
+      throw new HttpError(403, "Only the Beebizy product team can review pilot feedback.");
+    });
+    vi.mocked(authorize).mockResolvedValue(context);
+    const denied = await handleRequest(new Request("http://localhost/api/feedback/inbox"));
+    expect(denied.status).toBe(403);
+    expect(feedback.listInbox).not.toHaveBeenCalled();
   });
 });

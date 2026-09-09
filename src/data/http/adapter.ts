@@ -24,6 +24,7 @@ import type {
   Event,
   EventHealth,
   EventHistoryEntry,
+  FeedbackInboxItem,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -61,6 +62,8 @@ import type { AssistantTurn } from "../assistantChat";
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
   getToken: () => Promise<string | null>;
+  /** Current Clerk user id, used only to isolate browser query caches. */
+  cacheScope: string;
   /** Clerk organization id, when the user is acting inside one. */
   getOrgId?: () => string | null;
   baseUrl?: string;
@@ -152,6 +155,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
   return {
     kind: "postgres",
+    cacheScope: options.cacheScope,
 
     me: () => client.get<Identity>("/me"),
 
@@ -335,6 +339,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     feedback: {
       list: () => client.get<ProductFeedback[]>("/feedback"),
+      listInbox: () => client.get<FeedbackInboxItem[]>("/feedback/inbox"),
       create: (draft) => client.post<ProductFeedback>("/feedback", draft),
     },
 

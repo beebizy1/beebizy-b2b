@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   MapPin,
   MessageSquare,
+  MessagesSquare,
   PieChart,
   Sparkles,
   Store,
@@ -32,7 +33,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { EventSectionId } from "@/data/entities";
+import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
 
 export interface NavItem {
   label: string;
@@ -116,6 +117,17 @@ export const NAV_ITEMS: NavItem[] = [
     hint: "Past events, spend and planning decisions",
   },
 ];
+
+const FEEDBACK_REVIEW_NAV_ITEM: NavItem = {
+  label: "Pilot feedback",
+  href: FEEDBACK_INBOX_PATH,
+  icon: MessagesSquare,
+  hint: "Private feedback inbox for the Beebizy product team",
+};
+
+export function visibleNavItems(canReviewFeedback: boolean): NavItem[] {
+  return canReviewFeedback ? [...NAV_ITEMS, FEEDBACK_REVIEW_NAV_ITEM] : NAV_ITEMS;
+}
 
 export interface EventTab {
   id: EventTabId;

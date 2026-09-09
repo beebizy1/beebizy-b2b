@@ -55,6 +55,7 @@ import type {
   EventFilter,
   EventHealth,
   EventHistoryChange,
+  FeedbackInboxItem,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -1538,6 +1539,19 @@ const feedback: FeedbackRepository = {
     store().feedback.push(record);
     return copy(record);
   },
+  async listInbox(): Promise<FeedbackInboxItem[]> {
+    await wait();
+    return copy(
+      store().feedback
+        .map((item) => ({
+          ...item,
+          userName: "Demo organiser",
+          userEmail: "demo@beebizy.com",
+          workspaceName: "Demo workspace",
+        }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
+    );
+  },
 };
 
 const history: EventHistoryRepository = {
@@ -1664,6 +1678,7 @@ const analytics: AnalyticsRepository = {
 
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
+  cacheScope: "demo",
 
   // The demo has a single implicit workspace and no roles to speak of.
   me: async () => {
@@ -1674,6 +1689,7 @@ export const memoryAdapter: DataAdapter = {
       userId: DEMO_OWNER_ID,
       workspaceId: DEMO_OWNER_ID,
       role: "owner",
+      canReviewFeedback: false,
       access: { status: "beta", betaStartedAt: started.toISOString(), betaEndsAt: ends.toISOString() },
     };
   },

@@ -38,6 +38,7 @@ import type {
   EventFilter,
   EventHealth,
   EventHistoryEntry,
+  FeedbackInboxItem,
   MoodBoardImage,
   EventPatch,
   EventRoi,
@@ -270,6 +271,8 @@ export interface MembersRepository {
 export interface FeedbackRepository {
   /** Feedback belongs to the signed-in user, newest first. */
   list(): Promise<ProductFeedback[]>;
+  /** Cross-workspace inbox. The API permits only approved Beebizy operators. */
+  listInbox(): Promise<FeedbackInboxItem[]>;
   create(draft: ProductFeedbackDraft): Promise<ProductFeedback>;
 }
 
@@ -278,6 +281,7 @@ export interface Identity {
   userId: string;
   workspaceId: string;
   role: "owner" | "admin" | "member";
+  canReviewFeedback: boolean;
   access: {
     status: "beta" | "active" | "expired" | "past_due" | "cancelled";
     betaStartedAt: string;
@@ -287,6 +291,8 @@ export interface Identity {
 
 export interface DataAdapter {
   readonly kind: "memory" | "postgres";
+  /** Stable identity used to isolate authenticated query caches. */
+  readonly cacheScope: string;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
   events: EventsRepository;

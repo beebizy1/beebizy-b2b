@@ -1,9 +1,9 @@
 /**
  * Server-side data access.
  *
- * Every function takes a `RequestContext` and filters by its `workspaceId`. There is no
- * unscoped query in this file, which is the property that makes the API multi-tenant
- * rather than hopeful.
+ * Every customer-facing function takes a `RequestContext` and filters by its
+ * `workspaceId`. The one cross-workspace query is the pilot-feedback inbox, which checks
+ * the caller against the three-person Beebizy operator list before reading anything.
  *
  * Three things the relational model does that the document model could not, and which
  * this file exists to use:
@@ -23,6 +23,7 @@ import {
   HttpError,
   lookupUsers,
   newId,
+  requireBeebizyOperator,
   requireRole,
   revokeInvitationEmail,
   sendInvitationEmail,
@@ -37,6 +38,7 @@ import type {
   EventHealth,
   EventHistoryChange,
   EventHistoryEntry,
+  FeedbackInboxItem,
   Floorplan,
   FloorplanItem,
   Location,
@@ -2139,6 +2141,22 @@ export const settings = {
 /* ----------------------------------------------------------- product feedback */
 
 export const feedback = {
+  async listInbox(ctx: RequestContext): Promise<FeedbackInboxItem[]> {
+    requireBeebizyOperator(ctx.email);
+    const rows = await db
+      .select({ feedback: s.productFeedback, workspaceName: s.workspaces.name })
+      .from(s.productFeedback)
+      .innerJoin(s.workspaces, eq(s.productFeedback.workspaceId, s.workspaces.id))
+      .orderBy(desc(s.productFeedback.createdAt));
+    const directory = await lookupUsers([...new Set(rows.map(({ feedback: item }) => item.userId))]);
+    return rows.map(({ feedback: item, workspaceName }) => ({
+      ...map.toProductFeedback(item),
+      userName: directory.get(item.userId)?.name ?? null,
+      userEmail: directory.get(item.userId)?.email ?? null,
+      workspaceName,
+    }));
+  },
+
   async list(ctx: RequestContext): Promise<ProductFeedback[]> {
     const rows = await db
       .select()

@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/command";
 import { useEvents } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
-import { NAV_ITEMS } from "./nav";
+import { visibleNavItems } from "./nav";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
   const [open, setOpen] = useState(false);
@@ -69,7 +69,15 @@ function score(value: string, search: string): number {
   return 0;
 }
 
-export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CommandPalette({
+  canReviewFeedback,
+  open,
+  onOpenChange,
+}: {
+  canReviewFeedback: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { when } = usePreferences();
   const [, navigate] = useLocation();
   const { data: events } = useEvents();
@@ -121,7 +129,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             <CommandSeparator />
 
             <CommandGroup heading="Go to">
-              {NAV_ITEMS.map((item) => (
+              {visibleNavItems(canReviewFeedback).map((item) => (
                 <CommandItem key={item.href} value={`${item.label} ${item.hint}`} onSelect={() => go(item.href)}>
                   <item.icon className="mr-2 size-4" aria-hidden="true" />
                   <span>{item.label}</span>

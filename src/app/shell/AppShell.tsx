@@ -29,7 +29,7 @@ import type { Identity } from "@/data/adapter";
 import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
-import { isNavActive, NAV_ITEMS, type NavItem } from "./nav";
+import { isNavActive, visibleNavItems, type NavItem } from "./nav";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -83,7 +83,13 @@ function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; 
   );
 }
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({
+  canReviewFeedback,
+  onNavigate,
+}: {
+  canReviewFeedback: boolean;
+  onNavigate?: () => void;
+}) {
   const [pathname] = useLocation();
   const { user, signOut } = useSession();
 
@@ -100,7 +106,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3">
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems(canReviewFeedback).map((item) => (
           <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} onNavigate={onNavigate} />
         ))}
       </nav>
@@ -258,7 +264,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 md:block">
-        <SidebarContent />
+        <SidebarContent canReviewFeedback={identity?.canReviewFeedback ?? false} />
       </aside>
 
       <div className="fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-border bg-background px-4 md:hidden">
@@ -270,7 +276,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
             <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <SidebarContent
+              canReviewFeedback={identity?.canReviewFeedback ?? false}
+              onNavigate={() => setMobileOpen(false)}
+            />
           </SheetContent>
         </Sheet>
         <BrandLogo size="sm" />
@@ -284,7 +293,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</div>
       </main>
 
-      <CommandPalette open={open} onOpenChange={setOpen} />
+      <CommandPalette
+        canReviewFeedback={identity?.canReviewFeedback ?? false}
+        open={open}
+        onOpenChange={setOpen}
+      />
       {mode === "live" && identity ? (
         <FeedbackBot userId={identity.userId} open={feedbackOpen} onOpenChange={setFeedbackOpen} />
       ) : null}

@@ -10,7 +10,7 @@
  * it, and because 300s is plenty for a request that should take 50ms.
  */
 
-import { authorize, HttpError, type RequestContext } from "../src/server/auth.ts";
+import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
@@ -18,6 +18,7 @@ import { parseFloorplanDraft } from "../src/data/floorplan.ts";
 import { PLANNING_LIMITS } from "../src/data/planner.ts";
 import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../src/data/feedback.ts";
+import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
 import { z, ZodError } from "zod";
 
 export const config = { runtime: "nodejs" };
@@ -224,7 +225,13 @@ async function handleAuthed(
 
   switch (resource) {
     case "me":
-      return json({ userId: ctx.userId, workspaceId: ctx.workspaceId, role: ctx.role, access: ctx.access });
+      return json({
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+        role: ctx.role,
+        canReviewFeedback: isBeebizyOperator(ctx.email),
+        access: ctx.access,
+      });
 
     /* -------------------------------------------------------------- assistant */
     case "assistant": {
@@ -475,6 +482,10 @@ async function handleAuthed(
 
     /* ---------------------------------------------------------- product feedback */
     case "feedback": {
+      if (a === "inbox" && method === "GET") {
+        requireBeebizyOperator(ctx.email);
+        return json(await repos.feedback.listInbox(ctx));
+      }
       if (method === "GET") return json(await repos.feedback.list(ctx));
       if (method === "POST") {
         const parsed = feedbackDraftSchema.safeParse(body);

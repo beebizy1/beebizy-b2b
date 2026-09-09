@@ -78,7 +78,7 @@ import type { AssistantChatMessage } from "./assistantChat";
 /* ---------------------------------------------------------------- query keys */
 
 export const qk = {
-  me: ["me"] as const,
+  me: (cacheScope: string) => ["me", cacheScope] as const,
   portfolio: ["analytics", "portfolio"] as const,
   attention: ["analytics", "attention"] as const,
   openTasks: ["analytics", "openTasks"] as const,
@@ -98,6 +98,7 @@ export const qk = {
   eventRegistrations: (eventId: string) => ["registrations", "byEvent", eventId] as const,
   members: ["members"] as const,
   feedback: (userId: string) => ["feedback", userId] as const,
+  feedbackInbox: (userId: string) => ["feedback", "inbox", userId] as const,
 
   vendors: ["vendors"] as const,
   vendor: (id: string) => ["vendors", "detail", id] as const,
@@ -176,7 +177,8 @@ function useAdapterMutation<TVars, TResult>(
  * server — it is re-checked on every write — so this copy only shapes the UI.
  */
 export function useMe() {
-  return useAdapterQuery(qk.me, (a) => a.me(), { staleTime: 60_000 });
+  const { cacheScope } = useData();
+  return useAdapterQuery(qk.me(cacheScope), (a) => a.me(), { staleTime: 60_000 });
 }
 
 /**
@@ -960,6 +962,10 @@ export function useSubmitFeedback(userId: string) {
     (a, draft: ProductFeedbackDraft) => a.feedback.create(draft),
     () => [qk.feedback(userId)],
   );
+}
+
+export function useFeedbackInbox(userId: string, enabled: boolean) {
+  return useAdapterQuery(qk.feedbackInbox(userId), (a) => a.feedback.listInbox(), { enabled });
 }
 
 export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {

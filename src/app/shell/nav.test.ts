@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNavActive, NAV_ITEMS } from "./nav";
+import { isNavActive, NAV_ITEMS, visibleNavItems } from "./nav";
 
 describe("product navigation", () => {
   it("lists the twelve destinations in the reference order", () => {
@@ -28,5 +28,10 @@ describe("product navigation", () => {
   it("keeps Dashboard inactive on every other destination", () => {
     expect(isNavActive("/app", "/app")).toBe(true);
     expect(isNavActive("/app", "/app/locations")).toBe(false);
+  });
+
+  it("shows the feedback inbox only to approved reviewers", () => {
+    expect(visibleNavItems(false)).toEqual(NAV_ITEMS);
+    expect(visibleNavItems(true).at(-1)).toMatchObject({ label: "Pilot feedback", href: "/app/feedback" });
   });
 });
