@@ -64,7 +64,7 @@ function toWebRequest(req: NodeRequest, rawBody: Uint8Array): Request {
   return new Request(url, {
     method,
     headers,
-    body: method === "GET" || method === "HEAD" ? undefined : (rawBody as BodyInit),
+    body: method === "GET" || method === "HEAD" ? undefined : Buffer.from(rawBody),
   });
 }
 
