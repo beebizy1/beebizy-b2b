@@ -5,12 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import {
-  useCreateGuest,
-  useCreateRegistration,
-  useDeleteGuest,
-  useSetRegistrationCheckIn,
-} from "@/data/hooks";
+import { useRegisterWalkIn } from "@/data/hooks";
 import type { Event, RegistrationWithGuest } from "@/data/entities";
 
 interface OnSiteRegistrationProps {
@@ -21,10 +16,7 @@ interface OnSiteRegistrationProps {
 
 /** Registers an unexpected arrival and checks them in as one front-desk operation. */
 export function OnSiteRegistration({ event, station, onRegistered }: OnSiteRegistrationProps) {
-  const createGuest = useCreateGuest();
-  const deleteGuest = useDeleteGuest();
-  const createRegistration = useCreateRegistration();
-  const checkIn = useSetRegistrationCheckIn();
+  const registerWalkIn = useRegisterWalkIn();
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [organization, setOrganization] = useState("");
@@ -39,53 +31,26 @@ export function OnSiteRegistration({ event, station, onRegistered }: OnSiteRegis
     if (!cleanName || atCapacity) return;
 
     setBusy(true);
-    const guest = await createGuest.mutateAsync({
-      name: cleanName,
-      contact: contact.trim(),
-      notes: "Registered at event check-in.",
-    });
-
-    let registration;
-    try {
-      registration = await createRegistration.mutateAsync({
-        eventId: event.id,
-        guestId: guest.id,
-        status: "confirmed",
+    const row = await registerWalkIn.mutateAsync({
+      eventId: event.id,
+      draft: {
+        name: cleanName,
+        contact: contact.trim(),
         segment: segment.trim() || "Walk-in",
         organization: organization.trim() || null,
-      });
-    } catch (error) {
-      await deleteGuest.mutateAsync({ id: guest.id }).catch(() => undefined);
-      throw error;
-    }
-
-    try {
-      const checkedIn = await checkIn.mutateAsync({
-        id: registration.id,
-        eventId: event.id,
-        patch: {
-          checkedInAt: new Date().toISOString(),
-          checkInStation: station.trim() || null,
-          checkInNotes: "Registered on site.",
-        },
-      });
-      const row: RegistrationWithGuest = { ...checkedIn, guest };
-      onRegistered(row, printBadge);
-      setName("");
-      setContact("");
-      setOrganization("");
-      toast({
-        title: `${guest.name} is checked in`,
-        description: station ? `Added at ${station}.` : "Added as an on-site registration.",
-      });
-    } catch (error) {
-      toast({
-        title: `${guest.name} was registered, but not checked in`,
-        description: error instanceof Error ? error.message : "Find them in the guest list and try check-in again.",
-      });
-    } finally {
-      setBusy(false);
-    }
+        checkInStation: station.trim() || null,
+        checkInNotes: "Registered on site.",
+      },
+    });
+    onRegistered(row, printBadge);
+    setName("");
+    setContact("");
+    setOrganization("");
+    setBusy(false);
+    toast({
+      title: `${row.guest?.name ?? cleanName} is checked in`,
+      description: station ? `Added at ${station}.` : "Added as an on-site registration.",
+    });
   };
 
   return (
@@ -114,7 +79,7 @@ export function OnSiteRegistration({ event, station, onRegistered }: OnSiteRegis
 
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <Input value={name} onChange={(inputEvent) => setName(inputEvent.target.value)} placeholder="Full name" aria-label="Walk-in guest name" required />
-        <Input type="email" value={contact} onChange={(inputEvent) => setContact(inputEvent.target.value)} placeholder="Email (optional)" aria-label="Walk-in guest email" />
+        <Input type="email" value={contact} onChange={(inputEvent) => setContact(inputEvent.target.value)} placeholder="Email" aria-label="Walk-in guest email" required />
         <Input value={organization} onChange={(inputEvent) => setOrganization(inputEvent.target.value)} placeholder="Organization (optional)" aria-label="Walk-in guest organization" />
         <Input value={segment} onChange={(inputEvent) => setSegment(inputEvent.target.value)} placeholder="Category" aria-label="Walk-in guest category" />
       </div>
@@ -124,7 +89,7 @@ export function OnSiteRegistration({ event, station, onRegistered }: OnSiteRegis
           <Checkbox checked={printBadge} onCheckedChange={(checked) => setPrintBadge(checked === true)} />
           Print badge after check-in
         </label>
-        <Button type="submit" size="sm" disabled={!name.trim() || busy || atCapacity}>
+        <Button type="submit" size="sm" disabled={!name.trim() || !contact.trim() || busy || atCapacity}>
           <BadgeCheck className="mr-1.5 size-3.5" aria-hidden="true" />
           {busy ? "Registering…" : "Register and check in"}
         </Button>

@@ -328,6 +328,7 @@ async function handleAuthed(
         }
 
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
+        if (b === "walk-ins" && !c && method === "POST") return json(await repos.registrations.createWalkIn(ctx, a, body), 201);
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
         if (b === "floorplans" && !c && method === "GET") return json(await repos.floorplan.list(ctx, a));
         if (b === "floorplans" && !c && method === "POST") {

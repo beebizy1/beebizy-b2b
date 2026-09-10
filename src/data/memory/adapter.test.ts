@@ -219,6 +219,37 @@ describe("registrations", () => {
     expect(checkedIn.status).toBe("confirmed");
   });
 
+  it("creates a walk-in guest, confirmed registration and arrival as one operation", async () => {
+    const before = (await memoryAdapter.events.get("evt-atlas"))!.registrationCount;
+    const row = await memoryAdapter.registrations.createWalkIn("evt-atlas", {
+      name: "Ada Walkin",
+      contact: "ada.walkin@example.com",
+      organization: "Analytical Engines",
+      checkInStation: "East entrance",
+    });
+    expect(row).toMatchObject({
+      status: "confirmed",
+      segment: "Walk-in",
+      organization: "Analytical Engines",
+      checkInStation: "East entrance",
+      guest: { name: "Ada Walkin", contact: "ada.walkin@example.com" },
+    });
+    expect(row.checkedInAt).not.toBeNull();
+    expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(before + 1);
+  });
+
+  it("does not leave a walk-in guest behind when the event is full", async () => {
+    const event = (await memoryAdapter.events.get("evt-cab"))!;
+    await memoryAdapter.events.update(event.id, { capacity: event.registrationCount });
+    await expect(
+      memoryAdapter.registrations.createWalkIn(event.id, {
+        name: "Capacity Test",
+        contact: "capacity.walkin@example.com",
+      }),
+    ).rejects.toThrow(/capacity/i);
+    expect((await memoryAdapter.guests.list()).some((guest) => guest.contact === "capacity.walkin@example.com")).toBe(false);
+  });
+
   it("refuses a duplicate registration", async () => {
     const existing = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "confirmed")!;
     await expect(

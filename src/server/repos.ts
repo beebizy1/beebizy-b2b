@@ -57,6 +57,7 @@ import type {
   ChecklistItem,
   InviteResult,
   VolunteerShift,
+  WalkInRegistrationDraft,
   WorkspaceMember,
 } from "../data/entities.ts";
 import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
@@ -822,6 +823,71 @@ export const registrations = {
     }
     const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
     return map.toRegistration(row!, event.title);
+  },
+
+  async createWalkIn(ctx: RequestContext, eventId: string, body: Body): Promise<RegistrationWithGuest> {
+    const event = await events.get(ctx, eventId);
+    if (!event) throw new HttpError(404, "That event no longer exists.");
+    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+      throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
+    }
+
+    const draft: WalkInRegistrationDraft = {
+      name: str(body, "name").trim(),
+      contact: str(body, "contact").trim(),
+      segment: labelFrom(body, "segment"),
+      organization: labelFrom(body, "organization", 120),
+      checkInStation: labelFrom(body, "checkInStation", 80),
+      checkInNotes: labelFrom(body, "checkInNotes", 500),
+    };
+    const [existingGuest] = await db
+      .select({ id: s.guests.id })
+      .from(s.guests)
+      .where(and(eq(s.guests.workspaceId, ctx.workspaceId), eq(s.guests.contact, draft.contact)))
+      .limit(1);
+    if (existingGuest) {
+      throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
+    }
+
+    const guestId = newId("att");
+    const registrationId = newId("reg");
+    const checkedInAt = new Date();
+    const guestInsert = db
+      .insert(s.guests)
+      .values({
+        id: guestId,
+        workspaceId: ctx.workspaceId,
+        name: draft.name,
+        contact: draft.contact,
+        notes: "Registered at event check-in.",
+      })
+      .returning();
+    const registrationInsert = db
+      .insert(s.registrations)
+      .values({
+        id: registrationId,
+        workspaceId: ctx.workspaceId,
+        eventId,
+        guestId,
+        status: "confirmed",
+        segment: draft.segment?.trim() || "Walk-in",
+        organization: draft.organization?.trim() || null,
+        checkedInAt,
+        checkInStation: draft.checkInStation?.trim() || null,
+        checkInNotes: draft.checkInNotes?.trim() || "Registered on site.",
+      })
+      .returning();
+
+    try {
+      const [guestRows, registrationRows] = await db.batch([guestInsert, registrationInsert]);
+      const guest = map.toGuest(guestRows[0]!);
+      return { ...map.toRegistration(registrationRows[0]!, event.title), guest };
+    } catch (error) {
+      if (isUniqueViolation(error, "guests_workspace_contact_idx")) {
+        throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
+      }
+      throw error;
+    }
   },
 
   /**

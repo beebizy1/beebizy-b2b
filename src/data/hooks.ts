@@ -53,6 +53,7 @@ import type {
   RegistrationDraft,
   RegistrationCheckInPatch,
   RegistrationStatus,
+  WalkInRegistrationDraft,
   WorkspaceRole,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -358,6 +359,14 @@ export function useCreateRegistration() {
   return useAdapterMutation(
     (a, draft: RegistrationDraft) => a.registrations.create(draft),
     (draft) => [qk.registrations, qk.eventRegistrations(draft.eventId), ...eventDerivedKeys(draft.eventId)],
+  );
+}
+
+export function useRegisterWalkIn() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: WalkInRegistrationDraft }) =>
+      a.registrations.createWalkIn(vars.eventId, vars.draft),
+    (vars) => [qk.guests, qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
   );
 }
 

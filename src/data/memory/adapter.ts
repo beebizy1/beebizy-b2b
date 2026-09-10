@@ -86,6 +86,7 @@ import type {
   Registration,
   RegistrationStatus,
   RegistrationWithGuest,
+  WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -658,6 +659,50 @@ const registrations: RegistrationsRepository = {
     state.registrations.push(registration);
     syncRegistrationCount(draft.eventId);
     return copy(registration);
+  },
+  async createWalkIn(eventId: string, draft: WalkInRegistrationDraft) {
+    await wait();
+    const event = requireEvent(eventId);
+    const state = store();
+    const name = draft.name.trim();
+    const contact = draft.contact.trim();
+    if (!name) throw new DataError("invalid", "name is required.");
+    if (!contact) throw new DataError("invalid", "contact is required.");
+    if (state.guests.some((candidate) => candidate.contact.toLowerCase() === contact.toLowerCase())) {
+      throw new DataError("conflict", "That email is already in the people list. Search for the guest and check them in instead.");
+    }
+    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+      throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
+    }
+
+    const now = nowIso();
+    const guest: Guest = {
+      id: newId("att"),
+      ownerId: DEMO_OWNER_ID,
+      name,
+      contact,
+      notes: "Registered at event check-in.",
+      createdAt: now,
+    };
+    const registration: Registration = {
+      id: newId("reg"),
+      ownerId: DEMO_OWNER_ID,
+      eventId,
+      eventTitle: event.title,
+      guestId: guest.id,
+      status: "confirmed",
+      segment: draft.segment?.trim() || "Walk-in",
+      organization: draft.organization?.trim() || null,
+      registeredAt: now,
+      checkedInAt: now,
+      checkInStation: draft.checkInStation?.trim() || null,
+      checkInNotes: draft.checkInNotes?.trim() || "Registered on site.",
+      createdAt: now,
+    };
+    state.guests.push(guest);
+    state.registrations.push(registration);
+    syncRegistrationCount(eventId);
+    return copy({ ...registration, guest });
   },
   async setStatus(id, status: RegistrationStatus) {
     await wait();

@@ -229,6 +229,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: () => client.get<RegistrationWithGuest[]>("/registrations"),
       listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
+      createWalkIn: (eventId, draft) =>
+        client.post<RegistrationWithGuest>(`/events/${eventId}/walk-ins`, draft),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
       setSegment: (id, segment) => client.patch<Registration>(`/registrations/${id}`, { segment }),
       setOrganization: (id, organization) =>

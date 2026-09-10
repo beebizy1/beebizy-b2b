@@ -84,6 +84,7 @@ import type {
   WorkspaceRole,
   RegistrationStatus,
   RegistrationWithGuest,
+  WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -147,6 +148,8 @@ export interface RegistrationsRepository {
   list(): Promise<RegistrationWithGuest[]>;
   listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
+  /** Atomically creates a guest, confirmed registration and arrival record. */
+  createWalkIn(eventId: string, draft: WalkInRegistrationDraft): Promise<RegistrationWithGuest>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
   /** Null clears the category. */
   setSegment(id: string, segment: string | null): Promise<Registration>;

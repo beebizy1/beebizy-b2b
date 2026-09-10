@@ -212,6 +212,16 @@ export interface RegistrationCheckInPatch {
   checkInNotes?: string | null;
 }
 
+/** One atomic front-desk action: create a new person, register them, and record arrival. */
+export interface WalkInRegistrationDraft {
+  name: string;
+  contact: string;
+  segment?: string | null;
+  organization?: string | null;
+  checkInStation?: string | null;
+  checkInNotes?: string | null;
+}
+
 /** A persistent operating position at an event entrance. */
 export interface CheckInStation {
   id: string;
