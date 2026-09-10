@@ -38,7 +38,7 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-export default function GuestCsvImportDialog({ event }: { event: Event }) {
+export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV" }: { event: Event; triggerLabel?: string }) {
   const createGuest = useCreateGuest();
   const createRegistration = useCreateRegistration();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -101,7 +101,7 @@ export default function GuestCsvImportDialog({ event }: { event: Event }) {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Upload className="mr-1.5 size-3.5" aria-hidden="true" />
-          Import CSV
+          {triggerLabel}
         </Button>
       </DialogTrigger>
 
@@ -109,7 +109,7 @@ export default function GuestCsvImportDialog({ event }: { event: Event }) {
         <DialogHeader>
           <DialogTitle>Import guests from CSV</DialogTitle>
           <DialogDescription>
-            Upload or paste a file with name and email columns. Everything imports as a pending registration.
+            Export a guest list from HubSpot or Google Sheets as CSV, then upload or paste it here. Everything imports as a pending registration.
           </DialogDescription>
         </DialogHeader>
 

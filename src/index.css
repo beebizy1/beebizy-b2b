@@ -3,6 +3,186 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+/* Check-in print jobs stay out of the app layout and become the only visible content
+   when the browser print dialog opens. This supports ordinary office printers and
+   dedicated badge printers without a vendor-specific integration. */
+.check-in-print-area {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0.35in;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .check-in-print-area,
+  .check-in-print-area * {
+    visibility: visible !important;
+  }
+
+  .check-in-print-area {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    color: #111827;
+    background: #fff;
+    font-family: Arial, sans-serif;
+  }
+
+  .check-in-guest-list header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 18px;
+    border-bottom: 4px solid #f8d810;
+  }
+
+  .check-in-guest-list h1 {
+    margin: 2px 0 4px;
+    font-size: 24px;
+  }
+
+  .check-in-guest-list header p {
+    margin: 0;
+    color: #4b5563;
+    font-size: 11px;
+  }
+
+  .check-in-print-kicker {
+    color: #111827 !important;
+    font-size: 9px !important;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+  }
+
+  .check-in-print-total {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .check-in-print-total strong {
+    font-size: 28px;
+    line-height: 1;
+  }
+
+  .check-in-print-total span {
+    margin-top: 3px;
+    color: #4b5563;
+    font-size: 10px;
+  }
+
+  .check-in-guest-list table {
+    width: 100%;
+    margin-top: 14px;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+
+  .check-in-guest-list thead {
+    display: table-header-group;
+  }
+
+  .check-in-guest-list tr {
+    break-inside: avoid;
+  }
+
+  .check-in-guest-list th,
+  .check-in-guest-list td {
+    padding: 7px 6px;
+    border-bottom: 1px solid #d1d5db;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .check-in-guest-list th {
+    color: #374151;
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .check-in-badge {
+    position: relative;
+    box-sizing: border-box;
+    width: 4in;
+    height: 3in;
+    padding: 0.28in;
+    overflow: hidden;
+    border: 1px solid #d1d5db;
+    border-top: 0.14in solid #f8d810;
+  }
+
+  .check-in-badge-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .check-in-badge-brand span {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: #f8d810;
+    box-shadow: inset 0 0 0 2px #111827;
+  }
+
+  .check-in-badge-event {
+    margin: 20px 0 0;
+    color: #4b5563;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .check-in-badge h1 {
+    margin: 8px 0 0;
+    font-size: 32px;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+  }
+
+  .check-in-badge-organization {
+    margin: 7px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .check-in-badge-role {
+    display: inline-block;
+    margin: 9px 0 0;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #fef9c3;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .check-in-badge footer {
+    position: absolute;
+    right: 0.28in;
+    bottom: 0.24in;
+    left: 0.28in;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #d1d5db;
+    color: #4b5563;
+    font-size: 9px;
+  }
+}
+
 /*
   Design tokens.
 

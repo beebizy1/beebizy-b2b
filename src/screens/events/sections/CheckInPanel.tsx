@@ -7,6 +7,7 @@ import {
   Laptop,
   Pencil,
   Plus,
+  Printer,
   Search,
   Trash2,
   UserCheck,
@@ -31,6 +32,9 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
 import { eventTabHref } from "@/app/shell/nav";
+import GuestCsvImportDialog from "./GuestCsvImportDialog";
+import { CheckInPrintSheet, type CheckInPrintJob } from "./CheckInPrintSheet";
+import { OnSiteRegistration } from "./OnSiteRegistration";
 import {
   useAddChecklistItem,
   useAddCheckInStation,
@@ -182,6 +186,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const [editingStation, setEditingStation] = useState<CheckInStation | null>(null);
   const [deleteStation, setDeleteStation] = useState<CheckInStation | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(50);
+  const [printJob, setPrintJob] = useState<CheckInPrintJob | null>(null);
   const stationRows = useMemo(() => stations ?? [], [stations]);
 
   const rows = useMemo(
@@ -193,6 +198,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const confirmedRows = rows.filter((row) => row.status === "confirmed");
   const arrived = confirmedRows.filter((row) => row.checkedInAt !== null).length;
   const remaining = confirmedRows.length - arrived;
+  const eventFinished = event.status === "completed" || Boolean(event.endDate && new Date(event.endDate).getTime() < Date.now());
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
@@ -212,6 +218,14 @@ export function CheckInPanel({ event }: { event: Event }) {
   useEffect(() => {
     if (!station && stationRows[0]) setStation(stationRows[0].name);
   }, [station, stationRows]);
+  useEffect(() => {
+    if (!printJob) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.print();
+      setPrintJob(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [printJob]);
   const displayed = visible.slice(0, visibleLimit);
 
   const existingTasks = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
@@ -257,9 +271,31 @@ export function CheckInPanel({ event }: { event: Event }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Expected" value={confirmedRows.length} icon={UsersRound} sublabel={`${rows.length - confirmedRows.length} awaiting RSVP`} loading={isLoading} />
         <StatTile label="Checked in" value={arrived} icon={UserCheck} tone="success" loading={isLoading} />
-        <StatTile label="Still expected" value={remaining} icon={DoorOpen} tone={remaining > 0 ? "warning" : "success"} loading={isLoading} />
+        <StatTile label={eventFinished ? "No-shows" : "Still expected"} value={remaining} icon={DoorOpen} tone={remaining > 0 ? "warning" : "success"} loading={isLoading} />
         <StatTile label="Arrival rate" value={confirmedRows.length ? `${Math.round((arrived / confirmedRows.length) * 100)}%` : "0%"} loading={isLoading} />
       </div>
+
+      <Panel className="overflow-hidden border-l-4 border-l-primary">
+        <PanelHeader
+          title="Event-day desk"
+          description="Bring in HubSpot or Google Sheets guest lists, register walk-ins, and print what the door team needs."
+          actions={
+            <div className="flex flex-wrap gap-2">
+              <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets CSV" />
+              <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "guest-list" })} disabled={rows.length === 0}>
+                <Printer className="mr-1.5 size-3.5" aria-hidden="true" />Print guest list
+              </Button>
+            </div>
+          }
+        />
+        <OnSiteRegistration
+          event={event}
+          station={station}
+          onRegistered={(row, printBadge) => {
+            if (printBadge) setPrintJob({ kind: "badge", row });
+          }}
+        />
+      </Panel>
 
       <Panel className="overflow-hidden">
         <PanelHeader
@@ -373,7 +409,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           description={`Check-ins use the workspace time zone (${timeZoneLabel}). Cancelled registrations are excluded.`}
           actions={
             <Button asChild variant="outline" size="sm">
-              <Link href={eventTabHref(event.id, "registrations")}><Plus className="mr-1.5 size-3.5" />Add walk-in</Link>
+              <Link href={eventTabHref(event.id, "registrations")}>Manage registrations</Link>
             </Button>
           }
         />
@@ -387,7 +423,7 @@ export function CheckInPanel({ event }: { event: Event }) {
               <SelectTrigger className="w-[150px]" aria-label="Arrival filter"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="confirmed">Confirmed list</SelectItem>
-                <SelectItem value="waiting">Still expected</SelectItem>
+                <SelectItem value="waiting">{eventFinished ? "No-shows" : "Still expected"}</SelectItem>
                 <SelectItem value="arrived">Checked in</SelectItem>
                 <SelectItem value="pending">Awaiting RSVP</SelectItem>
               </SelectContent>
@@ -426,7 +462,7 @@ export function CheckInPanel({ event }: { event: Event }) {
                       ) : row.status === "pending" ? (
                         <Pill tone="neutral">Awaiting RSVP</Pill>
                       ) : (
-                        <Pill tone="warning">Expected</Pill>
+                        <Pill tone="warning">{eventFinished ? "No-show" : "Expected"}</Pill>
                       )}
                     </div>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -439,6 +475,9 @@ export function CheckInPanel({ event }: { event: Event }) {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "badge", row })}>
+                      <Printer className="mr-1.5 size-3.5" />Badge
+                    </Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(editingId === row.id ? null : row.id)}>
                       <Pencil className="mr-1.5 size-3.5" />Details
                     </Button>
@@ -502,6 +541,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <CheckInPrintSheet event={event} job={printJob} rows={rows} formatDate={formatDate} timeZoneLabel={timeZoneLabel} />
     </div>
   );
 }
