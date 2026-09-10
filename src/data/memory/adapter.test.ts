@@ -213,6 +213,12 @@ describe("registrations", () => {
     expect(undone.checkInStation).toBe("North entrance");
   });
 
+  it("confirms an invited guest when they arrive", async () => {
+    const pending = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "pending")!;
+    const checkedIn = await memoryAdapter.registrations.setCheckIn(pending.id, { checkedInAt: new Date().toISOString() });
+    expect(checkedIn.status).toBe("confirmed");
+  });
+
   it("refuses a duplicate registration", async () => {
     const existing = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "confirmed")!;
     await expect(

@@ -230,7 +230,7 @@ export function toVolunteerShift(row: InferSelectModel<typeof s.volunteerShifts>
     role: row.role,
     startTime: row.startTime,
     endTime: row.endTime,
-    status: row.status as VolunteerShift["status"],
+    status: row.status,
     notes: row.notes,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),

@@ -831,7 +831,7 @@ export const registrations = {
    */
   async update(ctx: RequestContext, id: string, body: Body): Promise<Registration> {
     const patch: {
-      status?: "pending";
+      status?: Registration["status"];
       segment?: string | null;
       organization?: string | null;
       checkedInAt?: Date | null;
@@ -844,11 +844,15 @@ export const registrations = {
       if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
         throw new HttpError(400, `status must be one of ${REGISTRATION_STATUSES.join(", ")}.`);
       }
-      patch.status = status as "pending";
+      patch.status = status as Registration["status"];
     }
     if ("segment" in body) patch.segment = labelFrom(body, "segment");
     if ("organization" in body) patch.organization = labelFrom(body, "organization", 120);
-    if ("checkedInAt" in body) patch.checkedInAt = parseOptionalDate(body.checkedInAt, "checkedInAt");
+    if ("checkedInAt" in body) {
+      patch.checkedInAt = parseOptionalDate(body.checkedInAt, "checkedInAt");
+      // Someone who arrives has accepted the invitation in the most concrete way.
+      if (patch.checkedInAt) patch.status = "confirmed";
+    }
     if ("checkInStation" in body) patch.checkInStation = labelFrom(body, "checkInStation", 80);
     if ("checkInNotes" in body) patch.checkInNotes = labelFrom(body, "checkInNotes", 500);
 

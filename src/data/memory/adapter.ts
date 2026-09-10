@@ -693,6 +693,10 @@ const registrations: RegistrationsRepository = {
       `Registration ${id} no longer exists.`,
     );
     registration.checkedInAt = patch.checkedInAt;
+    if (patch.checkedInAt && registration.status === "pending") {
+      registration.status = "confirmed";
+      syncRegistrationCount(registration.eventId);
+    }
     if ("checkInStation" in patch) registration.checkInStation = patch.checkInStation?.trim() || null;
     if ("checkInNotes" in patch) registration.checkInNotes = patch.checkInNotes?.trim() || null;
     registration.updatedAt = nowIso();

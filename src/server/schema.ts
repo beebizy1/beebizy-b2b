@@ -34,7 +34,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
-import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES } from "../data/entities.ts";
+import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -52,6 +52,7 @@ export const paymentStatus = pgEnum("payment_status", ["pending", "paid", "refun
 export const subscriptionStatus = pgEnum("subscription_status", ["beta", "active", "past_due", "cancelled"]);
 export const subscriptionPlan = pgEnum("subscription_plan", ["solo", "team", "enterprise"]);
 export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
+export const volunteerStatus = pgEnum("volunteer_status", VOLUNTEER_STATUSES);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -437,7 +438,7 @@ export const volunteerShifts = pgTable(
     role: text("role").notNull(),
     startTime: varchar("start_time", { length: 5 }).notNull(),
     endTime: varchar("end_time", { length: 5 }).notNull(),
-    status: text("status").notNull().default("scheduled"),
+    status: volunteerStatus("status").notNull().default("scheduled"),
     notes: text("notes"),
   },
   (table) => [index("volunteer_shifts_event_idx").on(table.eventId, table.startTime)],
