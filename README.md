@@ -138,8 +138,10 @@ before-and-after snapshots.
 
 The beta app is restricted to `https://beebizy-studio-preview.vercel.app`. The three
 Beebizy operators are always approved. Additional testers are invited without a code
-change by adding the same comma-separated emails to `BETA_ACCESS_EMAILS` and
-`VITE_BETA_ACCESS_EMAILS` in the Vercel Preview environment. Each new workspace starts
+change by adding comma-separated emails to `BETA_ACCESS_EMAILS` in the Vercel Preview
+environment and redeploying, then re-pointing the
+`beebizy-studio-preview.vercel.app` alias at the new deployment. Only the server reads
+the allowlist, so there is no client-side counterpart. Each new workspace starts
 with three free months; expired, past-due, and cancelled access states are enforced by
 the API and shown explicitly in the app.
 
