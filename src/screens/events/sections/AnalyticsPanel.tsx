@@ -40,6 +40,13 @@ export default function AnalyticsPanel({ event }: { event: Event }) {
   const confirmed = (registrations ?? []).filter((r) => r.status === "confirmed").length;
   const pending = (registrations ?? []).filter((r) => r.status === "pending").length;
   const cancelled = (registrations ?? []).filter((r) => r.status === "cancelled").length;
+  /*
+   * Arrival is the only registration fact recorded at the door, and until now it stayed
+   * there: `checkedInAt` was read solely by the check-in screen, so the gap between who
+   * registered and who actually came never reached anyone reviewing the event.
+   */
+  const arrived = (registrations ?? []).filter((r) => r.checkedInAt !== null).length;
+  const noShows = Math.max(0, confirmed - arrived);
 
   const done = (checklist ?? []).filter((item) => item.completed).length;
   const total = checklist?.length ?? 0;
@@ -106,6 +113,17 @@ export default function AnalyticsPanel({ event }: { event: Event }) {
               <Meter value={confirmed} max={registrations?.length ?? 1} tone="success" label="Confirmed" />
               <Meter value={pending} max={registrations?.length ?? 1} tone="warning" label="Pending" />
               <Meter value={cancelled} max={registrations?.length ?? 1} tone="danger" label="Cancelled" />
+              {arrived > 0 ? (
+                <>
+                  <Meter value={arrived} max={confirmed || 1} tone="success" label="Arrived" />
+                  <Meter value={noShows} max={confirmed || 1} tone="danger" label="No-show" />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No arrivals recorded yet. Check guests in from the Check-in tab to see attendance against
+                  registrations.
+                </p>
+              )}
               {event.capacity ? (
                 <p className="text-sm text-muted-foreground">
                   <span data-numeric>{percent(confirmed, event.capacity)}%</span> of the room is confirmed.

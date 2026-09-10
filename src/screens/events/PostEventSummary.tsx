@@ -74,7 +74,24 @@ export default function PostEventSummary({ id }: { id: string }) {
 
   const totalReg = registrations?.length ?? 0;
   const confirmed = (registrations ?? []).filter((r) => r.status === "confirmed").length;
-  const fillRate = event.capacity ? Math.round((confirmed / event.capacity) * 100) : null;
+  const arrived = (registrations ?? []).filter((r) => r.checkedInAt !== null).length;
+  /*
+   * Only a confirmed registration can be a no-show.
+   *
+   * Someone who never RSVP'd was never expected through the door, and counting them as
+   * absent inflates the one number the organizer is trying to act on.
+   */
+  const noShows = Math.max(0, confirmed - arrived);
+  /*
+   * Attendance is reported only when the door was actually worked.
+   *
+   * This tile used to read "fill rate" and divide confirmed registrations by capacity,
+   * which answered "how many signed up" while being labelled as though it answered "how
+   * many came" - the exact number that hides a no-show problem. Attendance replaces it,
+   * but an event with no check-in records has no attendance truth: 0% would read as
+   * "nobody came" rather than "nobody scanned", so that case says so instead.
+   */
+  const attendanceRate = arrived > 0 && confirmed > 0 ? Math.round((arrived / confirmed) * 100) : null;
 
   const expenses = (budget ?? []).filter((line) => line.type === "expense");
   const estimated = sumCents(expenses.map((line) => line.estimatedCents));
@@ -143,11 +160,15 @@ export default function PostEventSummary({ id }: { id: string }) {
           sublabel={event.capacity ? `of ${event.capacity} capacity` : undefined}
         />
         <StatTile
-          label="Fill rate"
-          value={fillRate === null ? "—" : `${fillRate}%`}
+          label="Attended"
+          value={attendanceRate === null ? "—" : `${attendanceRate}%`}
           icon={CheckCircle2}
-          tone={fillRate !== null && fillRate >= 75 ? "success" : "warning"}
-          sublabel={`${confirmed} confirmed`}
+          tone={attendanceRate === null ? "neutral" : attendanceRate >= 75 ? "success" : "warning"}
+          sublabel={
+            attendanceRate === null
+              ? "No check-in data"
+              : `${arrived} of ${confirmed} confirmed · ${noShows} no-show${noShows === 1 ? "" : "s"}`
+          }
         />
         <StatTile
           label="Total spend"
