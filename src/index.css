@@ -11,10 +11,6 @@
 }
 
 @media print {
-  @page {
-    margin: 0.35in;
-  }
-
   body * {
     visibility: hidden !important;
   }

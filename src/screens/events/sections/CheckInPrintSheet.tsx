@@ -25,6 +25,7 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
 
   return (
     <section className="check-in-print-area" aria-hidden="true">
+      <style>{job.kind === "badge" ? "@page { size: 4in 3in; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
       {job.kind === "badge" ? (
         <div className="check-in-badge">
           <div className="check-in-badge-brand"><span />beebizy</div>
