@@ -281,7 +281,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           description="Bring in HubSpot or Google Sheets guest lists, register walk-ins, and print what the door team needs."
           actions={
             <div className="flex flex-wrap gap-2">
-              <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets CSV" />
+              <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets CSV" registrationStatus="confirmed" />
               <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "guest-list" })} disabled={rows.length === 0}>
                 <Printer className="mr-1.5 size-3.5" aria-hidden="true" />Print guest list
               </Button>

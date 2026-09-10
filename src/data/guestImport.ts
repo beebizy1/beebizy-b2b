@@ -17,6 +17,8 @@ export interface ParsedGuestRow {
   name: string;
   contact: string;
   notes: string | null;
+  organization: string | null;
+  segment: string | null;
   /** Why this row can't be imported, or null when it can. */
   problem: string | null;
 }
@@ -24,14 +26,24 @@ export interface ParsedGuestRow {
 export interface GuestImportPreview {
   rows: ParsedGuestRow[];
   /** Headers we recognised, for telling the user what we read. */
-  matched: { name: string | null; contact: string | null; notes: string | null };
+  matched: {
+    name: string | null;
+    contact: string | null;
+    notes: string | null;
+    organization: string | null;
+    segment: string | null;
+  };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const NAME_KEYS = ["name", "full name", "fullname", "guest", "guest name", "attendee", "attendee name"];
+const FIRST_NAME_KEYS = ["first name", "firstname", "contact first name"];
+const LAST_NAME_KEYS = ["last name", "lastname", "contact last name"];
 const CONTACT_KEYS = ["email", "e-mail", "email address", "e-mail address", "contact", "contact email"];
 const NOTES_KEYS = ["notes", "note", "comment", "comments", "dietary", "requirements"];
+const ORGANIZATION_KEYS = ["company name", "company", "organization", "organisation", "school"];
+const SEGMENT_KEYS = ["segment", "category", "guest type", "registration type", "lifecycle stage"];
 
 function normalise(header: string): string {
   return header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
@@ -68,15 +80,26 @@ function text(value: SpreadsheetValue): string {
 export function parseGuestCsv(source: string): GuestImportPreview {
   const table = parseCsvTable(source, "Guests");
   const nameHeader = pickHeader(table.headers, NAME_KEYS);
+  const firstNameHeader = pickHeader(table.headers, FIRST_NAME_KEYS);
+  const lastNameHeader = pickHeader(table.headers, LAST_NAME_KEYS);
   const contactHeader = pickHeader(table.headers, CONTACT_KEYS);
   const notesHeader = pickHeader(table.headers, NOTES_KEYS);
+  const organizationHeader = pickHeader(table.headers, ORGANIZATION_KEYS);
+  const segmentHeader = pickHeader(table.headers, SEGMENT_KEYS);
+  const matchedName = nameHeader ?? ([firstNameHeader, lastNameHeader].filter(Boolean).join(" + ") || null);
 
   const seen = new Set<string>();
 
   const rows = table.rows.map((row, index) => {
-    const name = nameHeader ? text(row[nameHeader]) : "";
+    const name = nameHeader
+      ? text(row[nameHeader])
+      : [firstNameHeader ? text(row[firstNameHeader]) : "", lastNameHeader ? text(row[lastNameHeader]) : ""]
+          .filter(Boolean)
+          .join(" ");
     const contact = contactHeader ? text(row[contactHeader]) : "";
     const notes = notesHeader ? text(row[notesHeader]) : "";
+    const organization = organizationHeader ? text(row[organizationHeader]) : "";
+    const segment = segmentHeader ? text(row[segmentHeader]) : "";
 
     let problem: string | null = null;
     if (!name && !contact) problem = "Empty row";
@@ -87,10 +110,27 @@ export function parseGuestCsv(source: string): GuestImportPreview {
 
     if (problem === null) seen.add(contact.toLowerCase());
 
-    return { line: index + 2, name, contact, notes: notes || null, problem };
+    return {
+      line: index + 2,
+      name,
+      contact,
+      notes: notes || null,
+      organization: organization || null,
+      segment: segment || null,
+      problem,
+    };
   });
 
-  return { rows, matched: { name: nameHeader, contact: contactHeader, notes: notesHeader } };
+  return {
+    rows,
+    matched: {
+      name: matchedName,
+      contact: contactHeader,
+      notes: notesHeader,
+      organization: organizationHeader,
+      segment: segmentHeader,
+    },
+  };
 }
 
 /** The header row we hand out, so an import that uses it always parses. */

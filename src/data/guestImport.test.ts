@@ -4,7 +4,7 @@ import { GUEST_CSV_TEMPLATE, parseGuestCsv } from "./guestImport";
 describe("parseGuestCsv", () => {
   it("reads the template it hands out", () => {
     const { rows, matched } = parseGuestCsv(GUEST_CSV_TEMPLATE);
-    expect(matched).toEqual({ name: "name", contact: "email", notes: "notes" });
+    expect(matched).toEqual({ name: "name", contact: "email", notes: "notes", organization: null, segment: null });
     expect(rows.filter((r) => r.problem === null)).toHaveLength(2);
     expect(rows[0]).toMatchObject({ line: 2, name: "Jane Doe", contact: "jane@example.com", notes: "Vegetarian" });
     expect(rows[1]!.notes).toBeNull();
@@ -12,7 +12,27 @@ describe("parseGuestCsv", () => {
 
   it("matches headers loosely, whatever the exporter called them", () => {
     const { matched } = parseGuestCsv("Full Name,E-Mail Address,Comments\nA,a@b.co,x\n");
-    expect(matched).toEqual({ name: "Full Name", contact: "E-Mail Address", notes: "Comments" });
+    expect(matched).toEqual({ name: "Full Name", contact: "E-Mail Address", notes: "Comments", organization: null, segment: null });
+  });
+
+  it("reads common HubSpot first-name, last-name, company and lifecycle columns", () => {
+    const { rows, matched } = parseGuestCsv(
+      "First Name,Last Name,Email,Company Name,Lifecycle Stage\nAda,Lovelace,ada@example.com,Analytical Engines,Customer\n",
+    );
+    expect(matched).toEqual({
+      name: "First Name + Last Name",
+      contact: "Email",
+      notes: null,
+      organization: "Company Name",
+      segment: "Lifecycle Stage",
+    });
+    expect(rows[0]).toMatchObject({
+      name: "Ada Lovelace",
+      contact: "ada@example.com",
+      organization: "Analytical Engines",
+      segment: "Customer",
+      problem: null,
+    });
   });
 
   it("flags rows rather than dropping them", () => {
@@ -41,7 +61,7 @@ describe("parseGuestCsv", () => {
 
   it("survives a file with no recognisable columns", () => {
     const { rows, matched } = parseGuestCsv("colour,size\nred,large\n");
-    expect(matched).toEqual({ name: null, contact: null, notes: null });
+    expect(matched).toEqual({ name: null, contact: null, notes: null, organization: null, segment: null });
     expect(rows[0]!.problem).toBe("Empty row");
   });
 

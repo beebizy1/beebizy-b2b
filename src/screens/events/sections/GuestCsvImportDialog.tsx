@@ -8,8 +8,9 @@
  */
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, FileUp, Upload } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, FileUp, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { Pill } from "@/components/primitives";
-import { useCreateGuest, useCreateRegistration } from "@/data/hooks";
+import { useCreateGuest, useCreateRegistration, useLoadGoogleSheet } from "@/data/hooks";
 import { GUEST_CSV_TEMPLATE, parseGuestCsv } from "@/data/guestImport";
 import type { Event } from "@/data/entities";
 
@@ -38,20 +39,52 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV" }: { event: Event; triggerLabel?: string }) {
+export default function GuestCsvImportDialog({
+  event,
+  triggerLabel = "Import CSV",
+  registrationStatus = "pending",
+}: {
+  event: Event;
+  triggerLabel?: string;
+  registrationStatus?: "pending" | "confirmed";
+}) {
   const createGuest = useCreateGuest();
   const createRegistration = useCreateRegistration();
+  const loadGoogleSheet = useLoadGoogleSheet();
   const fileInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState("");
+  const [googleUrl, setGoogleUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   const preview = useMemo(() => (source.trim() ? parseGuestCsv(source) : null), [source]);
+  /*
+   * Say which columns were recognised, and show the optional ones in the preview.
+   *
+   * A HubSpot export carries company and lifecycle columns, and they are read and
+   * imported onto the registration - but the preview listed only name and email, so the
+   * two fields that decide how a guest is grouped at the door were applied without ever
+   * being shown. An import preview that hides part of what it imports is not a preview.
+   */
+  const showOrganization = preview?.matched.organization != null;
+  const showSegment = preview?.matched.segment != null;
+  const readColumns = preview
+    ? [
+        preview.matched.name ?? "no name column",
+        preview.matched.contact ?? "no email column",
+        preview.matched.organization,
+        preview.matched.segment,
+        preview.matched.notes,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   const valid = preview?.rows.filter((row) => row.problem === null) ?? [];
   const invalid = preview?.rows.filter((row) => row.problem !== null) ?? [];
 
   const reset = () => {
     setSource("");
+    setGoogleUrl("");
     setBusy(false);
   };
 
@@ -69,7 +102,9 @@ export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV
         await createRegistration.mutateAsync({
           eventId: event.id,
           guestId: guest.id,
-          status: "pending",
+          status: registrationStatus,
+          segment: row.segment,
+          organization: row.organization,
         });
         imported += 1;
       }
@@ -109,11 +144,44 @@ export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV
         <DialogHeader>
           <DialogTitle>Import guests from CSV</DialogTitle>
           <DialogDescription>
-            Export a guest list from HubSpot or Google Sheets as CSV, then upload or paste it here. Everything imports as a pending registration.
+            Export a guest list from HubSpot or Google Sheets as CSV, then upload or paste it here. Guests import as {registrationStatus === "confirmed" ? "confirmed registrants" : "pending registrations"}.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
+          <div className="space-y-1.5 rounded-lg border border-hairline bg-surface-sunken/40 p-3">
+            <Label htmlFor="guest-google-sheet">Public Google Sheet</Label>
+            <p className="text-xs text-muted-foreground">Set sharing to “Anyone with the link can view,” then paste the link.</p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="guest-google-sheet"
+                type="url"
+                value={googleUrl}
+                onChange={(changeEvent) => setGoogleUrl(changeEvent.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/…"
+                className="min-w-0 flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!googleUrl.trim() || loadGoogleSheet.isPending}
+                onClick={() => {
+                  void loadGoogleSheet.mutateAsync(googleUrl).then(
+                    (loaded) => setSource(loaded.csv),
+                    (error) => toast({
+                      title: "The Google Sheet could not be read",
+                      description: error instanceof Error ? error.message : undefined,
+                    }),
+                  );
+                }}
+              >
+                <FileSpreadsheet className="mr-1.5 size-3.5" aria-hidden="true" />
+                {loadGoogleSheet.isPending ? "Reading…" : "Load sheet"}
+              </Button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <input
               ref={fileInput}
@@ -153,16 +221,13 @@ export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Pill tone={valid.length > 0 ? "success" : "neutral"}>{valid.length} ready</Pill>
                 {invalid.length > 0 ? <Pill tone="warning">{invalid.length} skipped</Pill> : null}
-                <span className="text-muted-foreground">
-                  Read {preview.matched.name ?? "no name column"} / {preview.matched.contact ?? "no email column"}
-                </span>
+                <span className="text-muted-foreground">Read {readColumns}</span>
               </div>
 
               {preview.matched.name === null || preview.matched.contact === null ? (
                 <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-tint px-3 py-2 text-xs text-warning-text">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                  Couldn't find a name and email column. Rename your headers to <code>name</code> and{" "}
-                  <code>email</code>, or download the template.
+                  Couldn't find a name and email column. Use <code>name</code> or <code>first name</code> and <code>last name</code>, plus <code>email</code>, or download the template.
                 </p>
               ) : null}
 
@@ -173,6 +238,8 @@ export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV
                       <TableHead className="w-14">Line</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
+                      {showOrganization ? <TableHead>Organization</TableHead> : null}
+                      {showSegment ? <TableHead>Group</TableHead> : null}
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -184,6 +251,12 @@ export default function GuestCsvImportDialog({ event, triggerLabel = "Import CSV
                         </TableCell>
                         <TableCell>{row.name || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-muted-foreground">{row.contact || "—"}</TableCell>
+                        {showOrganization ? (
+                          <TableCell className="text-muted-foreground">{row.organization || "—"}</TableCell>
+                        ) : null}
+                        {showSegment ? (
+                          <TableCell className="text-muted-foreground">{row.segment || "—"}</TableCell>
+                        ) : null}
                         <TableCell>
                           {row.problem ? (
                             <Pill tone="warning">{row.problem}</Pill>
