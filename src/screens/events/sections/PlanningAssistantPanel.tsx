@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, CalendarClock, CheckCircle2, ExternalLink, ListChecks, Palette, Plus, Sparkles, Store, Trash2 } from "lucide-react";
+import {
+  Bot,
+  CalendarClock,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  ListChecks,
+  Palette,
+  Plus,
+  Sparkles,
+  Store,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,6 +109,62 @@ function dueDateFor(eventDate: string, daysBefore: number): string | null {
   due.setDate(due.getDate() - daysBefore);
   return due.toISOString();
 }
+/**
+ * Move one suggestion up or down by a single position.
+ *
+ * The model orders a checklist by lead time and mood directions by its own preference,
+ * and that order is the first thing an experienced planner disagrees with. Reordering
+ * during the review - rather than after the suggestions have been written to the event -
+ * keeps the whole argument in one place: the list on screen is the list that gets saved.
+ */
+function moveWithin<T>(items: T[], from: number, direction: -1 | 1): T[] {
+  const to = from + direction;
+  if (to < 0 || to >= items.length) return items;
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+function ReorderButtons({
+  label,
+  index,
+  count,
+  onMove,
+}: {
+  label: string;
+  index: number;
+  count: number;
+  onMove: (direction: -1 | 1) => void;
+}) {
+  return (
+    <div className="flex items-center">
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-8 text-muted-foreground"
+        disabled={index === 0}
+        aria-label={`Move ${label} up`}
+        onClick={() => onMove(-1)}
+      >
+        <ChevronUp className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-8 text-muted-foreground"
+        disabled={index === count - 1}
+        aria-label={`Move ${label} down`}
+        onClick={() => onMove(1)}
+      >
+        <ChevronDown className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
 function ApplyButton({
   applied,
   busy,
@@ -263,18 +332,35 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const applyChecklist = async () => {
     if (!suggestions) return;
     setApplying("checklist");
-    const pending = suggestions.checklist.filter(
-      (item) => item.title.trim() && !existing.checklist.has(item.title.trim().toLowerCase()),
-    );
+    /*
+     * Renumber from the reviewed order before sending.
+     *
+     * Each draft still carries the sortOrder it was generated with, so moving a row in
+     * this panel does not change it. The live server discards that number and derives its
+     * own, but the in-memory adapter takes `draft.sortOrder ?? derived` and therefore
+     * honours the stale one - the same reorder persisted correctly signed in and silently
+     * reverted on demo data. Position in this list is the only thing that means anything
+     * by now, so it is what gets written.
+     */
+    const pending = suggestions.checklist
+      .map((item, index) => ({ ...item, sortOrder: index }))
+      .filter((item) => item.title.trim() && !existing.checklist.has(item.title.trim().toLowerCase()));
     try {
-      await Promise.all(
-        pending.map(({ dueDaysBefore, ...draft }) =>
-          addChecklist.mutateAsync({
-            eventId: event.id,
-            draft: { ...draft, dueDate: dueDateFor(event.date, dueDaysBefore) },
-          }),
-        ),
-      );
+      /*
+       * Sequential, in the order shown above.
+       *
+       * The server ignores the draft's sortOrder and derives its own from
+       * max(sort_order) + 1. Fired concurrently, every create reads the same maximum and
+       * they all land on one value, so the saved order is whichever write happened to
+       * commit first. That made the reordering in this panel decorative: the planner
+       * moved a task to the top, and the event showed it wherever it fell.
+       */
+      for (const { dueDaysBefore, ...draft } of pending) {
+        await addChecklist.mutateAsync({
+          eventId: event.id,
+          draft: { ...draft, dueDate: dueDateFor(event.date, dueDaysBefore) },
+        });
+      }
       markApplied("checklist");
       toast({ title: "Checklist added", description: `${pending.length} new tasks were added.` });
     } catch (error) {
@@ -286,11 +372,34 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
   const applyRunOfShow = async () => {
     if (!suggestions) return;
     setApplying("runOfShow");
-    const pending = suggestions.runOfShow.filter(
-      (item) => item.title.trim() && !existing.runOfShow.has(`${item.startTime}|${item.title.trim().toLowerCase()}`),
-    );
+    /*
+     * Renumber from the reviewed order before sending.
+     *
+     * Each draft still carries the sortOrder it was generated with, so moving a row in
+     * this panel does not change it. The live server discards that number and derives its
+     * own, but the in-memory adapter takes `draft.sortOrder ?? derived` and therefore
+     * honours the stale one - the same reorder persisted correctly signed in and silently
+     * reverted on demo data. Position in this list is the only thing that means anything
+     * by now, so it is what gets written.
+     */
+    const pending = suggestions.runOfShow
+      .map((item, index) => ({ ...item, sortOrder: index }))
+      .filter(
+        (item) => item.title.trim() && !existing.runOfShow.has(`${item.startTime}|${item.title.trim().toLowerCase()}`),
+      );
     try {
-      await Promise.all(pending.map((draft) => addCue.mutateAsync({ eventId: event.id, draft })));
+      /*
+       * Sequential, in the order shown above.
+       *
+       * The server ignores the draft's sortOrder and derives its own from
+       * max(sort_order) + 1. Fired concurrently, every create reads the same maximum and
+       * they all land on one value, so the saved order is whichever write happened to
+       * commit first. That made the reordering in this panel decorative: the planner
+       * moved a task to the top, and the event showed it wherever it fell.
+       */
+      for (const draft of pending) {
+        await addCue.mutateAsync({ eventId: event.id, draft });
+      }
       markApplied("runOfShow");
       toast({ title: "Run of show added", description: `${pending.length} new cues were added.` });
     } catch (error) {
@@ -306,15 +415,22 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
       (concept) => concept.name.trim() && !existing.mood.has(concept.name.trim().toLowerCase()),
     );
     try {
-      await Promise.all(
-        pending.map((concept) =>
-          addMood.mutateAsync({
-            eventId: event.id,
-            url: moodConceptDataUrl(concept),
-            caption: `${concept.name} · ${concept.description}`,
-          }),
-        ),
-      );
+      /*
+       * Sequential, in the order shown above.
+       *
+       * The server ignores the draft's sortOrder and derives its own from
+       * max(sort_order) + 1. Fired concurrently, every create reads the same maximum and
+       * they all land on one value, so the saved order is whichever write happened to
+       * commit first. That made the reordering in this panel decorative: the planner
+       * moved a task to the top, and the event showed it wherever it fell.
+       */
+      for (const concept of pending) {
+        await addMood.mutateAsync({
+          eventId: event.id,
+          url: moodConceptDataUrl(concept),
+          caption: `${concept.name} · ${concept.description}`,
+        });
+      }
       markApplied("mood");
       toast({ title: "Mood directions added", description: `${pending.length} visual directions are on the mood board.` });
     } catch (error) {
@@ -595,21 +711,34 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                         className="h-8"
                       />
                     </label>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-8 text-muted-foreground hover:text-danger-text"
-                      aria-label={`Remove ${item.title || "task"}`}
-                      onClick={() =>
-                        reviseSuggestions("checklist", (current) => ({
-                          ...current,
-                          checklist: current.checklist.filter((_, draftIndex) => draftIndex !== index),
-                        }))
-                      }
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                    <div className="flex items-center">
+                      <ReorderButtons
+                        label={item.title || "task"}
+                        index={index}
+                        count={suggestions.checklist.length}
+                        onMove={(direction) =>
+                          reviseSuggestions("checklist", (current) => ({
+                            ...current,
+                            checklist: moveWithin(current.checklist, index, direction),
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-8 text-muted-foreground hover:text-danger-text"
+                        aria-label={`Remove ${item.title || "task"}`}
+                        onClick={() =>
+                          reviseSuggestions("checklist", (current) => ({
+                            ...current,
+                            checklist: current.checklist.filter((_, draftIndex) => draftIndex !== index),
+                          }))
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -722,21 +851,34 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                         className="h-8"
                       />
                     </label>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-8 text-muted-foreground hover:text-danger-text"
-                      aria-label={`Remove ${cue.title || "cue"}`}
-                      onClick={() =>
-                        reviseSuggestions("runOfShow", (current) => ({
-                          ...current,
-                          runOfShow: current.runOfShow.filter((_, draftIndex) => draftIndex !== index),
-                        }))
-                      }
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                    <div className="flex items-center">
+                      <ReorderButtons
+                        label={cue.title || "cue"}
+                        index={index}
+                        count={suggestions.runOfShow.length}
+                        onMove={(direction) =>
+                          reviseSuggestions("runOfShow", (current) => ({
+                            ...current,
+                            runOfShow: moveWithin(current.runOfShow, index, direction),
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-8 text-muted-foreground hover:text-danger-text"
+                        aria-label={`Remove ${cue.title || "cue"}`}
+                        onClick={() =>
+                          reviseSuggestions("runOfShow", (current) => ({
+                            ...current,
+                            runOfShow: current.runOfShow.filter((_, draftIndex) => draftIndex !== index),
+                          }))
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ol>
@@ -781,21 +923,55 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                 {suggestions.moodConcepts.map((concept, index) => (
                   <article key={index} className="relative overflow-hidden rounded-lg border border-hairline bg-surface">
                     <img src={moodConceptDataUrl(concept)} alt={`${concept.name} palette`} className="aspect-4/3 w-full object-cover" />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="secondary"
-                      className="absolute right-2 top-2 size-7"
-                      aria-label={`Remove ${concept.name || "mood direction"}`}
-                      onClick={() =>
-                        reviseSuggestions("mood", (current) => ({
-                          ...current,
-                          moodConcepts: current.moodConcepts.filter((_, draftIndex) => draftIndex !== index),
-                        }))
-                      }
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                    <div className="absolute right-2 top-2 flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="secondary"
+                        className="size-7"
+                        disabled={index === 0}
+                        aria-label={`Move ${concept.name || "mood direction"} earlier`}
+                        onClick={() =>
+                          reviseSuggestions("mood", (current) => ({
+                            ...current,
+                            moodConcepts: moveWithin(current.moodConcepts, index, -1),
+                          }))
+                        }
+                      >
+                        <ChevronUp className="size-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="secondary"
+                        className="size-7"
+                        disabled={index === suggestions.moodConcepts.length - 1}
+                        aria-label={`Move ${concept.name || "mood direction"} later`}
+                        onClick={() =>
+                          reviseSuggestions("mood", (current) => ({
+                            ...current,
+                            moodConcepts: moveWithin(current.moodConcepts, index, 1),
+                          }))
+                        }
+                      >
+                        <ChevronDown className="size-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="secondary"
+                        className="size-7"
+                        aria-label={`Remove ${concept.name || "mood direction"}`}
+                        onClick={() =>
+                          reviseSuggestions("mood", (current) => ({
+                            ...current,
+                            moodConcepts: current.moodConcepts.filter((_, draftIndex) => draftIndex !== index),
+                          }))
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                     <div className="space-y-2 p-3">
                       <Input
                         value={concept.name}
