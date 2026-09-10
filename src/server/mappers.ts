@@ -20,6 +20,7 @@ import type {
   Canvas,
   CanvasCard,
   ChecklistItem,
+  CheckInStation,
   Event,
   EventHistoryEntry,
   MoodBoardImage,
@@ -215,6 +216,20 @@ export function toRunOfShowItem(row: InferSelectModel<typeof s.runOfShowItems>):
     title: row.title,
     description: row.description,
     responsible: row.responsible,
+    sortOrder: row.sortOrder,
+    createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toCheckInStation(row: InferSelectModel<typeof s.checkInStations>): CheckInStation {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    name: row.name,
+    lane: row.lane,
+    lead: row.lead,
+    deviceCount: row.deviceCount,
+    notes: row.notes,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
   };

@@ -30,6 +30,9 @@ import type {
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  CheckInStation,
+  CheckInStationDraft,
+  CheckInStationPatch,
   Deposit,
   DepositDraft,
   DepositPatch,
@@ -318,6 +321,7 @@ export interface DataAdapter {
   locations: OwnedRepository<Location, LocationDraft, LocationPatch>;
   guests: OwnedRepository<Guest, GuestDraft, GuestPatch>;
   registrations: RegistrationsRepository;
+  checkInStations: EventScopedRepository<CheckInStation, CheckInStationDraft, CheckInStationPatch>;
   vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch>;
   vendorMessages: VendorMessagesRepository;
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;

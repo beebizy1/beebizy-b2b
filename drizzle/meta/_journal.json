@@ -120,6 +120,13 @@
       "when": 1789072148726,
       "tag": "0016_natural_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789072482290,
+      "tag": "0017_deep_warpath",
+      "breakpoints": true
     }
   ]
 }

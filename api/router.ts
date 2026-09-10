@@ -549,6 +549,7 @@ const eventChildren: Record<
   }
 > = {
   checklist: repos.checklist,
+  "check-in-stations": repos.checkInStations,
   "run-of-show": repos.runOfShow,
   volunteers: repos.volunteers,
   budget: repos.budget,

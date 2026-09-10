@@ -285,6 +285,32 @@ describe("volunteers", () => {
   });
 });
 
+describe("check-in stations", () => {
+  it("stores an event's entrance lanes and equipment plan", async () => {
+    const created = await memoryAdapter.checkInStations.create("evt-cab", {
+      name: "East entrance",
+      lane: "Last names A-M",
+      lead: "Jordan Lee",
+      deviceCount: 3,
+      notes: "Keep accessibility lane clear.",
+    });
+    expect(created).toMatchObject({ name: "East entrance", lane: "Last names A-M", deviceCount: 3 });
+    expect((await memoryAdapter.checkInStations.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
+
+    const updated = await memoryAdapter.checkInStations.update("evt-cab", created.id, { deviceCount: 4 });
+    expect(updated.deviceCount).toBe(4);
+
+    await memoryAdapter.checkInStations.remove("evt-cab", created.id);
+    expect((await memoryAdapter.checkInStations.list("evt-cab")).some((row) => row.id === created.id)).toBe(false);
+  });
+
+  it("removes station plans when their event is deleted", async () => {
+    expect((await memoryAdapter.checkInStations.list("evt-skickoff")).length).toBeGreaterThan(0);
+    await memoryAdapter.events.remove("evt-skickoff");
+    expect(await memoryAdapter.checkInStations.list("evt-skickoff")).toEqual([]);
+  });
+});
+
 describe("tickets", () => {
   it("sells against a share token and creates the buyer as an guest", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-gala");

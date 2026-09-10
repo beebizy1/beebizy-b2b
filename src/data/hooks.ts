@@ -30,6 +30,8 @@ import type {
   CanvasPatch,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  CheckInStationDraft,
+  CheckInStationPatch,
   Event,
   EventDraft,
   EventFilter,
@@ -108,6 +110,7 @@ export const qk = {
   vendorThread: (vendorId: string) => ["vendors", "thread", vendorId] as const,
 
   eventVendors: (eventId: string) => ["eventVendors", eventId] as const,
+  checkInStations: (eventId: string) => ["checkInStations", eventId] as const,
   checklist: (eventId: string) => ["checklist", eventId] as const,
   runOfShow: (eventId: string) => ["runOfShow", eventId] as const,
   volunteers: (eventId: string) => ["volunteers", eventId] as const,
@@ -465,6 +468,34 @@ export function useRemoveEventVendor() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.eventVendors.remove(vars.eventId, vars.id),
     (vars) => [qk.eventVendors(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+/* ---------------------------------------------------------- check-in stations */
+
+export function useCheckInStations(eventId: string) {
+  return useAdapterQuery(qk.checkInStations(eventId), (a) => a.checkInStations.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddCheckInStation() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: CheckInStationDraft }) => a.checkInStations.create(vars.eventId, vars.draft),
+    (vars) => [qk.checkInStations(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useUpdateCheckInStation() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: CheckInStationPatch }) =>
+      a.checkInStations.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.checkInStations(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useRemoveCheckInStation() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.checkInStations.remove(vars.eventId, vars.id),
+    (vars) => [qk.checkInStations(vars.eventId), qk.history(vars.eventId)],
   );
 }
 

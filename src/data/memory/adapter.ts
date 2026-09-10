@@ -48,6 +48,9 @@ import type {
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  CheckInStation,
+  CheckInStationDraft,
+  CheckInStationPatch,
   Deposit,
   DepositDraft,
   DepositPatch,
@@ -291,6 +294,7 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
 
 const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "checklist",
+  "checkInStations",
   "runOfShow",
   "volunteers",
   "budget",
@@ -841,6 +845,23 @@ const checklist = eventScoped<ChecklistItem, ChecklistItemDraft, ChecklistItemPa
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),
   }),
+);
+
+const checkInStations = eventScoped<CheckInStation, CheckInStationDraft, CheckInStationPatch>(
+  () => store().checkInStations,
+  "station",
+  (eventId, draft, sortOrder) => ({
+    id: "",
+    eventId,
+    name: draft.name.trim(),
+    lane: draft.lane.trim(),
+    lead: draft.lead?.trim() || null,
+    deviceCount: Math.max(0, Math.trunc(draft.deviceCount ?? 1)),
+    notes: draft.notes?.trim() || null,
+    sortOrder: draft.sortOrder ?? sortOrder,
+    createdAt: nowIso(),
+  }),
+  "check-in-station",
 );
 
 const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>(
@@ -1840,6 +1861,7 @@ export const memoryAdapter: DataAdapter = {
   locations,
   guests,
   registrations,
+  checkInStations,
   vendors,
   vendorMessages,
   eventVendors,

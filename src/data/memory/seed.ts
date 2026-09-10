@@ -16,6 +16,7 @@ import type {
   AuctionItem,
   BudgetItem,
   ChecklistItem,
+  CheckInStation,
   Event,
   EventHistoryEntry,
   MoodBoardImage,
@@ -50,6 +51,7 @@ export interface MemoryDb {
   locations: Location[];
   guests: Guest[];
   registrations: Registration[];
+  checkInStations: CheckInStation[];
   vendors: Vendor[];
   vendorMessages: VendorMessage[];
   eventVendors: EventVendor[];
@@ -409,6 +411,42 @@ export function buildSeed(): MemoryDb {
   for (const event of events) {
     event.registrationCount = registrations.filter((r) => r.eventId === event.id && r.status !== "cancelled").length;
   }
+
+  const checkInStations: CheckInStation[] = [
+    {
+      id: "station-sk-a-m",
+      eventId: "evt-skickoff",
+      name: "Main entrance A-M",
+      lane: "Last names A-M",
+      lead: "Jordan Lee",
+      deviceCount: 2,
+      notes: "Standard badge pickup and reprints.",
+      sortOrder: 1,
+      createdAt: at(-14),
+    },
+    {
+      id: "station-sk-n-z",
+      eventId: "evt-skickoff",
+      name: "Main entrance N-Z",
+      lane: "Last names N-Z",
+      lead: "Maya Thompson",
+      deviceCount: 2,
+      notes: "Route VIP badge issues to the welcome desk lead.",
+      sortOrder: 2,
+      createdAt: at(-14),
+    },
+    {
+      id: "station-sk-vip",
+      eventId: "evt-skickoff",
+      name: "VIP and speakers",
+      lane: "VIPs, speakers and sponsors",
+      lead: "Lena Park",
+      deviceCount: 1,
+      notes: "Hold credentials and escort contacts here.",
+      sortOrder: 3,
+      createdAt: at(-14),
+    },
+  ];
 
   /* --------------------------------------------------------------- vendors */
 
@@ -1734,6 +1772,7 @@ export function buildSeed(): MemoryDb {
     locations,
     guests,
     registrations,
+    checkInStations,
     vendors,
     vendorMessages,
     eventVendors,

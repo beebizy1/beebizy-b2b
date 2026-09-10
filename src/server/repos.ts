@@ -1219,6 +1219,30 @@ export const checklist = eventScoped({
   },
 });
 
+export const checkInStations = eventScoped({
+  table: s.checkInStations as never,
+  mapper: map.toCheckInStation as never,
+  idPrefix: "station",
+  historyResource: "check-in-station",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    name: labelFrom(body, "name", 80) ?? str(body, "name"),
+    lane: labelFrom(body, "lane", 120) ?? str(body, "lane"),
+    lead: labelFrom(body, "lead", 120),
+    deviceCount: Math.max(0, optInt(body, "deviceCount") ?? 1),
+    notes: labelFrom(body, "notes", 500),
+    sortOrder,
+  }),
+  patch: {
+    name: (b) => labelFrom(b, "name", 80) ?? str(b, "name"),
+    lane: (b) => labelFrom(b, "lane", 120) ?? str(b, "lane"),
+    lead: (b) => labelFrom(b, "lead", 120),
+    deviceCount: (b) => Math.max(0, optInt(b, "deviceCount") ?? 0),
+    notes: (b) => labelFrom(b, "notes", 500),
+    sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+});
+
 export const runOfShow = eventScoped({
   table: s.runOfShowItems as never,
   mapper: map.toRunOfShowItem as never,

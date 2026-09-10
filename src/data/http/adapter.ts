@@ -20,6 +20,7 @@ import type {
   Canvas,
   CanvasCard,
   ChecklistItem,
+  CheckInStation,
   CustomReportRow,
   Deposit,
   Event,
@@ -257,6 +258,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
+    checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
     runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
     volunteers: eventScoped<VolunteerShift, never, never>(client, "volunteers") as DataAdapter["volunteers"],

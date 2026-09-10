@@ -212,6 +212,31 @@ export interface RegistrationCheckInPatch {
   checkInNotes?: string | null;
 }
 
+/** A persistent operating position at an event entrance. */
+export interface CheckInStation {
+  id: string;
+  eventId: string;
+  name: string;
+  /** Which guests this station should handle, such as A-M, VIPs or walk-ins. */
+  lane: string;
+  lead: string | null;
+  deviceCount: number;
+  notes: string | null;
+  sortOrder: number;
+  createdAt: IsoDateTime;
+}
+
+export interface CheckInStationDraft {
+  name: string;
+  lane: string;
+  lead?: string | null;
+  deviceCount?: number;
+  notes?: string | null;
+  sortOrder?: number;
+}
+
+export type CheckInStationPatch = Partial<CheckInStationDraft>;
+
 /* -------------------------------------------------------------------- vendors */
 
 export const VENDOR_CATEGORIES = [
@@ -569,6 +594,7 @@ export const HISTORY_RESOURCES = [
   "event",
   "vendor-booking",
   "checklist",
+  "check-in-station",
   "run-of-show",
   "volunteer",
   "budget",

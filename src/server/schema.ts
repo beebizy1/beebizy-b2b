@@ -428,6 +428,19 @@ export const runOfShowItems = pgTable(
   (table) => [index("run_of_show_event_idx").on(table.eventId, table.startTime)],
 );
 
+export const checkInStations = pgTable(
+  "check_in_stations",
+  {
+    ...eventChild,
+    name: text("name").notNull(),
+    lane: text("lane").notNull(),
+    lead: text("lead"),
+    deviceCount: integer("device_count").notNull().default(1),
+    notes: text("notes"),
+  },
+  (table) => [index("check_in_stations_event_idx").on(table.eventId, table.sortOrder)],
+);
+
 export const volunteerShifts = pgTable(
   "volunteer_shifts",
   {
@@ -736,6 +749,7 @@ export const eventRelations = relations(events, ({ one, many }) => ({
   registrations: many(registrations),
   eventVendors: many(eventVendors),
   checklistItems: many(checklistItems),
+  checkInStations: many(checkInStations),
   volunteerShifts: many(volunteerShifts),
   budgetItems: many(budgetItems),
   ticketTypes: many(ticketTypes),
