@@ -68,6 +68,7 @@ import FloorplanPanel from "./sections/FloorplanPanel";
 import RfpPanel from "./sections/RfpPanel";
 import DepositsPanel from "./sections/DepositsPanel";
 import AnalyticsPanel from "./sections/AnalyticsPanel";
+import { CheckInPanel, VolunteersPanel } from "./sections/OperationsSection";
 import FundraisingPanel from "./sections/FundraisingPanel";
 import LiveAuctionPanel from "./sections/LiveAuctionPanel";
 import PlanningAssistantPanel from "./sections/PlanningAssistantPanel";
@@ -274,7 +275,7 @@ function WorkspaceHeader({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete “{event.title}”?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This also deletes its checklist, run of show, budget, vendors, tickets, fundraising and{" "}
+                    This also deletes its checklist, run of show, volunteers, budget, vendors, tickets, fundraising and{" "}
                     {event.registrationCount} registration{event.registrationCount === 1 ? "" : "s"}. It cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -451,8 +452,10 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       <WorkspaceHeader event={event} health={health} active={active} plan={plan} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
+      {active === "check-in" ? <CheckInPanel event={event} /> : null}
       {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
       {active === "checklist" ? <ChecklistWorkspace key={event.id} event={event} /> : null}
+      {active === "volunteers" ? <VolunteersPanel event={event} /> : null}
       {active === "contingency" ? <ContingencyWorkspace key={event.id} event={event} /> : null}
       {active === "vendors" ? (
         <div className="space-y-6">

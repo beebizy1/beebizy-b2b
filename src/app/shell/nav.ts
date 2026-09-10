@@ -25,6 +25,7 @@ import {
   MapPin,
   MessageSquare,
   MessagesSquare,
+  ScanLine,
   PieChart,
   Sparkles,
   Store,
@@ -32,6 +33,7 @@ import {
   Trophy,
   UtensilsCrossed,
   Users,
+  HeartHandshake,
   type LucideIcon,
 } from "lucide-react";
 import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
@@ -150,8 +152,10 @@ export interface EventTab {
 export type EventTabId =
   | "overview"
   | "registrations"
+  | "check-in"
   | "run-of-show"
   | "checklist"
+  | "volunteers"
   | "contingency"
   | "vendors"
   | "budget"
@@ -179,8 +183,10 @@ export type EventTabId =
 export const EVENT_TABS: EventTab[] = [
   { id: "overview", label: "Overview", slug: "", icon: null, hint: "Readiness, risks and the event at a glance" },
   { id: "registrations", label: "Registrations", slug: "registrations", icon: Users, hint: "Invitations, registrations and capacity" },
+  { id: "check-in", label: "Check-in", slug: "check-in", icon: ScanLine, hint: "Guest arrivals, entry stations and front-door notes" },
   { id: "run-of-show", label: "Run of Show", slug: "run-of-show", icon: Clock, hint: "Cue-by-cue schedule for the day" },
   { id: "checklist", label: "Checklist", slug: "checklist", icon: ClipboardList, hint: "Everything still to do, and who owns it" },
+  { id: "volunteers", label: "Volunteers", slug: "volunteers", icon: HeartHandshake, hint: "Roles, shift times, attendance and volunteer notes" },
   {
     id: "contingency",
     label: "Contingency",

@@ -285,6 +285,9 @@ export const registrations = pgTable(
     /** Free text: the fund, firm or school this person represents. */
     organization: text("organization"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+    checkInStation: text("check_in_station"),
+    checkInNotes: text("check_in_notes"),
     /** Set when the seat was bought rather than added by an organizer. */
     ticketTypeId: text("ticket_type_id"),
     quantity: integer("quantity").notNull().default(1),
@@ -422,6 +425,22 @@ export const runOfShowItems = pgTable(
     responsible: text("responsible"),
   },
   (table) => [index("run_of_show_event_idx").on(table.eventId, table.startTime)],
+);
+
+export const volunteerShifts = pgTable(
+  "volunteer_shifts",
+  {
+    ...eventChild,
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    role: text("role").notNull(),
+    startTime: varchar("start_time", { length: 5 }).notNull(),
+    endTime: varchar("end_time", { length: 5 }).notNull(),
+    status: text("status").notNull().default("scheduled"),
+    notes: text("notes"),
+  },
+  (table) => [index("volunteer_shifts_event_idx").on(table.eventId, table.startTime)],
 );
 
 export const budgetItems = pgTable(
@@ -716,6 +735,7 @@ export const eventRelations = relations(events, ({ one, many }) => ({
   registrations: many(registrations),
   eventVendors: many(eventVendors),
   checklistItems: many(checklistItems),
+  volunteerShifts: many(volunteerShifts),
   budgetItems: many(budgetItems),
   ticketTypes: many(ticketTypes),
 }));

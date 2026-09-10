@@ -102,6 +102,9 @@ import type {
   VendorDraft,
   VendorMessage,
   VendorPatch,
+  VolunteerShift,
+  VolunteerShiftDraft,
+  VolunteerShiftPatch,
   WorkspaceMember,
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
@@ -289,6 +292,7 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
 const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "checklist",
   "runOfShow",
+  "volunteers",
   "budget",
   "menu",
   "moodBoard",
@@ -642,6 +646,9 @@ const registrations: RegistrationsRepository = {
       segment: draft.segment?.trim() || null,
       organization: draft.organization?.trim() || null,
       registeredAt: nowIso(),
+      checkedInAt: null,
+      checkInStation: null,
+      checkInNotes: null,
       createdAt: nowIso(),
     };
     state.registrations.push(registration);
@@ -676,6 +683,18 @@ const registrations: RegistrationsRepository = {
       `Registration ${id} no longer exists.`,
     );
     registration.organization = organization?.trim() || null;
+    registration.updatedAt = nowIso();
+    return copy(registration);
+  },
+  async setCheckIn(id, patch) {
+    await wait();
+    const registration = required(
+      store().registrations.find((r) => r.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    registration.checkedInAt = patch.checkedInAt;
+    if ("checkInStation" in patch) registration.checkInStation = patch.checkInStation?.trim() || null;
+    if ("checkInNotes" in patch) registration.checkInNotes = patch.checkInNotes?.trim() || null;
     registration.updatedAt = nowIso();
     return copy(registration);
   },
@@ -836,6 +855,27 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
   }),
   "run-of-show",
   (a, b) => a.startTime.localeCompare(b.startTime) || a.sortOrder - b.sortOrder,
+);
+
+const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>(
+  () => store().volunteers,
+  "vol",
+  (eventId, draft, sortOrder) => ({
+    id: "",
+    eventId,
+    name: draft.name.trim(),
+    email: draft.email?.trim() || null,
+    phone: draft.phone?.trim() || null,
+    role: draft.role.trim(),
+    startTime: draft.startTime,
+    endTime: draft.endTime,
+    status: draft.status ?? "scheduled",
+    notes: draft.notes?.trim() || null,
+    sortOrder: draft.sortOrder ?? sortOrder,
+    createdAt: nowIso(),
+  }),
+  "volunteer",
+  (a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name),
 );
 
 const budget = eventScoped<BudgetItem, BudgetItemDraft, BudgetItemPatch>(
@@ -1018,6 +1058,9 @@ const tickets: TicketsRepository = {
       organization: null,
       status: "confirmed",
       registeredAt: nowIso(),
+      checkedInAt: null,
+      checkInStation: null,
+      checkInNotes: null,
       createdAt: nowIso(),
     });
     syncRegistrationCount(event.id);
@@ -1798,6 +1841,7 @@ export const memoryAdapter: DataAdapter = {
   eventVendors,
   checklist,
   runOfShow,
+  volunteers,
   budget,
   menu,
   moodBoard,

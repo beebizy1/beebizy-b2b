@@ -74,6 +74,7 @@ import type {
   TeamHoursDraft,
   TeamHoursPatch,
   Registration,
+  RegistrationCheckInPatch,
   RegistrationDraft,
   InviteResult,
   WorkspaceMember,
@@ -100,6 +101,9 @@ import type {
   VendorMessage,
   VendorMessageDraft,
   VendorPatch,
+  VolunteerShift,
+  VolunteerShiftDraft,
+  VolunteerShiftPatch,
 } from "./entities";
 import type { BillingInterval, PlanId } from "./plans";
 import type { PlanningBrief, PlanningSuggestions } from "./planner";
@@ -145,6 +149,8 @@ export interface RegistrationsRepository {
   setSegment(id: string, segment: string | null): Promise<Registration>;
   /** Null clears the organization. */
   setOrganization(id: string, organization: string | null): Promise<Registration>;
+  /** Records arrival details, or clears the arrival timestamp to undo a check-in. */
+  setCheckIn(id: string, patch: RegistrationCheckInPatch): Promise<Registration>;
   remove(id: string): Promise<void>;
 }
 
@@ -317,6 +323,7 @@ export interface DataAdapter {
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
+  volunteers: EventScopedRepository<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>;
   budget: EventScopedRepository<BudgetItem, BudgetItemDraft, BudgetItemPatch>;
   menu: EventScopedRepository<MenuItem, MenuItemDraft, MenuItemPatch>;
   moodBoard: EventScopedRepository<MoodBoardImage, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>;

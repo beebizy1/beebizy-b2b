@@ -186,6 +186,12 @@ export interface Registration extends OwnedRecord {
    */
   organization: string | null;
   registeredAt: IsoDateTime;
+  /** Null until the guest arrives. Clearing it is the reversible "undo check-in" action. */
+  checkedInAt: IsoDateTime | null;
+  /** Which entrance or desk handled the guest, for multi-station events. */
+  checkInStation: string | null;
+  /** Arrival-specific detail such as accessibility help, badge issues or a plus-one. */
+  checkInNotes: string | null;
 }
 
 export interface RegistrationWithGuest extends Registration {
@@ -198,6 +204,12 @@ export interface RegistrationDraft {
   status?: RegistrationStatus;
   segment?: string | null;
   organization?: string | null;
+}
+
+export interface RegistrationCheckInPatch {
+  checkedInAt: IsoDateTime | null;
+  checkInStation?: string | null;
+  checkInNotes?: string | null;
 }
 
 /* -------------------------------------------------------------------- vendors */
@@ -357,6 +369,41 @@ export interface RunOfShowItemDraft {
 }
 
 export type RunOfShowItemPatch = Partial<RunOfShowItemDraft>;
+
+export const VOLUNTEER_STATUSES = ["scheduled", "confirmed", "checked_in", "completed", "cancelled"] as const;
+export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
+
+/** One person's event-day commitment, including the exact shift and operating notes. */
+export interface VolunteerShift {
+  id: string;
+  eventId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  /** `HH:mm` local to the event. */
+  startTime: string;
+  /** `HH:mm` local to the event. */
+  endTime: string;
+  status: VolunteerStatus;
+  notes: string | null;
+  sortOrder: number;
+  createdAt: IsoDateTime;
+}
+
+export interface VolunteerShiftDraft {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  role: string;
+  startTime: string;
+  endTime: string;
+  status?: VolunteerStatus;
+  notes?: string | null;
+  sortOrder?: number;
+}
+
+export type VolunteerShiftPatch = Partial<VolunteerShiftDraft>;
 
 export type BudgetLineType = "expense" | "revenue";
 
@@ -523,6 +570,7 @@ export const HISTORY_RESOURCES = [
   "vendor-booking",
   "checklist",
   "run-of-show",
+  "volunteer",
   "budget",
   "menu",
   "mood-board",

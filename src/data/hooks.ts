@@ -49,6 +49,7 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RegistrationDraft,
+  RegistrationCheckInPatch,
   RegistrationStatus,
   WorkspaceRole,
   RunOfShowItemDraft,
@@ -71,6 +72,8 @@ import type {
   VendorDraft,
   VendorMessageDraft,
   VendorPatch,
+  VolunteerShiftDraft,
+  VolunteerShiftPatch,
 } from "./entities";
 import type { PlanningBrief } from "./planner";
 import type { AssistantChatMessage } from "./assistantChat";
@@ -107,6 +110,7 @@ export const qk = {
   eventVendors: (eventId: string) => ["eventVendors", eventId] as const,
   checklist: (eventId: string) => ["checklist", eventId] as const,
   runOfShow: (eventId: string) => ["runOfShow", eventId] as const,
+  volunteers: (eventId: string) => ["volunteers", eventId] as const,
   budget: (eventId: string) => ["budget", eventId] as const,
   menu: (eventId: string) => ["menu", eventId] as const,
   moodBoard: (eventId: string) => ["moodBoard", eventId] as const,
@@ -378,6 +382,14 @@ export function useSetRegistrationOrganization() {
   );
 }
 
+export function useSetRegistrationCheckIn() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; patch: RegistrationCheckInPatch }) =>
+      a.registrations.setCheckIn(vars.id, vars.patch),
+    (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
 export function useDeleteRegistration() {
   return useAdapterMutation(
     (a, vars: { id: string; eventId: string }) => a.registrations.remove(vars.id),
@@ -509,6 +521,34 @@ export function useRemoveRunOfShowItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.runOfShow.remove(vars.eventId, vars.id),
     (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+/* ---------------------------------------------------------------- volunteers */
+
+export function useVolunteers(eventId: string) {
+  return useAdapterQuery(qk.volunteers(eventId), (a) => a.volunteers.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddVolunteer() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VolunteerShiftDraft }) => a.volunteers.create(vars.eventId, vars.draft),
+    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useUpdateVolunteer() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: VolunteerShiftPatch }) =>
+      a.volunteers.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useRemoveVolunteer() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.volunteers.remove(vars.eventId, vars.id),
+    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
   );
 }
 

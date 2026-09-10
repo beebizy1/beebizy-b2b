@@ -54,6 +54,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerShift,
   InviteResult,
   WorkspaceMember,
 } from "../entities";
@@ -231,6 +232,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       setSegment: (id, segment) => client.patch<Registration>(`/registrations/${id}`, { segment }),
       setOrganization: (id, organization) =>
         client.patch<Registration>(`/registrations/${id}`, { organization }),
+      setCheckIn: (id, patch) => client.patch<Registration>(`/registrations/${id}`, patch),
       remove: async (id) => {
         await client.del(`/registrations/${id}`);
       },
@@ -257,6 +259,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
     runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
+    volunteers: eventScoped<VolunteerShift, never, never>(client, "volunteers") as DataAdapter["volunteers"],
     budget: eventScoped<BudgetItem, never, never>(client, "budget") as DataAdapter["budget"],
     menu: eventScoped<MenuItem, never, never>(client, "menu") as DataAdapter["menu"],
     moodBoard: eventScoped<MoodBoardImage, never, never>(client, "mood-board") as DataAdapter["moodBoard"],

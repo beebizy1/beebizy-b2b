@@ -56,9 +56,10 @@ import type {
   HistoryResource,
   ChecklistItem,
   InviteResult,
+  VolunteerShift,
   WorkspaceMember,
 } from "../data/entities.ts";
-import { REGISTRATION_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
@@ -833,6 +834,9 @@ export const registrations = {
       status?: "pending";
       segment?: string | null;
       organization?: string | null;
+      checkedInAt?: Date | null;
+      checkInStation?: string | null;
+      checkInNotes?: string | null;
       updatedAt: Date;
     } = { updatedAt: new Date() };
     if ("status" in body) {
@@ -844,6 +848,9 @@ export const registrations = {
     }
     if ("segment" in body) patch.segment = labelFrom(body, "segment");
     if ("organization" in body) patch.organization = labelFrom(body, "organization", 120);
+    if ("checkedInAt" in body) patch.checkedInAt = parseOptionalDate(body.checkedInAt, "checkedInAt");
+    if ("checkInStation" in body) patch.checkInStation = labelFrom(body, "checkInStation", 80);
+    if ("checkInNotes" in body) patch.checkInNotes = labelFrom(body, "checkInNotes", 500);
 
     const updated = await db
       .update(s.registrations)
@@ -1229,6 +1236,50 @@ export const runOfShow = eventScoped({
     title: (b) => str(b, "title"),
     description: (b) => optStr(b, "description"),
     responsible: (b) => optStr(b, "responsible"),
+  },
+});
+
+const localTime = (body: Body, key: string): string => {
+  const value = str(body, key).trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new HttpError(400, `${key} must use HH:mm.`);
+  return value;
+};
+
+const volunteerStatus = (body: Body): VolunteerShift["status"] => {
+  const value = str(body, "status", "scheduled");
+  if (!(VOLUNTEER_STATUSES as readonly string[]).includes(value)) {
+    throw new HttpError(400, `status must be one of ${VOLUNTEER_STATUSES.join(", ")}.`);
+  }
+  return value as VolunteerShift["status"];
+};
+
+export const volunteers = eventScoped({
+  table: s.volunteerShifts as never,
+  mapper: map.toVolunteerShift as never,
+  idPrefix: "vol",
+  historyResource: "volunteer",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    name: labelFrom(body, "name", 120) ?? str(body, "name"),
+    email: labelFrom(body, "email", 320),
+    phone: labelFrom(body, "phone", 60),
+    role: labelFrom(body, "role", 120) ?? str(body, "role"),
+    startTime: localTime(body, "startTime"),
+    endTime: localTime(body, "endTime"),
+    status: volunteerStatus(body),
+    notes: labelFrom(body, "notes", 1_000),
+    sortOrder,
+  }),
+  patch: {
+    name: (b) => labelFrom(b, "name", 120) ?? str(b, "name"),
+    email: (b) => labelFrom(b, "email", 320),
+    phone: (b) => labelFrom(b, "phone", 60),
+    role: (b) => labelFrom(b, "role", 120) ?? str(b, "role"),
+    startTime: (b) => localTime(b, "startTime"),
+    endTime: (b) => localTime(b, "endTime"),
+    status: (b) => volunteerStatus(b),
+    notes: (b) => labelFrom(b, "notes", 1_000),
+    sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
   },
 });
 

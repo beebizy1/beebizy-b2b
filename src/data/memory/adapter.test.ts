@@ -190,6 +190,27 @@ describe("registrations", () => {
     const created = await memoryAdapter.registrations.create({ eventId: "evt-atlas", guestId: guest.id });
     expect(created.segment).toBeNull();
     expect(created.organization).toBeNull();
+    expect(created.checkedInAt).toBeNull();
+  });
+
+  it("records arrival details and supports undoing a check-in", async () => {
+    const row = (await memoryAdapter.registrations.listForEvent("evt-cab"))[0]!;
+    const arrivedAt = new Date().toISOString();
+
+    const checkedIn = await memoryAdapter.registrations.setCheckIn(row.id, {
+      checkedInAt: arrivedAt,
+      checkInStation: "  North entrance  ",
+      checkInNotes: "  Badge reprinted  ",
+    });
+    expect(checkedIn).toMatchObject({
+      checkedInAt: arrivedAt,
+      checkInStation: "North entrance",
+      checkInNotes: "Badge reprinted",
+    });
+
+    const undone = await memoryAdapter.registrations.setCheckIn(row.id, { checkedInAt: null });
+    expect(undone.checkedInAt).toBeNull();
+    expect(undone.checkInStation).toBe("North entrance");
   });
 
   it("refuses a duplicate registration", async () => {
@@ -224,6 +245,37 @@ describe("registrations", () => {
     const before = (await memoryAdapter.events.get("evt-cab"))!.registrationCount;
     await memoryAdapter.guests.remove(target.guestId);
     expect((await memoryAdapter.events.get("evt-cab"))!.registrationCount).toBe(before - 1);
+  });
+});
+
+describe("volunteers", () => {
+  it("creates, updates and removes event-scoped shifts", async () => {
+    const created = await memoryAdapter.volunteers.create("evt-cab", {
+      name: "Cassandra Gomez",
+      role: "Welcome desk",
+      email: "cassandra@example.com",
+      startTime: "08:00",
+      endTime: "12:00",
+      notes: "Arrive at the east entrance.",
+    });
+    expect(created.status).toBe("scheduled");
+    expect((await memoryAdapter.volunteers.list("evt-cab")).some((row) => row.id === created.id)).toBe(true);
+    expect((await memoryAdapter.volunteers.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
+
+    const updated = await memoryAdapter.volunteers.update("evt-cab", created.id, {
+      status: "confirmed",
+      startTime: "07:45",
+    });
+    expect(updated).toMatchObject({ status: "confirmed", startTime: "07:45" });
+
+    await memoryAdapter.volunteers.remove("evt-cab", created.id);
+    expect((await memoryAdapter.volunteers.list("evt-cab")).some((row) => row.id === created.id)).toBe(false);
+  });
+
+  it("removes volunteer shifts when their event is deleted", async () => {
+    expect((await memoryAdapter.volunteers.list("evt-gala")).length).toBeGreaterThan(0);
+    await memoryAdapter.events.remove("evt-gala");
+    expect(await memoryAdapter.volunteers.list("evt-gala")).toEqual([]);
   });
 });
 

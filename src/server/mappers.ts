@@ -41,6 +41,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerShift,
 } from "../data/entities.ts";
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
@@ -118,6 +119,9 @@ export function toRegistration(
     segment: row.segment,
     organization: row.organization,
     registeredAt: isoRequired(row.registeredAt),
+    checkedInAt: iso(row.checkedInAt),
+    checkInStation: row.checkInStation,
+    checkInNotes: row.checkInNotes,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
   };
@@ -211,6 +215,23 @@ export function toRunOfShowItem(row: InferSelectModel<typeof s.runOfShowItems>):
     title: row.title,
     description: row.description,
     responsible: row.responsible,
+    sortOrder: row.sortOrder,
+    createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toVolunteerShift(row: InferSelectModel<typeof s.volunteerShifts>): VolunteerShift {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    role: row.role,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    status: row.status as VolunteerShift["status"],
+    notes: row.notes,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
   };

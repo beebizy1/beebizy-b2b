@@ -41,6 +41,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerShift,
 } from "../entities";
 import { DEFAULT_USER_SETTINGS } from "../entities";
 
@@ -54,6 +55,7 @@ export interface MemoryDb {
   eventVendors: EventVendor[];
   checklist: ChecklistItem[];
   runOfShow: RunOfShowItem[];
+  volunteers: VolunteerShift[];
   budget: BudgetItem[];
   menu: MenuItem[];
   moodBoard: MoodBoardImage[];
@@ -384,6 +386,9 @@ export function buildSeed(): MemoryDb {
         segment: demoSegment(index),
         organization: demoOrganization(index),
         registeredAt: at(dayOffset, 11, regSeq % 60),
+        checkedInAt: null,
+        checkInStation: null,
+        checkInNotes: null,
         createdAt: at(dayOffset, 11, regSeq % 60),
       });
     }
@@ -838,6 +843,53 @@ export function buildSeed(): MemoryDb {
     cue("evt-gala", "20:25", 35, "Live auction", "Grace Oyelaran", "Five lots. Runners staged at both wings."),
     cue("evt-gala", "21:00", 15, "Raffle draw", "Reuben Castellanos"),
     cue("evt-gala", "21:15", 10, "Closing remarks", "Naomi Bergstrom"),
+  ];
+
+  /* ------------------------------------------------------------- volunteers */
+
+  const volunteers: VolunteerShift[] = [
+    {
+      id: "vol-1",
+      eventId: "evt-skickoff",
+      name: "Jordan Lee",
+      email: "jordan.lee@example.com",
+      phone: "+1 415 555 0130",
+      role: "Welcome desk",
+      startTime: "07:15",
+      endTime: "10:30",
+      status: "confirmed",
+      notes: "Brief on VIP badges before doors open.",
+      sortOrder: 1,
+      createdAt: at(-12),
+    },
+    {
+      id: "vol-2",
+      eventId: "evt-skickoff",
+      name: "Maya Thompson",
+      email: "maya.thompson@example.com",
+      phone: null,
+      role: "Badge pickup",
+      startTime: "07:30",
+      endTime: "11:00",
+      status: "scheduled",
+      notes: null,
+      sortOrder: 2,
+      createdAt: at(-10),
+    },
+    {
+      id: "vol-3",
+      eventId: "evt-gala",
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      phone: "+1 415 555 0144",
+      role: "Auction runner",
+      startTime: "17:30",
+      endTime: "22:00",
+      status: "confirmed",
+      notes: "Meet the auction lead at stage left.",
+      sortOrder: 1,
+      createdAt: at(-15),
+    },
   ];
 
   /* ---------------------------------------------------------------- budget */
@@ -1687,6 +1739,7 @@ export function buildSeed(): MemoryDb {
     eventVendors,
     checklist,
     runOfShow,
+    volunteers,
     budget,
     menu,
     moodBoard,

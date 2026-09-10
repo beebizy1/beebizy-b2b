@@ -17,6 +17,7 @@ vi.mock("./repos", () => {
     publicTickets: vi.fn(),
     checklist: child,
     runOfShow: child,
+    volunteers: child,
     budget: child,
     menu: child,
     moodBoard: child,
