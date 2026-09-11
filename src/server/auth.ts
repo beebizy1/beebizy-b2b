@@ -255,12 +255,30 @@ async function resolveWorkspace(
   }
 
   const workspaceId = newId("ws");
-  // Existing operators and explicitly allowlisted customers retain private-pilot access.
-  // Every public signup stays locked until card-backed Solo Checkout is completed.
-  const subscriptionStatus = hasInternalAccess(email, process.env.BETA_ACCESS_EMAILS) ? "beta" : "pending";
+  /*
+   * Three kinds of new workspace, and the first one is the reason this is not a boolean.
+   *
+   * Beebizy staff are not customers of Beebizy. A beta expires, so leaving them on one
+   * meant the founder and the CTO would eventually be shown a card form for the product
+   * they are building. They get the full plan outright, with no subscription behind it
+   * and nothing to renew.
+   *
+   * A pilot customer keeps the three free months they were promised and is asked to
+   * choose a plan when that ends. Every public signup stays locked until card-backed
+   * Solo Checkout completes.
+   */
+  const staff = isBeebizyOperator(email);
+  const pilot = hasInternalAccess(email, process.env.BETA_ACCESS_EMAILS);
   const [workspace] = await db
     .insert(workspaces)
-    .values({ id: workspaceId, name: "My workspace", clerkOrgId, subscriptionStatus })
+    .values({
+      id: workspaceId,
+      name: "My workspace",
+      clerkOrgId,
+      subscriptionStatus: staff ? "active" : pilot ? "beta" : "pending",
+      subscriptionPlan: staff ? "enterprise" : null,
+      eventQuotaExempt: staff,
+    })
     .returning();
   await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
   if (!workspace) throw new HttpError(500, "The workspace could not be created.");

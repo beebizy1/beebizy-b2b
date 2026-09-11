@@ -7,12 +7,12 @@ import {
 } from "./internalAccess";
 
 describe("internal access allowlist", () => {
-  it("contains only the three approved Beebizy operators", () => {
-    expect(INTERNAL_ACCESS_EMAILS).toEqual([
-      "laila@beebizy.com",
-      "mary@beebizy.com",
-      "tarang@beebizy.com",
-    ]);
+  it("treats the whole Beebizy domain as staff, including people hired since", () => {
+    for (const staff of ["laila@beebizy.com", "mary@beebizy.com", "tarang@beebizy.com", "sabina@beebizy.com"]) {
+      expect(isBeebizyOperator(staff)).toBe(true);
+    }
+    // The old list was three addresses and had already missed someone holding a workspace.
+    expect(INTERNAL_ACCESS_EMAILS).not.toContain("sabina@beebizy.com");
   });
 
   it("accepts approved email addresses regardless of casing or surrounding space", () => {
@@ -21,10 +21,15 @@ describe("internal access allowlist", () => {
     expect(hasInternalAccess("Tarang@Beebizy.com")).toBe(true);
   });
 
-  it("rejects every other address", () => {
-    expect(hasInternalAccess("someone@beebizy.com")).toBe(false);
+  it("rejects addresses outside the domain, and look-alikes of it", () => {
     expect(hasInternalAccess("laila@example.com")).toBe(false);
     expect(hasInternalAccess(null)).toBe(false);
+    // Only the domain itself counts: a suffix match would hand staff access to anyone
+    // who registered a domain ending in the same letters.
+    expect(isBeebizyOperator("attacker@notbeebizy.com")).toBe(false);
+    expect(isBeebizyOperator("attacker@beebizy.com.evil.example")).toBe(false);
+    expect(isBeebizyOperator("beebizy.com")).toBe(false);
+    expect(isBeebizyOperator("attacker@sub.beebizy.com")).toBe(false);
   });
 
   it("allows invited beta testers from a comma-separated environment list", () => {
@@ -34,11 +39,14 @@ describe("internal access allowlist", () => {
     expect(hasInternalAccess("not-invited@example.com", invited)).toBe(false);
   });
 
-  it("grants feedback review only to the three Beebizy operators", () => {
+  it("grants feedback review to Beebizy staff and nobody else", () => {
     expect(isBeebizyOperator(" LAILA@BEEBIZY.COM ")).toBe(true);
     expect(isBeebizyOperator("mary@beebizy.com")).toBe(true);
     expect(isBeebizyOperator("tarang@beebizy.com")).toBe(true);
+    expect(isBeebizyOperator("sabina@beebizy.com")).toBe(true);
     expect(isBeebizyOperator("partner@example.com")).toBe(false);
+    // A pilot customer is not staff, however much they use the product.
+    expect(isBeebizyOperator("carlin@page-oneevents.com")).toBe(false);
     expect(isBeebizyOperator(null)).toBe(false);
   });
 
