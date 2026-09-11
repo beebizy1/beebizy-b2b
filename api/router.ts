@@ -135,16 +135,26 @@ async function handleLead(request: Request): Promise<Response> {
   const record = { at: new Date().toISOString(), ...lead, userAgent: request.headers.get("user-agent") };
   console.log(`LEAD ${JSON.stringify(record)}`);
 
-  if (!process.env.MAIL_TO || !process.env.RESEND_API_KEY) {
+  if (!process.env.MAIL_TO?.trim() || !process.env.RESEND_API_KEY?.trim()) {
     console.error("LEAD_EMAIL_NOT_CONFIGURED");
-    return json({ error: "Demo requests are temporarily unavailable. Please try again shortly." }, 503);
+    /* Nothing the sender does will configure the mail provider, so "try again shortly"
+     * only costs them their typing twice. Give them the address instead. */
+    return json(
+      { error: "We couldn’t send that automatically. Please email hello@beebizy.com and we will pick it up right away." },
+      503,
+    );
   }
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
     body: JSON.stringify({
-      from: process.env.MAIL_FROM ?? "Beebizy <onboarding@resend.dev>",
+      /*
+       * `??` only catches an unset variable. A blank one - which is what saving the
+       * dashboard field empty leaves behind - is a string, so it passed straight through
+       * and Resend was asked to send from "".
+       */
+      from: process.env.MAIL_FROM?.trim() || "Beebizy <onboarding@resend.dev>",
       to: [process.env.MAIL_TO],
       reply_to: lead.email,
       subject: lead.plan ? `${lead.plan} enquiry - ${lead.company}` : `New demo request - ${lead.company}`,
@@ -164,8 +174,24 @@ async function handleLead(request: Request): Promise<Response> {
     }),
   });
   if (!response.ok) {
+    /*
+     * The detail matters here: "API key is invalid" and "domain not verified" are both
+     * silent 502s to the caller, and both are fixed in a dashboard rather than by the
+     * person filling in the form. Logging the provider's own words is what turned a
+     * "mail is down" guess into a one-line cause.
+     */
     console.error("LEAD_EMAIL_FAILED", response.status, await response.text());
-    return json({ error: "We couldn’t send your demo request. Please try again." }, 502);
+    /*
+     * Telling someone to try again invites them to retype everything for a second
+     * failure, because nothing they can do affects a misconfigured mail provider. They
+     * get the address instead, so the enquiry still reaches Beebizy.
+     */
+    return json(
+      /* The published contact address, not MAIL_TO - the destination may be an internal
+       * inbox, and a 502 body is public. */
+      { error: "We couldn’t send that automatically. Please email hello@beebizy.com and we will pick it up right away." },
+      502,
+    );
   }
 
   return json({ ok: true });
