@@ -184,9 +184,13 @@ function useAdapterMutation<TVars, TResult>(
  * Who the server thinks you are, and what you may do. The role is authoritative on the
  * server — it is re-checked on every write — so this copy only shapes the UI.
  */
-export function useMe() {
+/** `enabled` lets a public page ask only once the visitor is actually signed in. */
+export function useMe(options?: { enabled?: boolean }) {
   const { cacheScope } = useData();
-  return useAdapterQuery(qk.me(cacheScope), (a) => a.me(), { staleTime: 60_000 });
+  return useAdapterQuery(qk.me(cacheScope), (a) => a.me(), {
+    staleTime: 60_000,
+    enabled: options?.enabled ?? true,
+  });
 }
 
 /**

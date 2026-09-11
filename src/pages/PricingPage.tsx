@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { BrandLogoLink } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/data/provider";
+import { useMe } from "@/data/hooks";
 import { useSession } from "@/app/session";
 import {
   PLAN_NAMES,
@@ -103,6 +104,11 @@ export default function PricingPage() {
   const [error, setError] = useState<string | null>(null);
   const { status } = useSession();
   const data = useData();
+  // Only asked once there is a session to ask about; /pricing is a public page.
+  const me = useMe({ enabled: status === "authenticated" });
+  const accessStatus = me.data?.access?.status;
+  /** The two states that already open Studio. Everything else needs a plan first. */
+  const hasStudioAccess = accessStatus === "active" || accessStatus === "beta";
   const query = new URLSearchParams(window.location.search);
   const startRequested = query.get("start") === "solo";
   const checkoutCancelled = query.get("checkout") === "cancelled";
@@ -120,6 +126,19 @@ export default function PricingPage() {
       window.location.assign(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
+    /*
+     * Someone who can already open Studio is not a trial customer.
+     *
+     * Signing in used to land them back here: Checkout refuses a workspace that is
+     * already active, so the error was caught and the page simply stayed put, which
+     * reads as a login that did nothing. A workspace still inside its beta had the
+     * opposite problem - Checkout opened and offered to charge for access it already
+     * has. Both go to Studio, which is what they were trying to reach.
+     */
+    if (hasStudioAccess) {
+      window.location.assign("/app");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -129,13 +148,18 @@ export default function PricingPage() {
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout could not be opened.");
       setLoading(false);
     }
-  }, [data.billing, status]);
+    // hasStudioAccess is a dependency: it starts false and flips once /me resolves, and a
+    // callback holding the first value would send an existing customer to Checkout.
+  }, [data.billing, hasStudioAccess, status]);
 
   useEffect(() => {
     if (!startRequested || status !== "authenticated" || checkoutStarted.current) return;
+    // Wait for the workspace's access before deciding, or an existing customer is sent
+    // to Checkout in the moment before we know they never needed it.
+    if (me.isLoading) return;
     checkoutStarted.current = true;
     void chooseSolo();
-  }, [chooseSolo, startRequested, status]);
+  }, [chooseSolo, me.isLoading, startRequested, status]);
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -223,7 +247,7 @@ export default function PricingPage() {
 
               {plan.selfServe ? (
                 <Button className="mt-7 w-full" size="lg" onClick={() => void chooseSolo()} disabled={loading || status === "loading"}>
-                  {loading ? "Opening secure checkout…" : plan.cta}
+                  {loading ? "Opening secure checkout…" : hasStudioAccess ? "Open Studio" : plan.cta}
                   {!loading ? <ArrowRight aria-hidden="true" /> : null}
                 </Button>
               ) : (
