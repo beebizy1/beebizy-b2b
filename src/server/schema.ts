@@ -37,6 +37,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
+import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -51,7 +52,7 @@ export const raffleStatus = pgEnum("raffle_status", ["open", "closed", "drawn"])
 export const sponsorshipTier = pgEnum("sponsorship_tier", ["gold", "silver", "bronze", "custom"]);
 export const messageDirection = pgEnum("message_direction", ["inbound", "outbound"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "paid", "refunded", "failed"]);
-export const subscriptionStatus = pgEnum("subscription_status", ["beta", "active", "past_due", "cancelled"]);
+export const subscriptionStatus = pgEnum("subscription_status", WORKSPACE_SUBSCRIPTION_STATUSES);
 export const subscriptionPlan = pgEnum("subscription_plan", ["solo", "team", "enterprise"]);
 export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
 export const volunteerStatus = pgEnum("volunteer_status", VOLUNTEER_STATUSES);

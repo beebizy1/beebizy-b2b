@@ -28,6 +28,7 @@ import { AppShell } from "@/app/shell/AppShell";
 import LandingPage from "@/pages/LandingPage";
 import AboutPage from "@/pages/AboutPage";
 import LoginPage from "@/pages/LoginPage";
+import SignupPage from "@/pages/SignupPage";
 import AcceptInvitationPage from "@/pages/AcceptInvitationPage";
 import AccessDeniedPage from "@/pages/AccessDeniedPage";
 import SubscriptionRequiredPage from "@/pages/SubscriptionRequiredPage";
@@ -144,7 +145,7 @@ function AppRoutes() {
 function Routes() {
   return (
     <Switch>
-      <Route path="/">{() => <Redirect to="/app" replace />}</Route>
+      <Route path="/" component={PricingPage} />
       <Route path="/marketing-preview" component={LandingPage} />
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
@@ -155,8 +156,8 @@ function Routes() {
       <Route path="/pricing" component={PricingPage} />
       <Route path="/contact-sales" component={ContactSalesPage} />
       <Route path="/billing/success" component={BillingSuccessPage} />
-      <Route path="/signup">{() => <Redirect to="/access-denied" replace />}</Route>
-      <Route path="/signup/*">{() => <Redirect to="/access-denied" replace />}</Route>
+      <Route path="/signup" component={SignupPage} />
+      <Route path="/signup/*" component={SignupPage} />
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>

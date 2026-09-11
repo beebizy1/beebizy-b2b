@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./db", () => ({ db: {} }));
 
-const { handleStripeWebhook, validateSoloPrice } = await import("./billing");
+const { handleStripeWebhook, isReusableSoloCheckout, soloCheckoutSessionParams, validateSoloPrice } = await import("./billing");
 const { SOLO_PRICE_OPTIONS } = await import("../data/plans");
 
 function price(overrides: Partial<Stripe.Price> = {}): Stripe.Price {
@@ -50,6 +50,35 @@ describe("Stripe Solo price validation", () => {
 
     vi.stubEnv("STRIPE_LIVE_PAYMENTS_ENABLED", "true");
     expect(() => validateSoloPrice(price({ livemode: true }), "month")).not.toThrow();
+  });
+});
+
+describe("Stripe Solo trial Checkout", () => {
+  it("collects a card now and delays the first charge for 90 days", () => {
+    const params = soloCheckoutSessionParams({
+      checkoutAttempt: "ws_test_month_pending",
+      customerId: "cus_test",
+      interval: "month",
+      origin: "https://beebizy-studio-preview.vercel.app",
+      priceId: "price_test",
+      workspaceId: "ws_test",
+    });
+
+    expect(params.mode).toBe("subscription");
+    expect(params.payment_method_collection).toBe("always");
+    expect(params.subscription_data?.trial_period_days).toBe(90);
+    expect(params.subscription_data?.trial_settings?.end_behavior?.missing_payment_method).toBe("cancel");
+    expect(params.metadata).toMatchObject({ trialDays: "90", cardRequired: "true" });
+    expect(isReusableSoloCheckout(params as Stripe.Checkout.Session, "month", "price_test")).toBe(true);
+  });
+
+  it("does not reuse a Checkout session created before the trial was introduced", () => {
+    const previous = {
+      metadata: { billingInterval: "month", priceId: "price_test" },
+      payment_method_collection: "always",
+    } as unknown as Stripe.Checkout.Session;
+
+    expect(isReusableSoloCheckout(previous, "month", "price_test")).toBe(false);
   });
 });
 

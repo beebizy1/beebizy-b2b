@@ -30,7 +30,7 @@ import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
-import { effectivePlan, type PlanId } from "@/data/plans";
+import { effectivePlan, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -198,19 +198,32 @@ function BetaBanner({ access, onFeedback }: { access: Identity["access"] | undef
 function AccessEnded({ access }: { access: Identity["access"] }) {
   const { signOut } = useSession();
   const ended = new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date(access.betaEndsAt));
-  const copy = access.status === "past_due"
+  const copy = access.status === "pending"
+    ? {
+        title: `Start your ${SOLO_TRIAL_DAYS}-day Solo trial`,
+        description: "Add a card securely through Stripe to unlock Studio. You will not be charged today, and you can cancel before the trial ends.",
+        cta: "Add card and start trial",
+        href: "/pricing?start=solo",
+      }
+    : access.status === "past_due"
     ? {
         title: "Your Studio payment is past due",
         description: "Your workspace and event history are preserved. Update the subscription to restore access.",
+        cta: "View billing options",
+        href: "/pricing",
       }
     : access.status === "cancelled"
       ? {
           title: "Your Studio subscription is cancelled",
-          description: "Your workspace and event history are preserved. Contact Beebizy to reactivate access.",
+          description: "Your workspace and event history are preserved. Choose Solo again or contact Beebizy to reactivate access.",
+          cta: "View plans",
+          href: "/pricing",
         }
       : {
           title: "Your Studio beta has ended",
           description: `Your three-month beta period ended on ${ended}. Your workspace and event history are preserved. Choose a plan to continue.`,
+          cta: "View plans",
+          href: "/pricing",
         };
 
   return (
@@ -225,7 +238,7 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{copy.description}</p>
           <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
             <Button asChild>
-              <Link href="/pricing">View plans</Link>
+              <Link href={copy.href}>{copy.cta}</Link>
             </Button>
             <Button variant="outline" onClick={() => void signOut()}>Sign out</Button>
           </div>

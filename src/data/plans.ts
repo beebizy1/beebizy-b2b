@@ -50,6 +50,9 @@ export const SOLO_PRICE_OPTIONS: Record<
   month: { amountCents: 29_900, currency: "usd", display: "$299" },
 };
 
+/** Card details are collected at Checkout, but the first charge is delayed this many days. */
+export const SOLO_TRIAL_DAYS = 90;
+
 /**
  * What a Solo subscription actually includes.
  *

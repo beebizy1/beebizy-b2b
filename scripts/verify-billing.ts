@@ -72,7 +72,7 @@ function subscriptionFixture(
 }
 
 try {
-  await db.insert(workspaces).values({ id: workspaceId, name: "Billing verification" });
+  await db.insert(workspaces).values({ id: workspaceId, name: "Billing verification", subscriptionStatus: "beta" });
   await db.insert(workspaceMembers).values({ workspaceId, userId: ctx.userId, role: "owner" });
 
   await db.insert(workspaceMembers).values([

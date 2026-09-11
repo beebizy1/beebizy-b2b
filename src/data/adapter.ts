@@ -110,6 +110,7 @@ import type {
   VolunteerShiftPatch,
 } from "./entities";
 import type { BillingInterval, PlanId } from "./plans";
+import type { WorkspaceAccessStatus } from "./workspaceAccess";
 import type { PlanningBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 
@@ -304,7 +305,7 @@ export interface Identity {
   role: "owner" | "admin" | "member";
   canReviewFeedback: boolean;
   access: {
-    status: "beta" | "active" | "expired" | "past_due" | "cancelled";
+    status: WorkspaceAccessStatus;
     plan: PlanId | null;
     betaStartedAt: string;
     betaEndsAt: string;

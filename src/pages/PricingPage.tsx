@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 import { BrandLogoLink } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/data/provider";
 import { useSession } from "@/app/session";
-import { PLAN_NAMES, SOLO_FEATURES, SOLO_LIMITS, SOLO_PRICE_OPTIONS, type PlanId } from "@/data/plans";
+import { PLAN_NAMES, SOLO_FEATURES, SOLO_LIMITS, SOLO_PRICE_OPTIONS, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
 import { cn } from "@/lib/utils";
 
 type PlanCard = {
@@ -31,14 +31,14 @@ const plans: PlanCard[] = [
     price: SOLO_PRICE_OPTIONS.month.display,
     cadence: "per month",
     facts: [
+      `${SOLO_TRIAL_DAYS} days free`,
       `${SOLO_LIMITS.eventsPerYear} events per year`,
       `${SOLO_LIMITS.teamMembers} total team members`,
-      "0% Beebizy registration fee",
     ],
     featuresTitle: "Five core features included",
     features: [...SOLO_FEATURES],
-    note: "Zero Beebizy registration fees. Standard Stripe or card-processing fees may still apply to ticket payments.",
-    cta: "Choose Solo",
+    note: `Card required. $0 today, then ${SOLO_PRICE_OPTIONS.month.display}/month after ${SOLO_TRIAL_DAYS} days unless cancelled. Zero Beebizy registration fees. Standard card-processing fees may still apply to ticket payments.`,
+    cta: `Start ${SOLO_TRIAL_DAYS}-day free trial`,
     selfServe: true,
   },
   {
@@ -78,10 +78,20 @@ export default function PricingPage() {
   const { status } = useSession();
   const data = useData();
   const query = new URLSearchParams(window.location.search);
+  const startRequested = query.get("start") === "solo";
+  const checkoutCancelled = query.get("checkout") === "cancelled";
+  const demoCheckout = query.get("demo") === "true";
+  const checkoutStarted = useRef(false);
 
-  const chooseSolo = async () => {
+  const chooseSolo = useCallback(async () => {
+    if (status === "loading") return;
+    if (status === "demo") {
+      window.location.assign("/pricing?demo=true");
+      return;
+    }
     if (status !== "authenticated") {
-      window.location.assign("/login?returnTo=%2Fpricing");
+      const returnTo = "/pricing?start=solo";
+      window.location.assign(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
     setLoading(true);
@@ -93,7 +103,13 @@ export default function PricingPage() {
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout could not be opened.");
       setLoading(false);
     }
-  };
+  }, [data.billing, status]);
+
+  useEffect(() => {
+    if (!startRequested || status !== "authenticated" || checkoutStarted.current) return;
+    checkoutStarted.current = true;
+    void chooseSolo();
+  }, [chooseSolo, startRequested, status]);
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -118,16 +134,16 @@ export default function PricingPage() {
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary-text">Simple, flexible pricing</p>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight sm:text-6xl">A plan for every kind of event team</h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Solo gives independent planners five essential tools, predictable limits, and no Beebizy registration fees.
+            Start Solo free for {SOLO_TRIAL_DAYS} days with a card. Pay nothing today, then {SOLO_PRICE_OPTIONS.month.display}/month unless you cancel.
           </p>
         </div>
 
-        {query.get("checkout") === "cancelled" ? (
+        {checkoutCancelled ? (
           <p className="mx-auto mt-5 max-w-xl rounded-lg border border-hairline bg-surface px-4 py-3 text-center text-sm text-muted-foreground">
-            Checkout was cancelled. No payment was taken.
+            Checkout was cancelled. Your trial did not start and no payment was taken.
           </p>
         ) : null}
-        {query.get("demo") === "true" ? (
+        {demoCheckout ? (
           <p className="mx-auto mt-5 max-w-xl rounded-lg border border-hairline bg-surface px-4 py-3 text-center text-sm text-muted-foreground">
             Checkout is disabled in the local demo. Sign in on the private Beebizy preview to test it.
           </p>
@@ -177,7 +193,7 @@ export default function PricingPage() {
               ) : null}
 
               {plan.selfServe ? (
-                <Button className="mt-7 w-full" size="lg" onClick={() => void chooseSolo()} disabled={loading}>
+                <Button className="mt-7 w-full" size="lg" onClick={() => void chooseSolo()} disabled={loading || status === "loading"}>
                   {loading ? "Opening secure checkout…" : plan.cta}
                   {!loading ? <ArrowRight aria-hidden="true" /> : null}
                 </Button>
@@ -209,7 +225,7 @@ export default function PricingPage() {
 
         <div className="mt-10 flex items-center justify-center gap-2 text-center text-sm text-muted-foreground">
           <ShieldCheck className="size-4 text-success-text" aria-hidden="true" />
-          Solo checkout is securely processed by Stripe. Team and Enterprise are invoiced after approval.
+          Stripe securely stores your card. Solo is free for {SOLO_TRIAL_DAYS} days, then renews monthly. Team and Enterprise are invoiced after approval.
         </div>
       </main>
     </div>

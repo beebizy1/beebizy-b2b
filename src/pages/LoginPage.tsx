@@ -13,12 +13,11 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { isClerkConfigured } from "@/lib/clerk";
 import { clerkAppearance } from "@/app/clerkAppearance";
+import { authReturnTo } from "@/lib/authRedirect";
+import { SOLO_TRIAL_DAYS } from "@/data/plans";
 
 export default function LoginPage() {
-  const requestedReturn = new URLSearchParams(window.location.search).get("returnTo");
-  const returnTo = requestedReturn && (requestedReturn === "/pricing" || requestedReturn.startsWith("/app"))
-    ? requestedReturn
-    : "/app";
+  const returnTo = authReturnTo(window.location.search);
 
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-6 py-12">
@@ -30,7 +29,8 @@ export default function LoginPage() {
         {isClerkConfigured ? (
           <SignIn
             appearance={clerkAppearance}
-            withSignUp={false}
+            withSignUp
+            signUpUrl={`/signup?returnTo=${encodeURIComponent(returnTo)}`}
             transferable={false}
             forceRedirectUrl={returnTo}
             fallbackRedirectUrl={returnTo}
@@ -49,15 +49,8 @@ export default function LoginPage() {
         )}
 
         <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
-          Beebizy Studio is a private workspace for approved beta testers. Beta access includes three free months
-          in exchange for product feedback, followed by paid access. Need an invitation?{" "}
-          <a
-            href="mailto:hello@beebizy.com?subject=Request%20Beebizy%20Studio%20beta%20access"
-            className="font-semibold text-foreground underline underline-offset-4"
-          >
-            Request beta access
-          </a>
-          .
+          New to Beebizy? Create an account, add your card securely through Stripe, and start Solo free for {SOLO_TRIAL_DAYS} days.
+          You will not be charged today.
         </p>
       </div>
     </div>

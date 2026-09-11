@@ -7,6 +7,7 @@ import {
   SOLO_LIMITS,
   SOLO_PRICE_LOOKUP_KEYS,
   SOLO_PRICE_OPTIONS,
+  SOLO_TRIAL_DAYS,
   type BillingInterval,
   type PlanId,
 } from "../data/plans.ts";
@@ -78,8 +79,66 @@ export function validateSoloPrice(price: Stripe.Price, interval: BillingInterval
   }
 }
 
+export function soloCheckoutSessionParams({
+  checkoutAttempt,
+  customerId,
+  interval,
+  origin,
+  priceId,
+  workspaceId,
+}: {
+  checkoutAttempt: string;
+  customerId: string;
+  interval: BillingInterval;
+  origin: string;
+  priceId: string;
+  workspaceId: string;
+}): Stripe.Checkout.SessionCreateParams {
+  const metadata = {
+    workspaceId,
+    plan: "solo",
+    billingInterval: interval,
+    priceId,
+    trialDays: String(SOLO_TRIAL_DAYS),
+    cardRequired: "true",
+  };
+  return {
+    integration_identifier: integrationIdentifier(checkoutAttempt),
+    mode: "subscription",
+    customer: customerId,
+    client_reference_id: workspaceId,
+    line_items: [{ price: priceId, quantity: 1 }],
+    allow_promotion_codes: true,
+    billing_address_collection: "auto",
+    payment_method_collection: "always",
+    expires_at: Math.floor(Date.now() / 1_000) + 30 * 60,
+    metadata,
+    subscription_data: {
+      metadata,
+      trial_period_days: SOLO_TRIAL_DAYS,
+      trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+    },
+    success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/pricing?checkout=cancelled`,
+  };
+}
+
 function checkoutUsesPrice(session: Stripe.Checkout.Session, priceId: string): boolean {
   return session.line_items?.data[0]?.price?.id === priceId;
+}
+
+export function isReusableSoloCheckout(
+  session: Stripe.Checkout.Session,
+  interval: BillingInterval,
+  priceId: string,
+): boolean {
+  return (
+    session.metadata?.billingInterval === interval &&
+    session.metadata?.priceId === priceId &&
+    session.metadata?.trialDays === String(SOLO_TRIAL_DAYS) &&
+    session.metadata?.cardRequired === "true" &&
+    session.payment_method_collection === "always"
+  );
 }
 
 export async function createCheckoutSession(
@@ -119,6 +178,7 @@ export async function createCheckoutSession(
         workspace.stripeCheckoutInterval === interval &&
         previous.metadata?.workspaceId === workspace.id &&
         checkoutUsesPrice(previous, price.id) &&
+        isReusableSoloCheckout(previous, interval, price.id) &&
         previous.url
       ) {
         return { url: previous.url };
@@ -215,8 +275,7 @@ export async function createCheckoutSession(
     );
     const reusableSession = beebizySessions.find(
       (candidate) =>
-        candidate.metadata?.billingInterval === interval &&
-        candidate.metadata?.priceId === price.id &&
+        isReusableSoloCheckout(candidate, interval, price.id) &&
         candidate.url,
     );
     if (reusableSession?.url) {
@@ -241,22 +300,14 @@ export async function createCheckoutSession(
     const origin = appOrigin(request);
     const checkoutAttempt = `${workspace.id}_${interval}_${lockId}`;
     const session = await stripe.checkout.sessions.create(
-      {
-        integration_identifier: integrationIdentifier(checkoutAttempt),
-        mode: "subscription",
-        customer: customerId,
-        client_reference_id: workspace.id,
-        line_items: [{ price: price.id, quantity: 1 }],
-        allow_promotion_codes: true,
-        billing_address_collection: "auto",
-        expires_at: Math.floor(Date.now() / 1_000) + 30 * 60,
-        metadata: { workspaceId: workspace.id, plan: "solo", billingInterval: interval, priceId: price.id },
-        subscription_data: {
-          metadata: { workspaceId: workspace.id, plan: "solo", billingInterval: interval, priceId: price.id },
-        },
-        success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/pricing?checkout=cancelled`,
-      },
+      soloCheckoutSessionParams({
+        checkoutAttempt,
+        customerId,
+        interval,
+        origin,
+        priceId: price.id,
+        workspaceId: workspace.id,
+      }),
       { idempotencyKey: `beebizy_checkout_${workspace.id}_${lockId}` },
     );
 

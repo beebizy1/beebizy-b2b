@@ -21,12 +21,12 @@ import {
 } from "../lib/internalAccess.ts";
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
+import { workspaceFitsSoloSeatLimit } from "./entitlements.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
-import { effectivePlan, type PlanId } from "../data/plans.ts";
+import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
+import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
 
 export type Role = "owner" | "admin" | "member";
-
-export type WorkspaceAccessStatus = "beta" | "active" | "expired" | "past_due" | "cancelled";
 
 export interface WorkspaceAccess {
   status: WorkspaceAccessStatus;
@@ -67,8 +67,8 @@ export function requireBeebizyOperator(email: string | null | undefined): void {
 const secretKey = process.env.CLERK_SECRET_KEY;
 const clerk = secretKey ? createClerkClient({ secretKey }) : null;
 
-/** Verifies the bearer token and confirms the user is an approved Studio operator or beta tester. */
-async function requireInternalUser(request: Request): Promise<{ userId: string; email: string | null }> {
+/** Verifies the bearer token and the user's primary email before any workspace is resolved. */
+async function requireVerifiedUser(request: Request): Promise<{ userId: string; email: string }> {
   if (!secretKey || !clerk) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
 
   const header = request.headers.get("authorization") ?? "";
@@ -100,48 +100,13 @@ async function requireInternalUser(request: Request): Promise<{ userId: string; 
     primaryEmail = primary?.verification?.status === "verified" ? primary.emailAddress : null;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    console.error("Clerk user lookup failed while verifying internal access.", error);
-    throw new HttpError(503, `Unable to verify internal access: ${detail}`);
+    console.error("Clerk user lookup failed while verifying the account.", error);
+    throw new HttpError(503, `Unable to verify this account: ${detail}`);
   }
 
-  /*
-   * Three ways in, and the third is the one that is easy to forget: already belonging to
-   * a workspace.
-   *
-   * An invite only counts while it is unclaimed, so checking the first two alone let an
-   * invited colleague through exactly once — the request that claimed the invite — and
-   * refused every request after it. They were a member of the workspace and locked out
-   * of it at the same time.
-   */
-  const allowed =
-    hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) ||
-    (await isWorkspaceMember(userId)) ||
-    (await hasPendingInvite(primaryEmail));
-  if (!allowed) {
-    throw new HttpError(403, "This account does not have access to Beebizy Studio.");
-  }
+  if (!primaryEmail) throw new HttpError(403, "Verify your primary email before opening Beebizy Studio.");
 
   return { userId, email: primaryEmail };
-}
-
-/** Membership is itself proof of access: someone put this account in a workspace. */
-async function isWorkspaceMember(userId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ userId: workspaceMembers.userId })
-    .from(workspaceMembers)
-    .where(eq(workspaceMembers.userId, userId))
-    .limit(1);
-  return Boolean(row);
-}
-
-async function hasPendingInvite(email: string | null): Promise<boolean> {
-  if (!email) return false;
-  const [invite] = await db
-    .select({ id: workspaceInvites.id })
-    .from(workspaceInvites)
-    .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
-    .limit(1);
-  return Boolean(invite);
 }
 
 function newId(prefix: string): string {
@@ -178,6 +143,7 @@ async function addWorkspaceMember(
   workspaceId: string,
   userId: string,
   role: Role,
+  seatAlreadyReserved = false,
 ): Promise<boolean> {
   const entitlementLock = db
     .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${workspaceId}))` })
@@ -198,7 +164,11 @@ async function addWorkspaceMember(
           and(
             eq(workspaces.id, workspaceId),
             isNull(workspaces.stripeCheckoutSessionId),
-            or(ne(workspaces.subscriptionStatus, "active"), ne(workspaces.subscriptionPlan, "solo")),
+            or(
+              ne(workspaces.subscriptionStatus, "active"),
+              ne(workspaces.subscriptionPlan, "solo"),
+              workspaceFitsSoloSeatLimit(workspaceId, seatAlreadyReserved ? 0 : 1),
+            ),
           ),
         ),
     )
@@ -257,11 +227,7 @@ async function resolveWorkspace(
     if (invite) {
       const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
       if (workspace) {
-        const invitedAccess = accessForWorkspace(workspace);
-        if (invitedAccess.status === "active" && effectivePlan(invitedAccess) === "solo") {
-          throw new HttpError(403, "This workspace's Solo plan does not include another user.");
-        }
-        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role))) {
+        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role, true))) {
           throw new HttpError(403, "This workspace's Solo plan does not include another user.");
         }
         await db
@@ -289,9 +255,12 @@ async function resolveWorkspace(
   }
 
   const workspaceId = newId("ws");
+  // Existing operators and explicitly allowlisted customers retain private-pilot access.
+  // Every public signup stays locked until card-backed Solo Checkout is completed.
+  const subscriptionStatus = hasInternalAccess(email, process.env.BETA_ACCESS_EMAILS) ? "beta" : "pending";
   const [workspace] = await db
     .insert(workspaces)
-    .values({ id: workspaceId, name: "My workspace", clerkOrgId })
+    .values({ id: workspaceId, name: "My workspace", clerkOrgId, subscriptionStatus })
     .returning();
   await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
   if (!workspace) throw new HttpError(500, "The workspace could not be created.");
@@ -303,7 +272,7 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(403, "Beebizy Studio beta access is available only at the private preview link.");
   }
 
-  const { userId, email } = await requireInternalUser(request);
+  const { userId, email } = await requireVerifiedUser(request);
   const orgHeader = request.headers.get("x-clerk-org-id");
   const { workspaceId, role, access } = await resolveWorkspace(
     userId,
@@ -325,16 +294,14 @@ export async function authorize(request: Request): Promise<RequestContext> {
     !billingRecoveryRoute &&
     !operatorFeedbackInbox
   ) {
-    const message = access.status === "past_due"
-      ? "Your Beebizy Studio payment is past due. Update the subscription to continue."
-      : access.status === "cancelled"
-        ? "Your Beebizy Studio subscription is cancelled. Reactivate it to continue."
-        : "Your three-month Beebizy Studio beta has ended. Activate a subscription to continue.";
+    const message = access.status === "pending"
+      ? `Add a card and start your ${SOLO_TRIAL_DAYS}-day Solo trial to continue.`
+      : access.status === "past_due"
+        ? "Your Beebizy Studio payment is past due. Update the subscription to continue."
+        : access.status === "cancelled"
+          ? "Your Beebizy Studio subscription is cancelled. Reactivate it to continue."
+          : "Your three-month Beebizy Studio beta has ended. Activate a subscription to continue.";
     throw new HttpError(402, message);
-  }
-
-  if (access.status === "active" && effectivePlan(access) === "solo" && role !== "owner") {
-    throw new HttpError(403, "The Solo plan includes one workspace owner. Upgrade to add collaborators.");
   }
 
   return { userId, email, workspaceId, role, access };
