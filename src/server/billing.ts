@@ -221,7 +221,14 @@ export async function createCheckoutSession(
     })
     .from(events)
     .innerJoin(workspaces, eq(workspaces.id, events.workspaceId))
-    .where(and(eq(events.workspaceId, workspace.id), eq(workspaces.stripeCheckoutSessionId, lockId)))
+    .where(
+      and(
+        eq(events.workspaceId, workspace.id),
+        eq(workspaces.stripeCheckoutSessionId, lockId),
+        // A pilot workspace reserves no slots, so the limit never applies to it.
+        eq(workspaces.eventQuotaExempt, false),
+      ),
+    )
     .as("ranked_events_for_quota");
 
   let lockedRows: { id: string }[];

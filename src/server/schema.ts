@@ -71,6 +71,15 @@ export const workspaces = pgTable("workspaces", {
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
   subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
+  /*
+   * Pilot workspaces predate the published Solo limits and are not held to them.
+   *
+   * They were invited before Beebizy had plans at all, several of them run more events in
+   * a year than Solo includes, and metering them retroactively would mean telling the
+   * people who tested the product first to delete their work. New workspaces default to
+   * false and are metered from the day they sign up.
+   */
+  eventQuotaExempt: boolean("event_quota_exempt").notNull().default(false),
   subscriptionPlan: subscriptionPlan("subscription_plan"),
   stripeCustomerId: text("stripe_customer_id").unique(),
   stripeSubscriptionId: text("stripe_subscription_id").unique(),

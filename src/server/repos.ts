@@ -90,6 +90,22 @@ function isQuotaConflict(error: unknown): boolean {
   return ["23505", "23514"].includes(String(candidate.code)) || String(candidate.message ?? "").includes("event_quota_slots");
 }
 
+/**
+ * Pilot workspaces are not metered against the Solo event limit.
+ *
+ * They joined before Beebizy published plans and several hold more events in a year than
+ * Solo includes, so the limit is applied from the day a workspace signs up rather than
+ * backwards over work that already exists.
+ */
+async function isEventQuotaExempt(workspaceId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ exempt: s.workspaces.eventQuotaExempt })
+    .from(s.workspaces)
+    .where(eq(s.workspaces.id, workspaceId))
+    .limit(1);
+  return Boolean(row?.exempt);
+}
+
 function nextEventQuotaSlot(workspaceId: string, calendarYear: number) {
   return sql<number>`coalesce((
     select min(slots.candidate)
@@ -261,7 +277,7 @@ export const events = {
      * a planner booking next spring should not be turned away because this spring is
      * already full. Beta workspaces resolve to the enterprise plan and are untouched.
      */
-    if (effectivePlan(ctx.access) === "solo") {
+    if (effectivePlan(ctx.access) === "solo" && !(await isEventQuotaExempt(ctx.workspaceId))) {
       const year = values.startsAt.getUTCFullYear();
       const [used] = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -323,6 +339,7 @@ export const events = {
         .where(
           and(
             eq(s.workspaces.id, ctx.workspaceId),
+            eq(s.workspaces.eventQuotaExempt, false),
             or(
               and(
                 eq(s.workspaces.subscriptionStatus, "active"),
@@ -416,6 +433,7 @@ export const events = {
         .where(
           and(
             eq(s.workspaces.id, ctx.workspaceId),
+            eq(s.workspaces.eventQuotaExempt, false),
             or(
               and(
                 eq(s.workspaces.subscriptionStatus, "active"),
