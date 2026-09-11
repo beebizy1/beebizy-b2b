@@ -106,7 +106,44 @@ async function requireVerifiedUser(request: Request): Promise<{ userId: string; 
 
   if (!primaryEmail) throw new HttpError(403, "Verify your primary email before opening Beebizy Studio.");
 
+  /*
+   * Three ways in, and the third is the one that is easy to forget: already belonging to
+   * a workspace.
+   *
+   * An invite only counts while it is unclaimed, so checking the allowlist and the invite
+   * alone lets an invited colleague through exactly once - the request that claims the
+   * invite - and refuses every request after it. They would be a member of the workspace
+   * and locked out of it at the same time.
+   */
+  const approved =
+    hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) ||
+    (await isWorkspaceMember(userId)) ||
+    (await hasPendingInvite(primaryEmail));
+  if (!approved) {
+    throw new HttpError(403, "This account does not have access to Beebizy Studio. Ask Beebizy for an invitation.");
+  }
+
   return { userId, email: primaryEmail };
+}
+
+/** Membership is itself proof of approval: someone with authority added this account. */
+async function isWorkspaceMember(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: workspaceMembers.userId })
+    .from(workspaceMembers)
+    .where(eq(workspaceMembers.userId, userId))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** An offered seat is approval, before it is claimed as well as after. */
+async function hasPendingInvite(email: string): Promise<boolean> {
+  const [invite] = await db
+    .select({ id: workspaceInvites.id })
+    .from(workspaceInvites)
+    .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
+    .limit(1);
+  return Boolean(invite);
 }
 
 function newId(prefix: string): string {

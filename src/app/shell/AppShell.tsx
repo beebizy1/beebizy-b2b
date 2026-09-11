@@ -30,7 +30,7 @@ import { useSession } from "@/app/session";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
-import { effectivePlan, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
+import { effectivePlan, SELF_SERVE_BILLING_ENABLED, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -115,13 +115,15 @@ function SidebarContent({
       </nav>
 
       <div className="space-y-2 border-t border-sidebar-border p-4">
+        {/* Points at sales while self-serve billing is paused; there is no price list to
+            send anyone to. */}
         <Link
-          href="/pricing"
+          href={SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales"}
           onClick={onNavigate}
           className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <BadgeDollarSign className="size-4" aria-hidden="true" />
-          Plans &amp; pricing
+          {SELF_SERVE_BILLING_ENABLED ? "Plans & pricing" : "Talk to us about plans"}
         </Link>
         {/* Settings used to live in the account menu. Removing the top bar took that
             menu with it, so the only way in is the footer. */}
@@ -200,30 +202,32 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
   const ended = new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date(access.betaEndsAt));
   const copy = access.status === "pending"
     ? {
-        title: `Start your ${SOLO_TRIAL_DAYS}-day Solo trial`,
-        description: "Add a card securely through Stripe to unlock Studio. You will not be charged today, and you can cancel before the trial ends.",
-        cta: "Add card and start trial",
-        href: "/pricing?start=solo",
+        title: SELF_SERVE_BILLING_ENABLED ? `Start your ${SOLO_TRIAL_DAYS}-day Solo trial` : "Let's get your workspace opened",
+        description: SELF_SERVE_BILLING_ENABLED
+          ? "Add a card securely through Stripe to unlock Studio. You will not be charged today, and you can cancel before the trial ends."
+          : "We are onboarding new teams personally while we finish setting up billing. Tell us about your events and we will open your workspace.",
+        cta: SELF_SERVE_BILLING_ENABLED ? "Add card and start trial" : "Contact us",
+        href: SELF_SERVE_BILLING_ENABLED ? "/pricing?start=solo" : "/contact-sales?plan=solo",
       }
     : access.status === "past_due"
     ? {
         title: "Your Studio payment is past due",
         description: "Your workspace and event history are preserved. Update the subscription to restore access.",
         cta: "View billing options",
-        href: "/pricing",
+        href: SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales",
       }
     : access.status === "cancelled"
       ? {
           title: "Your Studio subscription is cancelled",
           description: "Your workspace and event history are preserved. Choose Solo again or contact Beebizy to reactivate access.",
           cta: "View plans",
-          href: "/pricing",
+          href: SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales",
         }
       : {
           title: "Your Studio beta has ended",
           description: `Your three-month beta period ended on ${ended}. Your workspace and event history are preserved. Choose a plan to continue.`,
           cta: "View plans",
-          href: "/pricing",
+          href: SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales",
         };
 
   return (

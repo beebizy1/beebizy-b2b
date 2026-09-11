@@ -15,10 +15,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { TEAM_LIMITS } from "@/data/plans";
+import { SELF_SERVE_BILLING_ENABLED, SOLO_FEATURES, TEAM_LIMITS } from "@/data/plans";
 import { PLAN_NAMES, type PlanId } from "@/data/plans";
 
-const SALES_PLAN_IDS = ["team", "enterprise"] as const satisfies readonly PlanId[];
+/*
+ * Plans that are sold rather than bought.
+ *
+ * Solo joins the list while self-serve billing is paused, because its card points here
+ * too. Without it `?plan=solo` fell through to the first entry and a Solo enquiry arrived
+ * labelled "Team (Hive)" - the wrong plan, quoted at the wrong size, to the wrong person.
+ */
+const SALES_PLAN_IDS: readonly PlanId[] = SELF_SERVE_BILLING_ENABLED
+  ? ["team", "enterprise"]
+  : ["solo", "team", "enterprise"];
 
 export default function ContactSalesPage() {
   const requested = new URLSearchParams(window.location.search).get("plan");
@@ -142,10 +151,16 @@ export default function ContactSalesPage() {
           <h2 className="font-bold">{plan}</h2>
           <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
             {[
-              planId === "enterprise" ? "Unlimited events and team members" : `Unlimited events and up to ${TEAM_LIMITS.teamMembers} team members`,
-              "Vendor management",
-              "Weather and contingency planning",
-              ...(planId === "enterprise" ? ["Multi-location calendars and custom reporting"] : []),
+              ...(planId === "solo"
+                ? [...SOLO_FEATURES]
+                : [
+                    planId === "enterprise"
+                      ? "Unlimited events and team members"
+                      : `Unlimited events and up to ${TEAM_LIMITS.teamMembers} team members`,
+                    "Vendor management",
+                    "Weather and contingency planning",
+                    ...(planId === "enterprise" ? ["Multi-location calendars and custom reporting"] : []),
+                  ]),
               "Onboarding and migration from your current tools",
             ].map((line) => (
               <li key={line} className="flex items-start gap-2">

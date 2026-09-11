@@ -19,7 +19,7 @@ import { ClerkGate } from "@/app/ClerkGate";
 import { DataProvider } from "@/data/provider";
 import { FEEDBACK_INBOX_PATH } from "@/data/entities";
 import { useMe } from "@/data/hooks";
-import { effectivePlan, planHasCapability, type PlanCapability } from "@/data/plans";
+import { effectivePlan, planHasCapability, SELF_SERVE_BILLING_ENABLED, type PlanCapability } from "@/data/plans";
 import { isDataError } from "@/data/adapter";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { RequireSession, SessionProvider } from "@/app/session";
@@ -72,7 +72,7 @@ import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
 function PlanGate({ capability, children }: { capability: PlanCapability; children: React.ReactNode }) {
   const { data: identity, isLoading } = useMe();
   if (isLoading || !identity) return null;
-  if (!planHasCapability(effectivePlan(identity.access), capability)) return <Redirect to="/pricing" replace />;
+  if (!planHasCapability(effectivePlan(identity.access), capability)) return <Redirect to={SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales"} replace />;
   return <>{children}</>;
 }
 
@@ -145,7 +145,10 @@ function AppRoutes() {
 function Routes() {
   return (
     <Switch>
-      <Route path="/" component={PricingPage} />
+      {/* Pricing is the front door only when it has something to sell. While self-serve
+          billing is paused the marketing page takes the slot, so nobody lands on prices
+          we are not ready to honour. */}
+      <Route path="/" component={SELF_SERVE_BILLING_ENABLED ? PricingPage : LandingPage} />
       <Route path="/marketing-preview" component={LandingPage} />
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
@@ -153,7 +156,11 @@ function Routes() {
       <Route path={INVITATION_ACCEPTANCE_PATH} component={AcceptInvitationPage} />
       <Route path="/access-denied" component={AccessDeniedPage} />
       <Route path="/subscription-required" component={SubscriptionRequiredPage} />
-      <Route path="/pricing" component={PricingPage} />
+      {/* Kept as a redirect rather than deleted: links to it are already out in emails
+          and bookmarks, and a dead route would 404 them instead of reaching sales. */}
+      <Route path="/pricing">
+        {() => (SELF_SERVE_BILLING_ENABLED ? <PricingPage /> : <Redirect to="/contact-sales" replace />)}
+      </Route>
       <Route path="/contact-sales" component={ContactSalesPage} />
       <Route path="/billing/success" component={BillingSuccessPage} />
       <Route path="/signup" component={SignupPage} />

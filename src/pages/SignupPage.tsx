@@ -5,10 +5,16 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { authReturnTo } from "@/lib/authRedirect";
 import { isClerkConfigured } from "@/lib/clerk";
-import { SOLO_PRICE_OPTIONS, SOLO_TRIAL_DAYS } from "@/data/plans";
 
 export default function SignupPage() {
-  const returnTo = authReturnTo(window.location.search, "/pricing?start=solo");
+  /*
+   * Studio, not Checkout.
+   *
+   * Accounts are approved by the Beebizy team, so someone arriving here has already been
+   * invited and has a workspace waiting. Sending them to `?start=solo` would open a trial
+   * for access they were just granted. An explicit `returnTo` still wins.
+   */
+  const returnTo = authReturnTo(window.location.search, "/app");
 
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-6 py-12">
@@ -33,7 +39,8 @@ export default function SignupPage() {
         )}
 
         <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
-          After account creation, Stripe will securely collect your card. Your first {SOLO_PRICE_OPTIONS.month.display} monthly charge is in {SOLO_TRIAL_DAYS} days.
+          Beebizy Studio is approved by the Beebizy team. Create your account with the address your
+          invitation was sent to, and we will open your workspace.
         </p>
       </div>
     </div>

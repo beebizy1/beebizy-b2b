@@ -54,6 +54,19 @@ export const SOLO_PRICE_OPTIONS: Record<
 export const SOLO_TRIAL_DAYS = 30;
 
 /**
+ * Whether anyone can buy Solo without talking to us.
+ *
+ * Off while Stripe is still pointed at an unclaimed sandbox: Checkout renders a banner
+ * saying no real payments are processed and names the merchant `stripe-aureolin-ladder`,
+ * which is not a page to put a customer's card number into. With this false the prices
+ * come off the page, the trial cannot be started, and every plan routes to sales.
+ *
+ * Turn it back on once the live Stripe account is connected - one line here, and the
+ * server refuses Checkout independently so the two cannot drift apart.
+ */
+export const SELF_SERVE_BILLING_ENABLED = true;
+
+/**
  * What a Solo subscription actually includes.
  *
  * Solo is the only self-serve plan, and the pricing page quotes these limits directly.

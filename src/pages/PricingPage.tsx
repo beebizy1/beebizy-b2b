@@ -8,6 +8,7 @@ import { useMe } from "@/data/hooks";
 import { useSession } from "@/app/session";
 import {
   PLAN_NAMES,
+  SELF_SERVE_BILLING_ENABLED,
   SOLO_FEATURES,
   SOLO_LIMITS,
   SOLO_PRICE_OPTIONS,
@@ -37,18 +38,20 @@ const plans: PlanCard[] = [
     id: "solo",
     name: PLAN_NAMES.solo,
     audience: "For independent planners running focused events",
-    price: SOLO_PRICE_OPTIONS.month.display,
-    cadence: "per month",
+    price: SELF_SERVE_BILLING_ENABLED ? SOLO_PRICE_OPTIONS.month.display : "Contact sales",
+    cadence: SELF_SERVE_BILLING_ENABLED ? "per month" : "",
     facts: [
-      `${SOLO_TRIAL_DAYS} days free`,
+      ...(SELF_SERVE_BILLING_ENABLED ? [`${SOLO_TRIAL_DAYS} days free`] : []),
       `${SOLO_LIMITS.eventsPerYear} events per year`,
       `${SOLO_LIMITS.teamMembers} total team members`,
     ],
     featuresTitle: "Five core features included",
     features: [...SOLO_FEATURES],
-    note: `Card required. $0 today, then ${SOLO_PRICE_OPTIONS.month.display}/month after ${SOLO_TRIAL_DAYS} days unless cancelled. Zero Beebizy registration fees. Standard card-processing fees may still apply to ticket payments.`,
-    cta: `Start ${SOLO_TRIAL_DAYS}-day free trial`,
-    selfServe: true,
+    note: SELF_SERVE_BILLING_ENABLED
+      ? `Card required. $0 today, then ${SOLO_PRICE_OPTIONS.month.display}/month after ${SOLO_TRIAL_DAYS} days unless cancelled. Zero Beebizy registration fees. Standard card-processing fees may still apply to ticket payments.`
+      : "We are onboarding new teams personally while we finish setting up billing. Tell us about your events and we will get you started.",
+    cta: SELF_SERVE_BILLING_ENABLED ? `Start ${SOLO_TRIAL_DAYS}-day free trial` : "Contact sales",
+    selfServe: SELF_SERVE_BILLING_ENABLED,
   },
   /*
    * The paid tiers carry the same furniture as Solo - a facts strip, a titled list of the
@@ -139,6 +142,11 @@ export default function PricingPage() {
       window.location.assign("/app");
       return;
     }
+    // Billing paused: a bookmarked `?start=solo` must not open a sandbox Checkout.
+    if (!SELF_SERVE_BILLING_ENABLED) {
+      window.location.assign("/contact-sales?plan=solo");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -184,7 +192,9 @@ export default function PricingPage() {
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary-text">Simple, flexible pricing</p>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight sm:text-6xl">A plan for every kind of event team</h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Start Solo free for {SOLO_TRIAL_DAYS} days with a card. Pay nothing today, then {SOLO_PRICE_OPTIONS.month.display}/month unless you cancel.
+            {SELF_SERVE_BILLING_ENABLED
+              ? `Start Solo free for ${SOLO_TRIAL_DAYS} days with a card. Pay nothing today, then ${SOLO_PRICE_OPTIONS.month.display}/month unless you cancel.`
+              : "Tell us how you run events and we will set you up on the right plan."}
           </p>
         </div>
 
@@ -278,7 +288,9 @@ export default function PricingPage() {
 
         <div className="mt-10 flex items-center justify-center gap-2 text-center text-sm text-muted-foreground">
           <ShieldCheck className="size-4 text-success-text" aria-hidden="true" />
-          Stripe securely stores your card. Solo is free for {SOLO_TRIAL_DAYS} days, then renews monthly. Team and Enterprise are invoiced after approval.
+          {SELF_SERVE_BILLING_ENABLED
+            ? `Stripe securely stores your card. Solo is free for ${SOLO_TRIAL_DAYS} days, then renews monthly. Team and Enterprise are invoiced after approval.`
+            : "Every plan is invoiced after approval. No card is collected anywhere on this site."}
         </div>
       </main>
     </div>

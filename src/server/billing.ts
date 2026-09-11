@@ -3,6 +3,7 @@ import { and, eq, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import {
   BILLING_INTERVALS,
+  SELF_SERVE_BILLING_ENABLED,
   PLAN_IDS,
   SOLO_LIMITS,
   SOLO_PRICE_LOOKUP_KEYS,
@@ -147,6 +148,17 @@ export async function createCheckoutSession(
   request: Request,
 ): Promise<{ url: string }> {
   requireOwner(ctx);
+  /*
+   * Refused here as well as hidden in the page.
+   *
+   * The pricing page stops offering the trial when self-serve billing is off, but the
+   * endpoint is reachable on its own - a stale tab, a bookmarked `?start=solo`, anything
+   * holding the old URL - and a Checkout session created now would send a customer to a
+   * sandbox that tells them no real payment is processed.
+   */
+  if (!SELF_SERVE_BILLING_ENABLED) {
+    throw new HttpError(503, "Beebizy is onboarding new teams personally right now. Contact us and we will set you up.");
+  }
   if (!BILLING_INTERVALS.includes(interval)) throw new HttpError(400, "Choose monthly billing.");
 
   const stripe = stripeClient();

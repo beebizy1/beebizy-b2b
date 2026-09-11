@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { isClerkConfigured } from "@/lib/clerk";
 import { clerkAppearance } from "@/app/clerkAppearance";
 import { authReturnTo } from "@/lib/authRedirect";
-import { SOLO_TRIAL_DAYS } from "@/data/plans";
 
 export default function LoginPage() {
   const returnTo = authReturnTo(window.location.search);
@@ -49,7 +48,15 @@ export default function LoginPage() {
         )}
 
         <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
-          New to Beebizy? Create an account, add your card securely through Stripe, and start Solo free for {SOLO_TRIAL_DAYS} days.
+          Beebizy Studio is a private workspace. Accounts are approved by the Beebizy team, so sign in with
+          the address your invitation was sent to.{" "}
+          <a
+            href="mailto:hello@beebizy.com?subject=Request%20Beebizy%20Studio%20access"
+            className="font-semibold text-foreground underline underline-offset-4"
+          >
+            Request access
+          </a>
+          .
           You will not be charged today.
         </p>
       </div>
