@@ -16,9 +16,9 @@
  *     race past.
  */
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
-import { workspaceFitsSoloSeatLimit } from "./entitlements.ts";
+import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import * as s from "./schema.ts";
 import {
   HttpError,
@@ -62,7 +62,7 @@ import type {
   WorkspaceMember,
 } from "../data/entities.ts";
 import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
-import { effectivePlan, SOLO_LIMITS } from "../data/plans.ts";
+import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
@@ -2226,20 +2226,16 @@ export const members = {
               eq(s.workspaces.id, ctx.workspaceId),
               isNull(s.workspaces.stripeCheckoutSessionId),
               /*
-               * Solo buys a seat count, not zero collaboration.
+               * Every metered plan buys a seat count - Solo two, Team ten - and the count
+               * is taken from the plan the workspace is actually on.
                *
-               * The seat total is counted inside the same INSERT ... SELECT, under the
+               * The total is worked out inside the same INSERT ... SELECT, under the
                * advisory lock taken above, so two owners inviting at once cannot both
                * read "one seat left" and both take it. Unclaimed invites count: a seat
-               * that has been offered is spent until it is revoked, otherwise a Solo
-               * workspace could hold out ten invitations and let whoever answers first
-               * through.
+               * that has been offered is spent until it is revoked, otherwise a workspace
+               * could hold out ten invitations and let whoever answers first through.
                */
-              or(
-                ne(s.workspaces.subscriptionStatus, "active"),
-                ne(s.workspaces.subscriptionPlan, "solo"),
-                workspaceFitsSoloSeatLimit(s.workspaces.id, 1),
-              ),
+              workspaceFitsPlanSeatLimit(s.workspaces.id, 1),
             ),
           ),
       )
@@ -2247,9 +2243,15 @@ export const members = {
     const [, createdRows] = await db.batch([entitlementLock, inviteInsert]);
     const created = createdRows[0];
     if (!created) {
+      const plan = effectivePlan(ctx.access);
+      const seats = PLAN_SEAT_LIMITS[plan];
       throw new HttpError(
         403,
-        `The Solo plan includes ${SOLO_LIMITS.teamMembers} team members, and this workspace has used them. Upgrade to Team to invite more.`,
+        seats === null
+          ? "That invitation could not be created. Try again in a moment."
+          : `${PLAN_NAMES[plan]} includes ${seats} team members, and this workspace has used them.${
+              plan === "solo" ? " Upgrade to Team to invite more." : " Contact Beebizy to add more seats."
+            }`,
       );
     }
 

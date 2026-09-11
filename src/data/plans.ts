@@ -65,6 +65,23 @@ export const SOLO_LIMITS = {
   eventsPerYear: 3,
 } as const;
 
+/** Team is sold on unlimited events, but seats are capped. */
+export const TEAM_LIMITS = {
+  teamMembers: 10,
+} as const;
+
+/**
+ * Seats a plan includes, or null where seats are not metered.
+ *
+ * Read by the API when a seat is taken - an invitation sent or a member joining - so the
+ * ceiling quoted on the pricing page is the same number the database enforces.
+ */
+export const PLAN_SEAT_LIMITS: Record<PlanId, number | null> = {
+  solo: SOLO_LIMITS.teamMembers,
+  team: TEAM_LIMITS.teamMembers,
+  enterprise: null,
+};
+
 export const SOLO_FEATURES = [
   "AI planner with editable checklists, mood boards and run of show",
   "Budget planning and spend tracking",

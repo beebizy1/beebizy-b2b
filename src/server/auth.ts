@@ -13,7 +13,7 @@
  */
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   canAccessOperatorFeedbackInbox,
   hasInternalAccess,
@@ -21,7 +21,7 @@ import {
 } from "../lib/internalAccess.ts";
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
-import { workspaceFitsSoloSeatLimit } from "./entitlements.ts";
+import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
 import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
 import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
@@ -164,11 +164,8 @@ async function addWorkspaceMember(
           and(
             eq(workspaces.id, workspaceId),
             isNull(workspaces.stripeCheckoutSessionId),
-            or(
-              ne(workspaces.subscriptionStatus, "active"),
-              ne(workspaces.subscriptionPlan, "solo"),
-              workspaceFitsSoloSeatLimit(workspaceId, seatAlreadyReserved ? 0 : 1),
-            ),
+            // The seat ceiling of whatever plan the workspace is on, not Solo's alone.
+            workspaceFitsPlanSeatLimit(workspaceId, seatAlreadyReserved ? 0 : 1),
           ),
         ),
     )

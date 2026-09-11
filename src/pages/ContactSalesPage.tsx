@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { TEAM_LIMITS } from "@/data/plans";
 import { PLAN_NAMES, type PlanId } from "@/data/plans";
 
 const SALES_PLAN_IDS = ["team", "enterprise"] as const satisfies readonly PlanId[];
@@ -141,7 +142,7 @@ export default function ContactSalesPage() {
           <h2 className="font-bold">{plan}</h2>
           <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
             {[
-              "Unlimited events and team members",
+              planId === "enterprise" ? "Unlimited events and team members" : `Unlimited events and up to ${TEAM_LIMITS.teamMembers} team members`,
               "Vendor management",
               "Weather and contingency planning",
               ...(planId === "enterprise" ? ["Multi-location calendars and custom reporting"] : []),

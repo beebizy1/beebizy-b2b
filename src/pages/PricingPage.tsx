@@ -5,7 +5,15 @@ import { BrandLogoLink } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/data/provider";
 import { useSession } from "@/app/session";
-import { PLAN_NAMES, SOLO_FEATURES, SOLO_LIMITS, SOLO_PRICE_OPTIONS, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
+import {
+  PLAN_NAMES,
+  SOLO_FEATURES,
+  SOLO_LIMITS,
+  SOLO_PRICE_OPTIONS,
+  SOLO_TRIAL_DAYS,
+  TEAM_LIMITS,
+  type PlanId,
+} from "@/data/plans";
 import { cn } from "@/lib/utils";
 
 type PlanCard = {
@@ -57,10 +65,10 @@ const plans: PlanCard[] = [
     audience: "For lean event teams that plan together",
     price: "Contact sales",
     cadence: "",
-    facts: ["Unlimited events", "Unlimited members", "Vendor management"],
+    facts: ["Unlimited events", `${TEAM_LIMITS.teamMembers} team members`, "Vendor management"],
     featuresTitle: "Everything in Solo, plus",
     features: [
-      "Unlimited events and unlimited team members",
+      `Unlimited events and up to ${TEAM_LIMITS.teamMembers} team members`,
       "Vendor directory with bookings and confirmations",
       "Vendor conversations in one shared inbox",
       "Beebizy marketplace vendor suggestions",
