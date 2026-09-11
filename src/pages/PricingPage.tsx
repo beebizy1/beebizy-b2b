@@ -41,18 +41,32 @@ const plans: PlanCard[] = [
     cta: `Start ${SOLO_TRIAL_DAYS}-day free trial`,
     selfServe: true,
   },
+  /*
+   * The paid tiers carry the same furniture as Solo - a facts strip, a titled list of the
+   * same length, a closing note - because they did not, and it showed. Solo spelled out
+   * five capabilities while Team and Enterprise offered three short lines above a third
+   * of a card of white space, so the cheapest plan read as the most complete one.
+   *
+   * Every line below is a capability the API actually gates, not a phrase: vendors,
+   * vendor messages and contingency are Team and above; locations, reporting and event
+   * analytics are Enterprise. See `PLAN_CAPABILITIES`.
+   */
   {
     id: "team",
     name: PLAN_NAMES.team,
     audience: "For lean event teams that plan together",
     price: "Contact sales",
     cadence: "",
+    facts: ["Unlimited events", "Unlimited members", "Vendor management"],
+    featuresTitle: "Everything in Solo, plus",
     features: [
-      "Everything in Solo",
-      "Unlimited events and team members",
-      "Vendor management",
+      "Unlimited events and unlimited team members",
+      "Vendor directory with bookings and confirmations",
+      "Vendor conversations in one shared inbox",
+      "Beebizy marketplace vendor suggestions",
       "Weather and contingency planning",
     ],
+    note: "Invoiced after approval. No card is collected here, and pricing is agreed with you before anything starts.",
     cta: "Contact sales",
     featured: true,
   },
@@ -62,12 +76,16 @@ const plans: PlanCard[] = [
     audience: "For distributed organizations and hospitality groups",
     price: "Contact sales",
     cadence: "",
+    facts: ["Unlimited events", "Multi-location", "Dedicated support"],
+    featuresTitle: "Everything in Team, plus",
     features: [
-      "Everything in Team",
-      "Multi-location calendars",
-      "Custom integrations",
-      "Dedicated support and reporting",
+      "Multi-location calendars and a shared venue library",
+      "Custom reporting across every event",
+      "Per-event analytics and return on investment",
+      "Custom integrations with your existing tools",
+      "Dedicated support and onboarding",
     ],
+    note: "Invoiced after approval. No card is collected here, and pricing is agreed with you before anything starts.",
     cta: "Contact sales",
   },
 ];
@@ -172,7 +190,10 @@ export default function PricingPage() {
                 <h2 className="text-2xl font-bold">{plan.name}</h2>
                 <p className="mt-2 min-h-12 text-sm leading-relaxed text-muted-foreground">{plan.audience}</p>
               </div>
-              <div className="mt-8 flex items-end gap-2">
+              {/* Fixed height: the Solo figure is set larger than "Contact sales", and
+                  without it every row below - facts, button, feature list - sat a dozen
+                  pixels lower on one card than the other two. */}
+              <div className="mt-8 flex min-h-14 items-end gap-2">
                 <span
                   className={cn("font-extrabold tracking-tight", plan.selfServe ? "text-5xl" : "text-3xl")}
                   data-numeric={plan.selfServe ? true : undefined}
