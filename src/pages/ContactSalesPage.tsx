@@ -142,8 +142,9 @@ export default function ContactSalesPage() {
           <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
             {[
               "Unlimited events and team members",
-              "Vendor management and contingency planning",
-              planId === "enterprise" ? "Multi-location calendars and custom reporting" : "Inspiration boards",
+              "Vendor management",
+              "Weather and contingency planning",
+              ...(planId === "enterprise" ? ["Multi-location calendars and custom reporting"] : []),
               "Onboarding and migration from your current tools",
             ].map((line) => (
               <li key={line} className="flex items-start gap-2">
