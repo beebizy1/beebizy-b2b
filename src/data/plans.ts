@@ -51,7 +51,7 @@ export const SOLO_PRICE_OPTIONS: Record<
 };
 
 /** Card details are collected at Checkout, but the first charge is delayed this many days. */
-export const SOLO_TRIAL_DAYS = 90;
+export const SOLO_TRIAL_DAYS = 30;
 
 /**
  * What a Solo subscription actually includes.

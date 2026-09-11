@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./db", () => ({ db: {} }));
 
 const { handleStripeWebhook, isReusableSoloCheckout, soloCheckoutSessionParams, validateSoloPrice } = await import("./billing");
-const { SOLO_PRICE_OPTIONS } = await import("../data/plans");
+const { SOLO_PRICE_OPTIONS, SOLO_TRIAL_DAYS } = await import("../data/plans");
 
 function price(overrides: Partial<Stripe.Price> = {}): Stripe.Price {
   return {
@@ -54,7 +54,7 @@ describe("Stripe Solo price validation", () => {
 });
 
 describe("Stripe Solo trial Checkout", () => {
-  it("collects a card now and delays the first charge for 90 days", () => {
+  it("collects a card now and delays the first charge for the whole trial", () => {
     const params = soloCheckoutSessionParams({
       checkoutAttempt: "ws_test_month_pending",
       customerId: "cus_test",
@@ -66,9 +66,9 @@ describe("Stripe Solo trial Checkout", () => {
 
     expect(params.mode).toBe("subscription");
     expect(params.payment_method_collection).toBe("always");
-    expect(params.subscription_data?.trial_period_days).toBe(90);
+    expect(params.subscription_data?.trial_period_days).toBe(SOLO_TRIAL_DAYS);
     expect(params.subscription_data?.trial_settings?.end_behavior?.missing_payment_method).toBe("cancel");
-    expect(params.metadata).toMatchObject({ trialDays: "90", cardRequired: "true" });
+    expect(params.metadata).toMatchObject({ trialDays: String(SOLO_TRIAL_DAYS), cardRequired: "true" });
     expect(isReusableSoloCheckout(params as Stripe.Checkout.Session, "month", "price_test")).toBe(true);
   });
 

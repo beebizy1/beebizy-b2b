@@ -34,6 +34,6 @@ describe("plan entitlements", () => {
     expect(BILLING_INTERVALS).toEqual(["month"]);
     expect(SOLO_LIMITS).toEqual({ teamMembers: 2, eventsPerYear: 3 });
     expect(SOLO_FEATURES).toHaveLength(5);
-    expect(SOLO_TRIAL_DAYS).toBe(90);
+    expect(SOLO_TRIAL_DAYS).toBe(30);
   });
 });
