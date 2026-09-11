@@ -212,6 +212,18 @@ export async function createCheckoutSession(
       ),
     )
     .returning({ id: workspaces.id });
+  const rankedEventsForQuota = db
+    .select({
+      workspaceId: events.workspaceId,
+      calendarYear: sql<number>`extract(year from ${events.startsAt})::integer`.as("calendar_year"),
+      slot: annualEventQuotaRank().as("slot"),
+      eventId: events.id,
+    })
+    .from(events)
+    .innerJoin(workspaces, eq(workspaces.id, events.workspaceId))
+    .where(and(eq(events.workspaceId, workspace.id), eq(workspaces.stripeCheckoutSessionId, lockId)))
+    .as("ranked_events_for_quota");
+
   let lockedRows: { id: string }[];
   try {
     [, lockedRows] = await db.batch([
@@ -227,22 +239,29 @@ export async function createCheckoutSession(
           )`,
         ),
       ),
+      /*
+       * Reserve the slots that fit and leave the rest of the history alone.
+       *
+       * Ranking every existing event and inserting the lot meant a workspace with four
+       * events in one year could not reach Checkout at all: the fourth row failed the
+       * slot check and the whole thing came back as "move or remove extra events first".
+       * That is a demand to delete your own data for the privilege of paying, and it
+       * lands on exactly the customers who used the product most during the pilot.
+       *
+       * The earliest events in each year take the slots, older ones stay readable, and
+       * the cap still bites where it should - on creating the next one, which is blocked
+       * until the year is back under the limit.
+       */
       db.insert(eventQuotaSlots).select(
         db
           .select({
-            workspaceId: events.workspaceId,
-            calendarYear: sql<number>`extract(year from ${events.startsAt})::integer`.as("calendar_year"),
-            slot: annualEventQuotaRank().as("slot"),
-            eventId: events.id,
+            workspaceId: rankedEventsForQuota.workspaceId,
+            calendarYear: rankedEventsForQuota.calendarYear,
+            slot: rankedEventsForQuota.slot,
+            eventId: rankedEventsForQuota.eventId,
           })
-          .from(events)
-          .innerJoin(workspaces, eq(workspaces.id, events.workspaceId))
-          .where(
-            and(
-              eq(events.workspaceId, workspace.id),
-              eq(workspaces.stripeCheckoutSessionId, lockId),
-            ),
-          ),
+          .from(rankedEventsForQuota)
+          .where(lte(rankedEventsForQuota.slot, SOLO_LIMITS.eventsPerYear)),
       ),
     ]);
   } catch (error) {
