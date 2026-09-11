@@ -1,7 +1,7 @@
 export const PLAN_IDS = ["solo", "team", "enterprise"] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 
-export const BILLING_INTERVALS = ["month", "year"] as const;
+export const BILLING_INTERVALS = ["month"] as const;
 export type BillingInterval = (typeof BILLING_INTERVALS)[number];
 
 export const PLAN_CAPABILITIES = [
@@ -16,7 +16,7 @@ export const PLAN_CAPABILITIES = [
 export type PlanCapability = (typeof PLAN_CAPABILITIES)[number];
 
 const capabilities: Record<PlanId, readonly PlanCapability[]> = {
-  solo: ["corePlanning", "collaboration"],
+  solo: ["corePlanning", "collaboration", "inspirationBoards"],
   team: ["corePlanning", "collaboration", "vendorManagement", "inspirationBoards", "contingencyPlanning"],
   enterprise: [...PLAN_CAPABILITIES],
 };
@@ -41,7 +41,6 @@ export const PLAN_NAMES: Record<PlanId, string> = {
 
 export const SOLO_PRICE_LOOKUP_KEYS: Record<BillingInterval, string> = {
   month: "beebizy_solo_monthly",
-  year: "beebizy_solo_annual",
 };
 
 export const SOLO_PRICE_OPTIONS: Record<
@@ -49,7 +48,6 @@ export const SOLO_PRICE_OPTIONS: Record<
   { amountCents: number; currency: "usd"; display: string }
 > = {
   month: { amountCents: 29_900, currency: "usd", display: "$299" },
-  year: { amountCents: 299_000, currency: "usd", display: "$2,990" },
 };
 
 /**

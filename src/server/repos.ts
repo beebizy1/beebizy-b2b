@@ -18,6 +18,7 @@
 
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
+import { workspaceFitsSoloSeatLimit } from "./entitlements.ts";
 import * as s from "./schema.ts";
 import {
   HttpError,
@@ -2219,12 +2220,7 @@ export const members = {
               or(
                 ne(s.workspaces.subscriptionStatus, "active"),
                 ne(s.workspaces.subscriptionPlan, "solo"),
-                sql`(
-                  (select count(*) from ${s.workspaceMembers} where ${s.workspaceMembers.workspaceId} = ${s.workspaces.id})
-                  + (select count(*) from ${s.workspaceInvites}
-                     where ${s.workspaceInvites.workspaceId} = ${s.workspaces.id}
-                       and ${s.workspaceInvites.acceptedAt} is null)
-                ) < ${SOLO_LIMITS.teamMembers}`,
+                workspaceFitsSoloSeatLimit(s.workspaces.id, 1),
               ),
             ),
           ),

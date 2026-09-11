@@ -30,7 +30,7 @@ vi.mock("./repos", () => {
     vendors: { list: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]) },
-    canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
+    canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
     analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
     feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn() },
   };
@@ -245,19 +245,31 @@ describe("billing endpoints", () => {
     },
   };
 
-  it("creates checkout from the server-selected interval and ignores client price ids", async () => {
+  it("creates monthly checkout and ignores client price ids", async () => {
     vi.mocked(authorize).mockResolvedValue(owner);
     vi.mocked(createCheckoutSession).mockResolvedValue({ url: "https://checkout.stripe.com/test" });
     const request = new Request("http://localhost/api/billing/checkout", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ interval: "year", priceId: "price_attacker_supplied" }),
+      body: JSON.stringify({ interval: "month", priceId: "price_attacker_supplied" }),
     });
 
     const response = await handleRequest(request);
 
     expect(response.status).toBe(200);
-    expect(createCheckoutSession).toHaveBeenCalledWith(owner, "year", request);
+    expect(createCheckoutSession).toHaveBeenCalledWith(owner, "month", request);
+  });
+
+  it("rejects unadvertised billing intervals", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    const response = await handleRequest(new Request("http://localhost/api/billing/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ interval: "year" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Solo is billed monthly." });
   });
 
   it("accepts the signed Stripe webhook without a user session", async () => {
@@ -273,13 +285,11 @@ describe("billing endpoints", () => {
 
   it("keeps Solo core reads working while enforcing premium writes", async () => {
     vi.mocked(authorize).mockResolvedValue(owner);
-    for (const path of ["locations", "members", "analytics/portfolio"]) {
+    for (const path of ["locations", "members", "boards", "analytics/portfolio"]) {
       expect((await handleRequest(new Request(`http://localhost/api/${path}`))).status).toBe(200);
     }
-    expect((await handleRequest(new Request("http://localhost/api/boards"))).status).toBe(403);
-    for (const path of ["boards", "locations"]) {
-      expect((await handleRequest(new Request(`http://localhost/api/${path}`, { method: "POST" }))).status).toBe(403);
-    }
+    expect((await handleRequest(new Request("http://localhost/api/boards", { method: "POST" }))).status).toBe(201);
+    expect((await handleRequest(new Request("http://localhost/api/locations", { method: "POST" }))).status).toBe(403);
     expect((await handleRequest(new Request("http://localhost/api/analytics/custom-report"))).status).toBe(403);
     expect((await handleRequest(new Request("http://localhost/api/vendors"))).status).toBe(403);
 

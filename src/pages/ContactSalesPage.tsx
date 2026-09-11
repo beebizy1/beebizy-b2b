@@ -15,12 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PLAN_NAMES, type PlanId } from "@/data/plans";
 
-const PLANS = ["Team (Hive)", "Enterprise (Colony)"] as const;
+const SALES_PLAN_IDS = ["team", "enterprise"] as const satisfies readonly PlanId[];
 
 export default function ContactSalesPage() {
   const requested = new URLSearchParams(window.location.search).get("plan");
-  const plan = PLANS.find((candidate) => candidate === requested) ?? PLANS[0];
+  const planId = SALES_PLAN_IDS.find((candidate) => candidate === requested) ?? SALES_PLAN_IDS[0];
+  const plan = PLAN_NAMES[planId];
 
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -141,7 +143,7 @@ export default function ContactSalesPage() {
             {[
               "Unlimited events and team members",
               "Vendor management and contingency planning",
-              plan.startsWith("Enterprise") ? "Multi-location calendars and custom reporting" : "Inspiration boards",
+              planId === "enterprise" ? "Multi-location calendars and custom reporting" : "Inspiration boards",
               "Onboarding and migration from your current tools",
             ].map((line) => (
               <li key={line} className="flex items-start gap-2">

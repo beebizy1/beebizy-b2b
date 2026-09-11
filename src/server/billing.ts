@@ -12,7 +12,8 @@ import {
 } from "../data/plans.ts";
 import { db } from "./db.ts";
 import { HttpError, type RequestContext } from "./auth.ts";
-import { eventQuotaSlots, events, workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
+import { annualEventQuotaRank, workspaceFitsSoloSeatLimit } from "./entitlements.ts";
+import { eventQuotaSlots, events, workspaces } from "./schema.ts";
 
 function stripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -42,9 +43,7 @@ async function workspaceFor(ctx: RequestContext) {
 }
 
 async function soloPrice(stripe: Stripe, interval: BillingInterval): Promise<Stripe.Price> {
-  const configuredId = interval === "month"
-    ? process.env.STRIPE_SOLO_MONTHLY_PRICE_ID?.trim()
-    : process.env.STRIPE_SOLO_ANNUAL_PRICE_ID?.trim();
+  const configuredId = process.env.STRIPE_SOLO_MONTHLY_PRICE_ID?.trim();
   if (configuredId) {
     const configured = await stripe.prices.retrieve(configuredId);
     validateSoloPrice(configured, interval);
@@ -89,7 +88,7 @@ export async function createCheckoutSession(
   request: Request,
 ): Promise<{ url: string }> {
   requireOwner(ctx);
-  if (!BILLING_INTERVALS.includes(interval)) throw new HttpError(400, "Choose monthly or yearly billing.");
+  if (!BILLING_INTERVALS.includes(interval)) throw new HttpError(400, "Choose monthly billing.");
 
   const stripe = stripeClient();
   const workspace = await workspaceFor(ctx);
@@ -146,12 +145,7 @@ export async function createCheckoutSession(
     .where(
       and(
         eq(workspaces.id, workspace.id),
-        sql`(
-          (select count(*) from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspace.id}) +
-          (select count(*) from ${workspaceInvites}
-            where ${workspaceInvites.workspaceId} = ${workspace.id}
-              and ${workspaceInvites.acceptedAt} is null)
-        ) <= ${SOLO_LIMITS.teamMembers}`,
+        workspaceFitsSoloSeatLimit(workspace.id),
         replacedSessionId
           ? eq(workspaces.stripeCheckoutSessionId, replacedSessionId)
           : or(isNull(workspaces.stripeCheckoutSessionId), lt(workspaces.stripeCheckoutLockedAt, lockCutoff)),
@@ -178,10 +172,7 @@ export async function createCheckoutSession(
           .select({
             workspaceId: events.workspaceId,
             calendarYear: sql<number>`extract(year from ${events.startsAt})::integer`.as("calendar_year"),
-            slot: sql<number>`row_number() over (
-              partition by ${events.workspaceId}, extract(year from ${events.startsAt})
-              order by ${events.startsAt}, ${events.id}
-            )::integer`.as("slot"),
+            slot: annualEventQuotaRank().as("slot"),
             eventId: events.id,
           })
           .from(events)
@@ -431,12 +422,7 @@ export async function syncStripeSubscription(subscription: Stripe.Subscription, 
           and(
             eq(workspaces.id, workspaceId),
             activationIsCurrent,
-            sql`(
-              (select count(*) from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspaceId}) +
-              (select count(*) from ${workspaceInvites}
-                where ${workspaceInvites.workspaceId} = ${workspaceId}
-                  and ${workspaceInvites.acceptedAt} is null)
-            ) <= ${SOLO_LIMITS.teamMembers}`,
+            workspaceFitsSoloSeatLimit(workspaceId),
           ),
         )
         .returning({ id: workspaces.id }),

@@ -16,27 +16,43 @@ Laila's bank account.
 
 ## Current sandbox setup
 
-- Solo monthly price: USD $79 per month
-- Solo annual price: USD $599 per year
+- The published Solo offer is USD $299 per month.
+- The Studio pricing page offers monthly billing only.
 - Monthly lookup key: `beebizy_solo_monthly`
-- Annual lookup key: `beebizy_solo_annual`
 - Stable webhook URL: `https://beebizy-studio-preview.vercel.app/api/billing/webhook`
 - Team and Enterprise remain sales-assisted and are not automatically charged
+
+As of September 11, 2026, the existing Stripe test Price under the monthly lookup key is
+still $79. The application intentionally rejects that amount so nobody can enter Checkout
+for the wrong price. Laila needs to create the $299 monthly Price in Stripe test mode and
+add its test Price ID to Vercel before the Solo button will open Checkout.
 
 The sandbox webhook verifies Stripe signatures and handles Checkout completion,
 asynchronous payment success or failure, subscription changes or cancellation, and paid
 or failed invoices. It also releases reserved Solo capacity when Checkout expires.
 
-## Founder steps for production
+## Founder steps for the sandbox now
 
-1. In Stripe live mode, create the Solo product with recurring USD prices of exactly $79
-   monthly and $599 yearly.
+These steps stay entirely in test mode and cannot deduct money from Laila's bank account:
+
+1. In the Stripe Dashboard, turn on **Test mode**.
+2. Create a recurring Solo Price of exactly USD $299 per month.
+3. Copy that test Price ID into the Beebizy Vercel project's Production environment as
+   `STRIPE_SOLO_MONTHLY_PRICE_ID`. Laila can enter it herself; the developer does not need
+   access to her Stripe account.
+4. Redeploy Beebizy and run the sandbox verification. Do not use a real card.
+
+## Founder steps for a future live launch
+
+Do not complete these steps until Laila explicitly approves collecting real payments.
+
+1. In Stripe live mode, create the Solo product with a recurring USD price of exactly
+   $299 monthly.
 2. Create a restricted live API key with only the permissions needed for Customers,
    Products and Prices, Checkout Sessions, Subscriptions, Invoices, and Billing Portal.
 3. In the Beebizy Vercel project, add the restricted key as `STRIPE_SECRET_KEY` for the
    Production environment only.
-4. Add the two live price IDs as `STRIPE_SOLO_MONTHLY_PRICE_ID` and
-   `STRIPE_SOLO_ANNUAL_PRICE_ID` for Production only.
+4. Add the live price ID as `STRIPE_SOLO_MONTHLY_PRICE_ID` for Production only.
 5. Create a live Stripe webhook endpoint at the stable webhook URL above. Subscribe it to:
    `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed`, `customer.subscription.created`,
@@ -57,8 +73,9 @@ or failed invoices. It also releases reserved Solo capacity when Checkout expire
 ## Plan enforcement
 
 - Private-pilot workspaces stay free and retain full product access.
-- Solo is one workspace owner and one event per calendar year.
-- Team adds collaboration, vendor management, inspiration boards, and an editable weather
+- Solo includes two total team members, up to three events per calendar year, and the five
+  features shown on the pricing page, including inspiration boards.
+- Team adds unlimited events and team members, vendor management, and an editable weather
   and contingency workflow.
 - Enterprise adds multi-location management, integrations, and custom reporting.
 - Only a workspace owner can start Checkout or open the Billing Portal.
@@ -75,6 +92,7 @@ The workspace owner then signs in again and receives the plan's server-enforced 
 Sales-assisted workspaces do not show the Stripe Customer Portal button unless a Stripe
 customer ID is also recorded. Their billing continues directly through Beebizy.
 
-Before changing an existing workspace to Solo, reduce it to one member with no pending
-invitations and no more than one event in any calendar year. The self-serve Solo Checkout
-performs these checks automatically.
+Before changing an existing workspace to Solo, reduce it to no more than two occupied
+seats in total, counting both members and pending invitations, and no more than three
+events in any calendar year. The self-serve Solo Checkout performs these checks
+automatically.

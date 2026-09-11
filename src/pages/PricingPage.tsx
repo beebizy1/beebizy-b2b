@@ -5,10 +5,11 @@ import { BrandLogoLink } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/data/provider";
 import { useSession } from "@/app/session";
-import { SOLO_FEATURES, SOLO_LIMITS, SOLO_PRICE_OPTIONS, type BillingInterval } from "@/data/plans";
+import { PLAN_NAMES, SOLO_FEATURES, SOLO_LIMITS, SOLO_PRICE_OPTIONS, type PlanId } from "@/data/plans";
 import { cn } from "@/lib/utils";
 
 type PlanCard = {
+  id: PlanId;
   name: string;
   audience: string;
   price: string;
@@ -22,12 +23,13 @@ type PlanCard = {
   selfServe?: boolean;
 };
 
-const plans = (interval: BillingInterval): PlanCard[] => [
+const plans: PlanCard[] = [
   {
-    name: "Solo",
+    id: "solo",
+    name: PLAN_NAMES.solo,
     audience: "For independent planners running focused events",
-    price: SOLO_PRICE_OPTIONS[interval].display,
-    cadence: interval === "month" ? "per month" : "per year",
+    price: SOLO_PRICE_OPTIONS.month.display,
+    cadence: "per month",
     facts: [
       `${SOLO_LIMITS.eventsPerYear} events per year`,
       `${SOLO_LIMITS.teamMembers} total team members`,
@@ -40,10 +42,11 @@ const plans = (interval: BillingInterval): PlanCard[] => [
     selfServe: true,
   },
   {
-    name: "Team (Hive)",
+    id: "team",
+    name: PLAN_NAMES.team,
     audience: "For lean event teams that plan together",
-    price: "Contact sales",
-    cadence: "",
+    price: "$50K",
+    cadence: "per year",
     features: [
       "Everything in Solo",
       "Unlimited events and team members",
@@ -54,10 +57,11 @@ const plans = (interval: BillingInterval): PlanCard[] => [
     featured: true,
   },
   {
-    name: "Enterprise (Colony)",
+    id: "enterprise",
+    name: PLAN_NAMES.enterprise,
     audience: "For distributed organizations and hospitality groups",
-    price: "Contact sales",
-    cadence: "",
+    price: "$100K-$200K",
+    cadence: "per year",
     features: [
       "Everything in Team",
       "Multi-location calendars",
@@ -69,13 +73,11 @@ const plans = (interval: BillingInterval): PlanCard[] => [
 ];
 
 export default function PricingPage() {
-  const [interval, setInterval] = useState<BillingInterval>("month");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { status } = useSession();
   const data = useData();
   const query = new URLSearchParams(window.location.search);
-  const yearlySavings = SOLO_PRICE_OPTIONS.month.amountCents * 12 - SOLO_PRICE_OPTIONS.year.amountCents;
 
   const chooseSolo = async () => {
     if (status !== "authenticated") {
@@ -85,7 +87,7 @@ export default function PricingPage() {
     setLoading(true);
     setError(null);
     try {
-      const { url } = await data.billing.checkout(interval);
+      const { url } = await data.billing.checkout("month");
       window.location.assign(url);
     } catch (checkoutError) {
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout could not be opened.");
@@ -120,26 +122,6 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="mx-auto mt-10 flex w-fit rounded-xl border border-card-border bg-surface-sunken p-1" role="group" aria-label="Billing interval">
-          {(["month", "year"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setInterval(value)}
-              aria-pressed={interval === value}
-              className={cn(
-                "rounded-lg px-5 py-2 text-sm font-semibold transition-colors",
-                interval === value ? "bg-surface text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {value === "month" ? "Monthly" : "Yearly"}
-              {value === "year" ? (
-                <span className="ml-2 text-xs text-success-text">Save ${yearlySavings / 100}</span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-
         {query.get("checkout") === "cancelled" ? (
           <p className="mx-auto mt-5 max-w-xl rounded-lg border border-hairline bg-surface px-4 py-3 text-center text-sm text-muted-foreground">
             Checkout was cancelled. No payment was taken.
@@ -157,7 +139,7 @@ export default function PricingPage() {
         ) : null}
 
         <section className="mt-10 grid items-stretch gap-5 lg:grid-cols-3" aria-label="Beebizy plans">
-          {plans(interval).map((plan) => (
+          {plans.map((plan) => (
             <article
               key={plan.name}
               className={cn(
@@ -201,7 +183,7 @@ export default function PricingPage() {
                 </Button>
               ) : (
                 <Button asChild className="mt-7 w-full" size="lg" variant={plan.featured ? "default" : "outline"}>
-                  <Link href={`/contact-sales?plan=${encodeURIComponent(plan.name)}`}>
+                  <Link href={`/contact-sales?plan=${plan.id}`}>
                     {plan.cta}
                     <ArrowRight aria-hidden="true" />
                   </Link>

@@ -250,8 +250,8 @@ async function handleAuthed(
     /* ---------------------------------------------------------------- billing */
     case "billing": {
       if (a === "checkout" && method === "POST") {
-        const input = z.object({ interval: z.enum(["month", "year"]) }).parse(body);
-        return json(await createCheckoutSession(ctx, input.interval, request));
+        if (body.interval !== "month") throw new HttpError(400, "Solo is billed monthly.");
+        return json(await createCheckoutSession(ctx, "month", request));
       }
       if (a === "portal" && method === "POST") return json(await createPortalSession(ctx, request));
       return notFound();

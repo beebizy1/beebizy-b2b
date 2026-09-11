@@ -11,7 +11,6 @@ import { createCheckoutSession, syncStripeSubscription } from "../src/server/bil
 import { db } from "../src/server/db";
 import * as repos from "../src/server/repos";
 import { workspaceMembers, workspaces } from "../src/server/schema";
-import type { BillingInterval } from "../src/data/plans";
 import type { RequestContext } from "../src/server/auth";
 
 const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -39,14 +38,12 @@ const request = new Request("https://beebizy-studio-preview.vercel.app/api/billi
 
 let customerId: string | null = null;
 
-async function sessionInterval(url: string): Promise<BillingInterval | null> {
+async function sessionInterval(url: string): Promise<"month" | null> {
   const id = url.match(/cs_(?:test_)?[A-Za-z0-9]+/)?.[0];
   if (!id) return null;
   const session = await stripe.checkout.sessions.retrieve(id, { expand: ["line_items.data.price"] });
   const price = session.line_items?.data[0]?.price;
-  return price?.recurring?.interval === "month" || price?.recurring?.interval === "year"
-    ? price.recurring.interval
-    : null;
+  return price?.recurring?.interval === "month" ? "month" : null;
 }
 
 async function sessionPriceId(url: string): Promise<string | null> {
@@ -106,24 +103,22 @@ try {
 
   const concurrent = await Promise.allSettled([
     createCheckoutSession(ctx, "month", request),
-    createCheckoutSession(ctx, "year", request),
+    createCheckoutSession(ctx, "month", request),
   ]);
   const fulfilled = concurrent.filter((result): result is PromiseFulfilledResult<{ url: string }> => result.status === "fulfilled");
   const rejected = concurrent.filter((result) => result.status === "rejected");
   if (fulfilled.length !== 1 || rejected.length !== 1) throw new Error("Concurrent checkout lock did not allow exactly one session.");
 
-  const firstInterval = await sessionInterval(fulfilled[0]!.value.url);
-  if (!firstInterval) throw new Error("The first Checkout session has no recurring Solo price.");
-  const otherInterval: BillingInterval = firstInterval === "month" ? "year" : "month";
-  const switched = await createCheckoutSession(ctx, otherInterval, request);
-  if ((await sessionInterval(switched.url)) !== otherInterval) throw new Error("Switching billing interval returned the wrong Checkout price.");
-  const reused = await createCheckoutSession(ctx, otherInterval, request);
-  if (reused.url !== switched.url) throw new Error("Repeated checkout did not reuse the open session.");
+  if ((await sessionInterval(fulfilled[0]!.value.url)) !== "month") {
+    throw new Error("The Checkout session has no recurring monthly Solo price.");
+  }
+  const reused = await createCheckoutSession(ctx, "month", request);
+  if (reused.url !== fulfilled[0]!.value.url) throw new Error("Repeated checkout did not reuse the open session.");
 
   const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
   customerId = workspace?.stripeCustomerId ?? null;
   if (!customerId) throw new Error("Checkout verification did not persist the Stripe customer.");
-  const priceId = await sessionPriceId(switched.url);
+  const priceId = await sessionPriceId(reused.url);
   if (!priceId) throw new Error("The verified Checkout session did not contain a Stripe price.");
   const subscriptionId = `sub_verify_${suffix}`;
   const eventTime = Math.floor(Date.now() / 1_000);
@@ -147,7 +142,6 @@ try {
 
   console.log("PASS  concurrent Checkout requests create only one session");
   console.log("PASS  Solo Checkout rejects a third member and a fourth annual event");
-  console.log("PASS  switching interval returns the requested recurring price");
   console.log("PASS  repeated Checkout reuses the existing open session");
   console.log("PASS  sandbox verification completed without a payment method or charge");
   console.log("PASS  pilot access survives failed payment and same-second terminal events keep precedence");
