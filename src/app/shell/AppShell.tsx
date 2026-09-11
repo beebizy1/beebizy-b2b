@@ -18,7 +18,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Link, Redirect, useLocation } from "wouter";
-import { Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleAlert } from "lucide-react";
+import { BadgeDollarSign, Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
@@ -115,6 +115,14 @@ function SidebarContent({
       </nav>
 
       <div className="space-y-2 border-t border-sidebar-border p-4">
+        <Link
+          href="/pricing"
+          onClick={onNavigate}
+          className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <BadgeDollarSign className="size-4" aria-hidden="true" />
+          Plans &amp; pricing
+        </Link>
         {/* Settings used to live in the account menu. Removing the top bar took that
             menu with it, so the only way in is the footer. */}
         <Link

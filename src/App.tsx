@@ -32,6 +32,7 @@ import AcceptInvitationPage from "@/pages/AcceptInvitationPage";
 import AccessDeniedPage from "@/pages/AccessDeniedPage";
 import SubscriptionRequiredPage from "@/pages/SubscriptionRequiredPage";
 import PricingPage from "@/pages/PricingPage";
+import ContactSalesPage from "@/pages/ContactSalesPage";
 import BillingSuccessPage from "@/pages/BillingSuccessPage";
 import NotFound from "@/pages/not-found";
 
@@ -152,6 +153,7 @@ function Routes() {
       <Route path="/access-denied" component={AccessDeniedPage} />
       <Route path="/subscription-required" component={SubscriptionRequiredPage} />
       <Route path="/pricing" component={PricingPage} />
+      <Route path="/contact-sales" component={ContactSalesPage} />
       <Route path="/billing/success" component={BillingSuccessPage} />
       <Route path="/signup">{() => <Redirect to="/access-denied" replace />}</Route>
       <Route path="/signup/*">{() => <Redirect to="/access-denied" replace />}</Route>

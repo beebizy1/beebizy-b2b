@@ -108,8 +108,13 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 
 /* --------------------------------------------------------------- public routes */
 
-const LEAD_FIELDS = ["name", "email", "company", "phone", "volume"] as const;
+const LEAD_FIELDS = ["name", "email", "company", "phone", "volume", "plan", "notes"] as const;
 const LEAD_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/*
+ * What the enquirer wrote is the most useful part of the message, and 200 characters
+ * cuts it off mid-sentence. Everything else is a short identifying field.
+ */
+const LEAD_MAX_LENGTH: Partial<Record<(typeof LEAD_FIELDS)[number], number>> = { notes: 2_000 };
 
 async function handleLead(request: Request): Promise<Response> {
   const body = await readBody(request);
@@ -118,7 +123,8 @@ async function handleLead(request: Request): Promise<Response> {
   const lead = Object.fromEntries(
     LEAD_FIELDS.flatMap((field) => {
       const value = body[field];
-      return typeof value === "string" && value.trim() ? [[field, value.trim().slice(0, 200)]] : [];
+      const limit = LEAD_MAX_LENGTH[field] ?? 200;
+      return typeof value === "string" && value.trim() ? [[field, value.trim().slice(0, limit)]] : [];
     }),
   ) as Partial<Record<(typeof LEAD_FIELDS)[number], string>>;
 
@@ -141,13 +147,18 @@ async function handleLead(request: Request): Promise<Response> {
       from: process.env.MAIL_FROM ?? "Beebizy <onboarding@resend.dev>",
       to: [process.env.MAIL_TO],
       reply_to: lead.email,
-      subject: `New demo request - ${lead.company}`,
+      subject: lead.plan ? `${lead.plan} enquiry - ${lead.company}` : `New demo request - ${lead.company}`,
       text: [
+        `Plan: ${lead.plan ?? "-"}`,
         `Name: ${lead.name}`,
         `Email: ${lead.email}`,
         `Company: ${lead.company}`,
         `Phone: ${lead.phone ?? "-"}`,
         `Events: ${lead.volume ?? "-"} per year`,
+        "",
+        "What they are planning:",
+        lead.notes ?? "-",
+        "",
         `Received: ${record.at}`,
       ].join("\n"),
     }),

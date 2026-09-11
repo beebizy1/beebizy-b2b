@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   BILLING_INTERVALS,
   PLAN_IDS,
+  SOLO_LIMITS,
   SOLO_PRICE_LOOKUP_KEYS,
   SOLO_PRICE_OPTIONS,
   type BillingInterval,
@@ -150,7 +151,7 @@ export async function createCheckoutSession(
           (select count(*) from ${workspaceInvites}
             where ${workspaceInvites.workspaceId} = ${workspace.id}
               and ${workspaceInvites.acceptedAt} is null)
-        ) <= 1`,
+        ) <= ${SOLO_LIMITS.teamMembers}`,
         replacedSessionId
           ? eq(workspaces.stripeCheckoutSessionId, replacedSessionId)
           : or(isNull(workspaces.stripeCheckoutSessionId), lt(workspaces.stripeCheckoutLockedAt, lockCutoff)),
@@ -177,6 +178,10 @@ export async function createCheckoutSession(
           .select({
             workspaceId: events.workspaceId,
             calendarYear: sql<number>`extract(year from ${events.startsAt})::integer`.as("calendar_year"),
+            slot: sql<number>`row_number() over (
+              partition by ${events.workspaceId}, extract(year from ${events.startsAt})
+              order by ${events.startsAt}, ${events.id}
+            )::integer`.as("slot"),
             eventId: events.id,
           })
           .from(events)
@@ -191,8 +196,11 @@ export async function createCheckoutSession(
     ]);
   } catch (error) {
     const detail = error && typeof error === "object" ? error as { code?: unknown; message?: unknown } : null;
-    if (detail?.code === "23505" || String(detail?.message ?? "").includes("event_quota_slots")) {
-      throw new HttpError(409, "Solo includes one event per calendar year. Move or remove extra events first.");
+    if (["23505", "23514"].includes(String(detail?.code)) || String(detail?.message ?? "").includes("event_quota_slots")) {
+      throw new HttpError(
+        409,
+        `Solo includes ${SOLO_LIMITS.eventsPerYear} events per calendar year. Move or remove extra events first.`,
+      );
     }
     throw error;
   }
@@ -200,7 +208,7 @@ export async function createCheckoutSession(
   if (!locked) {
     throw new HttpError(
       409,
-      "Solo requires one user and no other Checkout in progress. Remove extra members or try again in a moment.",
+      `Solo allows ${SOLO_LIMITS.teamMembers} total team members and one Checkout at a time. Remove extra members or try again in a moment.`,
     );
   }
 
@@ -407,6 +415,10 @@ export async function syncStripeSubscription(subscription: Stripe.Subscription, 
           .select({
             workspaceId: events.workspaceId,
             calendarYear: sql<number>`extract(year from ${events.startsAt})::integer`.as("calendar_year"),
+            slot: sql<number>`row_number() over (
+              partition by ${events.workspaceId}, extract(year from ${events.startsAt})
+              order by ${events.startsAt}, ${events.id}
+            )::integer`.as("slot"),
             eventId: events.id,
           })
           .from(events)
@@ -424,7 +436,7 @@ export async function syncStripeSubscription(subscription: Stripe.Subscription, 
               (select count(*) from ${workspaceInvites}
                 where ${workspaceInvites.workspaceId} = ${workspaceId}
                   and ${workspaceInvites.acceptedAt} is null)
-            ) <= 1`,
+            ) <= ${SOLO_LIMITS.teamMembers}`,
           ),
         )
         .returning({ id: workspaces.id }),

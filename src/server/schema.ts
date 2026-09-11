@@ -23,6 +23,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -35,6 +36,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
+import { SOLO_LIMITS } from "../data/plans.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -225,8 +227,8 @@ export const events = pgTable(
 );
 
 /**
- * One calendar-year slot per Solo workspace. The unique primary key is the concurrency
- * guard: two simultaneous event creates cannot both claim the same year.
+ * A fixed set of calendar-year slots per Solo workspace. The unique primary key is the
+ * concurrency guard: simultaneous event creates cannot exceed the published allowance.
  */
 export const eventQuotaSlots = pgTable(
   "event_quota_slots",
@@ -235,12 +237,17 @@ export const eventQuotaSlots = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     calendarYear: integer("calendar_year").notNull(),
+    slot: integer("slot").notNull().default(1),
     eventId: text("event_id")
       .notNull()
       .references(() => events.id, { onDelete: "cascade" }),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.calendarYear] }),
+    primaryKey({ columns: [table.workspaceId, table.calendarYear, table.slot] }),
+    check(
+      "event_quota_slots_slot_check",
+      sql`${table.slot} between 1 and ${sql.raw(String(SOLO_LIMITS.eventsPerYear))}`,
+    ),
     uniqueIndex("event_quota_slots_event_idx").on(table.eventId),
   ],
 );

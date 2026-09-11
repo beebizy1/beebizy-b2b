@@ -61,6 +61,7 @@ import type {
   WorkspaceMember,
 } from "../data/entities.ts";
 import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { effectivePlan, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
@@ -85,7 +86,21 @@ type Body = Record<string, unknown>;
 function isQuotaConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as { code?: unknown; message?: unknown };
-  return candidate.code === "23505" || String(candidate.message ?? "").includes("event_quota_slots");
+  return ["23505", "23514"].includes(String(candidate.code)) || String(candidate.message ?? "").includes("event_quota_slots");
+}
+
+function nextEventQuotaSlot(workspaceId: string, calendarYear: number) {
+  return sql<number>`coalesce((
+    select min(slots.candidate)
+    from generate_series(1, ${SOLO_LIMITS.eventsPerYear}) as slots(candidate)
+    where not exists (
+      select 1
+      from ${s.eventQuotaSlots} as existing
+      where existing.workspace_id = ${workspaceId}
+        and existing.calendar_year = ${calendarYear}
+        and existing.slot = slots.candidate
+    )
+  ), 1)::integer`;
 }
 
 const str = (body: Body, key: string, fallback?: string): string => {
@@ -236,6 +251,33 @@ export const events = {
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
     if (values.locationId && !location) throw new HttpError(400, "That venue is not available in this workspace.");
+
+    /*
+     * Solo is sold as a fixed number of events a year, so the number is counted here
+     * rather than left to the pricing page to assert.
+     *
+     * Events count towards the year they happen in, not the year they were created:
+     * a planner booking next spring should not be turned away because this spring is
+     * already full. Beta workspaces resolve to the enterprise plan and are untouched.
+     */
+    if (effectivePlan(ctx.access) === "solo") {
+      const year = values.startsAt.getUTCFullYear();
+      const [used] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(s.events)
+        .where(
+          and(
+            eq(s.events.workspaceId, ctx.workspaceId),
+            sql`extract(year from ${s.events.startsAt}) = ${year}`,
+          ),
+        );
+      if ((used?.count ?? 0) >= SOLO_LIMITS.eventsPerYear) {
+        throw new HttpError(
+          403,
+          `The Solo plan includes ${SOLO_LIMITS.eventsPerYear} events a year, and ${year} is full. Upgrade to Team for unlimited events.`,
+        );
+      }
+    }
     const after: Event = {
       id,
       ownerId: ctx.workspaceId,
@@ -273,6 +315,7 @@ export const events = {
         .select({
           workspaceId: s.workspaces.id,
           calendarYear: sql<number>`${values.startsAt.getUTCFullYear()}::integer`.as("calendar_year"),
+          slot: nextEventQuotaSlot(ctx.workspaceId, values.startsAt.getUTCFullYear()).as("slot"),
           eventId: sql<string>`${id}::text`.as("event_id"),
         })
         .from(s.workspaces)
@@ -293,7 +336,10 @@ export const events = {
       await db.batch([entitlementLock, eventInsert, quotaInsert, historyInsert]);
     } catch (error) {
       if (isQuotaConflict(error)) {
-        throw new HttpError(403, `The Solo plan includes one event in ${values.startsAt.getUTCFullYear()}. Upgrade to create another.`);
+        throw new HttpError(
+          403,
+          `The Solo plan includes ${SOLO_LIMITS.eventsPerYear} events in ${values.startsAt.getUTCFullYear()}. Upgrade to create another.`,
+        );
       }
       throw error;
     }
@@ -362,6 +408,7 @@ export const events = {
         .select({
           workspaceId: s.workspaces.id,
           calendarYear: sql<number>`${new Date(after.date).getUTCFullYear()}::integer`.as("calendar_year"),
+          slot: nextEventQuotaSlot(ctx.workspaceId, new Date(after.date).getUTCFullYear()).as("slot"),
           eventId: sql<string>`${id}::text`.as("event_id"),
         })
         .from(s.workspaces)
@@ -389,7 +436,10 @@ export const events = {
       ]);
     } catch (error) {
       if (isQuotaConflict(error)) {
-        throw new HttpError(403, `The Solo plan already has an event in ${new Date(after.date).getUTCFullYear()}.`);
+        throw new HttpError(
+          403,
+          `The Solo plan already has ${SOLO_LIMITS.eventsPerYear} events in ${new Date(after.date).getUTCFullYear()}.`,
+        );
       }
       throw error;
     }
@@ -2156,14 +2206,38 @@ export const members = {
             and(
               eq(s.workspaces.id, ctx.workspaceId),
               isNull(s.workspaces.stripeCheckoutSessionId),
-              or(ne(s.workspaces.subscriptionStatus, "active"), ne(s.workspaces.subscriptionPlan, "solo")),
+              /*
+               * Solo buys a seat count, not zero collaboration.
+               *
+               * The seat total is counted inside the same INSERT ... SELECT, under the
+               * advisory lock taken above, so two owners inviting at once cannot both
+               * read "one seat left" and both take it. Unclaimed invites count: a seat
+               * that has been offered is spent until it is revoked, otherwise a Solo
+               * workspace could hold out ten invitations and let whoever answers first
+               * through.
+               */
+              or(
+                ne(s.workspaces.subscriptionStatus, "active"),
+                ne(s.workspaces.subscriptionPlan, "solo"),
+                sql`(
+                  (select count(*) from ${s.workspaceMembers} where ${s.workspaceMembers.workspaceId} = ${s.workspaces.id})
+                  + (select count(*) from ${s.workspaceInvites}
+                     where ${s.workspaceInvites.workspaceId} = ${s.workspaces.id}
+                       and ${s.workspaceInvites.acceptedAt} is null)
+                ) < ${SOLO_LIMITS.teamMembers}`,
+              ),
             ),
           ),
       )
       .returning();
     const [, createdRows] = await db.batch([entitlementLock, inviteInsert]);
     const created = createdRows[0];
-    if (!created) throw new HttpError(403, "The Solo plan includes one workspace owner. Upgrade to invite teammates.");
+    if (!created) {
+      throw new HttpError(
+        403,
+        `The Solo plan includes ${SOLO_LIMITS.teamMembers} team members, and this workspace has used them. Upgrade to Team to invite more.`,
+      );
+    }
 
     const emailSent = await sendInvitationEmail(email, invitationAcceptanceUrl(appOrigin()));
 

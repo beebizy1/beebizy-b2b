@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./db", () => ({ db: {} }));
 
 const { handleStripeWebhook, validateSoloPrice } = await import("./billing");
+const { SOLO_PRICE_OPTIONS } = await import("../data/plans");
 
 function price(overrides: Partial<Stripe.Price> = {}): Stripe.Price {
   return {
@@ -11,7 +12,7 @@ function price(overrides: Partial<Stripe.Price> = {}): Stripe.Price {
     currency: "usd",
     livemode: false,
     recurring: { interval: "month", interval_count: 1, usage_type: "licensed" },
-    unit_amount: 7_900,
+    unit_amount: SOLO_PRICE_OPTIONS.month.amountCents,
     ...overrides,
   } as Stripe.Price;
 }
@@ -21,7 +22,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("Stripe Solo price validation", () => {
   it("accepts only the amount, currency, and interval advertised by Beebizy", () => {
     expect(() => validateSoloPrice(price(), "month")).not.toThrow();
-    expect(() => validateSoloPrice(price({ unit_amount: 7_901 }), "month")).toThrow(/does not match/);
+    expect(() => validateSoloPrice(price({ unit_amount: SOLO_PRICE_OPTIONS.month.amountCents + 1 }), "month")).toThrow(/does not match/);
     expect(() => validateSoloPrice(price({ currency: "eur" }), "month")).toThrow(/does not match/);
     expect(() =>
       validateSoloPrice(

@@ -91,6 +91,40 @@ describe("public lead endpoint", () => {
     log.mockRestore();
   });
 
+  it("carries the plan and what they wrote into the email", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("MAIL_TO", "hello@beebizy.com");
+    vi.stubEnv("RESEND_API_KEY", "resend-test-key");
+    const sendEmail = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{"id":"email-2"}', { status: 200 }));
+
+    const notes = "Four galas and a summit. ".repeat(40);
+    const response = await handleRequest(
+      leadRequest("POST", {
+        name: "Grace",
+        email: "grace@example.com",
+        company: "Northwind",
+        phone: "555-0100",
+        plan: "Enterprise (Colony)",
+        notes,
+      }),
+    );
+    expect(response.status).toBe(200);
+
+    const sent = JSON.parse(String((sendEmail.mock.calls[0]?.[1] as RequestInit | undefined)?.body));
+    expect(sent.subject).toBe("Enterprise (Colony) enquiry - Northwind");
+    expect(sent.to).toEqual(["hello@beebizy.com"]);
+    expect(sent.reply_to).toBe("grace@example.com");
+    for (const detail of ["Grace", "grace@example.com", "Northwind", "555-0100", "Enterprise (Colony)"]) {
+      expect(sent.text).toContain(detail);
+    }
+    // The message survives past the 200-character cap the short fields use.
+    expect(sent.text).toContain(notes.trim().slice(0, 400));
+
+    vi.unstubAllEnvs();
+    sendEmail.mockRestore();
+    log.mockRestore();
+  });
+
   it("does not report success when email delivery fails", async () => {
     vi.stubEnv("MAIL_TO", "hello@beebizy.com");
     vi.stubEnv("RESEND_API_KEY", "resend-test-key");

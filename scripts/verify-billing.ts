@@ -78,20 +78,31 @@ try {
   await db.insert(workspaces).values({ id: workspaceId, name: "Billing verification" });
   await db.insert(workspaceMembers).values({ workspaceId, userId: ctx.userId, role: "owner" });
 
-  await db.insert(workspaceMembers).values({ workspaceId, userId: `${ctx.userId}_extra`, role: "member" });
-  const extraSeat = await createCheckoutSession(ctx, "month", request).then(() => false, (error) => /one user/i.test(String(error)));
-  if (!extraSeat) throw new Error("Solo Checkout did not reject an extra workspace member.");
-  await db.delete(workspaceMembers).where(eq(workspaceMembers.userId, `${ctx.userId}_extra`));
+  await db.insert(workspaceMembers).values([
+    { workspaceId, userId: `${ctx.userId}_extra_1`, role: "member" },
+    { workspaceId, userId: `${ctx.userId}_extra_2`, role: "member" },
+  ]);
+  const extraSeat = await createCheckoutSession(ctx, "month", request).then(
+    () => false,
+    (error) => /2 total team members/i.test(String(error)),
+  );
+  if (!extraSeat) throw new Error("Solo Checkout did not reject a third workspace member.");
+  await db.delete(workspaceMembers).where(eq(workspaceMembers.workspaceId, workspaceId));
+  await db.insert(workspaceMembers).values({ workspaceId, userId: ctx.userId, role: "owner" });
 
   const eventDate = new Date(Date.UTC(new Date().getUTCFullYear() + 1, 5, 1)).toISOString();
   const eventA = await repos.events.create(ctx, { title: "Checkout event A", date: eventDate, category: "Test" });
   const eventB = await repos.events.create(ctx, { title: "Checkout event B", date: eventDate, category: "Test" });
+  const eventC = await repos.events.create(ctx, { title: "Checkout event C", date: eventDate, category: "Test" });
+  const eventD = await repos.events.create(ctx, { title: "Checkout event D", date: eventDate, category: "Test" });
   const eventOverage = await createCheckoutSession(ctx, "month", request).then(
     () => false,
-    (error) => /one event per calendar year/i.test(String(error)),
+    (error) => /3 events per calendar year/i.test(String(error)),
   );
   if (!eventOverage) throw new Error("Solo Checkout did not reject an existing annual event overage.");
   await repos.events.remove(ctx, eventB.id);
+  await repos.events.remove(ctx, eventC.id);
+  await repos.events.remove(ctx, eventD.id);
 
   const concurrent = await Promise.allSettled([
     createCheckoutSession(ctx, "month", request),
@@ -135,7 +146,7 @@ try {
   }
 
   console.log("PASS  concurrent Checkout requests create only one session");
-  console.log("PASS  Solo Checkout rejects extra seats and annual event overages");
+  console.log("PASS  Solo Checkout rejects a third member and a fourth annual event");
   console.log("PASS  switching interval returns the requested recurring price");
   console.log("PASS  repeated Checkout reuses the existing open session");
   console.log("PASS  sandbox verification completed without a payment method or charge");

@@ -5,7 +5,7 @@ import { BrandLogoLink } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/data/provider";
 import { useSession } from "@/app/session";
-import { SOLO_PRICE_OPTIONS, type BillingInterval } from "@/data/plans";
+import { SOLO_FEATURES, SOLO_LIMITS, SOLO_PRICE_OPTIONS, type BillingInterval } from "@/data/plans";
 import { cn } from "@/lib/utils";
 
 type PlanCard = {
@@ -13,13 +13,14 @@ type PlanCard = {
   audience: string;
   price: string;
   cadence: string;
+  facts?: string[];
+  featuresTitle?: string;
   features: string[];
+  note?: string;
   cta: string;
   featured?: boolean;
   selfServe?: boolean;
 };
-
-const CONTACT_EMAIL = "hello@beebizy.com";
 
 const plans = (interval: BillingInterval): PlanCard[] => [
   {
@@ -27,47 +28,48 @@ const plans = (interval: BillingInterval): PlanCard[] => [
     audience: "For independent planners running focused events",
     price: SOLO_PRICE_OPTIONS[interval].display,
     cadence: interval === "month" ? "per month" : "per year",
-    features: [
-      "One event per calendar year",
-      "AI-assisted run-of-show builder",
-      "Editable checklist templates",
-      "Single event calendar",
-      "Budget planning and tracking",
+    facts: [
+      `${SOLO_LIMITS.eventsPerYear} events per year`,
+      `${SOLO_LIMITS.teamMembers} total team members`,
+      "0% Beebizy registration fee",
     ],
+    featuresTitle: "Five core features included",
+    features: [...SOLO_FEATURES],
+    note: "Zero Beebizy registration fees. Standard Stripe or card-processing fees may still apply to ticket payments.",
     cta: "Choose Solo",
     selfServe: true,
   },
   {
     name: "Team (Hive)",
     audience: "For lean event teams that plan together",
-    price: "$50K",
-    cadence: "per year",
+    price: "Contact sales",
+    cadence: "",
     features: [
       "Everything in Solo",
-      "Multi-user collaboration",
+      "Unlimited events and team members",
       "Vendor management",
       "Inspiration boards and contingency planning",
     ],
-    cta: "Talk to sales",
+    cta: "Contact sales",
     featured: true,
   },
   {
     name: "Enterprise (Colony)",
     audience: "For distributed organizations and hospitality groups",
-    price: "$100K-$200K",
-    cadence: "per year",
+    price: "Contact sales",
+    cadence: "",
     features: [
       "Everything in Team",
       "Multi-location calendars",
       "Custom integrations",
       "Dedicated support and reporting",
     ],
-    cta: "Talk to sales",
+    cta: "Contact sales",
   },
 ];
 
 export default function PricingPage() {
-  const [interval, setInterval] = useState<BillingInterval>("year");
+  const [interval, setInterval] = useState<BillingInterval>("month");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { status } = useSession();
@@ -114,7 +116,7 @@ export default function PricingPage() {
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary-text">Simple, flexible pricing</p>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight sm:text-6xl">A plan for every kind of event team</h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Start with the planning essentials, then add collaboration, locations, and reporting as your events grow.
+            Solo gives independent planners five essential tools, predictable limits, and no Beebizy registration fees.
           </p>
         </div>
 
@@ -173,11 +175,24 @@ export default function PricingPage() {
                 <p className="mt-2 min-h-12 text-sm leading-relaxed text-muted-foreground">{plan.audience}</p>
               </div>
               <div className="mt-8 flex items-end gap-2">
-                <span className={cn("font-extrabold tracking-tight", plan.name.startsWith("Enterprise") ? "text-3xl" : "text-5xl")} data-numeric>
+                <span
+                  className={cn("font-extrabold tracking-tight", plan.selfServe ? "text-5xl" : "text-3xl")}
+                  data-numeric={plan.selfServe ? true : undefined}
+                >
                   {plan.price}
                 </span>
                 <span className="pb-1 text-sm text-muted-foreground">{plan.cadence}</span>
               </div>
+
+              {plan.facts ? (
+                <div className="mt-6 grid grid-cols-3 divide-x divide-primary/20 rounded-xl border border-primary/20 bg-primary/8 py-3">
+                  {plan.facts.map((fact) => (
+                    <p key={fact} className="px-2 text-center text-xs font-semibold leading-snug text-foreground">
+                      {fact}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
 
               {plan.selfServe ? (
                 <Button className="mt-7 w-full" size="lg" onClick={() => void chooseSolo()} disabled={loading}>
@@ -186,14 +201,15 @@ export default function PricingPage() {
                 </Button>
               ) : (
                 <Button asChild className="mt-7 w-full" size="lg" variant={plan.featured ? "default" : "outline"}>
-                  <a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Beebizy ${plan.name} plan`)}`}>
+                  <Link href={`/contact-sales?plan=${encodeURIComponent(plan.name)}`}>
                     {plan.cta}
                     <ArrowRight aria-hidden="true" />
-                  </a>
+                  </Link>
                 </Button>
               )}
 
               <div className="my-7 h-px bg-hairline" />
+              {plan.featuresTitle ? <p className="mb-4 text-sm font-bold">{plan.featuresTitle}</p> : null}
               <ul className="space-y-4 text-sm">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-3">
@@ -204,6 +220,7 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
+              {plan.note ? <p className="mt-auto pt-7 text-xs leading-relaxed text-muted-foreground">{plan.note}</p> : null}
             </article>
           ))}
         </section>

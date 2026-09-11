@@ -127,6 +127,13 @@
       "when": 1789072482290,
       "tag": "0017_deep_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789093038168,
+      "tag": "0018_late_silver_fox",
+      "breakpoints": true
     }
   ]
 }

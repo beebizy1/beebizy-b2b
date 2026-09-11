@@ -38,7 +38,7 @@ import { useData, useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
 import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
-import { effectivePlan, PLAN_NAMES, planHasCapability } from "@/data/plans";
+import { effectivePlan, PLAN_NAMES } from "@/data/plans";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
@@ -355,7 +355,6 @@ export default function Settings() {
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
   const prefs = usePreferences();
-  const plan = effectivePlan(me?.access);
 
   const save = (patch: Partial<UserSettings>, message: string) => {
     updateSettings.mutate(patch, {
@@ -457,16 +456,7 @@ export default function Settings() {
 
       <BillingPanel />
 
-      {planHasCapability(plan, "collaboration") ? (
-        <TeamPanel />
-      ) : (
-        <Panel>
-          <PanelHeader title="Team & permissions" description="Multi-user collaboration is available on the Team plan." />
-          <div className="p-5">
-            <Button asChild size="sm"><Link href="/pricing">Compare plans</Link></Button>
-          </div>
-        </Panel>
-      )}
+      <TeamPanel />
 
       <Panel>
         <PanelHeader title="Account" />
