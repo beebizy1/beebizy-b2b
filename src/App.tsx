@@ -145,10 +145,11 @@ function AppRoutes() {
 function Routes() {
   return (
     <Switch>
-      {/* Pricing is the front door only when it has something to sell. While self-serve
-          billing is paused the marketing page takes the slot, so nobody lands on prices
-          we are not ready to honour. */}
-      <Route path="/" component={SELF_SERVE_BILLING_ENABLED ? PricingPage : LandingPage} />
+      {/* Studio is the front door, and the guard behind it sends anyone without a session
+          to sign in. Pricing held this slot while Solo was sold self-serve; putting a
+          price list in front of an approved-accounts product only asks people to shop for
+          something they cannot buy here. */}
+      <Route path="/">{() => <Redirect to="/app" replace />}</Route>
       <Route path="/marketing-preview" component={LandingPage} />
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />

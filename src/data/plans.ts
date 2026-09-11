@@ -64,7 +64,7 @@ export const SOLO_TRIAL_DAYS = 30;
  * Turn it back on once the live Stripe account is connected - one line here, and the
  * server refuses Checkout independently so the two cannot drift apart.
  */
-export const SELF_SERVE_BILLING_ENABLED = true;
+export const SELF_SERVE_BILLING_ENABLED = false;
 
 /**
  * What a Solo subscription actually includes.
