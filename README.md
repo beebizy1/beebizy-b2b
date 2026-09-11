@@ -148,6 +148,17 @@ the API and shown explicitly in the app.
 The in-memory adapter remains the intentional public demo backend. Its writes are
 session-scoped and are never mixed with authenticated workspaces.
 
+## Static asset caching
+
+`vercel.json` deliberately sets **no** `Cache-Control` override on `/assets/*`.
+
+A Vercel `headers` rule matches on path, not on status, so `max-age=31536000, immutable`
+was also stamped onto 404s for that prefix. A browser that requested a hashed bundle in
+the seconds between a new `index.html` going live and that asset propagating cached the
+404 for a year, and `immutable` meant it would never revalidate: the app rendered a blank
+page with no console error, and reloading could not clear it. Vite already fingerprints
+these filenames and Vercel caches its own static output, so the override bought nothing.
+
 ## Conventions
 
 - Semantic tokens only in screens (`bg-surface`, `text-muted-foreground`,
