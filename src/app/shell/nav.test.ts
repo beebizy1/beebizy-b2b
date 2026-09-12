@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNavActive, NAV_ITEMS, visibleEventTabs, visibleNavItems } from "./nav";
+import { isAppPathAllowed, isNavActive, NAV_ITEMS, visibleEventTabs, visibleNavItems } from "./nav";
 
 describe("product navigation", () => {
   it("lists the twelve destinations in the reference order", () => {
@@ -43,5 +43,26 @@ describe("product navigation", () => {
     expect(visibleNavItems(false, "team").map((item) => item.label)).not.toContain("Reporting");
     expect(visibleEventTabs("solo").map((item) => item.label)).not.toContain("Contingency");
     expect(visibleEventTabs("team").map((item) => item.label)).toContain("Contingency");
+  });
+
+  it("shows only the Santa Clara pilot workflow for that workspace experience", () => {
+    expect(visibleNavItems(false, "enterprise", "santa-clara").map((item) => item.label)).toEqual([
+      "Dashboard",
+      "Events",
+      "Import spreadsheet",
+    ]);
+    expect(visibleEventTabs("enterprise", "santa-clara").map((item) => item.label)).toEqual([
+      "Run of Show",
+      "Checklist",
+      "Budget",
+      "Floorplan",
+      "Registrations",
+      "Check-in",
+      "Volunteers",
+    ]);
+    expect(isAppPathAllowed("/app/events/event-1/checklist", "santa-clara")).toBe(true);
+    expect(isAppPathAllowed("/app/plan", "santa-clara")).toBe(true);
+    expect(isAppPathAllowed("/app/vendors", "santa-clara")).toBe(false);
+    expect(isAppPathAllowed("/app/fundraising", "santa-clara")).toBe(false);
   });
 });

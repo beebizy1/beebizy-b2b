@@ -127,8 +127,14 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
         ...plan.runOfShow.map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
         ...plan.moodBoard.map((reference) => addMood.mutateAsync({ eventId: created.id, ...reference })),
         ...plan.guests.map(async (draft) => {
-          const guest = await createGuest.mutateAsync(draft);
-          return createRegistration.mutateAsync({ eventId: created.id, guestId: guest.id, status: "confirmed" });
+          const guest = await createGuest.mutateAsync({ name: draft.name, contact: draft.contact, notes: draft.notes });
+          return createRegistration.mutateAsync({
+            eventId: created.id,
+            guestId: guest.id,
+            status: "confirmed",
+            segment: draft.segment,
+            organization: draft.organization,
+          });
         }),
         // A service on the sheet becomes a vendor in the directory and a booking on this
         // event, so the fee lands on the budget rather than only in the address book.
@@ -148,7 +154,7 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
           ? `${results.length - failed} of ${results.length} supporting records were added. Review the event workspace.`
           : "The event and its planning records are ready to review.",
       });
-      navigate(`/app/events/${created.id}/plan`);
+      navigate(`/app/events/${created.id}/run-of-show`);
     } catch (error) {
       toast({ title: "The event could not be created", description: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -376,7 +382,9 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
           {plan.guests.map((guest, index) => (
             <li key={`${guest.contact}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
               <span className="min-w-0 flex-1 truncate text-foreground">{guest.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{guest.contact}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {[guest.segment, guest.organization, guest.contact].filter(Boolean).join(" · ")}
+              </span>
               <RemoveButton label={guest.name} onClick={() => setPlan({ ...plan, guests: plan.guests.filter((_, itemIndex) => itemIndex !== index) })} />
             </li>
           ))}

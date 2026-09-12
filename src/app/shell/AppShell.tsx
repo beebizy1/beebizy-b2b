@@ -31,6 +31,7 @@ import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
 import { effectivePlan, SELF_SERVE_BILLING_ENABLED, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
+import type { WorkspaceExperience } from "@/data/workspaceExperience";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -86,10 +87,12 @@ function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; 
 
 function SidebarContent({
   canReviewFeedback,
+  experience,
   plan,
   onNavigate,
 }: {
   canReviewFeedback: boolean;
+  experience: WorkspaceExperience;
   plan: PlanId;
   onNavigate?: () => void;
 }) {
@@ -104,12 +107,12 @@ function SidebarContent({
           <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Customized for
           </p>
-          <WorkspaceMark label={user?.name ?? "Beebizy Studio"} />
+          <WorkspaceMark label={experience === "santa-clara" ? "Santa Clara University" : user?.name ?? "Beebizy Studio"} />
         </div>
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3">
-        {visibleNavItems(canReviewFeedback, plan).map((item) => (
+        {visibleNavItems(canReviewFeedback, plan, experience).map((item) => (
           <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} onNavigate={onNavigate} />
         ))}
       </nav>
@@ -117,14 +120,16 @@ function SidebarContent({
       <div className="space-y-2 border-t border-sidebar-border p-4">
         {/* Points at sales while self-serve billing is paused; there is no price list to
             send anyone to. */}
-        <Link
-          href={SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales"}
-          onClick={onNavigate}
-          className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <BadgeDollarSign className="size-4" aria-hidden="true" />
-          {SELF_SERVE_BILLING_ENABLED ? "Plans & pricing" : "Talk to us about plans"}
-        </Link>
+        {experience === "standard" ? (
+          <Link
+            href={SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales"}
+            onClick={onNavigate}
+            className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <BadgeDollarSign className="size-4" aria-hidden="true" />
+            {SELF_SERVE_BILLING_ENABLED ? "Plans & pricing" : "Talk to us about plans"}
+          </Link>
+        ) : null}
         {/* Settings used to live in the account menu. Removing the top bar took that
             menu with it, so the only way in is the footer. */}
         <Link
@@ -290,7 +295,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 md:block">
-        <SidebarContent canReviewFeedback={identity?.canReviewFeedback ?? false} plan={plan} />
+        <SidebarContent
+          canReviewFeedback={identity?.canReviewFeedback ?? false}
+          experience={identity?.experience ?? "standard"}
+          plan={plan}
+        />
       </aside>
 
       <div className="fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-border bg-background px-4 md:hidden">
@@ -304,6 +313,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <SidebarContent
               canReviewFeedback={identity?.canReviewFeedback ?? false}
+              experience={identity?.experience ?? "standard"}
               plan={plan}
               onNavigate={() => setMobileOpen(false)}
             />
@@ -322,6 +332,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <CommandPalette
         canReviewFeedback={identity?.canReviewFeedback ?? false}
+        experience={identity?.experience ?? "standard"}
         plan={plan}
         open={open}
         onOpenChange={setOpen}

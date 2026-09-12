@@ -193,6 +193,19 @@ export default function AIPlanner() {
     }
   };
 
+  if (identity?.experience === "santa-clara") {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Santa Clara pilot workspace"
+          title="Import an existing event plan"
+          description="Bring in the team's Excel, CSV, or Google Sheet and review every recognized record before creating the event."
+        />
+        <SpreadsheetImporter onBack={() => navigate("/app")} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader

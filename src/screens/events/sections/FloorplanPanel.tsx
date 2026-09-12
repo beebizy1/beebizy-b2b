@@ -51,6 +51,8 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   dancefloor: { label: "Dance floor", width: 24, height: 20, seats: null, round: false, className: "bg-surface-sunken border-dashed border-muted-foreground/50 text-muted-foreground" },
   booth: { label: "Booth", width: 10, height: 10, seats: 4, round: false, className: "bg-warning-tint border-warning/40 text-warning-text" },
   av: { label: "AV desk", width: 9, height: 7, seats: null, round: false, className: "bg-muted border-muted-foreground/40 text-muted-foreground" },
+  tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
+  chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));

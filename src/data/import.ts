@@ -27,10 +27,17 @@ export interface EventImportPlan {
   runOfShow: RunOfShowItemDraft[];
   budget: BudgetItemDraft[];
   moodBoard: ImportedMoodReference[];
-  guests: GuestDraft[];
+  guests: ImportedGuest[];
   /** Suppliers from a Services or Vendors sheet, with the fee agreed for this event. */
   vendors: ImportedVendor[];
   warnings: string[];
+}
+
+export interface ImportedGuest extends GuestDraft {
+  /** Event-specific grouping, such as Investor, Company or General. */
+  segment: string | null;
+  /** The fund, business or school this guest represents. */
+  organization: string | null;
 }
 
 export interface ImportedVendor {
@@ -82,6 +89,8 @@ const aliases = {
   caption: ["caption", "description", "notes", "direction"],
   guestName: ["guest name", "attendee name", "name"],
   email: ["email", "email address", "contact", "guest email"],
+  guestSegment: ["guest type", "registration type", "segment", "group", "category", "lifecycle stage"],
+  guestOrganization: ["organization", "organisation", "company", "firm", "school", "fund"],
   // Plurals matter: a column headed SERVICES is at least as common as SERVICE, and
   // matching is exact after normalising, so both spellings have to be listed.
   vendorName: [
@@ -353,11 +362,17 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
   });
 
   const guestTable = tableFor(tables, "guests", [/guests?/, /attendees?/, /invitees?/]);
-  const guests = (guestTable?.rows ?? []).flatMap((row): GuestDraft[] => {
+  const guests = (guestTable?.rows ?? []).flatMap((row): ImportedGuest[] => {
     const name = stringFrom(row, guestTable!, aliases.guestName);
     const contact = stringFrom(row, guestTable!, aliases.email);
     if (!name || !contact) return [];
-    return [{ name, contact, notes: stringFrom(row, guestTable!, aliases.description) || null }];
+    return [{
+      name,
+      contact,
+      notes: stringFrom(row, guestTable!, aliases.description) || null,
+      segment: stringFrom(row, guestTable!, aliases.guestSegment) || null,
+      organization: stringFrom(row, guestTable!, aliases.guestOrganization) || null,
+    }];
   });
 
   /* ------------------------------------------------------------------ vendors */

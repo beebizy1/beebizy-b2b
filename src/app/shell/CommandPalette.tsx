@@ -24,6 +24,7 @@ import { useEvents } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import { visibleNavItems } from "./nav";
 import { planHasCapability, type PlanId } from "@/data/plans";
+import type { WorkspaceExperience } from "@/data/workspaceExperience";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
   const [open, setOpen] = useState(false);
@@ -72,11 +73,13 @@ function score(value: string, search: string): number {
 
 export function CommandPalette({
   canReviewFeedback,
+  experience,
   plan,
   open,
   onOpenChange,
 }: {
   canReviewFeedback: boolean;
+  experience: WorkspaceExperience;
   plan: PlanId;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -119,22 +122,24 @@ export function CommandPalette({
                 <Plus className="mr-2 size-4" aria-hidden="true" />
                 New event
               </CommandItem>
-              {planHasCapability(plan, "vendorManagement") ? (
+              {experience === "standard" && planHasCapability(plan, "vendorManagement") ? (
                 <CommandItem value="new vendor supplier create" onSelect={() => go("/app/vendors/new")}>
                   <Store className="mr-2 size-4" aria-hidden="true" />
                   New vendor
                 </CommandItem>
               ) : null}
-              <CommandItem value="new guest person create" onSelect={() => go("/app/guests/new")}>
-                <UserPlus className="mr-2 size-4" aria-hidden="true" />
-                New guest
-              </CommandItem>
+              {experience === "standard" ? (
+                <CommandItem value="new guest person create" onSelect={() => go("/app/attendees/new")}>
+                  <UserPlus className="mr-2 size-4" aria-hidden="true" />
+                  New guest
+                </CommandItem>
+              ) : null}
             </CommandGroup>
 
             <CommandSeparator />
 
             <CommandGroup heading="Go to">
-              {visibleNavItems(canReviewFeedback, plan).map((item) => (
+              {visibleNavItems(canReviewFeedback, plan, experience).map((item) => (
                 <CommandItem key={item.href} value={`${item.label} ${item.hint}`} onSelect={() => go(item.href)}>
                   <item.icon className="mr-2 size-4" aria-hidden="true" />
                   <span>{item.label}</span>
@@ -162,18 +167,21 @@ export function CommandPalette({
               </>
             ) : null}
 
-            <CommandSeparator />
-
-            <CommandGroup heading="Preferences">
-              <CommandItem value="tasks open checklist todo" onSelect={() => go("/app/tasks")}>
-                <ListChecks className="mr-2 size-4" aria-hidden="true" />
-                All open tasks
-              </CommandItem>
-              <CommandItem value="settings preferences" onSelect={() => go("/app/settings")}>
-                <Search className="mr-2 size-4" aria-hidden="true" />
-                Settings
-              </CommandItem>
-            </CommandGroup>
+            {experience === "standard" ? (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Preferences">
+                  <CommandItem value="tasks open checklist todo" onSelect={() => go("/app/tasks")}>
+                    <ListChecks className="mr-2 size-4" aria-hidden="true" />
+                    All open tasks
+                  </CommandItem>
+                  <CommandItem value="settings preferences" onSelect={() => go("/app/settings")}>
+                    <Search className="mr-2 size-4" aria-hidden="true" />
+                    Settings
+                  </CommandItem>
+                </CommandGroup>
+              </>
+            ) : null}
           </CommandList>
         </Command>
       </DialogContent>

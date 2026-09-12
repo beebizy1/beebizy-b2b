@@ -65,7 +65,13 @@ describe("spreadsheet import", () => {
       expect.objectContaining({ name: "Ticket sales", type: "revenue", estimatedCents: 5_000_000, actualCents: 5_250_000 }),
     ]);
     expect(plan.moodBoard).toEqual([{ url: "https://example.com/look.jpg", caption: "Warm floral direction" }]);
-    expect(plan.guests).toEqual([{ name: "Ada Lovelace", contact: "ada@example.com", notes: "VIP" }]);
+    expect(plan.guests).toEqual([{
+      name: "Ada Lovelace",
+      contact: "ada@example.com",
+      notes: "VIP",
+      segment: null,
+      organization: null,
+    }]);
     expect(plan.warnings).toEqual([]);
   });
 
@@ -227,6 +233,17 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
   it("imports a guest list", () => {
     const plan = asGoogleSheet("Guest Name,Email\nPriya Raghunathan,priya@example.com");
     expect(plan.guests.map((g) => g.name)).toEqual(["Priya Raghunathan"]);
+  });
+
+  it("keeps Santa Clara guest type and organization on a full event import", () => {
+    const plan = asGoogleSheet(
+      "Guest Name,Email,Guest Type,Company\nPriya Raghunathan,priya@example.com,Investor,Acme Ventures",
+    );
+    expect(plan.guests[0]).toMatchObject({
+      name: "Priya Raghunathan",
+      segment: "Investor",
+      organization: "Acme Ventures",
+    });
   });
 
   it("imports a run of show", () => {

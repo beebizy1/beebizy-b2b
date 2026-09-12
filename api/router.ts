@@ -20,6 +20,7 @@ import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../src/data/feedback.ts";
 import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
 import { effectivePlan, planHasCapability, type PlanCapability } from "../src/data/plans.ts";
+import { workspaceExperienceForEmail } from "../src/data/workspaceExperience.ts";
 import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
 import { z, ZodError } from "zod";
 
@@ -270,6 +271,7 @@ async function handleAuthed(
         workspaceId: ctx.workspaceId,
         role: ctx.role,
         canReviewFeedback: isBeebizyOperator(ctx.email),
+        experience: workspaceExperienceForEmail(ctx.email),
         access: ctx.access,
       });
 

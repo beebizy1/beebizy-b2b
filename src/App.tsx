@@ -11,7 +11,7 @@
  * `/dashboard/*` now redirects into `/app` so existing links keep working.
  */
 
-import { Redirect, Route, Router as WouterRouter, Switch } from "wouter";
+import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
@@ -68,6 +68,7 @@ import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
+import { isAppPathAllowed } from "@/app/shell/nav";
 
 function PlanGate({ capability, children }: { capability: PlanCapability; children: React.ReactNode }) {
   const { data: identity, isLoading } = useMe();
@@ -91,11 +92,20 @@ const queryClient = new QueryClient({
 });
 
 /** Everything inside the product chrome. */
+function WorkspaceExperienceGate({ children }: { children: React.ReactNode }) {
+  const [pathname] = useLocation();
+  const { data: identity, isLoading } = useMe();
+  if (isLoading || !identity) return null;
+  if (!isAppPathAllowed(pathname, identity.experience)) return <Redirect to="/app" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <RequireSession>
       <AppShell>
-        <Switch>
+        <WorkspaceExperienceGate>
+          <Switch>
           <Route path="/app" component={Today} />
           <Route path="/app/plan" component={AIPlanner} />
           <Route path="/app/calendar" component={CalendarView} />
@@ -135,8 +145,9 @@ function AppRoutes() {
           <Route path="/app/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
           <Route path={FEEDBACK_INBOX_PATH} component={FeedbackInbox} />
-          <Route component={NotFound} />
-        </Switch>
+            <Route component={NotFound} />
+          </Switch>
+        </WorkspaceExperienceGate>
       </AppShell>
     </RequireSession>
   );

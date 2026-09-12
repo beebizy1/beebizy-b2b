@@ -1826,6 +1826,7 @@ export const memoryAdapter: DataAdapter = {
       workspaceId: DEMO_OWNER_ID,
       role: "owner",
       canReviewFeedback: false,
+      experience: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" ? "santa-clara" : "standard",
       access: {
         status: "beta",
         plan: null,

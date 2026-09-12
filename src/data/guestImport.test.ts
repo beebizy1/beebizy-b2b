@@ -4,9 +4,16 @@ import { GUEST_CSV_TEMPLATE, parseGuestCsv } from "./guestImport";
 describe("parseGuestCsv", () => {
   it("reads the template it hands out", () => {
     const { rows, matched } = parseGuestCsv(GUEST_CSV_TEMPLATE);
-    expect(matched).toEqual({ name: "name", contact: "email", notes: "notes", organization: null, segment: null });
+    expect(matched).toEqual({ name: "name", contact: "email", notes: "notes", organization: "company", segment: "guest type" });
     expect(rows.filter((r) => r.problem === null)).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ line: 2, name: "Jane Doe", contact: "jane@example.com", notes: "Vegetarian" });
+    expect(rows[0]).toMatchObject({
+      line: 2,
+      name: "Jane Doe",
+      contact: "jane@example.com",
+      notes: "Vegetarian",
+      organization: "Acme Ventures",
+      segment: "Investor",
+    });
     expect(rows[1]!.notes).toBeNull();
   });
 

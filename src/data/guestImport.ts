@@ -135,4 +135,4 @@ export function parseGuestCsv(source: string): GuestImportPreview {
 
 /** The header row we hand out, so an import that uses it always parses. */
 export const GUEST_CSV_TEMPLATE =
-  "name,email,notes\nJane Doe,jane@example.com,Vegetarian\nJohn Smith,john@example.com,\n";
+  "name,email,guest type,company,notes\nJane Doe,jane@example.com,Investor,Acme Ventures,Vegetarian\nJohn Smith,john@example.com,General,,\n";

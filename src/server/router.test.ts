@@ -161,6 +161,19 @@ describe("feedback endpoint", () => {
     },
   };
 
+  it("returns the focused experience for a verified Santa Clara account", async () => {
+    vi.mocked(authorize).mockResolvedValue({ ...context, email: "ccismasflorea@scu.edu" });
+
+    const response = await handleRequest(new Request("http://localhost/api/me"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      userId: context.userId,
+      workspaceId: context.workspaceId,
+      experience: "santa-clara",
+    });
+  });
+
   it("stores valid feedback for the authorized user", async () => {
     vi.mocked(authorize).mockResolvedValue(context);
     vi.mocked(feedback.create).mockResolvedValue({

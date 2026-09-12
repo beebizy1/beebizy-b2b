@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseFloorplanDraft } from "./floorplan";
+import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
+  it("supports Santa Clara site features and individual seating", () => {
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair"]));
+  });
   it("accepts a structured room layout", () => {
     expect(
       parseFloorplanDraft({

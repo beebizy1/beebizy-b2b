@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
 import { planHasCapability, type PlanCapability, type PlanId } from "@/data/plans";
+import type { WorkspaceExperience } from "@/data/workspaceExperience";
 
 export interface NavItem {
   label: string;
@@ -134,7 +135,23 @@ const FEEDBACK_REVIEW_NAV_ITEM: NavItem = {
   hint: "Private feedback inbox for the Beebizy product team",
 };
 
-export function visibleNavItems(canReviewFeedback: boolean, plan: PlanId = "enterprise"): NavItem[] {
+const SANTA_CLARA_NAV_ITEMS: NavItem[] = [
+  NAV_ITEMS[0]!,
+  NAV_ITEMS[3]!,
+  {
+    label: "Import spreadsheet",
+    href: "/app/plan",
+    icon: FileText,
+    hint: "Turn an Excel, CSV or Google Sheet plan into an event",
+  },
+];
+
+export function visibleNavItems(
+  canReviewFeedback: boolean,
+  plan: PlanId = "enterprise",
+  experience: WorkspaceExperience = "standard",
+): NavItem[] {
+  if (experience === "santa-clara") return SANTA_CLARA_NAV_ITEMS;
   const planItems = NAV_ITEMS.filter((item) => !item.capability || planHasCapability(plan, item.capability));
   return canReviewFeedback ? [...planItems, FEEDBACK_REVIEW_NAV_ITEM] : planItems;
 }
@@ -210,7 +227,26 @@ export const EVENT_TABS: EventTab[] = [
   { id: "deposits", label: "Deposits", slug: "deposits", icon: Banknote, hint: "Money committed to vendors before the day" },
 ];
 
-export function visibleEventTabs(plan: PlanId = "enterprise"): EventTab[] {
+const SANTA_CLARA_EVENT_TAB_IDS: readonly EventTabId[] = [
+  "run-of-show",
+  "checklist",
+  "budget",
+  "floorplan",
+  "registrations",
+  "check-in",
+  "volunteers",
+];
+
+export function visibleEventTabs(
+  plan: PlanId = "enterprise",
+  experience: WorkspaceExperience = "standard",
+): EventTab[] {
+  if (experience === "santa-clara") {
+    return SANTA_CLARA_EVENT_TAB_IDS.map((id) => {
+      const tab = EVENT_TABS.find((item) => item.id === id)!;
+      return id === "budget" ? { ...tab, label: "Budget", hint: "Budget line items, planned spend and actual spend" } : tab;
+    });
+  }
   return EVENT_TABS.filter((tab) => !tab.capability || planHasCapability(plan, tab.capability));
 }
 
@@ -261,4 +297,17 @@ export function tabFromSlug(slug: string | undefined): EventTabId | null {
 export function isNavActive(href: string, pathname: string): boolean {
   if (href === "/app") return pathname === "/app" || pathname === "/app/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Routes retained for the focused pilot. Event section access is narrowed separately. */
+export function isAppPathAllowed(pathname: string, experience: WorkspaceExperience): boolean {
+  if (experience === "standard") return true;
+  return (
+    pathname === "/app" ||
+    pathname === "/app/" ||
+    pathname === "/app/plan" ||
+    pathname === "/app/settings" ||
+    pathname === "/app/events" ||
+    pathname.startsWith("/app/events/")
+  );
 }

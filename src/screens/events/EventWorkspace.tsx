@@ -61,6 +61,7 @@ import { usePreferences, type Preferences } from "@/app/preferences";
 import { eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
+import type { WorkspaceExperience } from "@/data/workspaceExperience";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
@@ -98,7 +99,17 @@ function formatRange(event: Event, prefs: Preferences): string {
   return `${startText} – ${endText}`;
 }
 
-function SectionTabs({ eventId, active, plan }: { eventId: string; active: EventTabId; plan: PlanId }) {
+function SectionTabs({
+  eventId,
+  active,
+  plan,
+  experience,
+}: {
+  eventId: string;
+  active: EventTabId;
+  plan: PlanId;
+  experience: WorkspaceExperience;
+}) {
   const activeRef = useRef<HTMLAnchorElement>(null);
 
   // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
@@ -109,7 +120,7 @@ function SectionTabs({ eventId, active, plan }: { eventId: string; active: Event
 
   return (
     <nav aria-label="Event sections" className="-mb-px flex gap-1 overflow-x-auto">
-      {visibleEventTabs(plan).map((tab) => {
+      {visibleEventTabs(plan, experience).map((tab) => {
         const isActive = tab.id === active;
         return (
           <Link
@@ -160,11 +171,13 @@ function WorkspaceHeader({
   health,
   active,
   plan,
+  experience,
 }: {
   event: Event;
   health: EventHealth | null | undefined;
   active: EventTabId;
   plan: PlanId;
+  experience: WorkspaceExperience;
 }) {
   const [, navigate] = useLocation();
   const prefs = usePreferences();
@@ -231,14 +244,16 @@ function WorkspaceHeader({
                 Edit
               </Link>
             </Button>
-            <Button asChild size="sm">
-              <Link href={eventSectionHref(event.id, "share")}>
-                <Share2 className="mr-1.5 size-3.5" />
-                Share
-              </Link>
-            </Button>
+            {experience === "standard" ? (
+              <Button asChild size="sm">
+                <Link href={eventSectionHref(event.id, "share")}>
+                  <Share2 className="mr-1.5 size-3.5" />
+                  Share
+                </Link>
+              </Button>
+            ) : null}
 
-            <DropdownMenu>
+            {experience === "standard" ? <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" aria-label="More actions">
                   ···
@@ -264,7 +279,7 @@ function WorkspaceHeader({
                   Save as template
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu> : null}
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -305,10 +320,10 @@ function WorkspaceHeader({
         </div>
       </div>
 
-      {health ? <RiskStrip health={health} eventId={event.id} /> : null}
+      {health && experience === "standard" ? <RiskStrip health={health} eventId={event.id} /> : null}
 
       <div className="border-b border-hairline">
-        <SectionTabs eventId={event.id} active={active} plan={plan} />
+        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} />
       </div>
     </div>
   );
@@ -413,6 +428,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const { data: identity } = useMe();
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
+  const experience = identity?.experience ?? "standard";
 
   if (isLoading) {
     return (
@@ -444,13 +460,17 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     return <Redirect to={`/app/events/${id}`} replace />;
   }
 
-  if (!visibleEventTabs(plan).some((tab) => tab.id === active) && active !== "share") {
-    return <Redirect to="/pricing" replace />;
+  if (experience === "santa-clara" && active === "overview") {
+    return <Redirect to={eventTabHref(id, "run-of-show")} replace />;
+  }
+
+  if (!visibleEventTabs(plan, experience).some((tab) => tab.id === active) && (active !== "share" || experience !== "standard")) {
+    return <Redirect to={experience === "santa-clara" ? eventTabHref(id, "run-of-show") : "/pricing"} replace />;
   }
 
   return (
     <div className="space-y-6">
-      <WorkspaceHeader event={event} health={health} active={active} plan={plan} />
+      <WorkspaceHeader event={event} health={health} active={active} plan={plan} experience={experience} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}
@@ -465,12 +485,16 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
         </div>
       ) : null}
       {active === "budget" ? (
-        <div className="space-y-6">
-          <BudgetTotals event={event} />
+        experience === "santa-clara" ? (
           <BudgetPanel event={event} />
-          <BudgetRoiSummary event={event} />
-          <RoiPanel event={event} />
-        </div>
+        ) : (
+          <div className="space-y-6">
+            <BudgetTotals event={event} />
+            <BudgetPanel event={event} />
+            <BudgetRoiSummary event={event} />
+            <RoiPanel event={event} />
+          </div>
+        )
       ) : null}
       {active === "floorplan" ? <FloorplanPanel event={event} /> : null}
       {active === "inspiration" ? <MoodBoardPanel event={event} /> : null}

@@ -111,6 +111,7 @@ import type {
 } from "./entities";
 import type { BillingInterval, PlanId } from "./plans";
 import type { WorkspaceAccessStatus } from "./workspaceAccess";
+import type { WorkspaceExperience } from "./workspaceExperience";
 import type { PlanningBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 
@@ -304,6 +305,8 @@ export interface Identity {
   workspaceId: string;
   role: "owner" | "admin" | "member";
   canReviewFeedback: boolean;
+  /** Presentation profile selected from the verified account, never from client input. */
+  experience: WorkspaceExperience;
   access: {
     status: WorkspaceAccessStatus;
     plan: PlanId | null;

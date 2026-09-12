@@ -156,13 +156,15 @@ export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
  * becomes a one-click choice for everyone after.
  */
 export const REGISTRATION_SEGMENTS = [
+  "Investor",
+  "Company",
+  "General",
   "VIP",
   "Sponsor",
   "Speaker",
   "Staff",
   "Press",
   "Family",
-  "General",
 ] as const;
 
 export interface Registration extends OwnedRecord {
@@ -565,6 +567,8 @@ export const FLOORPLAN_SHAPES = [
   "dancefloor",
   "booth",
   "av",
+  "tree",
+  "chair",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
