@@ -72,7 +72,7 @@ export const workspaces = pgTable("workspaces", {
   clerkOrgId: text("clerk_org_id").unique(),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
-  /** Presentation profile belongs to the workspace so it never follows a person elsewhere. */
+  /** Retained for migration compatibility. Active pilot presentation is email-scoped. */
   experience: workspaceExperience("experience").notNull().default("standard"),
   subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
   /*

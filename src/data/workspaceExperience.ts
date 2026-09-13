@@ -7,10 +7,9 @@
 export const WORKSPACE_EXPERIENCES = ["standard", "santa-clara"] as const;
 export type WorkspaceExperience = (typeof WORKSPACE_EXPERIENCES)[number];
 
-/** Known pilot anchors, kept in one place for a clean rollback. */
+/** The only accounts that receive the focused Santa Clara presentation. */
 export const SANTA_CLARA_PILOT_EMAILS = [
   "ccismasflorea@scu.edu",
-  "poorvi@santaclaraventures.com",
   "poorvishukla27@gmail.com",
 ] as const;
 

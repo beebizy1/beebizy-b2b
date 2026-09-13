@@ -316,7 +316,6 @@ async function resolveWorkspace(
       subscriptionStatus: staff ? "active" : pilot ? "beta" : "pending",
       subscriptionPlan: staff ? "enterprise" : null,
       eventQuotaExempt: staff,
-      experience: workspaceExperienceForEmail(email),
     })
     .returning();
   await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
@@ -393,18 +392,12 @@ export async function lookupUsers(
 }
 
 /**
- * Resolves the presentation profile from the workspace, not merely the current person.
- *
- * The profile is stored on the workspace. It therefore applies to every teammate in that
- * workspace and never follows an anchor person into another customer workspace.
+ * Resolves the presentation profile from the verified signed-in email. Only the two
+ * explicitly approved accounts receive the focused view, even when other teammates use
+ * the same workspace.
  */
 export async function workspaceExperienceForContext(ctx: RequestContext): Promise<WorkspaceExperience> {
-  const [workspace] = await db
-    .select({ experience: workspaces.experience })
-    .from(workspaces)
-    .where(eq(workspaces.id, ctx.workspaceId))
-    .limit(1);
-  return workspace?.experience ?? "standard";
+  return workspaceExperienceForEmail(ctx.email);
 }
 
 /**
