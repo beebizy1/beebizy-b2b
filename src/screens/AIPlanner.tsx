@@ -40,6 +40,7 @@ import { formatClockTime } from "@/lib/datetime";
 import { EVENT_CATEGORIES, type ChecklistItemDraft, type EventCategory, type RunOfShowItemDraft } from "@/data/entities";
 import SpreadsheetImporter from "@/screens/import/SpreadsheetImporter";
 import { effectivePlan, planHasCapability } from "@/data/plans";
+import { useAccountExperience } from "@/app/useAccountExperience";
 
 type PlannerMode = "choose" | "agent" | "plan" | "import";
 
@@ -119,6 +120,7 @@ export default function AIPlanner() {
   const addMood = useAddMoodBoardImage();
   const addRunOfShow = useAddRunOfShowItem();
   const { data: identity } = useMe();
+  const { experience } = useAccountExperience();
   const [mode, setMode] = useState<PlannerMode>("choose");
   const [eventType, setEventType] = useState<string>(EVENT_CATEGORIES[0]);
   const [headcount, setHeadcount] = useState("200");
@@ -193,7 +195,7 @@ export default function AIPlanner() {
     }
   };
 
-  if (identity?.experience === "santa-clara") {
+  if (experience === "santa-clara") {
     return (
       <div className="space-y-6">
         <PageHeader

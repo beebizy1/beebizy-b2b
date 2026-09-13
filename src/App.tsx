@@ -69,6 +69,7 @@ import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
 import { isAppPathAllowed } from "@/app/shell/nav";
+import { useAccountExperience } from "@/app/useAccountExperience";
 
 function PlanGate({ capability, children }: { capability: PlanCapability; children: React.ReactNode }) {
   const { data: identity, isLoading } = useMe();
@@ -94,9 +95,8 @@ const queryClient = new QueryClient({
 /** Everything inside the product chrome. */
 function AccountExperienceGate({ children }: { children: React.ReactNode }) {
   const [pathname] = useLocation();
-  const { data: identity, isLoading } = useMe();
-  if (isLoading || !identity) return null;
-  if (!isAppPathAllowed(pathname, identity.experience)) return <Redirect to="/app" replace />;
+  const { experience } = useAccountExperience();
+  if (!isAppPathAllowed(pathname, experience)) return <Redirect to="/app" replace />;
   return <>{children}</>;
 }
 

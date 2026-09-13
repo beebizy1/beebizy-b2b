@@ -16,7 +16,9 @@ Santa Clara University needs a deliberately smaller Beebizy experience for its p
 
 The authenticated identity response includes a presentation-only experience derived from the user's verified email. Exactly `ccismasflorea@scu.edu` and `poorvishukla27@gmail.com` receive the `santa-clara` experience. Every other account receives the standard experience, including other people who belong to the same workspace.
 
-The focused experience filters the main navigation, command palette, event tabs, and application routes. Standard workspaces retain the existing experience.
+The focused experience filters the main navigation, command palette, event tabs, and application routes. Standard accounts retain the existing experience.
+
+The verified `laila@beebizy.com` and `tarang@beebizy.com` accounts receive an internal-only "View as" control. It previews either presentation without changing the assigned experience for the workspace, its members, or any customer account. The selected preview is stored locally for that signed-in account.
 
 The profile does not grant access and does not replace plan entitlement checks. It only narrows the product surface after normal authentication and authorization succeed.
 
@@ -41,3 +43,4 @@ The profile does not grant access and does not replace plan entitlement checks. 
 - Old hidden-section URLs redirect back into the focused workflow.
 - Adding another customer-specific profile requires an explicit profile and tests instead of scattered conditions.
 - The exact account list is deliberately centralized for a one-line rollback or update.
+- Laila and Tarang can review both presentations without impersonating a customer or changing customer data.

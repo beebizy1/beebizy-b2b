@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { accountExperienceForEmail } from "./accountExperience";
+import {
+  accountExperienceForEmail,
+  canSwitchAccountExperience,
+  parseAccountExperience,
+  resolveAccountExperience,
+} from "./accountExperience";
 
 describe("account experience", () => {
   it("recognizes only the two verified Santa Clara pilot accounts", () => {
@@ -14,5 +19,19 @@ describe("account experience", () => {
     expect(accountExperienceForEmail("laila@beebizy.com")).toBe("standard");
     expect(accountExperienceForEmail("person@example.com")).toBe("standard");
     expect(accountExperienceForEmail(null)).toBe("standard");
+  });
+
+  it("lets only Laila and Tarang switch between account experiences", () => {
+    expect(canSwitchAccountExperience("laila@beebizy.com")).toBe(true);
+    expect(canSwitchAccountExperience(" TARANG@BEEBIZY.COM ")).toBe(true);
+    expect(canSwitchAccountExperience("mary@beebizy.com")).toBe(false);
+    expect(canSwitchAccountExperience("ccismasflorea@scu.edu")).toBe(false);
+    expect(canSwitchAccountExperience(null)).toBe(false);
+  });
+
+  it("honors a saved preview only for an approved switcher", () => {
+    expect(resolveAccountExperience("standard", true, "santa-clara")).toBe("santa-clara");
+    expect(resolveAccountExperience("santa-clara", false, "standard")).toBe("santa-clara");
+    expect(resolveAccountExperience("standard", true, parseAccountExperience("not-a-profile"))).toBe("standard");
   });
 });

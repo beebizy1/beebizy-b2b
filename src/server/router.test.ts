@@ -173,6 +173,23 @@ describe("feedback endpoint", () => {
     });
   });
 
+  it("allows only Laila and Tarang to preview another account experience", async () => {
+    vi.mocked(authorize).mockResolvedValueOnce({ ...context, email: "tarang@beebizy.com" });
+    const tarang = await handleRequest(new Request("http://localhost/api/me"));
+
+    vi.mocked(authorize).mockResolvedValueOnce({ ...context, email: "mary@beebizy.com" });
+    const mary = await handleRequest(new Request("http://localhost/api/me"));
+
+    expect(await tarang.json()).toMatchObject({
+      experience: "standard",
+      canSwitchExperience: true,
+    });
+    expect(await mary.json()).toMatchObject({
+      experience: "standard",
+      canSwitchExperience: false,
+    });
+  });
+
   it("stores valid feedback for the authorized user", async () => {
     vi.mocked(authorize).mockResolvedValue(context);
     vi.mocked(feedback.create).mockResolvedValue({

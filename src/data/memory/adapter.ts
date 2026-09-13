@@ -1827,6 +1827,7 @@ export const memoryAdapter: DataAdapter = {
       role: "owner",
       canReviewFeedback: false,
       experience: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" ? "santa-clara" : "standard",
+      canSwitchExperience: false,
       access: {
         status: "beta",
         plan: null,

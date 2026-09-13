@@ -307,6 +307,8 @@ export interface Identity {
   canReviewFeedback: boolean;
   /** Presentation profile selected from the verified account, never from client input. */
   experience: AccountExperience;
+  /** Whether this verified account may preview another customer's presentation. */
+  canSwitchExperience: boolean;
   access: {
     status: WorkspaceAccessStatus;
     plan: PlanId | null;

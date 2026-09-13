@@ -16,7 +16,8 @@ import { Activity, Calendar, MapPin, Ticket, Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorNotice, PageHeader, Panel, PanelHeader, StatTile } from "@/components/primitives";
 import { usePreferences } from "@/app/preferences";
-import { useEvents, useGuests, useLocations, useMe, useRegistrations } from "@/data/hooks";
+import { useAccountExperience } from "@/app/useAccountExperience";
+import { useEvents, useGuests, useLocations, useRegistrations } from "@/data/hooks";
 import { eventLocationLabel } from "./events/calendar";
 import type { Event, UserSettings } from "@/data/entities";
 import SantaClaraDashboard from "./SantaClaraDashboard";
@@ -239,6 +240,6 @@ function PortfolioDashboard() {
 }
 
 export default function Today() {
-  const { data: identity } = useMe();
-  return identity?.experience === "santa-clara" ? <SantaClaraDashboard /> : <PortfolioDashboard />;
+  const { experience } = useAccountExperience();
+  return experience === "santa-clara" ? <SantaClaraDashboard /> : <PortfolioDashboard />;
 }

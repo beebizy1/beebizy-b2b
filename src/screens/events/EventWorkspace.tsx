@@ -62,6 +62,7 @@ import { eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, visible
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
+import { useAccountExperience } from "@/app/useAccountExperience";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
@@ -426,9 +427,9 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
   const { data: health } = useEventHealth(id);
   const { data: identity } = useMe();
+  const { experience } = useAccountExperience();
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
-  const experience = identity?.experience ?? "standard";
 
   if (isLoading) {
     return (

@@ -11,7 +11,7 @@
  */
 
 import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
-import { accountExperienceForEmail } from "../src/data/accountExperience.ts";
+import { accountExperienceForEmail, canSwitchAccountExperience } from "../src/data/accountExperience.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
@@ -272,6 +272,7 @@ async function handleAuthed(
         role: ctx.role,
         canReviewFeedback: isBeebizyOperator(ctx.email),
         experience: accountExperienceForEmail(ctx.email),
+        canSwitchExperience: canSwitchAccountExperience(ctx.email),
         access: ctx.access,
       });
 

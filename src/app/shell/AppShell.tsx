@@ -24,14 +24,15 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/data/hooks";
-import { useDataMode } from "@/data/provider";
+import { useDataMode, type DataMode } from "@/data/provider";
 import type { Identity } from "@/data/adapter";
 import { useSession } from "@/app/session";
+import { AccountExperienceProvider } from "@/app/AccountExperienceProvider";
+import { useAccountExperience } from "@/app/useAccountExperience";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
 import { effectivePlan, SELF_SERVE_BILLING_ENABLED, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
-import type { AccountExperience } from "@/data/accountExperience";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -87,17 +88,16 @@ function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; 
 
 function SidebarContent({
   canReviewFeedback,
-  experience,
   plan,
   onNavigate,
 }: {
   canReviewFeedback: boolean;
-  experience: AccountExperience;
   plan: PlanId;
   onNavigate?: () => void;
 }) {
   const [pathname] = useLocation();
   const { user, signOut } = useSession();
+  const { experience, canSwitchExperience, setExperience } = useAccountExperience();
 
   return (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
@@ -108,6 +108,37 @@ function SidebarContent({
             Customized for
           </p>
           <WorkspaceMark label={experience === "santa-clara" ? "Santa Clara University" : user?.name ?? "Beebizy Studio"} />
+          {canSwitchExperience ? (
+            <div className="mt-3 rounded-lg border border-sidebar-border bg-background/70 p-1.5">
+              <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                View as
+              </p>
+              <div className="grid grid-cols-2 gap-1" role="group" aria-label="Preview account experience">
+                {([
+                  ["standard", "Full Beebizy"],
+                  ["santa-clara", "Santa Clara"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={experience === value}
+                    onClick={() => {
+                      setExperience(value);
+                      onNavigate?.();
+                    }}
+                    className={cn(
+                      "rounded-md px-2 py-1.5 text-[11px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      experience === value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -257,36 +288,20 @@ function AccessEnded({ access }: { access: Identity["access"] }) {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+function AppShellFrame({
+  children,
+  identity,
+  mode,
+}: {
+  children: ReactNode;
+  identity: Identity | undefined;
+  mode: DataMode;
+}) {
   const { open, setOpen } = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const { mode } = useDataMode();
-  const { data: identity, isLoading: identityLoading, error: identityError } = useMe();
+  const { experience } = useAccountExperience();
   const plan = effectivePlan(identity?.access);
-
-  if (mode === "live" && identityLoading) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-7 animate-spin rounded-full border-2 border-muted border-t-primary" />
-          <p className="text-sm text-muted-foreground">Loading your Studio access…</p>
-        </div>
-      </div>
-    );
-  }
-
-  /*
-   * The server refused. That is the only authority on whether this account may be here —
-   * it is the side that can see both the operator allowlist and any outstanding invite.
-   */
-  if (mode === "live" && identityError) {
-    return <Redirect to="/access-denied" replace />;
-  }
-
-  if (mode === "live" && identity && !["beta", "active"].includes(identity.access.status)) {
-    return <AccessEnded access={identity.access} />;
-  }
 
   return (
     <div className="flex min-h-dvh bg-background">
@@ -297,7 +312,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 md:block">
         <SidebarContent
           canReviewFeedback={identity?.canReviewFeedback ?? false}
-          experience={identity?.experience ?? "standard"}
           plan={plan}
         />
       </aside>
@@ -313,7 +327,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <SidebarContent
               canReviewFeedback={identity?.canReviewFeedback ?? false}
-              experience={identity?.experience ?? "standard"}
               plan={plan}
               onNavigate={() => setMobileOpen(false)}
             />
@@ -332,7 +345,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <CommandPalette
         canReviewFeedback={identity?.canReviewFeedback ?? false}
-        experience={identity?.experience ?? "standard"}
+        experience={experience}
         plan={plan}
         open={open}
         onOpenChange={setOpen}
@@ -341,5 +354,41 @@ export function AppShell({ children }: { children: ReactNode }) {
         <FeedbackBot userId={identity.userId} open={feedbackOpen} onOpenChange={setFeedbackOpen} />
       ) : null}
     </div>
+  );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const { mode } = useDataMode();
+  const { data: identity, isLoading: identityLoading, error: identityError } = useMe();
+
+  if (mode === "live" && identityLoading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="size-7 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          <p className="text-sm text-muted-foreground">Loading your Studio access…</p>
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * The server refused. That is the only authority on whether this account may be here -
+   * it is the side that can see both the operator allowlist and any outstanding invite.
+   */
+  if (mode === "live" && identityError) {
+    return <Redirect to="/access-denied" replace />;
+  }
+
+  if (mode === "live" && identity && !["beta", "active"].includes(identity.access.status)) {
+    return <AccessEnded access={identity.access} />;
+  }
+
+  return (
+    <AccountExperienceProvider identity={identity}>
+      <AppShellFrame identity={identity} mode={mode}>
+        {children}
+      </AppShellFrame>
+    </AccountExperienceProvider>
   );
 }
