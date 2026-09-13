@@ -118,6 +118,9 @@ async function requireVerifiedUser(request: Request): Promise<{ userId: string; 
    */
   const approved =
     hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) ||
+    // Customer-specific pilot anchors are additive to the secret allowlist. This
+    // avoids replacing that secret and accidentally locking out existing pilots.
+    workspaceExperienceForEmail(primaryEmail) === "santa-clara" ||
     (await isWorkspaceMember(userId)) ||
     (await hasPendingInvite(primaryEmail));
   if (!approved) {
