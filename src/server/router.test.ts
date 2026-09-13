@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./auth", () => ({
   authorize: vi.fn(),
   requireBeebizyOperator: vi.fn(),
-  workspaceExperienceForContext: vi.fn().mockResolvedValue("standard"),
   HttpError: class HttpError extends Error {
     constructor(public status: number, message: string) {
       super(message);
@@ -43,7 +42,7 @@ vi.mock("./billing", () => ({
 }));
 
 const { config, handleRequest } = await import("../../api/router");
-const { authorize, HttpError, requireBeebizyOperator, workspaceExperienceForContext } = await import("./auth");
+const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { feedback } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
@@ -164,8 +163,6 @@ describe("feedback endpoint", () => {
 
   it("returns the focused experience for a verified Santa Clara account", async () => {
     vi.mocked(authorize).mockResolvedValue({ ...context, email: "ccismasflorea@scu.edu" });
-    vi.mocked(workspaceExperienceForContext).mockResolvedValueOnce("santa-clara");
-
     const response = await handleRequest(new Request("http://localhost/api/me"));
 
     expect(response.status).toBe(200);
@@ -174,9 +171,6 @@ describe("feedback endpoint", () => {
       workspaceId: context.workspaceId,
       experience: "santa-clara",
     });
-    expect(workspaceExperienceForContext).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: context.workspaceId,
-    }));
   });
 
   it("stores valid feedback for the authorized user", async () => {

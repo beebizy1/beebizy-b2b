@@ -25,7 +25,7 @@ import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
 import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
 import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
-import { workspaceExperienceForEmail, type WorkspaceExperience } from "../data/workspaceExperience.ts";
+import { accountExperienceForEmail } from "../data/accountExperience.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -120,7 +120,7 @@ async function requireVerifiedUser(request: Request): Promise<{ userId: string; 
     hasInternalAccess(primaryEmail, process.env.BETA_ACCESS_EMAILS) ||
     // Customer-specific pilot anchors are additive to the secret allowlist. This
     // avoids replacing that secret and accidentally locking out existing pilots.
-    workspaceExperienceForEmail(primaryEmail) === "santa-clara" ||
+    accountExperienceForEmail(primaryEmail) === "santa-clara" ||
     (await isWorkspaceMember(userId)) ||
     (await hasPendingInvite(primaryEmail));
   if (!approved) {
@@ -389,15 +389,6 @@ export async function lookupUsers(
     console.warn("MEMBER_DIRECTORY_LOOKUP_FAILED", error instanceof Error ? error.message : String(error));
   }
   return directory;
-}
-
-/**
- * Resolves the presentation profile from the verified signed-in email. Only the two
- * explicitly approved accounts receive the focused view, even when other teammates use
- * the same workspace.
- */
-export async function workspaceExperienceForContext(ctx: RequestContext): Promise<WorkspaceExperience> {
-  return workspaceExperienceForEmail(ctx.email);
 }
 
 /**

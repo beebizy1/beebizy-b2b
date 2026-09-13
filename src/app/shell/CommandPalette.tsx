@@ -24,7 +24,7 @@ import { useEvents } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import { visibleNavItems } from "./nav";
 import { planHasCapability, type PlanId } from "@/data/plans";
-import type { WorkspaceExperience } from "@/data/workspaceExperience";
+import type { AccountExperience } from "@/data/accountExperience";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
   const [open, setOpen] = useState(false);
@@ -79,7 +79,7 @@ export function CommandPalette({
   onOpenChange,
 }: {
   canReviewFeedback: boolean;
-  experience: WorkspaceExperience;
+  experience: AccountExperience;
   plan: PlanId;
   open: boolean;
   onOpenChange: (open: boolean) => void;

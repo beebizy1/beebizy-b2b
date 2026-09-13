@@ -31,7 +31,7 @@ import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
 import { effectivePlan, SELF_SERVE_BILLING_ENABLED, SOLO_TRIAL_DAYS, type PlanId } from "@/data/plans";
-import type { WorkspaceExperience } from "@/data/workspaceExperience";
+import type { AccountExperience } from "@/data/accountExperience";
 
 /**
  * The workspace a signed-in rail is customised for.
@@ -92,7 +92,7 @@ function SidebarContent({
   onNavigate,
 }: {
   canReviewFeedback: boolean;
-  experience: WorkspaceExperience;
+  experience: AccountExperience;
   plan: PlanId;
   onNavigate?: () => void;
 }) {

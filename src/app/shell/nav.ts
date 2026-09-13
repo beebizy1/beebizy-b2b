@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
 import { planHasCapability, type PlanCapability, type PlanId } from "@/data/plans";
-import type { WorkspaceExperience } from "@/data/workspaceExperience";
+import type { AccountExperience } from "@/data/accountExperience";
 
 export interface NavItem {
   label: string;
@@ -148,7 +148,7 @@ const SANTA_CLARA_NAV_ITEMS: NavItem[] = [
 export function visibleNavItems(
   canReviewFeedback: boolean,
   plan: PlanId = "enterprise",
-  experience: WorkspaceExperience = "standard",
+  experience: AccountExperience = "standard",
 ): NavItem[] {
   if (experience === "santa-clara") return SANTA_CLARA_NAV_ITEMS;
   const planItems = NAV_ITEMS.filter((item) => !item.capability || planHasCapability(plan, item.capability));
@@ -248,7 +248,7 @@ const SANTA_CLARA_EVENT_HINTS: Partial<Record<EventTabId, string>> = {
 
 export function visibleEventTabs(
   plan: PlanId = "enterprise",
-  experience: WorkspaceExperience = "standard",
+  experience: AccountExperience = "standard",
 ): EventTab[] {
   if (experience === "santa-clara") {
     return SANTA_CLARA_EVENT_TAB_IDS.map((id) => {
@@ -313,7 +313,7 @@ export function isNavActive(href: string, pathname: string): boolean {
 }
 
 /** Routes retained for the focused pilot. Event section access is narrowed separately. */
-export function isAppPathAllowed(pathname: string, experience: WorkspaceExperience): boolean {
+export function isAppPathAllowed(pathname: string, experience: AccountExperience): boolean {
   if (experience === "standard") return true;
   return (
     pathname === "/app" ||

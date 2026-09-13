@@ -45,7 +45,7 @@ describe("product navigation", () => {
     expect(visibleEventTabs("team").map((item) => item.label)).toContain("Contingency");
   });
 
-  it("shows only the Santa Clara pilot workflow for that workspace experience", () => {
+  it("shows only the Santa Clara pilot workflow for that account experience", () => {
     expect(visibleNavItems(false, "enterprise", "santa-clara").map((item) => item.label)).toEqual([
       "Dashboard",
       "Events",

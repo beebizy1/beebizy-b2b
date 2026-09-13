@@ -10,7 +10,8 @@
  * it, and because 300s is plenty for a request that should take 50ms.
  */
 
-import { authorize, HttpError, requireBeebizyOperator, workspaceExperienceForContext, type RequestContext } from "../src/server/auth.ts";
+import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
+import { accountExperienceForEmail } from "../src/data/accountExperience.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
@@ -270,7 +271,7 @@ async function handleAuthed(
         workspaceId: ctx.workspaceId,
         role: ctx.role,
         canReviewFeedback: isBeebizyOperator(ctx.email),
-        experience: await workspaceExperienceForContext(ctx),
+        experience: accountExperienceForEmail(ctx.email),
         access: ctx.access,
       });
 

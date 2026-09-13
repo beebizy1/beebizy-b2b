@@ -92,7 +92,7 @@ const queryClient = new QueryClient({
 });
 
 /** Everything inside the product chrome. */
-function WorkspaceExperienceGate({ children }: { children: React.ReactNode }) {
+function AccountExperienceGate({ children }: { children: React.ReactNode }) {
   const [pathname] = useLocation();
   const { data: identity, isLoading } = useMe();
   if (isLoading || !identity) return null;
@@ -104,7 +104,7 @@ function AppRoutes() {
   return (
     <RequireSession>
       <AppShell>
-        <WorkspaceExperienceGate>
+        <AccountExperienceGate>
           <Switch>
           <Route path="/app" component={Today} />
           <Route path="/app/plan" component={AIPlanner} />
@@ -147,7 +147,7 @@ function AppRoutes() {
           <Route path={FEEDBACK_INBOX_PATH} component={FeedbackInbox} />
             <Route component={NotFound} />
           </Switch>
-        </WorkspaceExperienceGate>
+        </AccountExperienceGate>
       </AppShell>
     </RequireSession>
   );

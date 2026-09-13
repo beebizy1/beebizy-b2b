@@ -61,7 +61,7 @@ import { usePreferences, type Preferences } from "@/app/preferences";
 import { eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
-import type { WorkspaceExperience } from "@/data/workspaceExperience";
+import type { AccountExperience } from "@/data/accountExperience";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
@@ -108,7 +108,7 @@ function SectionTabs({
   eventId: string;
   active: EventTabId;
   plan: PlanId;
-  experience: WorkspaceExperience;
+  experience: AccountExperience;
 }) {
   const activeRef = useRef<HTMLAnchorElement>(null);
 
@@ -177,7 +177,7 @@ function WorkspaceHeader({
   health: EventHealth | null | undefined;
   active: EventTabId;
   plan: PlanId;
-  experience: WorkspaceExperience;
+  experience: AccountExperience;
 }) {
   const [, navigate] = useLocation();
   const prefs = usePreferences();
