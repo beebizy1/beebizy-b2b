@@ -22,6 +22,7 @@ import { BadgeDollarSign, Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleA
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
+import { SantaClaraLogo } from "@/components/SantaClaraLogo";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/data/hooks";
 import { useDataMode, type DataMode } from "@/data/provider";
@@ -42,6 +43,14 @@ import { effectivePlan, SELF_SERVE_BILLING_ENABLED, SOLO_TRIAL_DAYS, type PlanId
  */
 function WorkspaceMark({ label }: { label: string }) {
   const key = label.toLowerCase();
+
+  if (key.includes("santa clara")) {
+    return (
+      <div className="rounded-lg border border-[#b30738]/15 bg-white px-3 py-2">
+        <SantaClaraLogo className="max-h-11 max-w-[190px] object-left" />
+      </div>
+    );
+  }
 
   if (key.includes("hwood")) {
     return <img src="/hwood-group-logo.png" alt="Hwood Group" className="max-h-10 max-w-[180px] object-contain object-left" />;
