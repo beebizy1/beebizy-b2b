@@ -14,7 +14,7 @@ Santa Clara University needs a deliberately smaller Beebizy experience for its p
 
 ## Decision
 
-The authenticated identity response includes a presentation-only experience stored on the authenticated workspace. Two approved pilot emails act only as provisioning anchors. A new workspace created by an anchor, or a workspace that invites an anchor, is marked `santa-clara`. Every teammate then receives that workspace's stored experience regardless of email domain. The profile does not follow an anchor into another workspace.
+The authenticated identity response includes a presentation-only experience stored on the authenticated workspace. Approved pilot emails act only as provisioning anchors. A new workspace created by an anchor, or a workspace that invites an anchor, is marked `santa-clara`. Every teammate then receives that workspace's stored experience regardless of email domain. The profile does not follow an anchor into another workspace.
 
 The focused experience filters the main navigation, command palette, event tabs, and application routes. Standard workspaces retain the existing experience.
 

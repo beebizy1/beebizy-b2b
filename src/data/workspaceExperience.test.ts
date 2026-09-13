@@ -5,6 +5,7 @@ describe("workspace experience", () => {
   it("recognizes the verified Santa Clara pilot accounts", () => {
     expect(workspaceExperienceForEmail("ccismasflorea@scu.edu")).toBe("santa-clara");
     expect(workspaceExperienceForEmail(" Poorvi@SantaClaraVentures.com ")).toBe("santa-clara");
+    expect(workspaceExperienceForEmail("poorvishukla27@gmail.com")).toBe("santa-clara");
     expect(workspaceExperienceForEmail("teammate@scu.edu")).toBe("standard");
   });
 

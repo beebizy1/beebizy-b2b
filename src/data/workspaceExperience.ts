@@ -11,6 +11,7 @@ export type WorkspaceExperience = (typeof WORKSPACE_EXPERIENCES)[number];
 export const SANTA_CLARA_PILOT_EMAILS = [
   "ccismasflorea@scu.edu",
   "poorvi@santaclaraventures.com",
+  "poorvishukla27@gmail.com",
 ] as const;
 
 export function workspaceExperienceForEmail(email: string | null | undefined): WorkspaceExperience {
