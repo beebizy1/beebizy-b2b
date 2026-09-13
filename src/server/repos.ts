@@ -71,6 +71,7 @@ import { parseFloorplanDraft } from "../data/floorplan.ts";
 import { notifyTaskAssignment } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
+import { workspaceExperienceForEmail } from "../data/workspaceExperience.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -2186,6 +2187,12 @@ export const members = {
         .set({ role: role as "member" })
         .where(eq(s.workspaceInvites.id, existing.id))
         .returning();
+      if (workspaceExperienceForEmail(email) === "santa-clara") {
+        await db
+          .update(s.workspaces)
+          .set({ experience: "santa-clara" })
+          .where(eq(s.workspaces.id, ctx.workspaceId));
+      }
       return {
         member: {
           userId: null,
@@ -2253,6 +2260,13 @@ export const members = {
               plan === "solo" ? " Upgrade to Team to invite more." : " Contact Beebizy to add more seats."
             }`,
       );
+    }
+
+    if (workspaceExperienceForEmail(email) === "santa-clara") {
+      await db
+        .update(s.workspaces)
+        .set({ experience: "santa-clara" })
+        .where(eq(s.workspaces.id, ctx.workspaceId));
     }
 
     const emailSent = await sendInvitationEmail(email, invitationAcceptanceUrl(appOrigin()));

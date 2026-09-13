@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GripVertical, LayoutGrid, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { GripVertical, LayoutGrid, Lock, Plus, RotateCcw, Save, Trash2, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -104,6 +104,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
       y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
       seats: spec.seats,
+      // Existing landscape features should not be nudged accidentally while the
+      // team arranges temporary furniture around them.
+      locked: shape === "tree",
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
@@ -144,7 +147,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   };
 
   const removeSelected = () => {
-    if (!selected) return;
+    if (!selected || selected.locked) return;
     setItems(workingItems.filter((item) => item.id !== selected.id));
     setSelectedId(null);
   };
@@ -152,13 +155,14 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   /* --------------------------------------------------------------- dragging */
 
   const onPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>, item: FloorplanItem) => {
+    setSelectedId(item.id);
+    if (item.locked) return;
     const room = roomRef.current;
     if (!room) return;
     const rect = room.getBoundingClientRect();
     const pointerX = ((pointerEvent.clientX - rect.left) / rect.width) * 100;
     const pointerY = ((pointerEvent.clientY - rect.top) / rect.height) * 100;
     dragState.current = { id: item.id, offsetX: pointerX - item.x, offsetY: pointerY - item.y };
-    setSelectedId(item.id);
     pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
   };
 
@@ -189,6 +193,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
       const { selected: target, workingItems: current } = latest.current;
       if (!target) return;
+
+      if (target.locked) return;
 
       const step = keyEvent.shiftKey ? 5 : 1;
       const moves: Record<string, [number, number]> = {
@@ -353,12 +359,13 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     key={item.id}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}`}
+                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}${item.locked ? ", fixed in place" : ""}`}
                     aria-pressed={isSelected}
                     onPointerDown={(pointerEvent) => onPointerDown(pointerEvent, item)}
                     onFocus={() => setSelectedId(item.id)}
                     className={cn(
-                      "absolute flex cursor-grab touch-none select-none items-center justify-center border text-center text-[10px] font-semibold leading-tight shadow-xs transition-shadow active:cursor-grabbing",
+                      "absolute flex touch-none select-none items-center justify-center border text-center text-[10px] font-semibold leading-tight shadow-xs transition-shadow",
+                      item.locked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
                       spec.round ? "rounded-full" : "rounded-md",
                       spec.className,
                       isSelected && "ring-2 ring-ring ring-offset-1",
@@ -372,14 +379,15 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     }}
                   >
                     <span className="px-1">{item.label}</span>
+                    {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>
                 );
               })}
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag objects from the toolbar to place them. Drag again to move. Tab to an object and use the arrow
-              keys to nudge it, shift for a bigger step, delete to remove.
+              Drag objects from the toolbar to place them. Trees start fixed in place. Select an object to lock or
+              unlock it, then use drag or the arrow keys to move it.
             </p>
           </div>
 
@@ -412,7 +420,15 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 </label>
               ) : null}
               <Pill tone={capacityTone}>{capacityNote}</Pill>
-              <Button variant="outline" size="sm" onClick={removeSelected}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => updateItem(selected.id, { locked: !selected.locked })}
+              >
+                {selected.locked ? <Unlock className="mr-1.5 size-3.5" /> : <Lock className="mr-1.5 size-3.5" />}
+                {selected.locked ? "Unlock position" : "Lock position"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={removeSelected} disabled={selected.locked}>
                 <Trash2 className="mr-1.5 size-3.5 text-danger-text" />
                 Remove
               </Button>

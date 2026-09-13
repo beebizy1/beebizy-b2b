@@ -14,7 +14,9 @@ Santa Clara University needs a deliberately smaller Beebizy experience for its p
 
 ## Decision
 
-The authenticated identity response includes a presentation-only workspace experience derived from the user's verified email domain. Santa Clara pilot domains receive the `santa-clara` experience. That experience filters the main navigation, command palette, event tabs, and application routes. Standard workspaces retain the existing experience.
+The authenticated identity response includes a presentation-only experience stored on the authenticated workspace. Two approved pilot emails act only as provisioning anchors. A new workspace created by an anchor, or a workspace that invites an anchor, is marked `santa-clara`. Every teammate then receives that workspace's stored experience regardless of email domain. The profile does not follow an anchor into another workspace.
+
+The focused experience filters the main navigation, command palette, event tabs, and application routes. Standard workspaces retain the existing experience.
 
 The profile does not grant access and does not replace plan entitlement checks. It only narrows the product surface after normal authentication and authorization succeed.
 
@@ -38,4 +40,4 @@ The profile does not grant access and does not replace plan entitlement checks. 
 - Existing feature code and data remain intact.
 - Old hidden-section URLs redirect back into the focused workflow.
 - Adding another customer-specific profile requires an explicit profile and tests instead of scattered conditions.
-- If the pilot expands beyond the current domains, the profile lookup should move from domain mapping to workspace-level configuration.
+- The anchor list is deliberately centralized and is used only when provisioning the workspace profile.

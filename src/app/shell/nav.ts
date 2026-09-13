@@ -136,8 +136,7 @@ const FEEDBACK_REVIEW_NAV_ITEM: NavItem = {
 };
 
 const SANTA_CLARA_NAV_ITEMS: NavItem[] = [
-  NAV_ITEMS[0]!,
-  NAV_ITEMS[3]!,
+  ...NAV_ITEMS.filter((item) => item.href === "/app" || item.href === "/app/events"),
   {
     label: "Import spreadsheet",
     href: "/app/plan",
@@ -237,6 +236,16 @@ const SANTA_CLARA_EVENT_TAB_IDS: readonly EventTabId[] = [
   "volunteers",
 ];
 
+const SANTA_CLARA_EVENT_HINTS: Partial<Record<EventTabId, string>> = {
+  "run-of-show": "Build the minute-by-minute event schedule",
+  checklist: "Assign every task, owner and due date",
+  budget: "Track planned and actual line-item spend",
+  floorplan: "Place fixed trees, chairs, tables and event zones",
+  registrations: "Group guests as investor, company or general",
+  "check-in": "Import lists, record arrivals and print badges",
+  volunteers: "Assign roles, shift times and operating notes",
+};
+
 export function visibleEventTabs(
   plan: PlanId = "enterprise",
   experience: WorkspaceExperience = "standard",
@@ -244,7 +253,11 @@ export function visibleEventTabs(
   if (experience === "santa-clara") {
     return SANTA_CLARA_EVENT_TAB_IDS.map((id) => {
       const tab = EVENT_TABS.find((item) => item.id === id)!;
-      return id === "budget" ? { ...tab, label: "Budget", hint: "Budget line items, planned spend and actual spend" } : tab;
+      return {
+        ...tab,
+        label: id === "budget" ? "Budget" : tab.label,
+        hint: SANTA_CLARA_EVENT_HINTS[id] ?? tab.hint,
+      };
     });
   }
   return EVENT_TABS.filter((tab) => !tab.capability || planHasCapability(plan, tab.capability));

@@ -76,7 +76,13 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
-export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) {
+export default function SpreadsheetImporter({
+  onBack,
+  includeMoodBoard = true,
+}: {
+  onBack: () => void;
+  includeMoodBoard?: boolean;
+}) {
   const [, navigate] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [plan, setPlan] = useState<EventImportPlan | null>(null);
@@ -125,7 +131,9 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
         ...plan.budget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
         ...plan.checklist.map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
         ...plan.runOfShow.map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
-        ...plan.moodBoard.map((reference) => addMood.mutateAsync({ eventId: created.id, ...reference })),
+        ...(includeMoodBoard
+          ? plan.moodBoard.map((reference) => addMood.mutateAsync({ eventId: created.id, ...reference }))
+          : []),
         ...plan.guests.map(async (draft) => {
           const guest = await createGuest.mutateAsync({ name: draft.name, contact: draft.contact, notes: draft.notes });
           return createRegistration.mutateAsync({
@@ -240,7 +248,7 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
     plan.checklist.length +
     plan.runOfShow.length +
     plan.budget.length +
-    plan.moodBoard.length +
+    (includeMoodBoard ? plan.moodBoard.length : 0) +
     plan.guests.length +
     plan.vendors.length;
   return (
@@ -322,11 +330,18 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
       <div className="grid gap-4 xl:grid-cols-2">
         <ImportedList title="Services and vendors" count={plan.vendors.length}>
           {plan.vendors.map((imported, index) => (
-            <li key={`${imported.vendor.name}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+            <li key={`${imported.vendor.name}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
               <Store className="size-4 shrink-0 text-primary-text" />
-              <span className="min-w-0 flex-1 truncate text-foreground">{imported.vendor.name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {[imported.vendor.category, imported.notes].filter(Boolean).join(" · ")}
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-foreground">{imported.vendor.name}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {[
+                    imported.vendor.category,
+                    imported.vendor.contactEmail,
+                    imported.vendor.contactPhone,
+                    imported.notes,
+                  ].filter(Boolean).join(" · ") || "No additional details"}
+                </span>
               </span>
               {imported.feeCents == null ? null : (
                 <span data-numeric className="text-xs font-medium text-foreground">
@@ -343,10 +358,20 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
 
         <ImportedList title="Checklist" count={plan.checklist.length}>
           {plan.checklist.map((item, index) => (
-            <li key={`${item.title}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+            <li key={`${item.title}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
               <CheckCircle2 className="size-4 shrink-0 text-primary-text" />
-              <span className="min-w-0 flex-1 truncate text-foreground">{item.title}</span>
-              <span className="text-xs text-muted-foreground">{item.category}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-foreground">{item.title}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {[
+                    item.category ?? "General",
+                    item.assignedTo ? `Owner: ${item.assignedTo}` : null,
+                    item.dueDate ? `Due: ${dateInputValue(item.dueDate)}` : null,
+                    item.completed ? "Complete" : "Open",
+                    item.description,
+                  ].filter(Boolean).join(" · ")}
+                </span>
+              </span>
               <RemoveButton label={item.title} onClick={() => setPlan({ ...plan, checklist: plan.checklist.filter((_, itemIndex) => itemIndex !== index) })} />
             </li>
           ))}
@@ -354,9 +379,18 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
 
         <ImportedList title="Run of show" count={plan.runOfShow.length}>
           {plan.runOfShow.map((cue, index) => (
-            <li key={`${cue.startTime}-${cue.title}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+            <li key={`${cue.startTime}-${cue.title}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
               <span className="w-16 shrink-0 font-mono text-xs font-semibold text-primary-text">{formatClockTime(cue.startTime)}</span>
-              <span className="min-w-0 flex-1 truncate text-foreground">{cue.title}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-foreground">{cue.title}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {[
+                    cue.duration == null ? null : `${cue.duration} minutes`,
+                    cue.responsible ? `Lead: ${cue.responsible}` : null,
+                    cue.description,
+                  ].filter(Boolean).join(" · ") || "No additional details"}
+                </span>
+              </span>
               <RemoveButton label={cue.title} onClick={() => setPlan({ ...plan, runOfShow: plan.runOfShow.filter((_, itemIndex) => itemIndex !== index) })} />
             </li>
           ))}
@@ -364,26 +398,43 @@ export default function SpreadsheetImporter({ onBack }: { onBack: () => void }) 
 
         <ImportedList title="Budget" count={plan.budget.length}>
           {plan.budget.map((item, index) => (
-            <li key={`${item.name}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
-              <span data-numeric className="font-semibold text-foreground">{formatMoney(item.estimatedCents)}</span>
+            <li key={`${item.name}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-foreground">{item.name}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {[
+                    item.category ?? "General",
+                    item.type === "revenue" ? "Revenue" : "Expense",
+                    item.actualCents == null ? null : `Actual: ${formatMoney(item.actualCents)}`,
+                    item.notes,
+                  ].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+              <span data-numeric className="shrink-0 font-semibold text-foreground">Plan: {formatMoney(item.estimatedCents)}</span>
               <RemoveButton label={item.name} onClick={() => setPlan({ ...plan, budget: plan.budget.filter((_, itemIndex) => itemIndex !== index) })} />
             </li>
           ))}
         </ImportedList>
 
-        <ImportedList title="Mood references and guests" count={plan.moodBoard.length + plan.guests.length}>
-          {plan.moodBoard.map((reference, index) => (
-            <li key={`${reference.url}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <span className="min-w-0 flex-1 truncate text-foreground">{reference.caption ?? reference.url}</span>
-              <RemoveButton label="mood reference" onClick={() => setPlan({ ...plan, moodBoard: plan.moodBoard.filter((_, itemIndex) => itemIndex !== index) })} />
-            </li>
-          ))}
+        {includeMoodBoard ? (
+          <ImportedList title="Mood references" count={plan.moodBoard.length}>
+            {plan.moodBoard.map((reference, index) => (
+              <li key={`${reference.url}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                <span className="min-w-0 flex-1 truncate text-foreground">{reference.caption ?? reference.url}</span>
+                <RemoveButton label="mood reference" onClick={() => setPlan({ ...plan, moodBoard: plan.moodBoard.filter((_, itemIndex) => itemIndex !== index) })} />
+              </li>
+            ))}
+          </ImportedList>
+        ) : null}
+
+        <ImportedList title="Guests and registrations" count={plan.guests.length}>
           {plan.guests.map((guest, index) => (
-            <li key={`${guest.contact}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <span className="min-w-0 flex-1 truncate text-foreground">{guest.name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {[guest.segment, guest.organization, guest.contact].filter(Boolean).join(" · ")}
+            <li key={`${guest.contact}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-foreground">{guest.name}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {[guest.segment, guest.organization, guest.contact, guest.notes].filter(Boolean).join(" · ")}
+                </span>
               </span>
               <RemoveButton label={guest.name} onClick={() => setPlan({ ...plan, guests: plan.guests.filter((_, itemIndex) => itemIndex !== index) })} />
             </li>

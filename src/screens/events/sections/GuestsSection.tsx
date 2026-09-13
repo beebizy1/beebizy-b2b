@@ -505,7 +505,7 @@ export default function GuestsSection({ event }: { event: Event }) {
             description={
               search || segmentFilter !== null
                 ? "Try a different category, or clear the search."
-                : "Register someone above, or share the ticket link from Share."
+                : "Register someone above, or import the existing guest list."
             }
           />
         ) : (

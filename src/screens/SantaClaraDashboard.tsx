@@ -2,38 +2,18 @@
 
 import { Link } from "wouter";
 import {
-  CalendarPlus,
-  CheckSquare2,
-  Clock3,
-  FileSpreadsheet,
-  LayoutGrid,
-  ScanLine,
-  Users,
-  WalletCards,
-  HeartHandshake,
   ArrowRight,
+  CalendarPlus,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, Pill } from "@/components/primitives";
 import { usePreferences } from "@/app/preferences";
 import { useEvents } from "@/data/hooks";
-import { eventTabHref, type EventTabId } from "@/app/shell/nav";
+import { eventTabHref, visibleEventTabs } from "@/app/shell/nav";
 import type { Event } from "@/data/entities";
 
-const WORK_AREAS: Array<{
-  tab: EventTabId;
-  label: string;
-  description: string;
-  icon: typeof Clock3;
-}> = [
-  { tab: "run-of-show", label: "Run of show", description: "Build the minute-by-minute event schedule.", icon: Clock3 },
-  { tab: "checklist", label: "Checklist", description: "Assign every task, owner and due date.", icon: CheckSquare2 },
-  { tab: "budget", label: "Budget", description: "Track planned and actual line-item spend.", icon: WalletCards },
-  { tab: "floorplan", label: "Floorplan", description: "Place trees, chairs, tables and event zones.", icon: LayoutGrid },
-  { tab: "registrations", label: "Registrations", description: "Group guests as investor, company or general.", icon: Users },
-  { tab: "check-in", label: "Check-in", description: "Import lists, record arrivals, and print badges.", icon: ScanLine },
-  { tab: "volunteers", label: "Volunteers", description: "Assign roles, shift times and operating notes.", icon: HeartHandshake },
-];
+const WORK_AREAS = visibleEventTabs("enterprise", "santa-clara");
 
 function nextEvent(events: Event[]): Event | null {
   const active = events
@@ -104,7 +84,7 @@ export default function SantaClaraDashboard() {
                   {formatDate(featured.date, "dayMonthYearTime")} · {featured.locationRecord?.name ?? featured.location ?? "Location not set"}
                 </p>
               </div>
-              <div className="shrink-0 rounded-xl bg-surface-sunken px-4 py-3 text-right">
+              <div data-numeric className="shrink-0 rounded-xl bg-surface-sunken px-4 py-3 text-right">
                 <p className="text-2xl font-bold tabular-nums text-foreground">{featured.registrationCount}</p>
                 <p className="text-xs text-muted-foreground">
                   of {featured.capacity ?? "unlimited"} registered
@@ -115,18 +95,18 @@ export default function SantaClaraDashboard() {
             <div className="grid gap-3 bg-surface p-4 sm:grid-cols-2 xl:grid-cols-4">
               {WORK_AREAS.map((area, index) => (
                 <Link
-                  key={area.tab}
-                  href={eventTabHref(featured.id, area.tab)}
+                  key={area.id}
+                  href={eventTabHref(featured.id, area.id)}
                   className="group flex min-h-36 flex-col rounded-xl border border-hairline bg-surface p-5 transition-colors hover:border-primary/45 hover:bg-primary-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <span className="grid size-9 place-items-center rounded-lg bg-primary-muted text-primary-text">
-                      <area.icon className="size-4" aria-hidden="true" />
+                      {area.icon ? <area.icon className="size-4" aria-hidden="true" /> : null}
                     </span>
                     <span className="font-mono text-[11px] text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
                   </div>
                   <h3 className="mt-4 font-semibold text-foreground">{area.label}</h3>
-                  <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">{area.description}</p>
+                  <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">{area.hint}.</p>
                   <span className="mt-3 inline-flex items-center text-xs font-semibold text-primary-text">
                     Open <ArrowRight className="ml-1 size-3 transition-transform group-hover:translate-x-0.5" />
                   </span>

@@ -38,6 +38,7 @@ import {
 import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
+import { WORKSPACE_EXPERIENCES } from "../data/workspaceExperience.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -56,6 +57,7 @@ export const subscriptionStatus = pgEnum("subscription_status", WORKSPACE_SUBSCR
 export const subscriptionPlan = pgEnum("subscription_plan", ["solo", "team", "enterprise"]);
 export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
 export const volunteerStatus = pgEnum("volunteer_status", VOLUNTEER_STATUSES);
+export const workspaceExperience = pgEnum("workspace_experience", WORKSPACE_EXPERIENCES);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -70,6 +72,8 @@ export const workspaces = pgTable("workspaces", {
   clerkOrgId: text("clerk_org_id").unique(),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
+  /** Presentation profile belongs to the workspace so it never follows a person elsewhere. */
+  experience: workspaceExperience("experience").notNull().default("standard"),
   subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
   /*
    * Pilot workspaces predate the published Solo limits and are not held to them.

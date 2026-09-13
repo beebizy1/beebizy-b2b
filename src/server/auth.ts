@@ -25,6 +25,7 @@ import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
 import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
 import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
+import { workspaceExperienceForEmail, type WorkspaceExperience } from "../data/workspaceExperience.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -312,6 +313,7 @@ async function resolveWorkspace(
       subscriptionStatus: staff ? "active" : pilot ? "beta" : "pending",
       subscriptionPlan: staff ? "enterprise" : null,
       eventQuotaExempt: staff,
+      experience: workspaceExperienceForEmail(email),
     })
     .returning();
   await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
@@ -385,6 +387,21 @@ export async function lookupUsers(
     console.warn("MEMBER_DIRECTORY_LOOKUP_FAILED", error instanceof Error ? error.message : String(error));
   }
   return directory;
+}
+
+/**
+ * Resolves the presentation profile from the workspace, not merely the current person.
+ *
+ * The profile is stored on the workspace. It therefore applies to every teammate in that
+ * workspace and never follows an anchor person into another customer workspace.
+ */
+export async function workspaceExperienceForContext(ctx: RequestContext): Promise<WorkspaceExperience> {
+  const [workspace] = await db
+    .select({ experience: workspaces.experience })
+    .from(workspaces)
+    .where(eq(workspaces.id, ctx.workspaceId))
+    .limit(1);
+  return workspace?.experience ?? "standard";
 }
 
 /**

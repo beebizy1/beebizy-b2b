@@ -582,6 +582,8 @@ export interface FloorplanItem {
   y: number;
   /** Null for objects nobody sits at. */
   seats: number | null;
+  /** Fixed site features stay in place until a planner explicitly unlocks them. */
+  locked?: boolean;
 }
 
 /**
