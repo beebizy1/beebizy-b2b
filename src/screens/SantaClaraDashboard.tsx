@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, Pill } from "@/components/primitives";
+import { SantaClaraLogo } from "@/components/SantaClaraLogo";
 import { usePreferences } from "@/app/preferences";
 import { useEvents } from "@/data/hooks";
 import { eventTabHref, visibleEventTabs } from "@/app/shell/nav";
@@ -31,9 +32,9 @@ export default function SantaClaraDashboard() {
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-primary/35 bg-gradient-to-br from-primary-wash via-surface to-surface p-6 sm:p-8">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-text">Santa Clara pilot workspace</p>
-        <div className="mt-3 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-text">Santa Clara pilot workspace</p>
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               Customized for Santa Clara University
             </h1>
@@ -41,18 +42,21 @@ export default function SantaClaraDashboard() {
               One focused place to prepare the program, coordinate people, and run registration on event day.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link href="/app/plan">
-                <FileSpreadsheet className="mr-2 size-4" />Import spreadsheet
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/app/events/new">
-                <CalendarPlus className="mr-2 size-4" />New event
-              </Link>
-            </Button>
+          <div className="w-full max-w-sm shrink-0 rounded-xl border border-[#b30738]/15 bg-white px-5 py-4 sm:px-6 sm:py-5">
+            <SantaClaraLogo />
           </div>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-2 lg:justify-end">
+          <Button asChild variant="outline">
+            <Link href="/app/plan">
+              <FileSpreadsheet className="mr-2 size-4" />Import spreadsheet
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/app/events/new">
+              <CalendarPlus className="mr-2 size-4" />New event
+            </Link>
+          </Button>
         </div>
       </section>
 
