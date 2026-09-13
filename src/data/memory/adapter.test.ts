@@ -121,6 +121,27 @@ describe("events", () => {
   });
 });
 
+describe("run of show", () => {
+  it("stores a conference day and orders cues by day before time", async () => {
+    const dayTwo = await memoryAdapter.runOfShow.create("evt-cab", {
+      dayNumber: 2,
+      startTime: "08:00",
+      title: "Day two breakfast",
+    });
+    const dayOne = await memoryAdapter.runOfShow.create("evt-cab", {
+      startTime: "17:00",
+      title: "Day one reception",
+    });
+
+    expect(dayTwo.dayNumber).toBe(2);
+    expect(dayOne.dayNumber).toBe(1);
+    const added = (await memoryAdapter.runOfShow.list("evt-cab")).filter((cue) =>
+      [dayOne.id, dayTwo.id].includes(cue.id),
+    );
+    expect(added.map((cue) => cue.id)).toEqual([dayOne.id, dayTwo.id]);
+  });
+});
+
 describe("registrations", () => {
   it("keeps the event's registration count in sync and excludes cancellations", async () => {
     const event = (await memoryAdapter.events.get("evt-atlas"))!;

@@ -1,4 +1,5 @@
 import type { BudgetItemDraft, ChecklistItemDraft, Event, FloorplanShape, RunOfShowItemDraft } from "./entities";
+import { compareRunOfShowItems, eventDayCount } from "./eventDays";
 
 export interface PlanningBrief {
   eventId: string;
@@ -213,10 +214,13 @@ function learnedRunOfShow(event: Event, fallback: RunOfShowItemDraft[], records:
   if (!closest || closest.runOfShow.length === 0) return fallback;
   const shift = minutesFromTime(eventStartTime(event)) - minutesFromTime(eventStartTime(closest.event));
   const learned = closest.runOfShow.map((cue) => ({ ...cue, startTime: addMinutes(cue.startTime, shift) }));
-  const seen = new Set(learned.map((cue) => normalizedTitle(cue.title)));
-  return [...learned, ...fallback.filter((cue) => !seen.has(normalizedTitle(cue.title)))]
-    .slice(0, 12)
-    .sort((left, right) => left.startTime.localeCompare(right.startTime))
+  const seen = new Set(learned.map((cue) => `${cue.dayNumber ?? 1}|${normalizedTitle(cue.title)}`));
+  return [
+    ...learned,
+    ...fallback.filter((cue) => !seen.has(`${cue.dayNumber ?? 1}|${normalizedTitle(cue.title)}`)),
+  ]
+    .slice(0, 36)
+    .sort(compareRunOfShowItems)
     .map((cue, index) => ({ ...cue, sortOrder: index }));
 }
 
@@ -281,6 +285,7 @@ export function buildRuleBasedSuggestions(
   event: Event,
   brief: PlanningBrief,
   pastEvents: PastEventPlanningRecord[] = [],
+  timeZone = "UTC",
 ): PlanningSuggestions {
   const theme = brief.theme.trim() || `${event.category} with a polished, welcoming feel`;
   const headcount = clampInteger(
@@ -294,6 +299,7 @@ export function buildRuleBasedSuggestions(
     PLANNING_LIMITS.maxBudgetCents,
   );
   const startTime = eventStartTime(event);
+  const conferenceDays = Math.min(eventDayCount(event.date, event.endDate, timeZone), 9);
 
   const checklist: SuggestedChecklistItem[] = [
     { title: "Confirm venue contract and access times", category: "Venue", dueDaysBefore: 60 },
@@ -305,16 +311,58 @@ export function buildRuleBasedSuggestions(
     { title: "Send final run of show to every owner and vendor", category: "Logistics", dueDaysBefore: 3 },
   ].map((item, index) => ({ ...item, sortOrder: index }));
 
-  const runOfShow: RunOfShowItemDraft[] = [
-    { startTime: addMinutes(startTime, -90), duration: 60, title: "Vendor load-in and production check", responsible: "Production", description: "Confirm access, power, sound, lighting and safety." },
-    { startTime: addMinutes(startTime, -30), duration: 30, title: "Team briefing and doors ready", responsible: "Event lead", description: "Review roles, escalation path and guest arrival plan." },
-    { startTime, duration: 30, title: "Guest arrival and registration", responsible: "Guest experience", description: `Welcome and check in up to ${headcount} guests.` },
-    { startTime: addMinutes(startTime, 30), duration: 20, title: "Opening and event orientation", responsible: "Host", description: "Set expectations, acknowledge partners and frame the experience." },
-    { startTime: addMinutes(startTime, 50), duration: 90, title: "Main program", responsible: "Program lead", description: `Deliver the core ${event.category.toLowerCase()} content.` },
-    { startTime: addMinutes(startTime, 140), duration: 45, title: "Break, networking and reset", responsible: "Guest experience", description: "Refresh catering and prepare the closing sequence." },
-    { startTime: addMinutes(startTime, 185), duration: 45, title: "Closing program and next steps", responsible: "Host", description: "Close the loop on outcomes and calls to action." },
-    { startTime: addMinutes(startTime, 230), duration: 60, title: "Guest departure and vendor strike", responsible: "Operations", description: "Complete departure, inventory and venue handback." },
-  ].map((item, index) => ({ ...item, sortOrder: index }));
+  const singleDayRunOfShow: RunOfShowItemDraft[] = [
+    { dayNumber: 1, startTime: addMinutes(startTime, -90), duration: 60, title: "Vendor load-in and production check", responsible: "Production", description: "Confirm access, power, sound, lighting and safety." },
+    { dayNumber: 1, startTime: addMinutes(startTime, -30), duration: 30, title: "Team briefing and doors ready", responsible: "Event lead", description: "Review roles, escalation path and guest arrival plan." },
+    { dayNumber: 1, startTime, duration: 30, title: "Guest arrival and registration", responsible: "Guest experience", description: `Welcome and check in up to ${headcount} guests.` },
+    { dayNumber: 1, startTime: addMinutes(startTime, 30), duration: 20, title: "Opening and event orientation", responsible: "Host", description: "Set expectations, acknowledge partners and frame the experience." },
+    { dayNumber: 1, startTime: addMinutes(startTime, 50), duration: 90, title: "Main program", responsible: "Program lead", description: `Deliver the core ${event.category.toLowerCase()} content.` },
+    { dayNumber: 1, startTime: addMinutes(startTime, 140), duration: 45, title: "Break, networking and reset", responsible: "Guest experience", description: "Refresh catering and prepare the closing sequence." },
+    { dayNumber: 1, startTime: addMinutes(startTime, 185), duration: 45, title: "Closing program and next steps", responsible: "Host", description: "Close the loop on outcomes and calls to action." },
+    { dayNumber: 1, startTime: addMinutes(startTime, 230), duration: 60, title: "Guest departure and vendor strike", responsible: "Operations", description: "Complete departure, inventory and venue handback." },
+  ];
+  const multiDayRunOfShow: RunOfShowItemDraft[] = Array.from({ length: conferenceDays }, (_, dayIndex) => {
+    const dayNumber = dayIndex + 1;
+    const finalDay = dayNumber === conferenceDays;
+    return [
+      {
+        dayNumber,
+        startTime: addMinutes(startTime, -60),
+        duration: 60,
+        title: dayNumber === 1 ? "Vendor load-in and production check" : "Daily production and room reset",
+        responsible: "Production",
+        description: dayNumber === 1 ? "Confirm access, power, sound, lighting and safety." : "Reset rooms, signage, AV and supplies before doors open.",
+      },
+      {
+        dayNumber,
+        startTime,
+        duration: 30,
+        title: `Day ${dayNumber} guest check-in`,
+        responsible: "Guest experience",
+        description: `Welcome and check in attendees for conference day ${dayNumber}.`,
+      },
+      {
+        dayNumber,
+        startTime: addMinutes(startTime, 30),
+        duration: 180,
+        title: finalDay ? "Final conference program and closing" : `Day ${dayNumber} conference program`,
+        responsible: "Program lead",
+        description: finalDay ? "Deliver the final sessions, closing remarks and next steps." : `Deliver the scheduled sessions and transitions for day ${dayNumber}.`,
+      },
+      {
+        dayNumber,
+        startTime: addMinutes(startTime, 210),
+        duration: finalDay ? 60 : 30,
+        title: finalDay ? "Guest departure and vendor strike" : `Day ${dayNumber} close and overnight reset`,
+        responsible: "Operations",
+        description: finalDay ? "Complete departure, inventory and venue handback." : "Secure the venue and prepare rooms, materials and staffing for the next day.",
+      },
+    ];
+  }).flat();
+  const runOfShow = (conferenceDays === 1 ? singleDayRunOfShow : multiDayRunOfShow).map((item, index) => ({
+    ...item,
+    sortOrder: index,
+  }));
 
   const moodConcepts: MoodConcept[] = ["Signature", "Editorial", "Immersive"].map((name, index) => ({
     name: `${theme}: ${name}`,

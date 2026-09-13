@@ -316,8 +316,11 @@ async function handleAuthed(
         .parse(body);
       const event = await repos.events.get(ctx, brief.eventId);
       if (!event) throw new HttpError(404, "This event no longer exists.");
-      const memory = await repos.planningMemory.list(ctx, event);
-      return json(await generatePlanningSuggestions(event, brief, ctx.userId, memory));
+      const [memory, settings] = await Promise.all([
+        repos.planningMemory.list(ctx, event),
+        repos.settings.get(ctx),
+      ]);
+      return json(await generatePlanningSuggestions(event, brief, ctx.userId, memory, settings.timeZone));
     }
 
     /* --------------------------------------------------------------- imports */

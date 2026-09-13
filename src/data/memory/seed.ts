@@ -842,6 +842,7 @@ export function buildSeed(): MemoryDb {
     return {
       id: `ros-${rosSeq}`,
       eventId,
+      dayNumber: 1,
       startTime,
       duration,
       title,
@@ -1343,12 +1344,12 @@ export function buildSeed(): MemoryDb {
         ["Post-event survey scheduled", "Marketing"],
       ]),
       runOfShowItems: [
-        { id: "tros-1", startTime: "06:00", duration: 120, title: "AV load-in", description: null, responsible: "AV vendor", sortOrder: 1, createdAt: at(-365) },
-        { id: "tros-2", startTime: "08:00", duration: 60, title: "Registration opens", description: null, responsible: "Staffing", sortOrder: 2, createdAt: at(-365) },
-        { id: "tros-3", startTime: "09:00", duration: 30, title: "Welcome", description: null, responsible: "Host", sortOrder: 3, createdAt: at(-365) },
-        { id: "tros-4", startTime: "09:30", duration: 45, title: "Keynote", description: null, responsible: "Programme", sortOrder: 4, createdAt: at(-365) },
-        { id: "tros-5", startTime: "12:00", duration: 60, title: "Lunch", description: null, responsible: "Catering", sortOrder: 5, createdAt: at(-365) },
-        { id: "tros-6", startTime: "17:00", duration: 60, title: "Close and teardown", description: null, responsible: "AV vendor", sortOrder: 6, createdAt: at(-365) },
+        { id: "tros-1", dayNumber: 1, startTime: "06:00", duration: 120, title: "AV load-in", description: null, responsible: "AV vendor", sortOrder: 1, createdAt: at(-365) },
+        { id: "tros-2", dayNumber: 1, startTime: "08:00", duration: 60, title: "Registration opens", description: null, responsible: "Staffing", sortOrder: 2, createdAt: at(-365) },
+        { id: "tros-3", dayNumber: 1, startTime: "09:00", duration: 30, title: "Welcome", description: null, responsible: "Host", sortOrder: 3, createdAt: at(-365) },
+        { id: "tros-4", dayNumber: 1, startTime: "09:30", duration: 45, title: "Keynote", description: null, responsible: "Programme", sortOrder: 4, createdAt: at(-365) },
+        { id: "tros-5", dayNumber: 1, startTime: "12:00", duration: 60, title: "Lunch", description: null, responsible: "Catering", sortOrder: 5, createdAt: at(-365) },
+        { id: "tros-6", dayNumber: 1, startTime: "17:00", duration: 60, title: "Close and teardown", description: null, responsible: "AV vendor", sortOrder: 6, createdAt: at(-365) },
       ],
       budgetItems: [
         { id: "tbud-1", name: "Venue rental", category: "Venue", type: "expense", estimatedCents: usd(90000), actualCents: null, notes: null, sortOrder: 1, createdAt: at(-365) },

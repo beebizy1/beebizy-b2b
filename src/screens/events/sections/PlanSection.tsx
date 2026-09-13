@@ -6,7 +6,7 @@
  * the readiness score above updates with it.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,7 @@ import {
   useUpdateRunOfShowItem,
 } from "@/data/hooks";
 import type { ChecklistItem, Event, RunOfShowItem, WorkspaceMember } from "@/data/entities";
+import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
 
 /**
  * The teammate a typed name refers to, if any.
@@ -310,11 +311,20 @@ export function ChecklistPanel({ event }: { event: Event }) {
   );
 }
 
-function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem }) {
+function RunOfShowRow({
+  eventId,
+  cue,
+  days,
+}: {
+  eventId: string;
+  cue: RunOfShowItem;
+  days: EventDayOption[];
+}) {
   const update = useUpdateRunOfShowItem();
   const remove = useRemoveRunOfShowItem();
   const [editing, setEditing] = useState(false);
   const currentDraft = () => ({
+    dayNumber: cue.dayNumber,
     startTime: cue.startTime,
     title: cue.title,
     duration: cue.duration === null ? "" : String(cue.duration),
@@ -337,7 +347,7 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
     return (
       <li className="bg-surface-sunken px-5 py-4">
         <form
-          className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_90px]"
+          className="flex flex-wrap gap-2"
           onSubmit={(formEvent) => {
             formEvent.preventDefault();
             const title = draft.title.trim();
@@ -348,6 +358,7 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
                 eventId,
                 id: cue.id,
                 patch: {
+                  dayNumber: draft.dayNumber,
                   startTime: draft.startTime,
                   title,
                   duration: Number.isFinite(parsedDuration) ? parsedDuration : null,
@@ -362,16 +373,35 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
             );
           }}
         >
+          {days.length > 1 ? (
+            <Select
+              value={String(draft.dayNumber)}
+              onValueChange={(value) => setDraft((current) => ({ ...current, dayNumber: Number(value) }))}
+            >
+              <SelectTrigger aria-label={`Conference day for ${cue.title}`} className="w-[170px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {days.map((day) => (
+                  <SelectItem key={day.dayNumber} value={String(day.dayNumber)}>
+                    {formatEventDayLabel(day)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Input
             type="time"
             value={draft.startTime}
             onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
             aria-label={`Start time for ${cue.title}`}
+            className="w-[110px]"
           />
           <Input
             value={draft.title}
             onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
             aria-label="Cue title"
+            className="min-w-[12rem] flex-1"
           />
           <Input
             type="number"
@@ -380,22 +410,23 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
             onChange={(event) => setDraft((current) => ({ ...current, duration: event.target.value }))}
             aria-label="Duration in minutes"
             placeholder="mins"
+            className="w-[90px]"
           />
           <Input
             value={draft.responsible}
             onChange={(event) => setDraft((current) => ({ ...current, responsible: event.target.value }))}
             aria-label="Cue owner"
             placeholder="Owner or team"
-            className="sm:col-span-1"
+            className="min-w-[12rem] flex-1"
           />
           <Input
             value={draft.description}
             onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
             aria-label="Cue notes"
             placeholder="Notes, handoffs, or dependencies"
-            className="sm:col-span-2"
+            className="min-w-[14rem] flex-[2]"
           />
-          <div className="flex justify-end gap-2 sm:col-span-3">
+          <div className="flex w-full justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={cancelEditing}>
               <X className="mr-1.5 size-3.5" />
               Cancel
@@ -447,14 +478,24 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
 }
 
 export function RunOfShowPanel({ event }: { event: Event }) {
-  const { timeZoneLabel } = usePreferences();
+  const { timeZone, timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const add = useAddRunOfShowItem();
+  const days = useMemo(
+    () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(cues ?? []).map((cue) => cue.dayNumber))),
+    [cues, event.date, event.endDate, timeZone],
+  );
+  const [selectedDay, setSelectedDay] = useState(1);
   const [startTime, setStartTime] = useState("09:00");
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
   const [responsible, setResponsible] = useState("");
   const [description, setDescription] = useState("");
+  const dayCues = (cues ?? []).filter((cue) => cue.dayNumber === selectedDay);
+
+  useEffect(() => {
+    if (!days.some((day) => day.dayNumber === selectedDay)) setSelectedDay(1);
+  }, [days, selectedDay]);
 
   const submit = () => {
     const trimmed = title.trim();
@@ -464,6 +505,7 @@ export function RunOfShowPanel({ event }: { event: Event }) {
       {
         eventId: event.id,
         draft: {
+          dayNumber: selectedDay,
           startTime,
           title: trimmed,
           duration: Number.isFinite(parsedDuration) ? parsedDuration : undefined,
@@ -485,7 +527,46 @@ export function RunOfShowPanel({ event }: { event: Event }) {
 
   return (
     <Panel>
-      <PanelHeader title="Run of show" description={`Cue times in ${timeZoneLabel}, the workspace\u2019s zone`} />
+      <PanelHeader
+        title="Run of show"
+        description={`${days.length > 1 ? `${days.length}-day schedule · ` : ""}Cue times in ${timeZoneLabel}, the workspace\u2019s zone`}
+      />
+
+      {days.length > 1 ? (
+        <div
+          className="flex gap-2 overflow-x-auto border-b border-hairline bg-surface-sunken px-5 py-3"
+          aria-label="Conference days"
+        >
+          {days.map((day) => {
+            const active = day.dayNumber === selectedDay;
+            const cueCount = (cues ?? []).filter((cue) => cue.dayNumber === day.dayNumber).length;
+            return (
+              <button
+                key={day.dayNumber}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSelectedDay(day.dayNumber)}
+                className={cn(
+                  "min-w-[9.5rem] rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-hairline bg-surface text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                )}
+              >
+                <span className="block text-xs font-semibold">{formatEventDayLabel(day)}</span>
+                <span
+                  className={cn(
+                    "mt-0.5 block text-[11px]",
+                    active ? "text-primary-foreground/75" : "text-muted-foreground",
+                  )}
+                >
+                  {cueCount} {cueCount === 1 ? "cue" : "cues"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
@@ -494,6 +575,11 @@ export function RunOfShowPanel({ event }: { event: Event }) {
           submit();
         }}
       >
+        {days.length > 1 ? (
+          <div className="flex h-9 items-center rounded-md border border-input bg-surface px-3 text-xs font-semibold text-foreground">
+            Day {selectedDay}
+          </div>
+        ) : null}
         <Input
           type="time"
           value={startTime}
@@ -539,11 +625,17 @@ export function RunOfShowPanel({ event }: { event: Event }) {
 
       {isLoading ? (
         <LoadingRows rows={3} className="p-4" />
-      ) : (cues ?? []).length === 0 ? (
-        <EmptyState icon={Clock} title="No cues yet" description="Build the order of the day above." />
+      ) : dayCues.length === 0 ? (
+        <EmptyState
+          icon={Clock}
+          title={days.length > 1 ? `No cues for Day ${selectedDay}` : "No cues yet"}
+          description={
+            days.length > 1 ? "Add the first cue for this conference day above." : "Build the order of the day above."
+          }
+        />
       ) : (
         <ol className="divide-y divide-hairline">
-          {(cues ?? []).map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} />)}
+          {dayCues.map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} days={days} />)}
         </ol>
       )}
     </Panel>

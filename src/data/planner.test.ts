@@ -63,6 +63,41 @@ describe("planning suggestions", () => {
     expect(plan.vendors.every((vendor) => vendor.marketplaceUrl.startsWith("https://app.beebizy.com/"))).toBe(true);
   });
 
+  it("builds a run of show for every day of a multi-day event", () => {
+    const plan = buildRuleBasedSuggestions(
+      { ...event, endDate: "2026-10-22T23:00:00.000Z" },
+      {
+        eventId: event.id,
+        headcount: 200,
+        totalBudgetCents: 7_000_000,
+        theme: "Future of community",
+      },
+    );
+
+    expect(new Set(plan.runOfShow.map((cue) => cue.dayNumber))).toEqual(new Set([1, 2, 3]));
+    expect(plan.runOfShow.filter((cue) => cue.dayNumber === 3).some((cue) => cue.title.includes("departure"))).toBe(true);
+  });
+
+  it("uses the workspace timezone when a conference crosses local midnight", () => {
+    const plan = buildRuleBasedSuggestions(
+      {
+        ...event,
+        date: "2026-10-11T06:30:00.000Z",
+        endDate: "2026-10-12T07:30:00.000Z",
+      },
+      {
+        eventId: event.id,
+        headcount: 200,
+        totalBudgetCents: 7_000_000,
+        theme: "Future of community",
+      },
+      [],
+      "America/Los_Angeles",
+    );
+
+    expect(new Set(plan.runOfShow.map((cue) => cue.dayNumber))).toEqual(new Set([1, 2, 3]));
+  });
+
   it("adapts the plan from similar completed events in the same workspace", () => {
     const memory: PastEventPlanningRecord[] = [{
       event: {

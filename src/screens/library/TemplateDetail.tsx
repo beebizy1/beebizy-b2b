@@ -30,6 +30,7 @@ import { useReplaceTemplateContents, useTemplate, useUpdateTemplate } from "@/da
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { EVENT_CATEGORIES, type TemplateContents } from "@/data/entities";
 import { formatClockTime } from "@/lib/datetime";
+import { compareRunOfShowItems } from "@/data/eventDays";
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -58,6 +59,7 @@ export default function TemplateDetail({ id }: { id: string }) {
   const [contents, setContents] = useState<TemplateContents | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskArea, setTaskArea] = useState("General");
+  const [cueDay, setCueDay] = useState("1");
   const [cueTime, setCueTime] = useState("09:00");
   const [cueTitle, setCueTitle] = useState("");
   const [lineName, setLineName] = useState("");
@@ -306,6 +308,7 @@ export default function TemplateDetail({ id }: { id: string }) {
                   ...working.runOfShowItems,
                   {
                     id: newId("tros"),
+                    dayNumber: Math.max(1, Number.parseInt(cueDay, 10) || 1),
                     startTime: cueTime,
                     duration: null,
                     title: trimmed,
@@ -314,11 +317,19 @@ export default function TemplateDetail({ id }: { id: string }) {
                     sortOrder: working.runOfShowItems.length + 1,
                     createdAt: nowIso(),
                   },
-                ].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+                ].sort(compareRunOfShowItems),
               });
               setCueTitle("");
             }}
           >
+            <Input
+              type="number"
+              min={1}
+              value={cueDay}
+              onChange={(inputEvent) => setCueDay(inputEvent.target.value)}
+              aria-label="Template cue day"
+              className="w-[82px]"
+            />
             <Input
               type="time"
               value={cueTime}
@@ -345,6 +356,7 @@ export default function TemplateDetail({ id }: { id: string }) {
             <ol className="divide-y divide-hairline">
               {working.runOfShowItems.map((cue) => (
                 <li key={cue.id} className="group flex items-center gap-3 px-5 py-2.5">
+                  <span className="shrink-0 text-xs font-semibold text-primary-text">Day {cue.dayNumber}</span>
                   <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
                     {formatClockTime(cue.startTime)}
                   </span>

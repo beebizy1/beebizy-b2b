@@ -367,11 +367,11 @@ export default function Settings() {
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
         title="Preferences"
-        description="Stored against your account, so they follow you to any device."
+        description="Your list preference follows your account. Currency and time zone are shared with the workspace."
       />
 
       <Panel>
-        <PanelHeader title="Defaults" description="How lists, dates and money are presented" />
+        <PanelHeader title="Defaults" description="How this workspace presents lists, dates and money" />
         {/*
           One setting per row. Side by side, "Group events by" sat immediately left of
           "Currency" and the pair read as a single sentence — "group events by currency" —

@@ -385,6 +385,8 @@ export type ChecklistItemPatch = Partial<ChecklistItemDraft>;
 export interface RunOfShowItem {
   id: string;
   eventId: string;
+  /** One-based day within the event. Existing schedules default to Day 1. */
+  dayNumber: number;
   /** `HH:mm` local to the event. */
   startTime: string;
   /** Minutes. */
@@ -397,6 +399,7 @@ export interface RunOfShowItem {
 }
 
 export interface RunOfShowItemDraft {
+  dayNumber?: number;
   startTime: string;
   duration?: number | null;
   title: string;
@@ -1003,10 +1006,7 @@ export type TemplateDetail = Template & TemplateContents;
 
 /* -------------------------------------------------------------- user settings */
 
-/**
- * Per-user preferences. Persisted server-side in `userSettings/{uid}` — never in
- * localStorage, so a preference set on a laptop follows the user to their phone.
- */
+/** Home grouping follows the user; currency and time zone are shared by the workspace. */
 /**
  * Everything a guest on a share link is allowed to see, and nothing else.
  *

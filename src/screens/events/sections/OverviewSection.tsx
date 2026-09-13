@@ -22,8 +22,11 @@ import { formatMoney, sumCents } from "@/data/money";
 import { eventSectionHref } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { formatClockTime } from "@/lib/datetime";
+import { usePreferences } from "@/app/preferences";
+import { eventDayCount } from "@/data/eventDays";
 
 export default function OverviewSection({ event, health }: { event: Event; health: EventHealth | null | undefined }) {
+  const { timeZone } = usePreferences();
   const { data: checklist, isLoading: checklistLoading } = useChecklist(event.id);
   const { data: vendors } = useEventVendors(event.id);
   const { data: budget } = useBudget(event.id);
@@ -31,6 +34,10 @@ export default function OverviewSection({ event, health }: { event: Event; healt
   const { data: sponsorships } = useSponsorships(event.id);
   const { data: runOfShow, isLoading: rosLoading } = useRunOfShow(event.id);
   const { data: history, isLoading: historyLoading } = useEventHistory(event.id);
+  const dayCount = Math.max(
+    eventDayCount(event.date, event.endDate, timeZone),
+    ...(runOfShow ?? []).map((cue) => cue.dayNumber),
+  );
 
   const expenses = (budget ?? []).filter((item) => item.type === "expense");
   const revenue = (budget ?? []).filter((item) => item.type === "revenue");
@@ -107,7 +114,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
         <Panel>
           <PanelHeader
             title="Run of show"
-            description={runOfShow?.length ? `${runOfShow.length} cues` : "The order of the day"}
+            description={runOfShow?.length ? `${runOfShow.length} cues · ${dayCount}-day schedule` : "The order of the day"}
             actions={
               <Button asChild variant="outline" size="sm">
                 <Link href={eventSectionHref(event.id, "plan")}>Open plan</Link>
@@ -131,6 +138,9 @@ export default function OverviewSection({ event, health }: { event: Event; healt
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>
+                    {dayCount > 1 ? (
+                      <span className="block text-[11px] font-semibold text-primary-text">Day {cue.dayNumber}</span>
+                    ) : null}
                     {cue.responsible ? (
                       <span className="block truncate text-xs text-muted-foreground">{cue.responsible}</span>
                     ) : null}

@@ -78,6 +78,7 @@ const aliases = {
   dueDate: ["due date", "deadline", "due"],
   owner: ["owner", "assigned to", "assignee", "responsible"],
   completed: ["completed", "done", "status"],
+  dayNumber: ["day", "event day", "conference day", "day number"],
   startTime: ["start time", "time", "cue time"],
   duration: ["duration", "duration minutes", "minutes", "mins"],
   cueTitle: ["cue", "cue title", "agenda item", "activity", "title"],
@@ -326,6 +327,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     const startTime = clockTime(valueFrom(row, runTable!, aliases.startTime));
     if (!cueTitle || !startTime) return [];
     return [{
+      dayNumber: Math.max(1, integer(valueFrom(row, runTable!, aliases.dayNumber)) ?? 1),
       startTime,
       duration: integer(valueFrom(row, runTable!, aliases.duration)),
       title: cueTitle,

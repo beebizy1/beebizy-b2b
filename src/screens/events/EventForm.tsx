@@ -280,6 +280,9 @@ export default function EventForm({ id }: { id?: string }) {
               {showProblem("end") ? <p className="text-xs text-danger-text">{problems.end}</p> : null}
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Add an end date on a later day to organize the run of show as Day 1, Day 2, and beyond.
+          </p>
 
           <div className="space-y-1.5">
             <Label htmlFor="venue">Venue</Label>

@@ -211,6 +211,7 @@ export function toRunOfShowItem(row: InferSelectModel<typeof s.runOfShowItems>):
   return {
     id: row.id,
     eventId: row.eventId,
+    dayNumber: row.dayNumber,
     startTime: row.startTime,
     duration: row.durationMinutes,
     title: row.title,

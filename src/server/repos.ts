@@ -61,6 +61,7 @@ import type {
   WalkInRegistrationDraft,
   WorkspaceMember,
 } from "../data/entities.ts";
+
 import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
@@ -83,6 +84,12 @@ function appOrigin(): string {
 import { selectSimilarPastEvents, type PastEventPlanningRecord } from "../data/planner.ts";
 
 type Body = Record<string, unknown>;
+
+const runOfShowOrderColumns = () => [
+  asc(s.runOfShowItems.dayNumber),
+  asc(s.runOfShowItems.startTime),
+  asc(s.runOfShowItems.sortOrder),
+] as const;
 
 function isQuotaConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -138,6 +145,11 @@ const optInt = (body: Body, key: string): number | null => {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed)) throw new HttpError(400, `${key} must be a number.`);
   return Math.trunc(parsed);
+};
+const positiveInt = (body: Body, key: string, fallback = 1): number => {
+  const value = optInt(body, key) ?? fallback;
+  if (value < 1) throw new HttpError(400, `${key} must be at least 1.`);
+  return value;
 };
 const optBool = (body: Body, key: string): boolean | undefined =>
   body[key] === undefined ? undefined : Boolean(body[key]);
@@ -538,6 +550,7 @@ export const events = {
       const rows = contents.runOfShowItems.map((item, index) => ({
           ...base,
           id: newId("ros"),
+          dayNumber: item.dayNumber ?? 1,
           startTime: item.startTime,
           durationMinutes: item.duration ?? null,
           title: item.title,
@@ -558,6 +571,7 @@ export const events = {
               after: {
                 id: row.id,
                 eventId: created.id,
+                dayNumber: row.dayNumber,
                 startTime: row.startTime,
                 duration: row.durationMinutes,
                 title: row.title,
@@ -619,7 +633,11 @@ export const events = {
 
     const [checklist, runOfShow, budget] = await Promise.all([
       db.select().from(s.checklistItems).where(eq(s.checklistItems.eventId, eventId)).orderBy(asc(s.checklistItems.sortOrder)),
-      db.select().from(s.runOfShowItems).where(eq(s.runOfShowItems.eventId, eventId)).orderBy(asc(s.runOfShowItems.startTime)),
+      db
+        .select()
+        .from(s.runOfShowItems)
+        .where(eq(s.runOfShowItems.eventId, eventId))
+        .orderBy(...runOfShowOrderColumns()),
       db.select().from(s.budgetItems).where(eq(s.budgetItems.eventId, eventId)).orderBy(asc(s.budgetItems.sortOrder)),
     ]);
 
@@ -682,7 +700,7 @@ export async function publicAgenda(eventId: string) {
     .select()
     .from(s.runOfShowItems)
     .where(eq(s.runOfShowItems.eventId, eventId))
-    .orderBy(asc(s.runOfShowItems.startTime));
+    .orderBy(...runOfShowOrderColumns());
   return rows.map(map.toRunOfShowItem);
 }
 
@@ -1149,7 +1167,7 @@ function eventScoped<Entity>(config: {
   insert: (ctx: RequestContext, eventId: string, body: Body, sortOrder: number) => Record<string, unknown>;
   patch: Record<string, (body: Body) => unknown>;
   idPrefix: string;
-  order?: "sortOrder" | "startTime" | "lotNumber" | "createdAt";
+  order?: "sortOrder" | "runOfShow" | "lotNumber" | "createdAt";
   historyResource?: HistoryResource;
   /**
    * Runs after a successful write, for side effects that must not be able to fail it —
@@ -1159,16 +1177,16 @@ function eventScoped<Entity>(config: {
   afterWrite?: (ctx: RequestContext, eventId: string, after: Entity, before: Entity | null) => Promise<void>;
 }) {
   const table = config.table as unknown as typeof s.checklistItems;
-  const orderColumn = () => {
+  const orderColumns = () => {
     switch (config.order) {
-      case "startTime":
-        return asc(s.runOfShowItems.startTime);
+      case "runOfShow":
+        return runOfShowOrderColumns();
       case "lotNumber":
-        return asc(s.auctionItems.lotNumber);
+        return [asc(s.auctionItems.lotNumber)];
       case "createdAt":
-        return asc(table.createdAt);
+        return [asc(table.createdAt)];
       default:
-        return asc(table.sortOrder);
+        return [asc(table.sortOrder)];
     }
   };
 
@@ -1178,7 +1196,7 @@ function eventScoped<Entity>(config: {
         .select()
         .from(table)
         .where(and(eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
-        .orderBy(orderColumn());
+        .orderBy(...orderColumns());
       return rows.map((row) => config.mapper(row as never));
     },
 
@@ -1383,9 +1401,10 @@ export const runOfShow = eventScoped({
   mapper: map.toRunOfShowItem as never,
   idPrefix: "ros",
   historyResource: "run-of-show",
-  order: "startTime",
+  order: "runOfShow",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
+    dayNumber: positiveInt(body, "dayNumber"),
     startTime: str(body, "startTime"),
     durationMinutes: optInt(body, "duration"),
     title: str(body, "title"),
@@ -1394,6 +1413,7 @@ export const runOfShow = eventScoped({
     sortOrder,
   }),
   patch: {
+    dayNumber: (b) => positiveInt(b, "dayNumber"),
     startTime: (b) => str(b, "startTime"),
     durationMinutes: (b) => optInt(b, "duration"),
     title: (b) => str(b, "title"),
@@ -2407,6 +2427,7 @@ export const planningMemory = {
             : 14,
         })),
         runOfShow: cues.filter((row) => row.eventId === event.id).map((row) => ({
+          dayNumber: row.dayNumber,
           startTime: row.startTime,
           duration: row.durationMinutes,
           title: row.title,
@@ -2453,23 +2474,46 @@ export const roi = {
 
 export const settings = {
   async get(ctx: RequestContext): Promise<UserSettings> {
-    const [row] = await db.select().from(s.userSettings).where(eq(s.userSettings.userId, ctx.userId)).limit(1);
-    if (row) return map.toUserSettings(row);
-    const [created] = await db.insert(s.userSettings).values({ userId: ctx.userId }).returning();
-    return map.toUserSettings(created!);
+    const [[stored], [workspace]] = await Promise.all([
+      db.select().from(s.userSettings).where(eq(s.userSettings.userId, ctx.userId)).limit(1),
+      db
+        .select({ currency: s.workspaces.currency, timeZone: s.workspaces.timeZone })
+        .from(s.workspaces)
+        .where(eq(s.workspaces.id, ctx.workspaceId))
+        .limit(1),
+    ]);
+    const row = stored ?? (await db.insert(s.userSettings).values({ userId: ctx.userId }).returning())[0]!;
+    const personal = map.toUserSettings(row);
+    return {
+      ...personal,
+      currency: workspace?.currency ?? personal.currency,
+      timeZone: workspace?.timeZone ?? personal.timeZone,
+    };
   },
   async update(ctx: RequestContext, body: Body): Promise<UserSettings> {
-    const patch = patchFrom<Record<string, unknown>>(body, {
+    const patch = patchFrom<Partial<UserSettings>>(body, {
       homeGrouping: (b) => str(b, "homeGrouping", "location"),
       currency: (b) => str(b, "currency", "USD"),
       timeZone: (b) => str(b, "timeZone", "America/Los_Angeles"),
     });
-    const [row] = await db
+    const savePersonal = db
       .insert(s.userSettings)
       .values({ userId: ctx.userId, ...patch })
-      .onConflictDoUpdate({ target: s.userSettings.userId, set: { ...patch, updatedAt: new Date() } })
-      .returning();
-    return map.toUserSettings(row!);
+      .onConflictDoUpdate({ target: s.userSettings.userId, set: { ...patch, updatedAt: new Date() } });
+    const workspacePatch = {
+      ...(patch.currency === undefined ? {} : { currency: patch.currency }),
+      ...(patch.timeZone === undefined ? {} : { timeZone: patch.timeZone }),
+      updatedAt: new Date(),
+    };
+    if (patch.currency !== undefined || patch.timeZone !== undefined) {
+      await db.batch([
+        savePersonal,
+        db.update(s.workspaces).set(workspacePatch).where(eq(s.workspaces.id, ctx.workspaceId)),
+      ]);
+    } else {
+      await savePersonal;
+    }
+    return settings.get(ctx);
   },
 };
 

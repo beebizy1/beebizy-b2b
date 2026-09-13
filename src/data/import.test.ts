@@ -30,7 +30,7 @@ describe("spreadsheet import", () => {
           "Checklist",
         ),
         parseCsvTable(
-          "Start Time,Duration,Title,Responsible,Notes\n5:30 PM,45,Guest arrival,Guest team,Open both doors\n18:15,15,Welcome,Host,",
+          "Day,Start Time,Duration,Title,Responsible,Notes\nDay 1,5:30 PM,45,Guest arrival,Guest team,Open both doors\n2,18:15,15,Welcome,Host,",
           "Run of Show",
         ),
         parseCsvTable(
@@ -57,8 +57,8 @@ describe("spreadsheet import", () => {
       expect.objectContaining({ title: "Send final guest count", category: "Catering", assignedTo: "Maya", completed: true }),
     ]);
     expect(plan.runOfShow).toEqual([
-      expect.objectContaining({ startTime: "17:30", duration: 45, title: "Guest arrival" }),
-      expect.objectContaining({ startTime: "18:15", duration: 15, title: "Welcome" }),
+      expect.objectContaining({ dayNumber: 1, startTime: "17:30", duration: 45, title: "Guest arrival" }),
+      expect.objectContaining({ dayNumber: 2, startTime: "18:15", duration: 15, title: "Welcome" }),
     ]);
     expect(plan.budget).toEqual([
       expect.objectContaining({ name: "Venue rental", type: "expense", estimatedCents: 3_000_000, actualCents: 2_950_000 }),

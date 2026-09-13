@@ -31,6 +31,7 @@ import type {
 } from "../adapter";
 import { DataError } from "../adapter";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
+import { compareRunOfShowItems } from "../eventDays";
 import type {
   Guest,
   GuestDraft,
@@ -438,7 +439,7 @@ const events: EventsRepository = {
       event,
       agenda: store()
         .runOfShow.filter((item) => item.eventId === event.id)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+        .sort(compareRunOfShowItems),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
       timeZone: store().settings.timeZone,
     });
@@ -915,6 +916,7 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
   (eventId, draft, sortOrder) => ({
     id: "",
     eventId,
+    dayNumber: Math.max(1, Math.trunc(draft.dayNumber ?? 1)),
     startTime: draft.startTime,
     duration: draft.duration ?? null,
     title: draft.title,
@@ -924,7 +926,7 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
     createdAt: nowIso(),
   }),
   "run-of-show",
-  (a, b) => a.startTime.localeCompare(b.startTime) || a.sortOrder - b.sortOrder,
+  compareRunOfShowItems,
 );
 
 const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>(
@@ -1876,6 +1878,7 @@ export const memoryAdapter: DataAdapter = {
               : 14,
           })),
           runOfShow: current.runOfShow.filter((cue) => cue.eventId === candidate.id).map((cue) => ({
+            dayNumber: cue.dayNumber,
             startTime: cue.startTime,
             duration: cue.duration,
             title: cue.title,
@@ -1889,7 +1892,7 @@ export const memoryAdapter: DataAdapter = {
           floorplanShapes: current.floorplans
             .find((plan) => plan.eventId === candidate.id)?.items.map((item) => item.shape) ?? [],
         }));
-      return buildRuleBasedSuggestions(event, brief, memory);
+      return buildRuleBasedSuggestions(event, brief, memory, current.settings.timeZone);
     },
   },
   imports: {

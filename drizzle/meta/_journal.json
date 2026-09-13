@@ -169,6 +169,13 @@
       "when": 1789264284996,
       "tag": "0023_remove_workspace_experience",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789282626161,
+      "tag": "0024_multi_day_run_of_show",
+      "breakpoints": true
     }
   ]
 }

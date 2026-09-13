@@ -33,6 +33,8 @@ import {
   useUpdateBudgetItem,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
+import { eventDayCount } from "@/data/eventDays";
+import { usePreferences } from "@/app/preferences";
 import {
   moodConceptDataUrl,
   PLANNING_LIMITS,
@@ -220,6 +222,7 @@ function DraftMoneyInput({
 }
 
 export default function PlanningAssistantPanel({ event }: { event: Event }) {
+  const { timeZone } = usePreferences();
   const initialHeadcount = event.capacity ?? 200;
   const storageKey = planningDraftStorageKey(event);
   const [restoredDraft] = useState(() => readStoredPlanningDraft(event));
@@ -246,6 +249,9 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
 
   const parsedHeadcount = Number.parseInt(headcount, 10);
   const parsedBudget = centsFromInput(budget);
+  const conferenceDays = eventDayCount(event.date, event.endDate, timeZone);
+  const showSuggestedDay =
+    conferenceDays > 1 || Math.max(1, ...(suggestions?.runOfShow ?? []).map((cue) => cue.dayNumber ?? 1)) > 1;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -273,7 +279,11 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
     () => ({
       budget: new Map((existingBudget ?? []).map((item) => [item.name.trim().toLowerCase(), item])),
       checklist: new Set((existingChecklist ?? []).map((item) => item.title.trim().toLowerCase())),
-      runOfShow: new Set((existingCues ?? []).map((item) => `${item.startTime}|${item.title.trim().toLowerCase()}`)),
+      runOfShow: new Set(
+        (existingCues ?? []).map(
+          (item) => `${item.dayNumber}|${item.startTime}|${item.title.trim().toLowerCase()}`,
+        ),
+      ),
       mood: new Set((existingMood ?? []).map((item) => item.caption?.split(" · ")[0]?.trim().toLowerCase())),
     }),
     [existingBudget, existingChecklist, existingCues, existingMood],
@@ -383,9 +393,17 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
      * by now, so it is what gets written.
      */
     const pending = suggestions.runOfShow
-      .map((item, index) => ({ ...item, sortOrder: index }))
+      .map((item, index) => ({
+        ...item,
+        dayNumber: Math.min(conferenceDays, Math.max(1, item.dayNumber ?? 1)),
+        sortOrder: index,
+      }))
       .filter(
-        (item) => item.title.trim() && !existing.runOfShow.has(`${item.startTime}|${item.title.trim().toLowerCase()}`),
+        (item) =>
+          item.title.trim() &&
+          !existing.runOfShow.has(
+            `${item.dayNumber ?? 1}|${item.startTime}|${item.title.trim().toLowerCase()}`,
+          ),
       );
     try {
       /*
@@ -764,6 +782,7 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
                         runOfShow: [
                           ...current.runOfShow,
                           {
+                            dayNumber: 1,
                             startTime: "09:00",
                             duration: 15,
                             title: "New cue",
@@ -783,7 +802,43 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
               </div>
               <ol className="divide-y divide-hairline" aria-label="Editable run of show suggestions">
                 {suggestions.runOfShow.map((cue, index) => (
-                  <li key={index} className="grid gap-2 px-4 py-3 sm:grid-cols-[7.25rem_minmax(0,1fr)_7rem_8rem_auto] sm:items-end">
+                  <li
+                    key={index}
+                    className={`grid gap-2 px-4 py-3 sm:items-end ${
+                      showSuggestedDay
+                        ? "sm:grid-cols-[5rem_7.25rem_minmax(0,1fr)_7rem_8rem_auto]"
+                        : "sm:grid-cols-[7.25rem_minmax(0,1fr)_7rem_8rem_auto]"
+                    }`}
+                  >
+                    {showSuggestedDay ? (
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-medium text-muted-foreground">Day</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={conferenceDays}
+                          value={cue.dayNumber ?? 1}
+                          onChange={(inputEvent) =>
+                            reviseSuggestions("runOfShow", (current) => ({
+                              ...current,
+                              runOfShow: current.runOfShow.map((draft, draftIndex) =>
+                                draftIndex === index
+                                  ? {
+                                      ...draft,
+                                      dayNumber: Math.min(
+                                        conferenceDays,
+                                        Math.max(1, Number.parseInt(inputEvent.target.value, 10) || 1),
+                                      ),
+                                    }
+                                  : draft,
+                              ),
+                            }))
+                          }
+                          aria-label={`Conference day for ${cue.title || "cue"}`}
+                          className="h-8"
+                        />
+                      </label>
+                    ) : null}
                     <label className="space-y-1">
                       <span className="text-[11px] font-medium text-muted-foreground">Start</span>
                       <Input

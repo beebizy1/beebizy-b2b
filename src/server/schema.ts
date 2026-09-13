@@ -436,13 +436,14 @@ export const runOfShowItems = pgTable(
   "run_of_show_items",
   {
     ...eventChild,
+    dayNumber: integer("day_number").notNull().default(1),
     startTime: varchar("start_time", { length: 5 }).notNull(),
     durationMinutes: integer("duration_minutes"),
     title: text("title").notNull(),
     description: text("description"),
     responsible: text("responsible"),
   },
-  (table) => [index("run_of_show_event_idx").on(table.eventId, table.startTime)],
+  (table) => [index("run_of_show_event_idx").on(table.eventId, table.dayNumber, table.startTime)],
 );
 
 export const checkInStations = pgTable(

@@ -385,6 +385,7 @@ export default function SpreadsheetImporter({
                 <span className="block font-medium text-foreground">{cue.title}</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   {[
+                    `Day ${cue.dayNumber ?? 1}`,
                     cue.duration == null ? null : `${cue.duration} minutes`,
                     cue.responsible ? `Lead: ${cue.responsible}` : null,
                     cue.description,

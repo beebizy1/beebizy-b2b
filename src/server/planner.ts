@@ -10,6 +10,7 @@ import {
   type PlanningSuggestions,
 } from "../data/planner.ts";
 import { nextTurn, type AssistantChatMessage, type AssistantTurn } from "../data/assistantChat.ts";
+import { eventDayCount } from "../data/eventDays.ts";
 import { plannerModel } from "./model.ts";
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -40,6 +41,7 @@ const generatedPlanSchema = z.object({
   runOfShow: z
     .array(
       z.object({
+        dayNumber: z.number().int().min(1).max(31).nullish(),
         startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
         duration: z.number().int().min(0).max(720).nullish(),
         title: z.string().min(3).max(140),
@@ -48,7 +50,7 @@ const generatedPlanSchema = z.object({
       }),
     )
     .min(6)
-    .max(12),
+    .max(36),
   moodConcepts: z
     .array(
       z.object({
@@ -87,8 +89,10 @@ export async function generatePlanningSuggestions(
   brief: PlanningBrief,
   userId: string,
   pastEvents: PastEventPlanningRecord[] = [],
+  timeZone = "UTC",
 ): Promise<PlanningSuggestions> {
-  const fallback = buildRuleBasedSuggestions(event, brief, pastEvents);
+  const fallback = buildRuleBasedSuggestions(event, brief, pastEvents, timeZone);
+  const conferenceDays = eventDayCount(event.date, event.endDate, timeZone);
   const configured = plannerModel({ effort: "medium", feature: "event-planner", user: userId });
   if (!configured) return fallback;
 
@@ -98,6 +102,7 @@ export async function generatePlanningSuggestions(
     description: event.description,
     startsAt: event.date,
     endsAt: event.endDate,
+    timeZone,
     location: event.locationRecord?.name ?? event.location,
     headcount: fallback.headcount,
     totalBudgetCents: fallback.totalBudgetCents,
@@ -117,6 +122,7 @@ export async function generatePlanningSuggestions(
       })),
       checklist: record.checklist.map((item) => ({ title: item.title, category: item.category, dueDaysBefore: item.dueDaysBefore })),
       runOfShow: record.runOfShow.map((cue) => ({
+        dayNumber: cue.dayNumber ?? 1,
         startTime: cue.startTime,
         duration: cue.duration,
         title: cue.title,
@@ -138,7 +144,7 @@ export async function generatePlanningSuggestions(
 
         "Order the checklist by when the work has to start, not by importance, and set dueDaysBefore to when it must be done rather than when it would be nice. Anything with a lead time — venue, catering headcount, print, AV rig, permits — goes early, because those are what actually sink an event.",
 
-        "Build the run of show as a real timeline for the day: load-in, doors, the programme itself, and strike. Times must run in order and durations must be plausible for the headcount.",
+        "Build the run of show as a real timeline: load-in, doors, the programme itself, and strike. Times must run in order within each event day and durations must be plausible for the headcount. For a multi-day event, assign every cue a one-based dayNumber and cover every event day with a useful schedule.",
 
         "Mood concepts should be three genuinely different directions, not one idea in three shades, and each palette must suit the stated theme.",
 
@@ -169,6 +175,7 @@ export async function generatePlanningSuggestions(
       })),
       runOfShow: output.runOfShow.map((item, index) => ({
         ...item,
+        dayNumber: Math.min(conferenceDays, Math.max(1, item.dayNumber ?? 1)),
         duration: item.duration ?? null,
         description: item.description ?? null,
         responsible: item.responsible ?? null,
