@@ -1,4 +1,4 @@
-import { dayNumberInZone } from "@/lib/datetime";
+import { dayNumberInZone } from "../lib/datetime.ts";
 
 export interface EventDayOption {
   /** One-based number shown to planners. */

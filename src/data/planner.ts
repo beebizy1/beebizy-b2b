@@ -1,5 +1,5 @@
 import type { BudgetItemDraft, ChecklistItemDraft, Event, FloorplanShape, RunOfShowItemDraft } from "./entities";
-import { compareRunOfShowItems, eventDayCount } from "./eventDays";
+import { compareRunOfShowItems, eventDayCount } from "./eventDays.ts";
 
 export interface PlanningBrief {
   eventId: string;
