@@ -22,7 +22,9 @@ import {
 } from "@/components/ui/command";
 import { useEvents } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
-import { NAV_ITEMS } from "./nav";
+import { visibleNavItems } from "./nav";
+import { planHasCapability, type PlanId } from "@/data/plans";
+import type { AccountExperience } from "@/data/accountExperience";
 
 export function useCommandPalette(): { open: boolean; setOpen: (open: boolean) => void } {
   const [open, setOpen] = useState(false);
@@ -69,7 +71,19 @@ function score(value: string, search: string): number {
   return 0;
 }
 
-export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CommandPalette({
+  canReviewFeedback,
+  experience,
+  plan,
+  open,
+  onOpenChange,
+}: {
+  canReviewFeedback: boolean;
+  experience: AccountExperience;
+  plan: PlanId;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { when } = usePreferences();
   const [, navigate] = useLocation();
   const { data: events } = useEvents();
@@ -108,20 +122,24 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 <Plus className="mr-2 size-4" aria-hidden="true" />
                 New event
               </CommandItem>
-              <CommandItem value="new vendor supplier create" onSelect={() => go("/app/vendors/new")}>
-                <Store className="mr-2 size-4" aria-hidden="true" />
-                New vendor
-              </CommandItem>
-              <CommandItem value="new guest person create" onSelect={() => go("/app/guests/new")}>
-                <UserPlus className="mr-2 size-4" aria-hidden="true" />
-                New guest
-              </CommandItem>
+              {experience === "standard" && planHasCapability(plan, "vendorManagement") ? (
+                <CommandItem value="new vendor supplier create" onSelect={() => go("/app/vendors/new")}>
+                  <Store className="mr-2 size-4" aria-hidden="true" />
+                  New vendor
+                </CommandItem>
+              ) : null}
+              {experience === "standard" ? (
+                <CommandItem value="new guest person create" onSelect={() => go("/app/attendees/new")}>
+                  <UserPlus className="mr-2 size-4" aria-hidden="true" />
+                  New guest
+                </CommandItem>
+              ) : null}
             </CommandGroup>
 
             <CommandSeparator />
 
             <CommandGroup heading="Go to">
-              {NAV_ITEMS.map((item) => (
+              {visibleNavItems(canReviewFeedback, plan, experience).map((item) => (
                 <CommandItem key={item.href} value={`${item.label} ${item.hint}`} onSelect={() => go(item.href)}>
                   <item.icon className="mr-2 size-4" aria-hidden="true" />
                   <span>{item.label}</span>
@@ -149,18 +167,21 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               </>
             ) : null}
 
-            <CommandSeparator />
-
-            <CommandGroup heading="Preferences">
-              <CommandItem value="tasks open checklist todo" onSelect={() => go("/app/tasks")}>
-                <ListChecks className="mr-2 size-4" aria-hidden="true" />
-                All open tasks
-              </CommandItem>
-              <CommandItem value="settings preferences" onSelect={() => go("/app/settings")}>
-                <Search className="mr-2 size-4" aria-hidden="true" />
-                Settings
-              </CommandItem>
-            </CommandGroup>
+            {experience === "standard" ? (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Preferences">
+                  <CommandItem value="tasks open checklist todo" onSelect={() => go("/app/tasks")}>
+                    <ListChecks className="mr-2 size-4" aria-hidden="true" />
+                    All open tasks
+                  </CommandItem>
+                  <CommandItem value="settings preferences" onSelect={() => go("/app/settings")}>
+                    <Search className="mr-2 size-4" aria-hidden="true" />
+                    Settings
+                  </CommandItem>
+                </CommandGroup>
+              </>
+            ) : null}
           </CommandList>
         </Command>
       </DialogContent>

@@ -16,6 +16,7 @@ import type {
   AuctionItem,
   BudgetItem,
   ChecklistItem,
+  CheckInStation,
   Event,
   EventHistoryEntry,
   MoodBoardImage,
@@ -25,17 +26,23 @@ import type {
   Floorplan,
   Location,
   MenuItem,
+  ProductFeedback,
   RaffleItem,
   RaffleTicket,
   Registration,
   RunOfShowItem,
   Sponsorship,
+  Rfp,
+  RfpResponse,
+  Deposit,
+  TeamHoursEntry,
   Template,
   TemplateContents,
   TicketType,
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerShift,
 } from "../entities";
 import { DEFAULT_USER_SETTINGS } from "../entities";
 
@@ -44,11 +51,13 @@ export interface MemoryDb {
   locations: Location[];
   guests: Guest[];
   registrations: Registration[];
+  checkInStations: CheckInStation[];
   vendors: Vendor[];
   vendorMessages: VendorMessage[];
   eventVendors: EventVendor[];
   checklist: ChecklistItem[];
   runOfShow: RunOfShowItem[];
+  volunteers: VolunteerShift[];
   budget: BudgetItem[];
   menu: MenuItem[];
   moodBoard: MoodBoardImage[];
@@ -57,12 +66,17 @@ export interface MemoryDb {
   raffle: RaffleItem[];
   raffleTickets: RaffleTicket[];
   sponsorships: Sponsorship[];
+  rfps: Rfp[];
+  rfpResponses: RfpResponse[];
+  deposits: Deposit[];
+  teamHours: TeamHoursEntry[];
   templates: (Template & TemplateContents)[];
   canvases: Canvas[];
   floorplans: Floorplan[];
   history: EventHistoryEntry[];
   roi: EventRoi[];
   settings: UserSettings;
+  feedback: ProductFeedback[];
 }
 
 export const DEMO_OWNER_ID = "demo-owner";
@@ -332,6 +346,34 @@ export function buildSeed(): MemoryDb {
 
   const registrations: Registration[] = [];
   let regSeq = 0;
+  /**
+   * A demo guest list is only useful segmented if the segments look like a real one: a
+   * few VIPs and sponsors against a bulk of general attendees, not an even split.
+   */
+  const demoSegment = (index: number): string | null => {
+    if (index % 11 === 0) return "VIP";
+    if (index % 7 === 0) return "Sponsor";
+    if (index % 5 === 0) return "Staff";
+    return "General";
+  };
+
+  /**
+   * Who each guest represents. Paired with the segment, this is the report a university
+   * demo day actually needs: how many investors came, and from which funds.
+   */
+  const DEMO_ORGS = [
+    "Sequoia Capital",
+    "Andreessen Horowitz",
+    "Bessemer Venture Partners",
+    "Kleiner Perkins",
+    "Lightspeed",
+    "Santa Clara University",
+    "Stripe",
+    "Figma",
+  ];
+  const demoOrganization = (index: number): string | null =>
+    index % 4 === 3 ? null : DEMO_ORGS[index % DEMO_ORGS.length]!;
+
   const register = (eventId: string, guestIndexes: number[], status: Registration["status"], dayOffset: number) => {
     const event = events.find((e) => e.id === eventId)!;
     for (const index of guestIndexes) {
@@ -343,7 +385,12 @@ export function buildSeed(): MemoryDb {
         eventTitle: event.title,
         guestId: guests[index]!.id,
         status,
+        segment: demoSegment(index),
+        organization: demoOrganization(index),
         registeredAt: at(dayOffset, 11, regSeq % 60),
+        checkedInAt: null,
+        checkInStation: null,
+        checkInNotes: null,
         createdAt: at(dayOffset, 11, regSeq % 60),
       });
     }
@@ -364,6 +411,42 @@ export function buildSeed(): MemoryDb {
   for (const event of events) {
     event.registrationCount = registrations.filter((r) => r.eventId === event.id && r.status !== "cancelled").length;
   }
+
+  const checkInStations: CheckInStation[] = [
+    {
+      id: "station-sk-a-m",
+      eventId: "evt-skickoff",
+      name: "Main entrance A-M",
+      lane: "Last names A-M",
+      lead: "Jordan Lee",
+      deviceCount: 2,
+      notes: "Standard badge pickup and reprints.",
+      sortOrder: 1,
+      createdAt: at(-14),
+    },
+    {
+      id: "station-sk-n-z",
+      eventId: "evt-skickoff",
+      name: "Main entrance N-Z",
+      lane: "Last names N-Z",
+      lead: "Maya Thompson",
+      deviceCount: 2,
+      notes: "Route VIP badge issues to the welcome desk lead.",
+      sortOrder: 2,
+      createdAt: at(-14),
+    },
+    {
+      id: "station-sk-vip",
+      eventId: "evt-skickoff",
+      name: "VIP and speakers",
+      lane: "VIPs, speakers and sponsors",
+      lead: "Lena Park",
+      deviceCount: 1,
+      notes: "Hold credentials and escort contacts here.",
+      sortOrder: 3,
+      createdAt: at(-14),
+    },
+  ];
 
   /* --------------------------------------------------------------- vendors */
 
@@ -689,6 +772,8 @@ export function buildSeed(): MemoryDb {
       completed,
       dueDate: dueDayOffset === null ? null : at(dueDayOffset, 17),
       assignedTo,
+      // Seeded names are not workspace members, so there is nobody to notify.
+      assignedEmail: null,
       category,
       sortOrder: clSeq,
       createdAt: at(-40),
@@ -757,6 +842,7 @@ export function buildSeed(): MemoryDb {
     return {
       id: `ros-${rosSeq}`,
       eventId,
+      dayNumber: 1,
       startTime,
       duration,
       title,
@@ -796,6 +882,53 @@ export function buildSeed(): MemoryDb {
     cue("evt-gala", "20:25", 35, "Live auction", "Grace Oyelaran", "Five lots. Runners staged at both wings."),
     cue("evt-gala", "21:00", 15, "Raffle draw", "Reuben Castellanos"),
     cue("evt-gala", "21:15", 10, "Closing remarks", "Naomi Bergstrom"),
+  ];
+
+  /* ------------------------------------------------------------- volunteers */
+
+  const volunteers: VolunteerShift[] = [
+    {
+      id: "vol-1",
+      eventId: "evt-skickoff",
+      name: "Jordan Lee",
+      email: "jordan.lee@example.com",
+      phone: "+1 415 555 0130",
+      role: "Welcome desk",
+      startTime: "07:15",
+      endTime: "10:30",
+      status: "confirmed",
+      notes: "Brief on VIP badges before doors open.",
+      sortOrder: 1,
+      createdAt: at(-12),
+    },
+    {
+      id: "vol-2",
+      eventId: "evt-skickoff",
+      name: "Maya Thompson",
+      email: "maya.thompson@example.com",
+      phone: null,
+      role: "Badge pickup",
+      startTime: "07:30",
+      endTime: "11:00",
+      status: "scheduled",
+      notes: null,
+      sortOrder: 2,
+      createdAt: at(-10),
+    },
+    {
+      id: "vol-3",
+      eventId: "evt-gala",
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      phone: "+1 415 555 0144",
+      role: "Auction runner",
+      startTime: "17:30",
+      endTime: "22:00",
+      status: "confirmed",
+      notes: "Meet the auction lead at stage left.",
+      sortOrder: 1,
+      createdAt: at(-15),
+    },
   ];
 
   /* ---------------------------------------------------------------- budget */
@@ -1181,6 +1314,7 @@ export function buildSeed(): MemoryDb {
       completed: false,
       dueDate: null,
       assignedTo: null,
+      assignedEmail: null,
       category,
       sortOrder: i + 1,
       createdAt: at(-365),
@@ -1210,12 +1344,12 @@ export function buildSeed(): MemoryDb {
         ["Post-event survey scheduled", "Marketing"],
       ]),
       runOfShowItems: [
-        { id: "tros-1", startTime: "06:00", duration: 120, title: "AV load-in", description: null, responsible: "AV vendor", sortOrder: 1, createdAt: at(-365) },
-        { id: "tros-2", startTime: "08:00", duration: 60, title: "Registration opens", description: null, responsible: "Staffing", sortOrder: 2, createdAt: at(-365) },
-        { id: "tros-3", startTime: "09:00", duration: 30, title: "Welcome", description: null, responsible: "Host", sortOrder: 3, createdAt: at(-365) },
-        { id: "tros-4", startTime: "09:30", duration: 45, title: "Keynote", description: null, responsible: "Programme", sortOrder: 4, createdAt: at(-365) },
-        { id: "tros-5", startTime: "12:00", duration: 60, title: "Lunch", description: null, responsible: "Catering", sortOrder: 5, createdAt: at(-365) },
-        { id: "tros-6", startTime: "17:00", duration: 60, title: "Close and teardown", description: null, responsible: "AV vendor", sortOrder: 6, createdAt: at(-365) },
+        { id: "tros-1", dayNumber: 1, startTime: "06:00", duration: 120, title: "AV load-in", description: null, responsible: "AV vendor", sortOrder: 1, createdAt: at(-365) },
+        { id: "tros-2", dayNumber: 1, startTime: "08:00", duration: 60, title: "Registration opens", description: null, responsible: "Staffing", sortOrder: 2, createdAt: at(-365) },
+        { id: "tros-3", dayNumber: 1, startTime: "09:00", duration: 30, title: "Welcome", description: null, responsible: "Host", sortOrder: 3, createdAt: at(-365) },
+        { id: "tros-4", dayNumber: 1, startTime: "09:30", duration: 45, title: "Keynote", description: null, responsible: "Programme", sortOrder: 4, createdAt: at(-365) },
+        { id: "tros-5", dayNumber: 1, startTime: "12:00", duration: 60, title: "Lunch", description: null, responsible: "Catering", sortOrder: 5, createdAt: at(-365) },
+        { id: "tros-6", dayNumber: 1, startTime: "17:00", duration: 60, title: "Close and teardown", description: null, responsible: "AV vendor", sortOrder: 6, createdAt: at(-365) },
       ],
       budgetItems: [
         { id: "tbud-1", name: "Venue rental", category: "Venue", type: "expense", estimatedCents: usd(90000), actualCents: null, notes: null, sortOrder: 1, createdAt: at(-365) },
@@ -1325,6 +1459,7 @@ export function buildSeed(): MemoryDb {
 
   const floorplans: Floorplan[] = [
     {
+      id: "fp-gala-ballroom",
       eventId: "evt-gala",
       name: "Ballroom — 30 tables",
       updatedAt: at(-14),
@@ -1346,6 +1481,22 @@ export function buildSeed(): MemoryDb {
         { id: "fp-t11", shape: "round-table", label: "11", x: 66, y: 66, seats: 10 },
         { id: "fp-auction", shape: "long-table", label: "Silent auction display", x: 50, y: 84, seats: null },
         { id: "fp-entry", shape: "entrance", label: "Entrance", x: 12, y: 92, seats: null },
+      ],
+    },
+    // A second room on the same event, because that is the case the single-plan model
+    // could not express and the one customers kept describing: drinks outside, dinner in.
+    {
+      id: "fp-gala-terrace",
+      eventId: "evt-gala",
+      name: "Terrace — arrival drinks",
+      updatedAt: at(-13),
+      items: [
+        { id: "fp-terr-entry", shape: "entrance", label: "From lobby", x: 14, y: 88, seats: null },
+        { id: "fp-terr-bar", shape: "bar", label: "Champagne bar", x: 50, y: 22, seats: null },
+        { id: "fp-terr-h1", shape: "booth", label: "High top 1", x: 26, y: 52, seats: 4 },
+        { id: "fp-terr-h2", shape: "booth", label: "High top 2", x: 44, y: 58, seats: 4 },
+        { id: "fp-terr-h3", shape: "booth", label: "High top 3", x: 62, y: 52, seats: 4 },
+        { id: "fp-terr-h4", shape: "booth", label: "High top 4", x: 78, y: 62, seats: 4 },
       ],
     },
   ];
@@ -1412,16 +1563,223 @@ export function buildSeed(): MemoryDb {
     },
   ];
 
+  /* ------------------------------------------------------------------- rfps */
+
+  const rfps: Rfp[] = [
+    {
+      id: "rfp-gala-catering",
+      eventId: "evt-gala",
+      title: "Plated dinner service for 300",
+      vendorCategory: "Catering",
+      description: "Three-course plated dinner with a drinks reception beforehand. Full dietary tracking required.",
+      budgetMinCents: usd(24000),
+      budgetMaxCents: usd(32000),
+      headcount: 300,
+      deadline: at(9),
+      requirements: "Kosher and vegan covers, two bars, service staff included, load-in from 2pm.",
+      status: "sent",
+      createdAt: at(-12),
+    },
+    {
+      id: "rfp-gala-av",
+      eventId: "evt-gala",
+      title: "Stage, lighting and sound",
+      vendorCategory: "AV & Tech",
+      description: "Main stage with LED backdrop, wireless handhelds for the auction, uplighting on the room.",
+      budgetMinCents: usd(9000),
+      budgetMaxCents: usd(14000),
+      headcount: 300,
+      deadline: at(4),
+      requirements: "Rehearsal slot the afternoon before. Backup handheld on standby for the auctioneer.",
+      status: "sent",
+      createdAt: at(-10),
+    },
+    {
+      id: "rfp-kickoff-print",
+      eventId: "evt-skickoff",
+      title: "Badges, signage and printed programme",
+      vendorCategory: "Print",
+      description: "Delegate badges, wayfinding signage and a saddle-stitched programme.",
+      budgetMinCents: usd(3000),
+      budgetMaxCents: usd(5500),
+      headcount: 450,
+      deadline: at(2),
+      requirements: "Proofs by end of week to hold the print slot. Delivery to Moscone loading dock.",
+      status: "draft",
+      createdAt: at(-5),
+    },
+  ];
+
+  const rfpResponses: RfpResponse[] = [
+    {
+      id: "rfpres-gala-catering-1",
+      rfpId: "rfp-gala-catering",
+      vendorName: "Golden Gate Catering",
+      contactName: "Marisol Vega",
+      contactEmail: "events@goldengatecatering.example",
+      contactPhone: "+1 415 555 0121",
+      quotedAmountCents: usd(28400),
+      notes: "Includes staff and bar. Needs final headcount 10 days out.",
+      status: "received",
+      createdAt: at(-8),
+    },
+    {
+      id: "rfpres-gala-catering-2",
+      rfpId: "rfp-gala-catering",
+      vendorName: "Harvest Table Co.",
+      contactName: "Dev Raman",
+      contactEmail: "hello@harvesttable.example",
+      contactPhone: "+1 415 555 0188",
+      quotedAmountCents: usd(31900),
+      notes: "Premium menu. Dietary tracking included at no extra cost.",
+      status: "received",
+      createdAt: at(-7),
+    },
+    {
+      id: "rfpres-gala-catering-3",
+      rfpId: "rfp-gala-catering",
+      vendorName: "Bayline Hospitality",
+      contactName: null,
+      contactEmail: "rfp@bayline.example",
+      contactPhone: null,
+      quotedAmountCents: null,
+      notes: null,
+      status: "pending",
+      createdAt: at(-6),
+    },
+    {
+      id: "rfpres-gala-av-1",
+      rfpId: "rfp-gala-av",
+      vendorName: "Apex AV & Sound",
+      contactName: "Tomas Lindqvist",
+      contactEmail: "bookings@apexav.example",
+      contactPhone: "+1 415 555 0164",
+      quotedAmountCents: usd(11250),
+      notes: "Rig list confirmed for both ballrooms. Load-in 6am Thursday.",
+      status: "accepted",
+      createdAt: at(-6),
+    },
+    {
+      id: "rfpres-gala-av-2",
+      rfpId: "rfp-gala-av",
+      vendorName: "Northbeam Production",
+      contactName: "Ruth Adeyemi",
+      contactEmail: "hello@northbeam.example",
+      contactPhone: null,
+      quotedAmountCents: usd(15600),
+      notes: "Over budget. Declined on cost, not capability — worth asking again next year.",
+      status: "declined",
+      createdAt: at(-5),
+    },
+  ];
+
+  /* --------------------------------------------------------------- deposits */
+
+  const deposits: Deposit[] = [
+    {
+      id: "dep-gala-venue",
+      eventId: "evt-gala",
+      vendorName: "Moscone Center West",
+      amountCents: usd(15000),
+      dueDate: at(-24),
+      paidDate: at(-22),
+      paidBy: "Maria Santos",
+      paymentMethod: "Bank transfer",
+      status: "paid",
+      notes: "50% venue deposit. Balance due on the day.",
+      createdAt: at(-30),
+    },
+    {
+      id: "dep-gala-catering",
+      eventId: "evt-gala",
+      vendorName: "Golden Gate Catering",
+      amountCents: usd(8500),
+      dueDate: at(6),
+      paidDate: null,
+      paidBy: null,
+      paymentMethod: null,
+      status: "pending",
+      notes: "Payable once the final headcount is signed off.",
+      createdAt: at(-8),
+    },
+    {
+      id: "dep-gala-av",
+      eventId: "evt-gala",
+      vendorName: "Apex AV & Sound",
+      amountCents: usd(3400),
+      dueDate: at(-3),
+      paidDate: null,
+      paidBy: null,
+      paymentMethod: null,
+      status: "overdue",
+      notes: "Invoice chased twice. Rig is held but not confirmed until this clears.",
+      createdAt: at(-6),
+    },
+    {
+      id: "dep-kickoff-venue",
+      eventId: "evt-skickoff",
+      vendorName: "Moscone Center West",
+      amountCents: usd(12000),
+      dueDate: at(-14),
+      paidDate: at(-14),
+      paidBy: "Tom Nguyen",
+      paymentMethod: "Corporate card",
+      status: "paid",
+      notes: null,
+      createdAt: at(-20),
+    },
+    {
+      id: "dep-cab-venue",
+      eventId: "evt-cab",
+      vendorName: "The Foundry Loft",
+      amountCents: usd(2750),
+      dueDate: at(-40),
+      paidDate: at(-38),
+      paidBy: "Dana Kim",
+      paymentMethod: "Bank transfer",
+      status: "refunded",
+      notes: "Date moved; deposit returned in full and re-booked.",
+      createdAt: at(-45),
+    },
+  ];
+
+  /* ------------------------------------------------------------- team hours */
+
+  const teamHours: TeamHoursEntry[] = [
+    { id: "hrs-1", eventId: "evt-townhall", staffMember: "Maria Santos", role: "Event Coordinator", hours: 42, createdAt: at(-30) },
+    { id: "hrs-2", eventId: "evt-townhall", staffMember: "James Okafor", role: "AV Technician", hours: 14, createdAt: at(-30) },
+    { id: "hrs-3", eventId: "evt-townhall", staffMember: "Priya Patel", role: "Marketing Lead", hours: 22, createdAt: at(-30) },
+    { id: "hrs-4", eventId: "evt-townhall", staffMember: "Tom Nguyen", role: "Logistics", hours: 10, createdAt: at(-30) },
+    { id: "hrs-5", eventId: "evt-townhall", staffMember: "Dana Kim", role: "Registration Desk", hours: 8, createdAt: at(-30) },
+    { id: "hrs-6", eventId: "evt-training", staffMember: "Maria Santos", role: "Event Coordinator", hours: 35, createdAt: at(-65) },
+    { id: "hrs-7", eventId: "evt-training", staffMember: "Dana Kim", role: "Registration Desk", hours: 12, createdAt: at(-65) },
+    { id: "hrs-8", eventId: "evt-training", staffMember: "Raj Mehta", role: "Security Coord.", hours: 8, createdAt: at(-65) },
+    { id: "hrs-9", eventId: "evt-gala", staffMember: "Maria Santos", role: "Event Coordinator", hours: 65, createdAt: at(-20) },
+    { id: "hrs-10", eventId: "evt-gala", staffMember: "James Okafor", role: "AV Technician", hours: 30, createdAt: at(-20) },
+    { id: "hrs-11", eventId: "evt-gala", staffMember: "Priya Patel", role: "Marketing Lead", hours: 40, createdAt: at(-20) },
+    { id: "hrs-12", eventId: "evt-gala", staffMember: "Tom Nguyen", role: "Logistics", hours: 20, createdAt: at(-20) },
+    { id: "hrs-13", eventId: "evt-gala", staffMember: "Raj Mehta", role: "Security Coord.", hours: 12, createdAt: at(-20) },
+    { id: "hrs-14", eventId: "evt-skickoff", staffMember: "Maria Santos", role: "Event Coordinator", hours: 50, createdAt: at(-15) },
+    { id: "hrs-15", eventId: "evt-skickoff", staffMember: "James Okafor", role: "AV Technician", hours: 25, createdAt: at(-15) },
+    { id: "hrs-16", eventId: "evt-skickoff", staffMember: "Priya Patel", role: "Marketing Lead", hours: 35, createdAt: at(-15) },
+    { id: "hrs-17", eventId: "evt-skickoff", staffMember: "Tom Nguyen", role: "Logistics", hours: 18, createdAt: at(-15) },
+    { id: "hrs-18", eventId: "evt-cab", staffMember: "Dana Kim", role: "Event Coordinator", hours: 28, createdAt: at(-10) },
+    { id: "hrs-19", eventId: "evt-cab", staffMember: "Priya Patel", role: "Marketing Lead", hours: 15, createdAt: at(-10) },
+    { id: "hrs-20", eventId: "evt-cab", staffMember: "Tom Nguyen", role: "Logistics", hours: 10, createdAt: at(-10) },
+  ];
+
   return {
     events,
     locations,
     guests,
     registrations,
+    checkInStations,
     vendors,
     vendorMessages,
     eventVendors,
     checklist,
     runOfShow,
+    volunteers,
     budget,
     menu,
     moodBoard,
@@ -1430,11 +1788,16 @@ export function buildSeed(): MemoryDb {
     raffle,
     raffleTickets,
     sponsorships,
+    rfps,
+    rfpResponses,
+    deposits,
+    teamHours,
     templates,
     canvases,
     floorplans,
     history,
     roi,
     settings: { ...DEFAULT_USER_SETTINGS },
+    feedback: [],
   };
 }

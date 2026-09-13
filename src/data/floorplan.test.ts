@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseFloorplanDraft } from "./floorplan";
+import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
+  it("supports Santa Clara site features and individual seating", () => {
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair"]));
+  });
   it("accepts a structured room layout", () => {
     expect(
       parseFloorplanDraft({
@@ -12,6 +16,14 @@ describe("parseFloorplanDraft", () => {
       name: "Ballroom A",
       items: [{ id: "table-1", shape: "round-table", label: "Table 1", x: 42, y: 58, seats: 10 }],
     });
+  });
+
+  it("preserves fixed site features while remaining compatible with older layouts", () => {
+    const base = { id: "tree-1", shape: "tree", label: "Existing tree", x: 42, y: 58, seats: null };
+    expect(parseFloorplanDraft({ name: "Lawn", items: [{ ...base, locked: true }] }).items[0]).toMatchObject({
+      locked: true,
+    });
+    expect(parseFloorplanDraft({ name: "Lawn", items: [base] }).items[0]).not.toHaveProperty("locked");
   });
 
   it("rejects duplicate object ids", () => {

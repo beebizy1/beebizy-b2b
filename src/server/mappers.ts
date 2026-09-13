@@ -20,9 +20,11 @@ import type {
   Canvas,
   CanvasCard,
   ChecklistItem,
+  CheckInStation,
   Event,
   EventHistoryEntry,
   MoodBoardImage,
+  ProductFeedback,
   EventRoi,
   EventVendor,
   Floorplan,
@@ -40,6 +42,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerShift,
 } from "../data/entities.ts";
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
@@ -114,7 +117,12 @@ export function toRegistration(
     eventTitle,
     guestId: row.guestId,
     status: row.status,
+    segment: row.segment,
+    organization: row.organization,
     registeredAt: isoRequired(row.registeredAt),
+    checkedInAt: iso(row.checkedInAt),
+    checkInStation: row.checkInStation,
+    checkInNotes: row.checkInNotes,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
   };
@@ -192,6 +200,7 @@ export function toChecklistItem(row: InferSelectModel<typeof s.checklistItems>):
     completed: row.completed,
     dueDate: iso(row.dueDate),
     assignedTo: row.assignedTo,
+    assignedEmail: row.assignedEmail,
     category: row.category,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
@@ -202,11 +211,43 @@ export function toRunOfShowItem(row: InferSelectModel<typeof s.runOfShowItems>):
   return {
     id: row.id,
     eventId: row.eventId,
+    dayNumber: row.dayNumber,
     startTime: row.startTime,
     duration: row.durationMinutes,
     title: row.title,
     description: row.description,
     responsible: row.responsible,
+    sortOrder: row.sortOrder,
+    createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toCheckInStation(row: InferSelectModel<typeof s.checkInStations>): CheckInStation {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    name: row.name,
+    lane: row.lane,
+    lead: row.lead,
+    deviceCount: row.deviceCount,
+    notes: row.notes,
+    sortOrder: row.sortOrder,
+    createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toVolunteerShift(row: InferSelectModel<typeof s.volunteerShifts>): VolunteerShift {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    role: row.role,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    status: row.status,
+    notes: row.notes,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
   };
@@ -379,6 +420,7 @@ export function toCanvas(row: InferSelectModel<typeof s.canvases>): Canvas {
 
 export function toFloorplan(row: InferSelectModel<typeof s.floorplans>): Floorplan {
   return {
+    id: row.id,
     eventId: row.eventId,
     name: row.name,
     items: row.items as FloorplanItem[],
@@ -417,6 +459,18 @@ export function toUserSettings(row: InferSelectModel<typeof s.userSettings>): Us
     homeGrouping: row.homeGrouping as UserSettings["homeGrouping"],
     currency: row.currency,
     timeZone: row.timeZone,
+  };
+}
+
+export function toProductFeedback(row: InferSelectModel<typeof s.productFeedback>): ProductFeedback {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    userId: row.userId,
+    category: row.category,
+    message: row.message,
+    pagePath: row.pagePath,
+    createdAt: isoRequired(row.createdAt),
   };
 }
 

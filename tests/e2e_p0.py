@@ -1,0 +1,269 @@
+"""Browser regression for authenticated entry and the five P0 workflows."""
+
+import os
+import re
+
+from playwright.sync_api import sync_playwright
+
+
+BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:3000")
+
+
+def wait_for_exact_text(page, text: str) -> None:
+    page.get_by_text(text, exact=True).first.wait_for(state="visible")
+
+
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(headless=True)
+    page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    browser_errors: list[str] = []
+    page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
+
+    page.goto(BASE_URL, wait_until="networkidle")
+    page.wait_for_url("**/login", timeout=5_000)
+    assert page.url.rstrip("/").endswith("/login")
+
+    marketing_url = f"{BASE_URL.rstrip('/')}/marketing-preview"
+    page.goto(marketing_url, wait_until="networkidle")
+    desktop_menu_button = page.get_by_role("button", name="Open menu")
+    assert desktop_menu_button.is_visible()
+    assert desktop_menu_button.locator("span").count() == 3
+    assert page.locator("header nav > *").last.get_by_role("button", name="Open menu").is_visible()
+    desktop_menu_button.click()
+    desktop_navigation = page.get_by_role("navigation", name="Header navigation")
+    assert desktop_navigation.get_by_role("link").all_inner_texts() == ["Who It’s For", "Features", "About Us"]
+    page.get_by_role("button", name="Close menu").click()
+    assert not desktop_navigation.is_visible()
+    assert page.locator("#pricing").count() == 0
+    assert "Start planning for free." not in page.locator("main").inner_text()
+    assert "Corp Packages" not in page.locator("main").inner_text()
+    testimonial = page.locator("#testimonial")
+    testimonial.wait_for(state="visible", timeout=5_000)
+    assert "Beebizy team" in testimonial.inner_text()
+    assert "BeBeezy" not in testimonial.inner_text()
+    assert "They’re incredible at sourcing vendors" in testimonial.inner_text()
+    assert "Jaclynn Brennan" in testimonial.inner_text()
+    assert "Co-founder, Ayana Foundation" in testimonial.inner_text()
+    assert testimonial.locator("figure").count() == 3
+    nia_card = testimonial.locator("figure").filter(has_text="Nia Sanchez")
+    nia_card_text = nia_card.inner_text()
+    assert "Bravo" in nia_card_text
+    assert "The Valley" in nia_card_text
+    assert "Used Beebizy" in nia_card_text
+    nia_video = nia_card.get_by_label("Nia Sanchez video testimonial")
+    assert nia_video.get_attribute("poster") == "/nia-sanchez-testimonial-poster.jpg"
+    assert nia_video.locator('source[type="video/mp4"]').get_attribute("src") == "/nia-sanchez-testimonial.mp4"
+    assert nia_video.evaluate(
+        """async video => {
+            if (video.readyState < 1) {
+                video.load();
+                await new Promise((resolve, reject) => {
+                    video.addEventListener('loadedmetadata', resolve, { once: true });
+                    video.addEventListener('error', () => reject(new Error('Video metadata failed to load')), { once: true });
+                });
+            }
+            video.muted = true;
+            await video.play();
+            const played = !video.paused && video.duration > 0;
+            video.pause();
+            return played;
+        }"""
+    )
+    watcher_card = testimonial.locator("figure").filter(has_text="@wearewatchers")
+    watcher_card_text = watcher_card.inner_text()
+    assert "featured event" in watcher_card_text.casefold()
+    assert "Watcher Live Viewing Party" in watcher_card_text
+    assert "Las Vegas" in watcher_card_text
+    assert "Ayana Rising" not in watcher_card_text
+
+    mobile_page = browser.new_page(viewport={"width": 390, "height": 844})
+    mobile_page.goto(marketing_url, wait_until="networkidle")
+    menu_button = mobile_page.get_by_role("button", name="Open menu")
+    assert menu_button.is_visible()
+    menu_button.click()
+    mobile_navigation = mobile_page.get_by_role("navigation", name="Header navigation")
+    assert mobile_navigation.is_visible()
+    assert mobile_navigation.get_by_role("link", name="About Us").get_attribute("href") == "/about"
+    features_link = mobile_navigation.get_by_role("link", name="Features")
+    assert features_link.get_attribute("href") == "#features"
+    features_link.click()
+    assert not mobile_navigation.is_visible()
+    assert mobile_page.url.endswith("#features")
+    menu_button.click()
+    who_link = mobile_navigation.get_by_role("link", name="Who It’s For")
+    assert who_link.get_attribute("href") == "#who"
+    who_link.click()
+    assert not mobile_navigation.is_visible()
+    assert mobile_page.url.endswith("#who")
+    mobile_testimonial = mobile_page.locator("#testimonial")
+    mobile_testimonial.wait_for(state="visible", timeout=5_000)
+    mobile_jaclynn_card = mobile_testimonial.locator("figure").filter(has_text="Jaclynn Brennan")
+    quote_box = mobile_jaclynn_card.locator("blockquote").bounding_box()
+    attribution_box = mobile_jaclynn_card.get_by_text("Jaclynn Brennan", exact=True).bounding_box()
+    assert quote_box and attribution_box and quote_box["y"] < attribution_box["y"]
+    mobile_video = mobile_testimonial.get_by_label("Nia Sanchez video testimonial")
+    assert mobile_video.is_visible()
+    assert mobile_video.evaluate("video => video.controls && video.playsInline")
+    assert mobile_page.evaluate(
+        "document.documentElement.scrollWidth === document.documentElement.clientWidth",
+    )
+    mobile_page.get_by_role("button", name="Open menu").click()
+    mobile_page.get_by_role("navigation", name="Header navigation").get_by_role("link", name="About Us").click()
+    mobile_page.wait_for_url("**/about", timeout=5_000)
+    mobile_page.get_by_role("heading", name=re.compile("Built by an event planner")).wait_for(state="visible")
+    assert "500 events" in mobile_page.locator("main").inner_text()
+    mobile_page.close()
+
+    wait_for_exact_text(
+        page,
+        "Enterprise, lean, or mission-driven. Request a personalized demo. No credit card.",
+    )
+
+    # Every CTA area has one Book a Free Demo action, and every demo action opens the lead form.
+    assert page.get_by_role("button", name="Talk to Sales", exact=True).count() == 0
+    assert page.locator("header").get_by_role("button", name="Book a Free Demo", exact=True).count() == 1
+    assert page.locator("main > section").first.get_by_role("button", name="Book a Free Demo", exact=True).count() == 1
+    demo_buttons = page.get_by_role("button", name="Book a Free Demo", exact=True)
+    assert demo_buttons.count() >= 3
+    for index in range(demo_buttons.count()):
+        demo_buttons.nth(index).click()
+        page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
+        assert page.url.rstrip("/") == marketing_url.rstrip("/")
+        page.get_by_role("button", name="Cancel", exact=True).click()
+
+    page.get_by_role("link", name="See it in action").first.click()
+    page.get_by_role("dialog", name="Talk to sales").wait_for(state="visible", timeout=5_000)
+    page.get_by_role("button", name="Cancel", exact=True).click()
+
+    # Keep the seeded product available to regression tests without exposing an
+    # authentication bypass through the public landing page.
+    page.evaluate("sessionStorage.setItem('beebizy:product-demo', 'true')")
+    page.goto(f"{BASE_URL.rstrip('/')}/app", wait_until="networkidle")
+    wait_for_exact_text(page, "Demo data.")
+    assert page.get_by_role("link", name="Dashboard").is_visible()
+    page.set_viewport_size({"width": 1986, "height": 1488})
+    page.screenshot(path="design-references/studio-dashboard-implementation.png")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+
+    product_mobile = browser.new_page(viewport={"width": 390, "height": 844})
+    product_mobile.add_init_script("sessionStorage.setItem('beebizy:product-demo', 'true')")
+    product_mobile.goto(f"{BASE_URL.rstrip('/')}/app", wait_until="networkidle")
+    product_mobile.screenshot(path="design-references/studio-dashboard-mobile-implementation.png")
+    product_mobile.get_by_role("button", name="Open navigation").click()
+    assert product_mobile.get_by_role("navigation", name="Main").get_by_role("link", name="Plan an event").is_visible()
+    product_mobile.keyboard.press("Escape")
+    assert product_mobile.evaluate(
+        "document.documentElement.scrollWidth === document.documentElement.clientWidth",
+    )
+    product_mobile.goto(f"{BASE_URL.rstrip('/')}/app/plan", wait_until="networkidle")
+    product_mobile.get_by_role("button", name="Plan with the AI agent").click()
+    product_mobile.get_by_label("Headcount").fill("200")
+    product_mobile.get_by_role("button", name="Build my plan").click()
+    product_mobile.get_by_text("3 PM", exact=True).wait_for(state="visible")
+    assert "15:00" not in product_mobile.locator("main").inner_text()
+    assert product_mobile.evaluate(
+        "document.documentElement.scrollWidth === document.documentElement.clientWidth",
+    )
+    product_mobile.close()
+
+    # The private beta starts with an AI-assisted or manual planning choice.
+    page.get_by_role("link", name="Plan an event", exact=True).click()
+    wait_for_exact_text(page, "How would you like to plan?")
+    page.get_by_role("button", name="Plan with the AI agent").click()
+    page.get_by_label("Headcount").fill("200")
+    page.get_by_role("button", name="Build my plan").click()
+    wait_for_exact_text(page, "Bee AI working plan")
+    wait_for_exact_text(page, "$70,000")
+    wait_for_exact_text(page, "$30,000")
+    wait_for_exact_text(page, "$10,000")
+    wait_for_exact_text(page, "$5,000")
+    wait_for_exact_text(page, "3 PM")
+    assert "15:00" not in page.locator("main").inner_text()
+    page.set_viewport_size({"width": 1986, "height": 1488})
+    page.screenshot(path="design-references/studio-ai-planner-implementation.png")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+
+    # Multi-location calendar is a first-class destination.
+    page.get_by_role("link", name="Calendar", exact=True).click()
+    wait_for_exact_text(page, "Your full event calendar")
+    assert page.url.endswith("/app/calendar")
+    wait_for_exact_text(page, "Today")
+    page.locator('a[title*="Global Sales Kickoff"]').first.wait_for(state="visible")
+    calendar = page.locator('a[title*=" · "]')
+    calendar_text = " ".join(calendar.all_inner_texts())
+    assert "Moscone Center West" in calendar_text
+    assert "The Foundry Loft" in calendar_text
+
+    page.get_by_role("link", name="Events", exact=True).click()
+    wait_for_exact_text(page, "Every event you run")
+    page.get_by_text("Annual Partner Gala & Fundraiser", exact=True).click()
+    event_sections = page.get_by_label("Event sections")
+
+    # Invitation and RSVP tracking.
+    event_sections.get_by_role("link", name="Invites & guests", exact=True).click()
+    wait_for_exact_text(page, "Invites & registrations")
+    page.get_by_label("Choose someone to invite").click()
+    page.get_by_role("option").first.click()
+    assert page.get_by_label("Invitation status").inner_text() == "Invite - awaiting RSVP"
+    page.get_by_role("button", name="Add invitation", exact=True).click()
+    page.get_by_role("link", name="Send invite", exact=True).first.wait_for(state="visible")
+
+    # Run of show builder with a real write.
+    event_sections.get_by_role("link", name="Plan", exact=True).click()
+    wait_for_exact_text(page, "Beebizy AI planner")
+    page.get_by_label("Headcount").fill("200")
+    assert page.get_by_label("Total budget").input_value() == "70000.00"
+    page.get_by_label("Theme or direction").fill("Future of community")
+    page.get_by_role("button", name="Build plan").click()
+    wait_for_exact_text(page, "Plan ready for review")
+    wait_for_exact_text(page, "$70,000")
+    wait_for_exact_text(page, "$30,000")
+    wait_for_exact_text(page, "$10,000")
+    wait_for_exact_text(page, "$5,000")
+    wait_for_exact_text(page, "4:30 PM")
+    assert "16:30" not in page.locator("main").inner_text()
+    for builder in ["Budget suggestion", "Checklist builder", "Run of show builder", "Mood board directions"]:
+        section = page.get_by_text(builder, exact=True).locator("xpath=ancestor::section[1]")
+        section.get_by_role("button", name="Add to event").click()
+        section.get_by_role("button", name="Added").wait_for(state="visible")
+    marketplace_links = page.get_by_text("Vendor suggestions", exact=True).locator("xpath=ancestor::section[1]").locator("a")
+    assert marketplace_links.count() >= 4
+    assert all((marketplace_links.nth(index).get_attribute("href") or "").startswith("https://app.beebizy.com/") for index in range(marketplace_links.count()))
+
+    wait_for_exact_text(page, "Run of show")
+    cue_title = page.get_by_role("textbox", name="Cue title").last
+    cue_title.fill("P0 browser verification")
+    cue_title.locator("xpath=ancestor::form").get_by_role("button", name="Add", exact=True).click()
+    wait_for_exact_text(page, "P0 browser verification")
+
+    # Planned-versus-actual budget management with a tracked actual-spend write.
+    event_sections.get_by_role("link", name="Budget & reporting", exact=True).click()
+    wait_for_exact_text(page, "Budget")
+    wait_for_exact_text(page, "Estimated")
+    wait_for_exact_text(page, "Actual")
+    wait_for_exact_text(page, "Variance")
+    catering_actual = page.get_by_label("Actual for Catering — 300 covers")
+    catering_actual.fill("60001")
+    page.locator("h2", has_text="Budget").first.click()
+    assert catering_actual.input_value() == "60001"
+    wait_for_exact_text(page, "-$3,999")
+
+    # Floorplan builder with a save.
+    event_sections.get_by_role("link", name="Vendors", exact=True).click()
+    wait_for_exact_text(page, "Floorplan")
+    page.get_by_role("button", name="Round table", exact=True).click()
+    page.get_by_role("button", name="Save").click()
+    wait_for_exact_text(page, "Floorplan saved")
+
+    # The writes above must survive SPA navigation and appear in structured history.
+    event_sections.get_by_role("link", name="Analytics", exact=True).click()
+    wait_for_exact_text(page, "Planning history")
+    wait_for_exact_text(page, "Created run-of-show: P0 browser verification")
+    wait_for_exact_text(page, "Updated budget: Catering — 300 covers")
+    page.get_by_text(re.compile(r"^Updated floorplan:")).first.wait_for(state="visible")
+
+    actionable_browser_errors = [error for error in browser_errors if "ERR_NETWORK_CHANGED" not in error]
+    assert not actionable_browser_errors, "Browser console errors:\n" + "\n".join(actionable_browser_errors)
+    browser.close()
+
+print("P0 end-to-end browser test passed")

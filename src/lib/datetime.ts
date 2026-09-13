@@ -184,6 +184,18 @@ const STYLES: Record<DateStyle, Intl.DateTimeFormatOptions> = {
 /** Placeholder for a missing or unparseable date. An em dash, never "Invalid Date". */
 export const NO_DATE = "—";
 
+/** Render a stored local `HH:mm` value as a compact 12-hour clock time. */
+export function formatClockTime(time: string | null | undefined): string {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time ?? "");
+  if (!match) return NO_DATE;
+
+  const hour = Number(match[1]);
+  const minute = match[2];
+  const displayHour = hour % 12 || 12;
+  const suffix = hour < 12 ? "AM" : "PM";
+  return minute === "00" ? `${displayHour} ${suffix}` : `${displayHour}:${minute} ${suffix}`;
+}
+
 export function formatInZone(
   iso: string | Date | null | undefined,
   timeZone: string,

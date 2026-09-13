@@ -19,10 +19,11 @@
  * `ON DELETE CASCADE` removes the eleven hand-written subcollection deletes.
  */
 
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -34,6 +35,9 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
+import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
+import { SOLO_LIMITS } from "../data/plans.ts";
+import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -48,6 +52,10 @@ export const raffleStatus = pgEnum("raffle_status", ["open", "closed", "drawn"])
 export const sponsorshipTier = pgEnum("sponsorship_tier", ["gold", "silver", "bronze", "custom"]);
 export const messageDirection = pgEnum("message_direction", ["inbound", "outbound"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "paid", "refunded", "failed"]);
+export const subscriptionStatus = pgEnum("subscription_status", WORKSPACE_SUBSCRIPTION_STATUSES);
+export const subscriptionPlan = pgEnum("subscription_plan", ["solo", "team", "enterprise"]);
+export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
+export const volunteerStatus = pgEnum("volunteer_status", VOLUNTEER_STATUSES);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -62,6 +70,31 @@ export const workspaces = pgTable("workspaces", {
   clerkOrgId: text("clerk_org_id").unique(),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
+  subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
+  /*
+   * Pilot workspaces predate the published Solo limits and are not held to them.
+   *
+   * They were invited before Beebizy had plans at all, several of them run more events in
+   * a year than Solo includes, and metering them retroactively would mean telling the
+   * people who tested the product first to delete their work. New workspaces default to
+   * false and are metered from the day they sign up.
+   */
+  eventQuotaExempt: boolean("event_quota_exempt").notNull().default(false),
+  subscriptionPlan: subscriptionPlan("subscription_plan"),
+  stripeCustomerId: text("stripe_customer_id").unique(),
+  stripeSubscriptionId: text("stripe_subscription_id").unique(),
+  stripePriceId: text("stripe_price_id"),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+  stripeCheckoutInterval: text("stripe_checkout_interval"),
+  stripeCheckoutLockedAt: timestamp("stripe_checkout_locked_at", { withTimezone: true }),
+  stripeLastEventCreated: bigint("stripe_last_event_created", { mode: "number" }),
+  stripeTerminalSubscriptionId: text("stripe_terminal_subscription_id"),
+  subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end", { withTimezone: true }),
+  subscriptionCancelAtPeriodEnd: boolean("subscription_cancel_at_period_end").notNull().default(false),
+  betaStartedAt: timestamp("beta_started_at", { withTimezone: true }).notNull().defaultNow(),
+  betaEndsAt: timestamp("beta_ends_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now() + interval '3 months'`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -89,6 +122,36 @@ export const workspaceMembers = pgTable(
   ],
 );
 
+/**
+ * Someone invited but not yet signed in.
+ *
+ * Access used to be an environment variable, so adding a colleague meant a redeploy and
+ * they landed in a brand new empty workspace of their own. An invite is a row: it grants
+ * entry, carries the role they should get, and names the workspace they join — which is
+ * what makes a team share one set of events instead of three private copies.
+ */
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Lower-cased on write, because an invite that only matches one casing is a bug. */
+    email: text("email").notNull(),
+    role: workspaceRole("role").notNull().default("member"),
+    invitedBy: text("invited_by").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedUserId: text("accepted_user_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    // One live invite per address, so two workspaces cannot both claim the same person.
+    uniqueIndex("workspace_invites_email_idx").on(table.email),
+    index("workspace_invites_workspace_idx").on(table.workspaceId),
+  ],
+);
+
 export const userSettings = pgTable("user_settings", {
   /** Clerk user id. */
   userId: text("user_id").primaryKey(),
@@ -97,6 +160,26 @@ export const userSettings = pgTable("user_settings", {
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
   updatedAt: updatedAt(),
 });
+
+export const productFeedback = pgTable(
+  "product_feedback",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Clerk user id, so a person's feedback follows them across sessions. */
+    userId: text("user_id").notNull(),
+    category: feedbackCategory("category").notNull().default(DEFAULT_FEEDBACK_CATEGORY),
+    message: text("message").notNull(),
+    pagePath: text("page_path"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("product_feedback_user_idx").on(table.userId, table.createdAt),
+    index("product_feedback_workspace_idx").on(table.workspaceId, table.createdAt),
+  ],
+);
 
 /* -------------------------------------------------------------------- locations */
 
@@ -153,6 +236,32 @@ export const events = pgTable(
   ],
 );
 
+/**
+ * A fixed set of calendar-year slots per Solo workspace. The unique primary key is the
+ * concurrency guard: simultaneous event creates cannot exceed the published allowance.
+ */
+export const eventQuotaSlots = pgTable(
+  "event_quota_slots",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    calendarYear: integer("calendar_year").notNull(),
+    slot: integer("slot").notNull().default(1),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.calendarYear, table.slot] }),
+    check(
+      "event_quota_slots_slot_check",
+      sql`${table.slot} between 1 and ${sql.raw(String(SOLO_LIMITS.eventsPerYear))}`,
+    ),
+    uniqueIndex("event_quota_slots_event_idx").on(table.eventId),
+  ],
+);
+
 /* ---------------------------------------------------------------------- people */
 
 export const guests = pgTable(
@@ -189,7 +298,14 @@ export const registrations = pgTable(
       .notNull()
       .references(() => guests.id, { onDelete: "cascade" }),
     status: registrationStatus("status").notNull().default("pending"),
+    /** Free text: the customer's own guest-list category. Null means uncategorised. */
+    segment: text("segment"),
+    /** Free text: the fund, firm or school this person represents. */
+    organization: text("organization"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+    checkInStation: text("check_in_station"),
+    checkInNotes: text("check_in_notes"),
     /** Set when the seat was bought rather than added by an organizer. */
     ticketTypeId: text("ticket_type_id"),
     quantity: integer("quantity").notNull().default(1),
@@ -305,6 +421,8 @@ export const checklistItems = pgTable(
     completed: boolean("completed").notNull().default(false),
     dueDate: timestamp("due_date", { withTimezone: true }),
     assignedTo: text("assigned_to"),
+    /** Where to notify the assignee. Null when the name belongs to nobody in the workspace. */
+    assignedEmail: text("assigned_email"),
     category: text("category").notNull().default("General"),
   },
   (table) => [
@@ -318,13 +436,43 @@ export const runOfShowItems = pgTable(
   "run_of_show_items",
   {
     ...eventChild,
+    dayNumber: integer("day_number").notNull().default(1),
     startTime: varchar("start_time", { length: 5 }).notNull(),
     durationMinutes: integer("duration_minutes"),
     title: text("title").notNull(),
     description: text("description"),
     responsible: text("responsible"),
   },
-  (table) => [index("run_of_show_event_idx").on(table.eventId, table.startTime)],
+  (table) => [index("run_of_show_event_idx").on(table.eventId, table.dayNumber, table.startTime)],
+);
+
+export const checkInStations = pgTable(
+  "check_in_stations",
+  {
+    ...eventChild,
+    name: text("name").notNull(),
+    lane: text("lane").notNull(),
+    lead: text("lead"),
+    deviceCount: integer("device_count").notNull().default(1),
+    notes: text("notes"),
+  },
+  (table) => [index("check_in_stations_event_idx").on(table.eventId, table.sortOrder)],
+);
+
+export const volunteerShifts = pgTable(
+  "volunteer_shifts",
+  {
+    ...eventChild,
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    role: text("role").notNull(),
+    startTime: varchar("start_time", { length: 5 }).notNull(),
+    endTime: varchar("end_time", { length: 5 }).notNull(),
+    status: volunteerStatus("status").notNull().default("scheduled"),
+    notes: text("notes"),
+  },
+  (table) => [index("volunteer_shifts_event_idx").on(table.eventId, table.startTime)],
 );
 
 export const budgetItems = pgTable(
@@ -366,18 +514,29 @@ export const moodBoardImages = pgTable(
   (table) => [index("mood_board_images_event_idx").on(table.eventId)],
 );
 
-export const floorplans = pgTable("floorplans", {
-  eventId: text("event_id")
-    .primaryKey()
-    .references(() => events.id, { onDelete: "cascade" }),
-  workspaceId: text("workspace_id")
-    .notNull()
-    .references(() => workspaces.id, { onDelete: "cascade" }),
-  name: text("name").notNull().default("Room layout"),
-  /** Typed objects, validated at the API boundary — not the opaque blob Firestore held. */
-  items: jsonb("items").$type<unknown[]>().notNull().default([]),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * Rooms, plural. `event_id` was the primary key when an event could only have one plan;
+ * it is an indexed foreign key now so indoor/outdoor and upstairs/downstairs can each be
+ * drawn separately, which is how the events actually run.
+ */
+export const floorplans = pgTable(
+  "floorplans",
+  {
+    id: id(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("Room layout"),
+    /** Typed objects, validated at the API boundary — not the opaque blob Firestore held. */
+    items: jsonb("items").$type<unknown[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("floorplans_event_idx").on(table.eventId)],
+);
 
 /**
  * Append-only planning history. `eventId` deliberately has no event foreign key: when
@@ -608,6 +767,8 @@ export const eventRelations = relations(events, ({ one, many }) => ({
   registrations: many(registrations),
   eventVendors: many(eventVendors),
   checklistItems: many(checklistItems),
+  checkInStations: many(checkInStations),
+  volunteerShifts: many(volunteerShifts),
   budgetItems: many(budgetItems),
   ticketTypes: many(ticketTypes),
 }));

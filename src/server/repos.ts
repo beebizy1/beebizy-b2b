@@ -1,9 +1,9 @@
 /**
  * Server-side data access.
  *
- * Every function takes a `RequestContext` and filters by its `workspaceId`. There is no
- * unscoped query in this file, which is the property that makes the API multi-tenant
- * rather than hopeful.
+ * Every customer-facing function takes a `RequestContext` and filters by its
+ * `workspaceId`. The one cross-workspace query is the pilot-feedback inbox, which checks
+ * the caller against the three-person Beebizy operator list before reading anything.
  *
  * Three things the relational model does that the document model could not, and which
  * this file exists to use:
@@ -18,22 +18,36 @@
 
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
+import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import * as s from "./schema.ts";
-import { HttpError, newId, requireRole, type RequestContext } from "./auth.ts";
+import {
+  HttpError,
+  lookupUsers,
+  newId,
+  requireBeebizyOperator,
+  requireRole,
+  revokeInvitationEmail,
+  sendInvitationEmail,
+  type RequestContext,
+} from "./auth.ts";
 import * as map from "./mappers.ts";
 import { parseDate, parseOptionalDate } from "./mappers.ts";
 import type {
   Canvas,
   CanvasCard,
+  CustomReportRow,
   Event,
   EventHealth,
   EventHistoryChange,
   EventHistoryEntry,
+  FeedbackInboxItem,
   Floorplan,
   FloorplanItem,
   Location,
   OpenTask,
   PortfolioSummary,
+  ProductFeedback,
+  ProductFeedbackDraft,
   Registration,
   RegistrationWithGuest,
   TemplateContents,
@@ -41,12 +55,77 @@ import type {
   UserSettings,
   Vendor,
   HistoryResource,
+  ChecklistItem,
+  InviteResult,
+  VolunteerShift,
+  WalkInRegistrationDraft,
+  WorkspaceMember,
 } from "../data/entities.ts";
+
+import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
+import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
+import { parseFloorplanDraft } from "../data/floorplan.ts";
+import { notifyTaskAssignment } from "./notify.ts";
+import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
+import { invitationAcceptanceUrl } from "../lib/invitation.ts";
+
+/**
+ * Where a notification should send someone. Configurable because the private-beta origin
+ * is a stopgap: an email is the one place a stale URL is permanent, since it outlives the
+ * deployment that sent it.
+ */
+function appOrigin(): string {
+  return process.env.APP_ORIGIN ?? PRIVATE_BETA_ORIGIN;
+}
+import { selectSimilarPastEvents, type PastEventPlanningRecord } from "../data/planner.ts";
 
 type Body = Record<string, unknown>;
+
+const runOfShowOrderColumns = () => [
+  asc(s.runOfShowItems.dayNumber),
+  asc(s.runOfShowItems.startTime),
+  asc(s.runOfShowItems.sortOrder),
+] as const;
+
+function isQuotaConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return ["23505", "23514"].includes(String(candidate.code)) || String(candidate.message ?? "").includes("event_quota_slots");
+}
+
+/**
+ * Pilot workspaces are not metered against the Solo event limit.
+ *
+ * They joined before Beebizy published plans and several hold more events in a year than
+ * Solo includes, so the limit is applied from the day a workspace signs up rather than
+ * backwards over work that already exists.
+ */
+async function isEventQuotaExempt(workspaceId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ exempt: s.workspaces.eventQuotaExempt })
+    .from(s.workspaces)
+    .where(eq(s.workspaces.id, workspaceId))
+    .limit(1);
+  return Boolean(row?.exempt);
+}
+
+function nextEventQuotaSlot(workspaceId: string, calendarYear: number) {
+  return sql<number>`coalesce((
+    select min(slots.candidate)
+    from generate_series(1, ${SOLO_LIMITS.eventsPerYear}) as slots(candidate)
+    where not exists (
+      select 1
+      from ${s.eventQuotaSlots} as existing
+      where existing.workspace_id = ${workspaceId}
+        and existing.calendar_year = ${calendarYear}
+        and existing.slot = slots.candidate
+    )
+  ), 1)::integer`;
+}
 
 const str = (body: Body, key: string, fallback?: string): string => {
   const value = body[key];
@@ -66,6 +145,11 @@ const optInt = (body: Body, key: string): number | null => {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed)) throw new HttpError(400, `${key} must be a number.`);
   return Math.trunc(parsed);
+};
+const positiveInt = (body: Body, key: string, fallback = 1): number => {
+  const value = optInt(body, key) ?? fallback;
+  if (value < 1) throw new HttpError(400, `${key} must be at least 1.`);
+  return value;
 };
 const optBool = (body: Body, key: string): boolean | undefined =>
   body[key] === undefined ? undefined : Boolean(body[key]);
@@ -90,6 +174,24 @@ function historyValues(
     summary: describeHistoryChange(input),
     ...input,
   };
+}
+
+/**
+ * Whether a failed write was this unique index rejecting a duplicate.
+ *
+ * The name is not in the error's message. Drizzle reports "Failed query: insert into
+ * ..." and hangs the driver's error off `cause`, where Postgres puts the SQLSTATE and the
+ * constraint. Matching on the message alone therefore never matched, and a duplicate
+ * email came back to the user as a 500 with the raw SQL in it.
+ */
+function isUniqueViolation(error: unknown, constraint: string): boolean {
+  for (let current: unknown = error, depth = 0; current != null && depth < 5; depth += 1) {
+    const candidate = current as { code?: string; constraint?: string; message?: string; cause?: unknown };
+    if (candidate.constraint === constraint) return true;
+    if (typeof candidate.message === "string" && candidate.message.includes(constraint)) return true;
+    current = candidate.cause;
+  }
+  return false;
 }
 
 async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
@@ -178,6 +280,33 @@ export const events = {
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
     if (values.locationId && !location) throw new HttpError(400, "That venue is not available in this workspace.");
+
+    /*
+     * Solo is sold as a fixed number of events a year, so the number is counted here
+     * rather than left to the pricing page to assert.
+     *
+     * Events count towards the year they happen in, not the year they were created:
+     * a planner booking next spring should not be turned away because this spring is
+     * already full. Beta workspaces resolve to the enterprise plan and are untouched.
+     */
+    if (effectivePlan(ctx.access) === "solo" && !(await isEventQuotaExempt(ctx.workspaceId))) {
+      const year = values.startsAt.getUTCFullYear();
+      const [used] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(s.events)
+        .where(
+          and(
+            eq(s.events.workspaceId, ctx.workspaceId),
+            sql`extract(year from ${s.events.startsAt}) = ${year}`,
+          ),
+        );
+      if ((used?.count ?? 0) >= SOLO_LIMITS.eventsPerYear) {
+        throw new HttpError(
+          403,
+          `The Solo plan includes ${SOLO_LIMITS.eventsPerYear} events a year, and ${year} is full. Upgrade to Team for unlimited events.`,
+        );
+      }
+    }
     const after: Event = {
       id,
       ownerId: ctx.workspaceId,
@@ -196,19 +325,54 @@ export const events = {
       shareToken: null,
       createdAt: createdAt.toISOString(),
     };
-    await db.batch([
-      db.insert(s.events).values(values),
-      db.insert(s.eventHistory).values(
-        historyValues(ctx, {
-          eventId: id,
-          resource: "event",
-          resourceId: id,
-          action: "created",
-          before: null,
-          after: after as unknown as Record<string, unknown>,
-        }),
-      ),
-    ]);
+    const eventInsert = db.insert(s.events).values(values);
+    const historyInsert = db.insert(s.eventHistory).values(
+      historyValues(ctx, {
+        eventId: id,
+        resource: "event",
+        resourceId: id,
+        action: "created",
+        before: null,
+        after: after as unknown as Record<string, unknown>,
+      }),
+    );
+    const entitlementLock = db.select({
+      locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))`,
+    }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const quotaInsert = db.insert(s.eventQuotaSlots).select(
+      db
+        .select({
+          workspaceId: s.workspaces.id,
+          calendarYear: sql<number>`${values.startsAt.getUTCFullYear()}::integer`.as("calendar_year"),
+          slot: nextEventQuotaSlot(ctx.workspaceId, values.startsAt.getUTCFullYear()).as("slot"),
+          eventId: sql<string>`${id}::text`.as("event_id"),
+        })
+        .from(s.workspaces)
+        .where(
+          and(
+            eq(s.workspaces.id, ctx.workspaceId),
+            eq(s.workspaces.eventQuotaExempt, false),
+            or(
+              and(
+                eq(s.workspaces.subscriptionStatus, "active"),
+                eq(s.workspaces.subscriptionPlan, "solo"),
+              ),
+              isNotNull(s.workspaces.stripeCheckoutSessionId),
+            ),
+          ),
+        ),
+    );
+    try {
+      await db.batch([entitlementLock, eventInsert, quotaInsert, historyInsert]);
+    } catch (error) {
+      if (isQuotaConflict(error)) {
+        throw new HttpError(
+          403,
+          `The Solo plan includes ${SOLO_LIMITS.eventsPerYear} events in ${values.startsAt.getUTCFullYear()}. Upgrade to create another.`,
+        );
+      }
+      throw error;
+    }
     const created = await events.get(ctx, id);
     if (!created) throw new HttpError(500, "Event was created but could not be read back.");
     return created;
@@ -251,23 +415,65 @@ export const events = {
 
     const updatedAt = new Date();
     after.updatedAt = updatedAt.toISOString();
-    const [updated] = await db.batch([
+    const eventUpdate = db
+      .update(s.events)
+      .set({ ...patch, updatedAt })
+      .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
+      .returning({ id: s.events.id });
+    const historyInsert = db.insert(s.eventHistory).values(
+      historyValues(ctx, {
+        eventId: id,
+        resource: "event",
+        resourceId: id,
+        action: "updated",
+        before: before as unknown as Record<string, unknown>,
+        after: after as unknown as Record<string, unknown>,
+      }),
+    );
+    const entitlementLock = db.select({
+      locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))`,
+    }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const quotaInsert = db.insert(s.eventQuotaSlots).select(
       db
-        .update(s.events)
-        .set({ ...patch, updatedAt })
-        .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
-        .returning({ id: s.events.id }),
-      db.insert(s.eventHistory).values(
-        historyValues(ctx, {
-          eventId: id,
-          resource: "event",
-          resourceId: id,
-          action: "updated",
-          before: before as unknown as Record<string, unknown>,
-          after: after as unknown as Record<string, unknown>,
-        }),
-      ),
-    ]);
+        .select({
+          workspaceId: s.workspaces.id,
+          calendarYear: sql<number>`${new Date(after.date).getUTCFullYear()}::integer`.as("calendar_year"),
+          slot: nextEventQuotaSlot(ctx.workspaceId, new Date(after.date).getUTCFullYear()).as("slot"),
+          eventId: sql<string>`${id}::text`.as("event_id"),
+        })
+        .from(s.workspaces)
+        .where(
+          and(
+            eq(s.workspaces.id, ctx.workspaceId),
+            eq(s.workspaces.eventQuotaExempt, false),
+            or(
+              and(
+                eq(s.workspaces.subscriptionStatus, "active"),
+                eq(s.workspaces.subscriptionPlan, "solo"),
+              ),
+              isNotNull(s.workspaces.stripeCheckoutSessionId),
+            ),
+          ),
+        ),
+    );
+    let updated: { id: string }[];
+    try {
+      [, updated] = await db.batch([
+        entitlementLock,
+        eventUpdate,
+        db.delete(s.eventQuotaSlots).where(eq(s.eventQuotaSlots.eventId, id)),
+        quotaInsert,
+        historyInsert,
+      ]);
+    } catch (error) {
+      if (isQuotaConflict(error)) {
+        throw new HttpError(
+          403,
+          `The Solo plan already has ${SOLO_LIMITS.eventsPerYear} events in ${new Date(after.date).getUTCFullYear()}.`,
+        );
+      }
+      throw error;
+    }
     if (updated.length === 0) throw new HttpError(404, "That event no longer exists.");
 
     const result = await events.get(ctx, id);
@@ -344,6 +550,7 @@ export const events = {
       const rows = contents.runOfShowItems.map((item, index) => ({
           ...base,
           id: newId("ros"),
+          dayNumber: item.dayNumber ?? 1,
           startTime: item.startTime,
           durationMinutes: item.duration ?? null,
           title: item.title,
@@ -364,6 +571,7 @@ export const events = {
               after: {
                 id: row.id,
                 eventId: created.id,
+                dayNumber: row.dayNumber,
                 startTime: row.startTime,
                 duration: row.durationMinutes,
                 title: row.title,
@@ -425,7 +633,11 @@ export const events = {
 
     const [checklist, runOfShow, budget] = await Promise.all([
       db.select().from(s.checklistItems).where(eq(s.checklistItems.eventId, eventId)).orderBy(asc(s.checklistItems.sortOrder)),
-      db.select().from(s.runOfShowItems).where(eq(s.runOfShowItems.eventId, eventId)).orderBy(asc(s.runOfShowItems.startTime)),
+      db
+        .select()
+        .from(s.runOfShowItems)
+        .where(eq(s.runOfShowItems.eventId, eventId))
+        .orderBy(...runOfShowOrderColumns()),
       db.select().from(s.budgetItems).where(eq(s.budgetItems.eventId, eventId)).orderBy(asc(s.budgetItems.sortOrder)),
     ]);
 
@@ -488,7 +700,7 @@ export async function publicAgenda(eventId: string) {
     .select()
     .from(s.runOfShowItems)
     .where(eq(s.runOfShowItems.eventId, eventId))
-    .orderBy(asc(s.runOfShowItems.startTime));
+    .orderBy(...runOfShowOrderColumns());
   return rows.map(map.toRunOfShowItem);
 }
 
@@ -595,7 +807,7 @@ export const guests = {
       });
     } catch (error) {
       // The unique index on (workspace, contact) is what makes this a real rule.
-      if (String(error).includes("guests_workspace_contact_idx")) {
+      if (isUniqueViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, `Someone with the email ${contact} is already in your people list.`);
       }
       throw error;
@@ -639,6 +851,20 @@ async function joinRegistrations(where: ReturnType<typeof and>): Promise<Registr
   }));
 }
 
+/**
+ * A guest-list category, normalised. Free text, so it is trimmed and bounded here rather
+ * than trusted: the picker offers existing values back to the user, and an untrimmed
+ * "VIP " would sit alongside "VIP" as a second, identical-looking category.
+ */
+function labelFrom(body: Body, key: string, limit = 60): string | null {
+  const value = optStr(body, key);
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length > limit) throw new HttpError(400, `${key} must be ${limit} characters or fewer.`);
+  return trimmed;
+}
+
 export const registrations = {
   list: (ctx: RequestContext) => joinRegistrations(eq(s.registrations.workspaceId, ctx.workspaceId)),
   listForEvent: (ctx: RequestContext, eventId: string) =>
@@ -673,9 +899,11 @@ export const registrations = {
         eventId,
         guestId,
         status: (optStr(body, "status") ?? "pending") as "pending",
+        segment: labelFrom(body, "segment"),
+        organization: labelFrom(body, "organization", 120),
       });
     } catch (error) {
-      if (String(error).includes("registrations_event_guest_idx")) {
+      if (isUniqueViolation(error, "registrations_event_guest_idx")) {
         throw new HttpError(409, "That guest is already registered for this event.");
       }
       throw error;
@@ -684,10 +912,106 @@ export const registrations = {
     return map.toRegistration(row!, event.title);
   },
 
-  async setStatus(ctx: RequestContext, id: string, status: string): Promise<Registration> {
+  async createWalkIn(ctx: RequestContext, eventId: string, body: Body): Promise<RegistrationWithGuest> {
+    const event = await events.get(ctx, eventId);
+    if (!event) throw new HttpError(404, "That event no longer exists.");
+    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+      throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
+    }
+
+    const draft: WalkInRegistrationDraft = {
+      name: str(body, "name").trim(),
+      contact: str(body, "contact").trim(),
+      segment: labelFrom(body, "segment"),
+      organization: labelFrom(body, "organization", 120),
+      checkInStation: labelFrom(body, "checkInStation", 80),
+      checkInNotes: labelFrom(body, "checkInNotes", 500),
+    };
+    const [existingGuest] = await db
+      .select({ id: s.guests.id })
+      .from(s.guests)
+      .where(and(eq(s.guests.workspaceId, ctx.workspaceId), eq(s.guests.contact, draft.contact)))
+      .limit(1);
+    if (existingGuest) {
+      throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
+    }
+
+    const guestId = newId("att");
+    const registrationId = newId("reg");
+    const checkedInAt = new Date();
+    const guestInsert = db
+      .insert(s.guests)
+      .values({
+        id: guestId,
+        workspaceId: ctx.workspaceId,
+        name: draft.name,
+        contact: draft.contact,
+        notes: "Registered at event check-in.",
+      })
+      .returning();
+    const registrationInsert = db
+      .insert(s.registrations)
+      .values({
+        id: registrationId,
+        workspaceId: ctx.workspaceId,
+        eventId,
+        guestId,
+        status: "confirmed",
+        segment: draft.segment?.trim() || "Walk-in",
+        organization: draft.organization?.trim() || null,
+        checkedInAt,
+        checkInStation: draft.checkInStation?.trim() || null,
+        checkInNotes: draft.checkInNotes?.trim() || "Registered on site.",
+      })
+      .returning();
+
+    try {
+      const [guestRows, registrationRows] = await db.batch([guestInsert, registrationInsert]);
+      const guest = map.toGuest(guestRows[0]!);
+      return { ...map.toRegistration(registrationRows[0]!, event.title), guest };
+    } catch (error) {
+      if (isUniqueViolation(error, "guests_workspace_contact_idx")) {
+        throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Applies whichever of status and segment the client sent. One method rather than two
+   * endpoints because they are edited from the same row and often in the same breath, and
+   * because a patch that only assigns what it was given cannot blank the other field.
+   */
+  async update(ctx: RequestContext, id: string, body: Body): Promise<Registration> {
+    const patch: {
+      status?: Registration["status"];
+      segment?: string | null;
+      organization?: string | null;
+      checkedInAt?: Date | null;
+      checkInStation?: string | null;
+      checkInNotes?: string | null;
+      updatedAt: Date;
+    } = { updatedAt: new Date() };
+    if ("status" in body) {
+      const status = str(body, "status");
+      if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
+        throw new HttpError(400, `status must be one of ${REGISTRATION_STATUSES.join(", ")}.`);
+      }
+      patch.status = status as Registration["status"];
+    }
+    if ("segment" in body) patch.segment = labelFrom(body, "segment");
+    if ("organization" in body) patch.organization = labelFrom(body, "organization", 120);
+    if ("checkedInAt" in body) {
+      patch.checkedInAt = parseOptionalDate(body.checkedInAt, "checkedInAt");
+      // Someone who arrives has accepted the invitation in the most concrete way.
+      if (patch.checkedInAt) patch.status = "confirmed";
+    }
+    if ("checkInStation" in body) patch.checkInStation = labelFrom(body, "checkInStation", 80);
+    if ("checkInNotes" in body) patch.checkInNotes = labelFrom(body, "checkInNotes", 500);
+
     const updated = await db
       .update(s.registrations)
-      .set({ status: status as "pending", updatedAt: new Date() })
+      .set(patch)
       .where(and(eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)))
       .returning();
     if (updated.length === 0) throw new HttpError(404, "That registration no longer exists.");
@@ -843,20 +1167,26 @@ function eventScoped<Entity>(config: {
   insert: (ctx: RequestContext, eventId: string, body: Body, sortOrder: number) => Record<string, unknown>;
   patch: Record<string, (body: Body) => unknown>;
   idPrefix: string;
-  order?: "sortOrder" | "startTime" | "lotNumber" | "createdAt";
+  order?: "sortOrder" | "runOfShow" | "lotNumber" | "createdAt";
   historyResource?: HistoryResource;
+  /**
+   * Runs after a successful write, for side effects that must not be able to fail it —
+   * notifying an assignee, for instance. Awaited so the request does not return before it
+   * settles, but its own errors are swallowed by the implementer, not thrown here.
+   */
+  afterWrite?: (ctx: RequestContext, eventId: string, after: Entity, before: Entity | null) => Promise<void>;
 }) {
   const table = config.table as unknown as typeof s.checklistItems;
-  const orderColumn = () => {
+  const orderColumns = () => {
     switch (config.order) {
-      case "startTime":
-        return asc(s.runOfShowItems.startTime);
+      case "runOfShow":
+        return runOfShowOrderColumns();
       case "lotNumber":
-        return asc(s.auctionItems.lotNumber);
+        return [asc(s.auctionItems.lotNumber)];
       case "createdAt":
-        return asc(table.createdAt);
+        return [asc(table.createdAt)];
       default:
-        return asc(table.sortOrder);
+        return [asc(table.sortOrder)];
     }
   };
 
@@ -866,7 +1196,7 @@ function eventScoped<Entity>(config: {
         .select()
         .from(table)
         .where(and(eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
-        .orderBy(orderColumn());
+        .orderBy(...orderColumns());
       return rows.map((row) => config.mapper(row as never));
     },
 
@@ -902,7 +1232,9 @@ function eventScoped<Entity>(config: {
         await insert;
       }
       const [row] = await db.select().from(table).where(eq(table.id, id)).limit(1);
-      return config.mapper(row as never);
+      const created = config.mapper(row as never);
+      await config.afterWrite?.(ctx, eventId, created, null);
+      return created;
     },
 
     async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Entity> {
@@ -915,15 +1247,20 @@ function eventScoped<Entity>(config: {
           .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
           .returning();
       let updated;
-      if (config.historyResource) {
+      let previous: Entity | null = null;
+      // The prior row is read when history needs it, and also when a post-write hook does
+      // — notifying on assignment requires knowing whether the assignee actually changed.
+      if (config.historyResource || config.afterWrite) {
         const [current] = await db
           .select()
           .from(table)
           .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
           .limit(1);
         if (!current) throw new HttpError(404, "That record no longer exists.");
-        const before = config.mapper(current as never) as Record<string, unknown>;
-        [updated] = await db.batch([
+        previous = config.mapper(current as never);
+        const before = previous as Record<string, unknown>;
+        [updated] = config.historyResource
+          ? await db.batch([
           buildUpdate(),
           db.insert(s.eventHistory).values(
             historyValues(ctx, {
@@ -935,12 +1272,15 @@ function eventScoped<Entity>(config: {
               after: config.mapper({ ...current, ...patch, updatedAt } as never) as Record<string, unknown>,
             }),
           ),
-        ]);
+        ])
+          : [await buildUpdate()];
       } else {
         updated = await buildUpdate();
       }
       if (updated.length === 0) throw new HttpError(404, "That record no longer exists.");
-      return config.mapper(updated[0] as never);
+      const after = config.mapper(updated[0] as never);
+      await config.afterWrite?.(ctx, eventId, after, previous);
+      return after;
     },
 
     async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
@@ -990,6 +1330,7 @@ export const checklist = eventScoped({
     completed: Boolean(body.completed),
     dueDate: parseOptionalDate(body.dueDate, "dueDate"),
     assignedTo: optStr(body, "assignedTo"),
+    assignedEmail: labelFrom(body, "assignedEmail", 320),
     category: str(body, "category", "General"),
     sortOrder,
   }),
@@ -999,7 +1340,58 @@ export const checklist = eventScoped({
     completed: (b) => Boolean(b.completed),
     dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
     assignedTo: (b) => optStr(b, "assignedTo"),
+    assignedEmail: (b) => labelFrom(b, "assignedEmail", 320),
     category: (b) => str(b, "category", "General"),
+    sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+
+  /**
+   * Tells a newly assigned person the task is theirs.
+   *
+   * Only when the address actually changed, so editing a due date does not re-notify, and
+   * never for a task assigned to a name that belongs to nobody in the workspace — there
+   * is no address to send to. Failures are logged inside the notifier and swallowed here:
+   * an assignment must not fail because email is unconfigured or the provider is down.
+   */
+  afterWrite: async (ctx, eventId, after, before) => {
+    const item = after as ChecklistItem;
+    const previous = before as ChecklistItem | null;
+    if (!item.assignedEmail || item.assignedEmail === previous?.assignedEmail) return;
+
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+
+    await notifyTaskAssignment({
+      to: item.assignedEmail,
+      assigneeName: item.assignedTo,
+      taskTitle: item.title,
+      eventTitle: event.title,
+      dueDate: item.dueDate,
+      url: `${appOrigin()}/app/events/${eventId}/checklist`,
+    });
+  },
+});
+
+export const checkInStations = eventScoped({
+  table: s.checkInStations as never,
+  mapper: map.toCheckInStation as never,
+  idPrefix: "station",
+  historyResource: "check-in-station",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    name: labelFrom(body, "name", 80) ?? str(body, "name"),
+    lane: labelFrom(body, "lane", 120) ?? str(body, "lane"),
+    lead: labelFrom(body, "lead", 120),
+    deviceCount: Math.max(0, optInt(body, "deviceCount") ?? 1),
+    notes: labelFrom(body, "notes", 500),
+    sortOrder,
+  }),
+  patch: {
+    name: (b) => labelFrom(b, "name", 80) ?? str(b, "name"),
+    lane: (b) => labelFrom(b, "lane", 120) ?? str(b, "lane"),
+    lead: (b) => labelFrom(b, "lead", 120),
+    deviceCount: (b) => Math.max(0, optInt(b, "deviceCount") ?? 0),
+    notes: (b) => labelFrom(b, "notes", 500),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
   },
 });
@@ -1009,9 +1401,10 @@ export const runOfShow = eventScoped({
   mapper: map.toRunOfShowItem as never,
   idPrefix: "ros",
   historyResource: "run-of-show",
-  order: "startTime",
+  order: "runOfShow",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
+    dayNumber: positiveInt(body, "dayNumber"),
     startTime: str(body, "startTime"),
     durationMinutes: optInt(body, "duration"),
     title: str(body, "title"),
@@ -1020,11 +1413,56 @@ export const runOfShow = eventScoped({
     sortOrder,
   }),
   patch: {
+    dayNumber: (b) => positiveInt(b, "dayNumber"),
     startTime: (b) => str(b, "startTime"),
     durationMinutes: (b) => optInt(b, "duration"),
     title: (b) => str(b, "title"),
     description: (b) => optStr(b, "description"),
     responsible: (b) => optStr(b, "responsible"),
+  },
+});
+
+const localTime = (body: Body, key: string): string => {
+  const value = str(body, key).trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new HttpError(400, `${key} must use HH:mm.`);
+  return value;
+};
+
+const volunteerStatus = (body: Body): VolunteerShift["status"] => {
+  const value = str(body, "status", "scheduled");
+  if (!(VOLUNTEER_STATUSES as readonly string[]).includes(value)) {
+    throw new HttpError(400, `status must be one of ${VOLUNTEER_STATUSES.join(", ")}.`);
+  }
+  return value as VolunteerShift["status"];
+};
+
+export const volunteers = eventScoped({
+  table: s.volunteerShifts as never,
+  mapper: map.toVolunteerShift as never,
+  idPrefix: "vol",
+  historyResource: "volunteer",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    name: labelFrom(body, "name", 120) ?? str(body, "name"),
+    email: labelFrom(body, "email", 320),
+    phone: labelFrom(body, "phone", 60),
+    role: labelFrom(body, "role", 120) ?? str(body, "role"),
+    startTime: localTime(body, "startTime"),
+    endTime: localTime(body, "endTime"),
+    status: volunteerStatus(body),
+    notes: labelFrom(body, "notes", 1_000),
+    sortOrder,
+  }),
+  patch: {
+    name: (b) => labelFrom(b, "name", 120) ?? str(b, "name"),
+    email: (b) => labelFrom(b, "email", 320),
+    phone: (b) => labelFrom(b, "phone", 60),
+    role: (b) => labelFrom(b, "role", 120) ?? str(b, "role"),
+    startTime: (b) => localTime(b, "startTime"),
+    endTime: (b) => localTime(b, "endTime"),
+    status: (b) => volunteerStatus(b),
+    notes: (b) => labelFrom(b, "notes", 1_000),
+    sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
   },
 });
 
@@ -1196,7 +1634,7 @@ export const eventVendors = {
         ),
       ]);
     } catch (error) {
-      if (String(error).includes("event_vendors_event_vendor_idx")) {
+      if (isUniqueViolation(error, "event_vendors_event_vendor_idx")) {
         throw new HttpError(409, "That vendor is already booked on this event.");
       }
       throw error;
@@ -1591,50 +2029,331 @@ export const canvases = {
   },
 };
 
+/** The event context a floorplan history entry carries, so the plan can be read back. */
+async function floorplanContext(ctx: RequestContext, eventId: string) {
+  const event = await events.get(ctx, eventId);
+  if (!event) throw new HttpError(404, "That event no longer exists.");
+  return {
+    locationId: event.locationId,
+    location: event.location,
+    guestCount: event.registrationCount,
+    capacity: event.capacity,
+  };
+}
+
+async function ownedFloorplan(ctx: RequestContext, id: string) {
+  const [row] = await db
+    .select()
+    .from(s.floorplans)
+    .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
+    .limit(1);
+  if (!row) throw new HttpError(404, "That floorplan no longer exists.");
+  return row;
+}
+
 export const floorplan = {
-  async get(ctx: RequestContext, eventId: string): Promise<Floorplan | null> {
-    const [row] = await db
+  async list(ctx: RequestContext, eventId: string): Promise<Floorplan[]> {
+    const rows = await db
       .select()
       .from(s.floorplans)
       .where(and(eq(s.floorplans.eventId, eventId), eq(s.floorplans.workspaceId, ctx.workspaceId)))
-      .limit(1);
-    return row ? map.toFloorplan(row) : null;
+      .orderBy(asc(s.floorplans.createdAt));
+    return rows.map(map.toFloorplan);
   },
-  async save(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
-    const event = await events.get(ctx, eventId);
-    if (!event) throw new HttpError(404, "That event no longer exists.");
-    const before = await floorplan.get(ctx, eventId);
+
+  async create(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+    const context = await floorplanContext(ctx, eventId);
+    const id = newId("fp");
     const updatedAt = new Date();
     const [saved] = await db.batch([
       db
         .insert(s.floorplans)
-        .values({ eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
-        .onConflictDoUpdate({ target: s.floorplans.eventId, set: { name, items, updatedAt } })
+        .values({ id, eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
         .returning(),
       db.insert(s.eventHistory).values(
         historyValues(ctx, {
           eventId,
           resource: "floorplan",
-          resourceId: eventId,
-          action: before ? "updated" : "created",
-          before: before as unknown as Record<string, unknown> | null,
-          after: {
-            eventId,
-            name,
-            items,
-            updatedAt: updatedAt.toISOString(),
-            locationId: event.locationId,
-            location: event.location,
-            guestCount: event.registrationCount,
-            capacity: event.capacity,
-          },
+          resourceId: id,
+          action: "created",
+          before: null,
+          after: { id, eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
         }),
       ),
     ]);
-    const [row] = saved;
-    return map.toFloorplan(row!);
+    return map.toFloorplan(saved[0]!);
+  },
+
+  async save(ctx: RequestContext, id: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+    const before = await ownedFloorplan(ctx, id);
+    const context = await floorplanContext(ctx, before.eventId);
+    const updatedAt = new Date();
+    const [saved] = await db.batch([
+      db
+        .update(s.floorplans)
+        .set({ name, items, updatedAt })
+        .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
+        .returning(),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: before.eventId,
+          resource: "floorplan",
+          resourceId: id,
+          action: "updated",
+          before: map.toFloorplan(before) as unknown as Record<string, unknown>,
+          after: { id, eventId: before.eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
+        }),
+      ),
+    ]);
+    return map.toFloorplan(saved[0]!);
+  },
+
+  async remove(ctx: RequestContext, id: string): Promise<void> {
+    const before = await ownedFloorplan(ctx, id);
+    await db.batch([
+      db.delete(s.floorplans).where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId))),
+      db.insert(s.eventHistory).values(
+        historyValues(ctx, {
+          eventId: before.eventId,
+          resource: "floorplan",
+          resourceId: id,
+          action: "deleted",
+          before: map.toFloorplan(before) as unknown as Record<string, unknown>,
+          after: null,
+        }),
+      ),
+    ]);
   },
 };
+
+/* ----------------------------------------------------------------- members */
+
+/**
+ * Who can do what in this workspace.
+ *
+ * Only an owner changes roles or removes people — the "super admin" of the request. An
+ * owner cannot demote or remove the last owner, because a workspace nobody can administer
+ * is unrecoverable without support.
+ */
+export const members = {
+  /** Everyone with a seat: those who have signed in, and those still holding an invite. */
+  async list(ctx: RequestContext): Promise<WorkspaceMember[]> {
+    const [rows, invites] = await Promise.all([
+      db
+        .select()
+        .from(s.workspaceMembers)
+        .where(eq(s.workspaceMembers.workspaceId, ctx.workspaceId))
+        .orderBy(asc(s.workspaceMembers.createdAt)),
+      db
+        .select()
+        .from(s.workspaceInvites)
+        .where(and(eq(s.workspaceInvites.workspaceId, ctx.workspaceId), isNull(s.workspaceInvites.acceptedAt)))
+        .orderBy(asc(s.workspaceInvites.createdAt)),
+    ]);
+
+    // One call for the whole page rather than one per member.
+    const directory = await lookupUsers(rows.map((row) => row.userId));
+    const active: WorkspaceMember[] = rows.map((row) => ({
+      userId: row.userId,
+      role: row.role,
+      status: "active",
+      name: directory.get(row.userId)?.name ?? null,
+      email: directory.get(row.userId)?.email ?? null,
+      isSelf: row.userId === ctx.userId,
+      joinedAt: row.createdAt.toISOString(),
+    }));
+
+    const pending: WorkspaceMember[] = invites.map((invite) => ({
+      userId: null,
+      role: invite.role,
+      status: "invited",
+      name: null,
+      email: invite.email,
+      isSelf: false,
+      joinedAt: invite.createdAt.toISOString(),
+    }));
+
+    return [...active, ...pending];
+  },
+
+  /**
+   * Grants someone a seat before they have ever signed in.
+   *
+   * The invite is what lets them through the door *and* what puts them in this workspace
+   * with the intended role. Without it a new address is refused outright, and an address
+   * that is somehow let through lands in a fresh empty workspace of its own.
+   */
+  async invite(ctx: RequestContext, rawEmail: string, role: string): Promise<InviteResult> {
+    requireRole(ctx, ["owner"]);
+    const email = rawEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "That is not a valid email address.");
+    if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+      throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
+    }
+
+    const [existing] = await db
+      .select()
+      .from(s.workspaceInvites)
+      .where(eq(s.workspaceInvites.email, email))
+      .limit(1);
+    if (existing && existing.acceptedAt === null) {
+      if (existing.workspaceId !== ctx.workspaceId) {
+        throw new HttpError(409, "That address already has a pending invite to another workspace.");
+      }
+      // Re-inviting is how the role on an unclaimed seat is corrected.
+      const [updated] = await db
+        .update(s.workspaceInvites)
+        .set({ role: role as "member" })
+        .where(eq(s.workspaceInvites.id, existing.id))
+        .returning();
+      return {
+        member: {
+          userId: null,
+          role: updated!.role,
+          status: "invited",
+          name: null,
+          email,
+          isSelf: false,
+          joinedAt: updated!.createdAt.toISOString(),
+        },
+        // Re-inviting corrects a role on a seat already offered; mailing them again to
+        // say so would be noise.
+        emailSent: false,
+      };
+    }
+    if (existing) throw new HttpError(409, "That address has already joined a workspace.");
+
+    const inviteId = newId("inv");
+    const entitlementLock = db
+      .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
+      .from(s.workspaces)
+      .where(eq(s.workspaces.id, ctx.workspaceId))
+      .limit(1);
+    const inviteInsert = db
+      .insert(s.workspaceInvites)
+      .select(
+        db
+          .select({
+            id: sql<string>`${inviteId}::text`.as("id"),
+            workspaceId: s.workspaces.id,
+            email: sql<string>`${email}::text`.as("email"),
+            role: sql<"owner" | "admin" | "member">`${role}::workspace_role`.as("role"),
+            invitedBy: sql<string>`${ctx.userId}::text`.as("invited_by"),
+          })
+          .from(s.workspaces)
+          .where(
+            and(
+              eq(s.workspaces.id, ctx.workspaceId),
+              isNull(s.workspaces.stripeCheckoutSessionId),
+              /*
+               * Every metered plan buys a seat count - Solo two, Team ten - and the count
+               * is taken from the plan the workspace is actually on.
+               *
+               * The total is worked out inside the same INSERT ... SELECT, under the
+               * advisory lock taken above, so two owners inviting at once cannot both
+               * read "one seat left" and both take it. Unclaimed invites count: a seat
+               * that has been offered is spent until it is revoked, otherwise a workspace
+               * could hold out ten invitations and let whoever answers first through.
+               */
+              workspaceFitsPlanSeatLimit(s.workspaces.id, 1),
+            ),
+          ),
+      )
+      .returning();
+    const [, createdRows] = await db.batch([entitlementLock, inviteInsert]);
+    const created = createdRows[0];
+    if (!created) {
+      const plan = effectivePlan(ctx.access);
+      const seats = PLAN_SEAT_LIMITS[plan];
+      throw new HttpError(
+        403,
+        seats === null
+          ? "That invitation could not be created. Try again in a moment."
+          : `${PLAN_NAMES[plan]} includes ${seats} team members, and this workspace has used them.${
+              plan === "solo" ? " Upgrade to Team to invite more." : " Contact Beebizy to add more seats."
+            }`,
+      );
+    }
+
+    const emailSent = await sendInvitationEmail(email, invitationAcceptanceUrl(appOrigin()));
+
+    return {
+      member: {
+        userId: null,
+        role: created!.role,
+        status: "invited",
+        name: null,
+        email,
+        isSelf: false,
+        joinedAt: created!.createdAt.toISOString(),
+      },
+      emailSent,
+    };
+  },
+
+  /** Takes back an unclaimed seat. */
+  async revokeInvite(ctx: RequestContext, rawEmail: string): Promise<void> {
+    requireRole(ctx, ["owner"]);
+    const email = rawEmail.trim().toLowerCase();
+    await db
+      .delete(s.workspaceInvites)
+      .where(
+        and(
+          eq(s.workspaceInvites.email, email),
+          eq(s.workspaceInvites.workspaceId, ctx.workspaceId),
+          isNull(s.workspaceInvites.acceptedAt),
+        ),
+      );
+    // Otherwise the link in their inbox still works after the seat was taken back.
+    await revokeInvitationEmail(email);
+  },
+
+  async setRole(ctx: RequestContext, userId: string, role: string): Promise<WorkspaceMember> {
+    requireRole(ctx, ["owner"]);
+    if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+      throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
+    }
+    await guardLastOwner(ctx, userId, role === "owner" ? "keep" : "drop");
+
+    const updated = await db
+      .update(s.workspaceMembers)
+      .set({ role: role as "member" })
+      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)))
+      .returning();
+    if (updated.length === 0) throw new HttpError(404, "That person is not in this workspace.");
+
+    const directory = await lookupUsers([userId]);
+    return {
+      userId,
+      role: updated[0]!.role,
+      status: "active",
+      name: directory.get(userId)?.name ?? null,
+      email: directory.get(userId)?.email ?? null,
+      isSelf: userId === ctx.userId,
+      joinedAt: updated[0]!.createdAt.toISOString(),
+    };
+  },
+
+  async remove(ctx: RequestContext, userId: string): Promise<void> {
+    requireRole(ctx, ["owner"]);
+    await guardLastOwner(ctx, userId, "drop");
+    await db
+      .delete(s.workspaceMembers)
+      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)));
+  },
+};
+
+/** Refuses a change that would leave the workspace with no owner. */
+async function guardLastOwner(ctx: RequestContext, userId: string, intent: "keep" | "drop"): Promise<void> {
+  if (intent === "keep") return;
+  const owners = await db
+    .select({ userId: s.workspaceMembers.userId })
+    .from(s.workspaceMembers)
+    .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.role, "owner")));
+  if (owners.length <= 1 && owners.some((owner) => owner.userId === userId)) {
+    throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+  }
+}
 
 export const history = {
   async list(ctx: RequestContext, eventId: string): Promise<EventHistoryEntry[]> {
@@ -1645,6 +2364,83 @@ export const history = {
       .orderBy(desc(s.eventHistory.createdAt))
       .limit(100);
     return rows.map(map.toEventHistory);
+  },
+};
+
+/**
+ * Bounded, workspace-scoped evidence for the planning assistant. This deliberately
+ * reads structured completed-event records instead of exposing the raw history log or
+ * another customer's data to the model.
+ */
+export const planningMemory = {
+  async list(ctx: RequestContext, target: Event): Promise<PastEventPlanningRecord[]> {
+    const completed = await events.list(ctx, { status: "completed" });
+    const selected = selectSimilarPastEvents(
+      target,
+      completed.map((event) => ({ event, budget: [], checklist: [], runOfShow: [], moodCaptions: [], floorplanShapes: [] })),
+    );
+    const eventIds = selected.map((record) => record.event.id);
+    if (eventIds.length === 0) return [];
+
+    const [budgets, checklistRows, cues, moods, planRows] = await Promise.all([
+      db.select().from(s.budgetItems).where(and(eq(s.budgetItems.workspaceId, ctx.workspaceId), inArray(s.budgetItems.eventId, eventIds))),
+      db.select().from(s.checklistItems).where(and(eq(s.checklistItems.workspaceId, ctx.workspaceId), inArray(s.checklistItems.eventId, eventIds))),
+      db.select().from(s.runOfShowItems).where(and(eq(s.runOfShowItems.workspaceId, ctx.workspaceId), inArray(s.runOfShowItems.eventId, eventIds))),
+      db.select().from(s.moodBoardImages).where(and(eq(s.moodBoardImages.workspaceId, ctx.workspaceId), inArray(s.moodBoardImages.eventId, eventIds))),
+      db.select().from(s.floorplans).where(and(eq(s.floorplans.workspaceId, ctx.workspaceId), inArray(s.floorplans.eventId, eventIds))),
+    ]);
+
+    return selected.map(({ event }) => {
+      const eventStart = new Date(event.date).getTime();
+      // Every room, not just the first: an event laid out across a ballroom and a
+      // terrace used both, and planning from one of them describes half the evening.
+      const floorplanShapes: PastEventPlanningRecord["floorplanShapes"] = [];
+      for (const row of planRows.filter((plan) => plan.eventId === event.id)) {
+        try {
+          const parsed = parseFloorplanDraft({ name: row.name, items: row.items });
+          floorplanShapes.push(...parsed.items.map((item) => item.shape));
+        } catch {
+          // Older opaque layouts should not prevent the rest of the event evidence
+          // from informing a new plan.
+        }
+      }
+      return {
+        event,
+        budget: budgets.filter((row) => row.eventId === event.id).map((row) => ({
+          name: row.name,
+          category: row.category,
+          type: row.type,
+          estimatedCents: row.estimatedCents,
+          actualCents: row.actualCents,
+          notes: row.notes,
+          sortOrder: row.sortOrder,
+        })),
+        checklist: checklistRows.filter((row) => row.eventId === event.id).map((row) => ({
+          title: row.title,
+          description: row.description,
+          category: row.category,
+          completed: row.completed,
+          assignedTo: row.assignedTo,
+          sortOrder: row.sortOrder,
+          dueDaysBefore: row.dueDate
+            ? Math.max(0, Math.round((eventStart - row.dueDate.getTime()) / 86_400_000))
+            : 14,
+        })),
+        runOfShow: cues.filter((row) => row.eventId === event.id).map((row) => ({
+          dayNumber: row.dayNumber,
+          startTime: row.startTime,
+          duration: row.durationMinutes,
+          title: row.title,
+          description: row.description,
+          responsible: row.responsible,
+          sortOrder: row.sortOrder,
+        })),
+        moodCaptions: moods
+          .filter((row) => row.eventId === event.id && row.caption)
+          .map((row) => row.caption!),
+        floorplanShapes,
+      };
+    });
   },
 };
 
@@ -1678,23 +2474,99 @@ export const roi = {
 
 export const settings = {
   async get(ctx: RequestContext): Promise<UserSettings> {
-    const [row] = await db.select().from(s.userSettings).where(eq(s.userSettings.userId, ctx.userId)).limit(1);
-    if (row) return map.toUserSettings(row);
-    const [created] = await db.insert(s.userSettings).values({ userId: ctx.userId }).returning();
-    return map.toUserSettings(created!);
+    const [[stored], [workspace]] = await Promise.all([
+      db.select().from(s.userSettings).where(eq(s.userSettings.userId, ctx.userId)).limit(1),
+      db
+        .select({ currency: s.workspaces.currency, timeZone: s.workspaces.timeZone })
+        .from(s.workspaces)
+        .where(eq(s.workspaces.id, ctx.workspaceId))
+        .limit(1),
+    ]);
+    const row = stored ?? (await db.insert(s.userSettings).values({ userId: ctx.userId }).returning())[0]!;
+    const personal = map.toUserSettings(row);
+    return {
+      ...personal,
+      currency: workspace?.currency ?? personal.currency,
+      timeZone: workspace?.timeZone ?? personal.timeZone,
+    };
   },
   async update(ctx: RequestContext, body: Body): Promise<UserSettings> {
-    const patch = patchFrom<Record<string, unknown>>(body, {
+    const patch = patchFrom<Partial<UserSettings>>(body, {
       homeGrouping: (b) => str(b, "homeGrouping", "location"),
       currency: (b) => str(b, "currency", "USD"),
       timeZone: (b) => str(b, "timeZone", "America/Los_Angeles"),
     });
-    const [row] = await db
+    const savePersonal = db
       .insert(s.userSettings)
       .values({ userId: ctx.userId, ...patch })
-      .onConflictDoUpdate({ target: s.userSettings.userId, set: { ...patch, updatedAt: new Date() } })
+      .onConflictDoUpdate({ target: s.userSettings.userId, set: { ...patch, updatedAt: new Date() } });
+    const workspacePatch = {
+      ...(patch.currency === undefined ? {} : { currency: patch.currency }),
+      ...(patch.timeZone === undefined ? {} : { timeZone: patch.timeZone }),
+      updatedAt: new Date(),
+    };
+    if (patch.currency !== undefined || patch.timeZone !== undefined) {
+      await db.batch([
+        savePersonal,
+        db.update(s.workspaces).set(workspacePatch).where(eq(s.workspaces.id, ctx.workspaceId)),
+      ]);
+    } else {
+      await savePersonal;
+    }
+    return settings.get(ctx);
+  },
+};
+
+/* ----------------------------------------------------------- product feedback */
+
+export const feedback = {
+  async listInbox(ctx: RequestContext): Promise<FeedbackInboxItem[]> {
+    requireBeebizyOperator(ctx.email);
+    const rows = await db
+      .select({ feedback: s.productFeedback, workspaceName: s.workspaces.name })
+      .from(s.productFeedback)
+      .innerJoin(s.workspaces, eq(s.productFeedback.workspaceId, s.workspaces.id))
+      .orderBy(desc(s.productFeedback.createdAt));
+    const directory = await lookupUsers([...new Set(rows.map(({ feedback: item }) => item.userId))]);
+    return rows.map(({ feedback: item, workspaceName }) => ({
+      ...map.toProductFeedback(item),
+      userName: directory.get(item.userId)?.name ?? null,
+      userEmail: directory.get(item.userId)?.email ?? null,
+      workspaceName,
+    }));
+  },
+
+  async list(ctx: RequestContext): Promise<ProductFeedback[]> {
+    const rows = await db
+      .select()
+      .from(s.productFeedback)
+      .where(
+        and(
+          eq(s.productFeedback.workspaceId, ctx.workspaceId),
+          eq(s.productFeedback.userId, ctx.userId),
+        ),
+      )
+      .orderBy(desc(s.productFeedback.createdAt));
+    return rows.map(map.toProductFeedback);
+  },
+
+  async create(ctx: RequestContext, draft: ProductFeedbackDraft): Promise<ProductFeedback> {
+    const parsed = feedbackDraftSchema.safeParse(draft);
+    if (!parsed.success) throw new HttpError(400, feedbackValidationMessage(parsed.error));
+    const { message, category, pagePath } = parsed.data;
+
+    const [row] = await db
+      .insert(s.productFeedback)
+      .values({
+        id: newId("feedback"),
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        category,
+        message,
+        pagePath,
+      })
       .returning();
-    return map.toUserSettings(row!);
+    return map.toProductFeedback(row!);
   },
 };
 
@@ -1766,6 +2638,29 @@ async function facts(ctx: RequestContext) {
 }
 
 export const analytics = {
+  async customReport(ctx: RequestContext): Promise<CustomReportRow[]> {
+    const [eventRows, healthRows] = await Promise.all([events.list(ctx), analytics.health(ctx)]);
+    const healthByEvent = new Map(healthRows.map((health) => [health.eventId, health]));
+    return eventRows.map((event) => {
+      const health = healthByEvent.get(event.id);
+      return {
+        eventId: event.id,
+        title: event.title,
+        date: event.date,
+        status: event.status,
+        category: event.category,
+        location: event.location,
+        capacity: event.capacity,
+        registrations: event.registrationCount,
+        readiness: health?.readiness ?? 0,
+        budgetPlannedCents: health?.budgetPlannedCents ?? 0,
+        budgetSpentCents: health?.budgetSpentCents ?? 0,
+        revenueCents: (health?.ticketRevenueCents ?? 0) + (health?.fundraisingCents ?? 0),
+        riskCount: health?.risks.length ?? 0,
+      };
+    });
+  },
+
   async health(ctx: RequestContext, eventIds?: string[]): Promise<EventHealth[]> {
     const f = await facts(ctx);
     const targets = eventIds ? f.eventRows.filter((event) => eventIds.includes(event.id)) : f.eventRows;

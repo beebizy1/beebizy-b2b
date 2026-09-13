@@ -7,18 +7,38 @@
  * in a code comment.
  */
 
+import { useState } from "react";
 import { Link } from "wouter";
-import { Database } from "lucide-react";
+import { CreditCard, Database, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { KeyValue, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
-import { useMe, useSettings, useUpdateSettings } from "@/data/hooks";
-import { useDataMode } from "@/data/provider";
+import { ErrorNotice, KeyValue, LoadingRows, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
+import {
+  useInviteMember,
+  useMe,
+  useMembers,
+  useRevokeInvite,
+  useRemoveMember,
+  useSetMemberRole,
+  useSettings,
+  useUpdateSettings,
+} from "@/data/hooks";
+import { useData, useDataMode } from "@/data/provider";
 import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
-import type { UserSettings } from "@/data/entities";
+import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
+import { effectivePlan, PLAN_NAMES } from "@/data/plans";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
@@ -52,6 +72,282 @@ const TIME_ZONES = [
   "UTC",
 ];
 
+/**
+ * Who is in the workspace, and what they may do.
+ *
+ * Only an owner can change this — that is the "super admin" of the request. Everyone else
+ * sees the list read-only, which is deliberate: knowing who has access is not a privilege,
+ * but granting it is.
+ */
+/** The "+ Add team member" flow: an address and the role they should get. */
+function InviteMemberDialog() {
+  const invite = useInviteMember();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<WorkspaceRole>("member");
+
+  const submit = () => {
+    invite.mutate(
+      { email: email.trim(), role },
+      {
+        onSuccess: (result) => {
+          setOpen(false);
+          const invitedAddress = email.trim();
+          setEmail("");
+          setRole("member");
+          // Says which actually happened. Claiming an email was sent when it was not is
+          // how someone ends up waiting for a message that never arrives.
+          toast(
+            result.emailSent
+              ? {
+                  title: "Invite sent",
+                  description: `${invitedAddress} has an email with a link to sign in.`,
+                }
+              : {
+                  title: "Invite added",
+                  description: `We couldn't email ${invitedAddress}. They still have access — send them the link yourself.`,
+                },
+          );
+        },
+        onError: (error) => toast({ title: "Couldn't add them", description: error.message }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="mr-1.5 size-3.5" />
+          Add team member
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add a team member</DialogTitle>
+          <DialogDescription>
+            They join this workspace with the role you choose, the first time they sign in with this address.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="space-y-3"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            if (email.trim()) submit();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-email">Email address</Label>
+            <Input
+              id="invite-email"
+              type="email"
+              value={email}
+              onChange={(inputEvent) => setEmail(inputEvent.target.value)}
+              placeholder="colleague@company.com"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-role">Role</Label>
+            <Select value={role} onValueChange={(value) => setRole(value as WorkspaceRole)}>
+              <SelectTrigger id="invite-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">Member — can view and edit, cannot delete</SelectItem>
+                <SelectItem value="admin">Admin — can also delete records</SelectItem>
+                <SelectItem value="owner">Owner — can also manage the team</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            They get an email with a link to sign in. Access is granted either way, so they can also just
+            sign in with this address.
+          </p>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={!email.trim() || invite.isPending}>
+              Add
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TeamPanel() {
+  const { data: identity } = useMe();
+  const { data: members, isLoading, isError, error, refetch } = useMembers();
+  const setRole = useSetMemberRole();
+  const removeMember = useRemoveMember();
+  const revokeInvite = useRevokeInvite();
+  const isOwner = identity?.role === "owner";
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Team & permissions"
+        description={
+          isOwner
+            ? "Owners manage access. Admins can delete records; members cannot."
+            : "Only an owner can change roles or remove people."
+        }
+        actions={isOwner ? <InviteMemberDialog /> : undefined}
+      />
+
+      {isError ? (
+        <ErrorNotice error={error} onRetry={() => void refetch()} className="m-4" />
+      ) : isLoading ? (
+        <LoadingRows rows={3} className="p-4" />
+      ) : (
+        <ul className="divide-y divide-hairline">
+          {(members ?? []).map((member) => {
+            const label = member.name ?? member.email ?? member.userId ?? "Unknown";
+            return (
+              <li key={member.userId ?? member.email} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {label}
+                    {member.isSelf ? <span className="ml-1.5 text-xs text-muted-foreground">(you)</span> : null}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {member.status === "invited"
+                      ? `${member.email} · hasn't signed in yet`
+                      : (member.email ?? "No email on file")}
+                  </p>
+                </div>
+
+                {member.status === "invited" ? <Pill tone="warning">invited</Pill> : null}
+
+                {/* An unclaimed seat has no user to update, so its role is changed by re-inviting. */}
+                {isOwner && !member.isSelf && member.status === "active" && member.userId ? (
+                  <Select
+                    value={member.role}
+                    onValueChange={(value) =>
+                      setRole.mutate(
+                        { userId: member.userId!, role: value as WorkspaceRole },
+                        {
+                          onError: (mutationError) =>
+                            toast({ title: "Couldn't change the role", description: mutationError.message }),
+                        },
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[132px]" aria-label={`Role for ${label}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {WORKSPACE_ROLES.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Pill tone={member.role === "owner" ? "success" : "neutral"}>{member.role}</Pill>
+                )}
+
+                {isOwner && !member.isSelf ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (member.status === "invited" && member.email) {
+                        revokeInvite.mutate(
+                          { email: member.email },
+                          {
+                            onError: (mutationError) =>
+                              toast({ title: "Couldn't cancel the invite", description: mutationError.message }),
+                          },
+                        );
+                        return;
+                      }
+                      if (!window.confirm(`Remove ${label} from the workspace?`)) return;
+                      removeMember.mutate(
+                        { userId: member.userId! },
+                        {
+                          onError: (mutationError) =>
+                            toast({ title: "Couldn't remove them", description: mutationError.message }),
+                        },
+                      );
+                    }}
+                  >
+                    {member.status === "invited" ? "Cancel" : "Remove"}
+                  </Button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <p className="border-t border-hairline px-5 py-3 text-xs text-muted-foreground">
+        An invited person joins this workspace the first time they sign in with that address.
+      </p>
+    </Panel>
+  );
+}
+
+function BillingPanel() {
+  const { data: identity } = useMe();
+  const data = useData();
+  const [loading, setLoading] = useState(false);
+  const plan = effectivePlan(identity?.access);
+  const access = identity?.access;
+  const canManage = identity?.role === "owner" && access?.billingPortalAvailable === true;
+
+  const openPortal = async () => {
+    setLoading(true);
+    try {
+      const { url } = await data.billing.portal();
+      window.location.assign(url);
+    } catch (error) {
+      toast({ title: "Couldn't open billing", description: error instanceof Error ? error.message : "Try again." });
+      setLoading(false);
+    }
+  };
+
+  const renewal = access?.currentPeriodEnd
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(new Date(access.currentPeriodEnd))
+    : null;
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Plan & billing"
+        description={access?.status === "beta" ? "Your private pilot access is free." : "Subscription access for this workspace."}
+        actions={<CreditCard className="size-4 text-muted-foreground" aria-hidden="true" />}
+      />
+      <dl className="divide-y divide-hairline px-5 py-2">
+        <KeyValue label="Plan">{access?.status === "beta" ? "Private pilot" : PLAN_NAMES[plan]}</KeyValue>
+        <KeyValue label="Status"><Pill tone={access?.status === "active" || access?.status === "beta" ? "success" : "warning"}>{access?.status ?? "loading"}</Pill></KeyValue>
+        {renewal ? <KeyValue label={access?.cancelAtPeriodEnd ? "Access ends" : "Renews"}>{renewal}</KeyValue> : null}
+      </dl>
+      <div className="flex flex-wrap gap-2 border-t border-hairline px-5 py-4">
+        <Button asChild variant={canManage ? "outline" : "default"} size="sm">
+          <Link href="/pricing">View plans</Link>
+        </Button>
+        {canManage ? (
+          <Button variant="outline" size="sm" onClick={() => void openPortal()} disabled={loading}>
+            {loading ? "Opening…" : "Manage billing"}
+          </Button>
+        ) : null}
+        {identity?.role === "owner" && access?.status === "active" && !access.billingPortalAvailable ? (
+          <p className="self-center text-xs text-muted-foreground">Your invoiced plan is managed directly with Beebizy.</p>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
 export default function Settings() {
   const { user, isDemo } = useSession();
   const { data: me } = useMe();
@@ -70,14 +366,18 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
-        eyebrow="Settings"
         title="Preferences"
-        description="Stored against your account, so they follow you to any device."
+        description="Your list preference follows your account. Currency and time zone are shared with the workspace."
       />
 
       <Panel>
-        <PanelHeader title="Defaults" description="How lists, dates and money are presented" />
-        <div className="grid gap-4 p-5 sm:grid-cols-2">
+        <PanelHeader title="Defaults" description="How this workspace presents lists, dates and money" />
+        {/*
+          One setting per row. Side by side, "Group events by" sat immediately left of
+          "Currency" and the pair read as a single sentence — "group events by currency" —
+          which is a feature that does not and should not exist.
+        */}
+        <div className="grid gap-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="grouping">Group events by</Label>
             <Select
@@ -114,12 +414,20 @@ export default function Settings() {
                 ))}
               </SelectContent>
             </Select>
+            {/*
+              The old hint said what it applied to and not what it did, so the question it
+              left unanswered was the important one: whether switching re-prices anything.
+              It does not — this is formatting, and nothing in the app converts between
+              currencies — and a budget silently reinterpreted as pounds would be a much
+              worse surprise than a wordy label.
+            */}
             <p className="text-xs text-muted-foreground">
-              Every amount in the app, e.g. {prefs.money(150_000)}.
+              The symbol and formatting for every amount — budgets, tickets, deposits. Right now that reads{" "}
+              {prefs.money(150_000)}. It reformats only: a 1,500 budget stays 1,500, shown with the new symbol.
             </p>
           </div>
 
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="space-y-1.5">
             <Label htmlFor="timezone">Time zone</Label>
             <Select
               value={settings?.timeZone ?? "America/Los_Angeles"}
@@ -145,6 +453,10 @@ export default function Settings() {
           </div>
         </div>
       </Panel>
+
+      <BillingPanel />
+
+      <TeamPanel />
 
       <Panel>
         <PanelHeader title="Account" />

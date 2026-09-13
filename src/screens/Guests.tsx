@@ -116,7 +116,6 @@ export default function Guests() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Guests"
         title="Everyone you invite"
         description="One record per person, with every event they're registered for. Notes carry dietary and access requirements through to the caterer."
       />

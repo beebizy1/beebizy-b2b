@@ -30,6 +30,8 @@ import type {
   CanvasPatch,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  CheckInStationDraft,
+  CheckInStationPatch,
   Event,
   EventDraft,
   EventFilter,
@@ -40,6 +42,7 @@ import type {
   EventVendorPatch,
   Floorplan,
   OpenTask,
+  ProductFeedbackDraft,
   FloorplanDraft,
   LocationDraft,
   LocationPatch,
@@ -48,11 +51,22 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RegistrationDraft,
+  RegistrationCheckInPatch,
   RegistrationStatus,
+  WalkInRegistrationDraft,
+  WorkspaceRole,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
   SponsorshipDraft,
   SponsorshipPatch,
+  RfpDraft,
+  RfpPatch,
+  RfpResponseDraft,
+  RfpResponseStatus,
+  DepositDraft,
+  DepositPatch,
+  TeamHoursDraft,
+  TeamHoursPatch,
   TemplateContents,
   TemplateDraft,
   TicketTypeDraft,
@@ -61,12 +75,16 @@ import type {
   VendorDraft,
   VendorMessageDraft,
   VendorPatch,
+  VolunteerShiftDraft,
+  VolunteerShiftPatch,
 } from "./entities";
+import type { PlanningBrief } from "./planner";
+import type { AssistantChatMessage } from "./assistantChat";
 
 /* ---------------------------------------------------------------- query keys */
 
 export const qk = {
-  me: ["me"] as const,
+  me: (cacheScope: string) => ["me", cacheScope] as const,
   portfolio: ["analytics", "portfolio"] as const,
   attention: ["analytics", "attention"] as const,
   openTasks: ["analytics", "openTasks"] as const,
@@ -84,14 +102,19 @@ export const qk = {
 
   registrations: ["registrations"] as const,
   eventRegistrations: (eventId: string) => ["registrations", "byEvent", eventId] as const,
+  members: ["members"] as const,
+  feedback: (userId: string) => ["feedback", userId] as const,
+  feedbackInbox: (userId: string) => ["feedback", "inbox", userId] as const,
 
   vendors: ["vendors"] as const,
   vendor: (id: string) => ["vendors", "detail", id] as const,
   vendorThread: (vendorId: string) => ["vendors", "thread", vendorId] as const,
 
   eventVendors: (eventId: string) => ["eventVendors", eventId] as const,
+  checkInStations: (eventId: string) => ["checkInStations", eventId] as const,
   checklist: (eventId: string) => ["checklist", eventId] as const,
   runOfShow: (eventId: string) => ["runOfShow", eventId] as const,
+  volunteers: (eventId: string) => ["volunteers", eventId] as const,
   budget: (eventId: string) => ["budget", eventId] as const,
   menu: (eventId: string) => ["menu", eventId] as const,
   moodBoard: (eventId: string) => ["moodBoard", eventId] as const,
@@ -103,6 +126,9 @@ export const qk = {
   raffle: (eventId: string) => ["raffle", eventId] as const,
   raffleTickets: (eventId: string, raffleItemId: string) => ["raffle", eventId, raffleItemId, "tickets"] as const,
   sponsorships: (eventId: string) => ["sponsorships", eventId] as const,
+  rfps: (eventId: string) => ["rfps", eventId] as const,
+  deposits: (eventId: string) => ["deposits", eventId] as const,
+  teamHours: (eventId: string) => ["teamHours", eventId] as const,
 
   templates: ["templates"] as const,
   template: (id: string) => ["templates", "detail", id] as const,
@@ -158,14 +184,45 @@ function useAdapterMutation<TVars, TResult>(
  * Who the server thinks you are, and what you may do. The role is authoritative on the
  * server — it is re-checked on every write — so this copy only shapes the UI.
  */
-export function useMe() {
-  return useAdapterQuery(qk.me, (a) => a.me(), { staleTime: 60_000 });
+/** `enabled` lets a public page ask only once the visitor is actually signed in. */
+export function useMe(options?: { enabled?: boolean }) {
+  const { cacheScope } = useData();
+  return useAdapterQuery(qk.me(cacheScope), (a) => a.me(), {
+    staleTime: 60_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * One turn of the planning conversation.
+ *
+ * A mutation rather than a query: each turn is a write to the conversation, and the
+ * transcript lives in the calling component so a half-finished interview is never cached
+ * and replayed at someone who has moved on.
+ */
+export function useAssistantChat() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; messages: AssistantChatMessage[] }) => a.assistant.chat(vars),
+    () => [],
+  );
+}
+
+export function usePlanningSuggestions() {
+  return useAdapterMutation((a, brief: PlanningBrief) => a.assistant.plan(brief), () => []);
+}
+
+export function useLoadGoogleSheet() {
+  return useAdapterMutation((a, url: string) => a.imports.loadGoogleSheet(url), () => []);
 }
 
 /* ------------------------------------------------------------------ analytics */
 
 export function usePortfolio() {
   return useAdapterQuery(qk.portfolio, (a) => a.analytics.portfolio());
+}
+
+export function useCustomReport() {
+  return useAdapterQuery(["analytics", "custom-report"], (a) => a.analytics.customReport());
 }
 
 export function useAttention(): UseQueryResult<AttentionItem[], Error> {
@@ -309,10 +366,42 @@ export function useCreateRegistration() {
   );
 }
 
+export function useRegisterWalkIn() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: WalkInRegistrationDraft }) =>
+      a.registrations.createWalkIn(vars.eventId, vars.draft),
+    (vars) => [qk.guests, qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
 export function useSetRegistrationStatus() {
   return useAdapterMutation(
     (a, vars: { id: string; eventId: string; status: RegistrationStatus }) =>
       a.registrations.setStatus(vars.id, vars.status),
+    (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useSetRegistrationSegment() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; segment: string | null }) =>
+      a.registrations.setSegment(vars.id, vars.segment),
+    (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useSetRegistrationOrganization() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; organization: string | null }) =>
+      a.registrations.setOrganization(vars.id, vars.organization),
+    (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useSetRegistrationCheckIn() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; patch: RegistrationCheckInPatch }) =>
+      a.registrations.setCheckIn(vars.id, vars.patch),
     (vars) => [qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
   );
 }
@@ -395,6 +484,34 @@ export function useRemoveEventVendor() {
   );
 }
 
+/* ---------------------------------------------------------- check-in stations */
+
+export function useCheckInStations(eventId: string) {
+  return useAdapterQuery(qk.checkInStations(eventId), (a) => a.checkInStations.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddCheckInStation() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: CheckInStationDraft }) => a.checkInStations.create(vars.eventId, vars.draft),
+    (vars) => [qk.checkInStations(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useUpdateCheckInStation() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: CheckInStationPatch }) =>
+      a.checkInStations.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.checkInStations(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useRemoveCheckInStation() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.checkInStations.remove(vars.eventId, vars.id),
+    (vars) => [qk.checkInStations(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
 /* ------------------------------------------------------------------ checklist */
 
 export function useChecklist(eventId: string) {
@@ -448,6 +565,34 @@ export function useRemoveRunOfShowItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.runOfShow.remove(vars.eventId, vars.id),
     (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+/* ---------------------------------------------------------------- volunteers */
+
+export function useVolunteers(eventId: string) {
+  return useAdapterQuery(qk.volunteers(eventId), (a) => a.volunteers.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddVolunteer() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VolunteerShiftDraft }) => a.volunteers.create(vars.eventId, vars.draft),
+    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useUpdateVolunteer() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: VolunteerShiftPatch }) =>
+      a.volunteers.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useRemoveVolunteer() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.volunteers.remove(vars.eventId, vars.id),
+    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
@@ -689,6 +834,113 @@ export function useRemoveSponsorship() {
   );
 }
 
+/* ---------------------------------------------------------------------- rfps */
+
+export function useRfps(eventId: string) {
+  return useAdapterQuery(qk.rfps(eventId), (a) => a.rfps.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: RfpDraft }) => a.rfps.create(vars.eventId, vars.draft),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useUpdateRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: RfpPatch }) => a.rfps.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useRemoveRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.rfps.remove(vars.eventId, vars.id),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useAddRfpResponse() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; draft: RfpResponseDraft }) =>
+      a.rfps.addResponse(vars.eventId, vars.rfpId, vars.draft),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useSetRfpResponseStatus() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; responseId: string; status: RfpResponseStatus }) =>
+      a.rfps.setResponseStatus(vars.eventId, vars.rfpId, vars.responseId, vars.status),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useRemoveRfpResponse() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; responseId: string }) =>
+      a.rfps.removeResponse(vars.eventId, vars.rfpId, vars.responseId),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+/* ------------------------------------------------------------------ deposits */
+
+export function useDeposits(eventId: string) {
+  return useAdapterQuery(qk.deposits(eventId), (a) => a.deposits.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddDeposit() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: DepositDraft }) => a.deposits.create(vars.eventId, vars.draft),
+    (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useUpdateDeposit() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: DepositPatch }) =>
+      a.deposits.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useRemoveDeposit() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.deposits.remove(vars.eventId, vars.id),
+    (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+/* ---------------------------------------------------------------- team hours */
+
+export function useTeamHours(eventId: string) {
+  return useAdapterQuery(qk.teamHours(eventId), (a) => a.teamHours.list(eventId), { enabled: !!eventId });
+}
+
+export function useAddTeamHours() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: TeamHoursDraft }) => a.teamHours.create(vars.eventId, vars.draft),
+    (vars) => [qk.teamHours(vars.eventId)],
+  );
+}
+
+export function useUpdateTeamHours() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: TeamHoursPatch }) =>
+      a.teamHours.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.teamHours(vars.eventId)],
+  );
+}
+
+export function useRemoveTeamHours() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.teamHours.remove(vars.eventId, vars.id),
+    (vars) => [qk.teamHours(vars.eventId)],
+  );
+}
+
 /* ------------------------------------------------------------------ templates */
 
 export function useTemplates() {
@@ -763,13 +1015,68 @@ export function useUpdateSettings() {
   return useAdapterMutation((a, patch: Partial<UserSettings>) => a.settings.update(patch), () => [qk.settings]);
 }
 
-export function useFloorplan(eventId: string): UseQueryResult<Floorplan | null, Error> {
-  return useAdapterQuery(qk.floorplan(eventId), (a) => a.floorplan.get(eventId), { enabled: !!eventId });
+export function useMembers() {
+  return useAdapterQuery(qk.members, (a) => a.members.list());
+}
+
+export function useInviteMember() {
+  return useAdapterMutation(
+    (a, vars: { email: string; role: WorkspaceRole }) => a.members.invite(vars.email, vars.role),
+    () => [qk.members],
+  );
+}
+
+export function useRevokeInvite() {
+  return useAdapterMutation((a, vars: { email: string }) => a.members.revokeInvite(vars.email), () => [qk.members]);
+}
+
+export function useSetMemberRole() {
+  return useAdapterMutation(
+    (a, vars: { userId: string; role: WorkspaceRole }) => a.members.setRole(vars.userId, vars.role),
+    () => [qk.members],
+  );
+}
+
+export function useRemoveMember() {
+  return useAdapterMutation((a, vars: { userId: string }) => a.members.remove(vars.userId), () => [qk.members]);
+}
+
+export function useFeedback(userId: string) {
+  return useAdapterQuery(qk.feedback(userId), (a) => a.feedback.list());
+}
+
+export function useSubmitFeedback(userId: string) {
+  return useAdapterMutation(
+    (a, draft: ProductFeedbackDraft) => a.feedback.create(draft),
+    () => [qk.feedback(userId)],
+  );
+}
+
+export function useFeedbackInbox(userId: string, enabled: boolean) {
+  return useAdapterQuery(qk.feedbackInbox(userId), (a) => a.feedback.listInbox(), { enabled });
+}
+
+export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {
+  return useAdapterQuery(qk.floorplan(eventId), (a) => a.floorplan.list(eventId), { enabled: !!eventId });
+}
+
+export function useCreateFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: FloorplanDraft }) => a.floorplan.create(vars.eventId, vars.draft),
+    (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
+  );
 }
 
 export function useSaveFloorplan() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.eventId, vars.draft),
+    (a, vars: { id: string; eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.id, vars.draft),
+    (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useDeleteFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string }) => a.floorplan.remove(vars.id),
     (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
   );
 }

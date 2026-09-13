@@ -32,14 +32,27 @@ export type EventStatus = (typeof EVENT_STATUSES)[number];
 
 export const EVENT_CATEGORIES = [
   "Summit",
+  "Conference",
+  "Workshop",
+  "Training",
+  "Town Hall",
   "Offsite",
   "Product Launch",
-  "Conference",
   "Awards",
-  "Town Hall",
   "Gala",
-  "Training",
+  "Fundraiser",
+  "Nonprofit Event",
+  "Community Event",
+  "School Event",
+  "Festival",
+  "Networking Event",
+  "Reception",
+  "Dinner",
+  "Celebration",
+  "Wedding",
   "Roadshow",
+  "Expo / Trade Show",
+  "Holiday Party",
   "Other",
 ] as const;
 export type EventCategory = (typeof EVENT_CATEGORIES)[number] | string;
@@ -133,13 +146,54 @@ export type GuestPatch = Partial<GuestDraft>;
 export const REGISTRATION_STATUSES = ["pending", "confirmed", "cancelled"] as const;
 export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
 
+/**
+ * Starting points for categorising a guest list, not a fixed set.
+ *
+ * A segment is stored as free text because the useful categories are the customer's, not
+ * ours: one runs "Bride's side" and "Groom's side", another runs "Table 1".."Table 12".
+ * These are what the picker offers before anyone has invented their own, and the picker
+ * also offers whatever is already in use on the event — so a custom label typed once
+ * becomes a one-click choice for everyone after.
+ */
+export const REGISTRATION_SEGMENTS = [
+  "Investor",
+  "Company",
+  "General",
+  "VIP",
+  "Sponsor",
+  "Speaker",
+  "Staff",
+  "Press",
+  "Family",
+] as const;
+
 export interface Registration extends OwnedRecord {
   eventId: string;
   /** Denormalized so the registrations list renders without joining events. */
   eventTitle: string;
   guestId: string;
   status: RegistrationStatus;
+  /**
+   * Which part of the guest list this person belongs to, scoped to this event. It lives
+   * on the registration rather than the guest because the same person is a sponsor at the
+   * gala and a staff member at the training — one label per person would force a lie.
+   */
+  segment: string | null;
+  /**
+   * Where this person is from — the fund, firm, school or company they represent.
+   *
+   * Separate from the segment because a university reporting on its demo day needs both
+   * halves: how many investors attended, *and* which funds they came from. One field
+   * collapsing "Investor · Sequoia" would make neither countable.
+   */
+  organization: string | null;
   registeredAt: IsoDateTime;
+  /** Null until the guest arrives. Clearing it is the reversible "undo check-in" action. */
+  checkedInAt: IsoDateTime | null;
+  /** Which entrance or desk handled the guest, for multi-station events. */
+  checkInStation: string | null;
+  /** Arrival-specific detail such as accessibility help, badge issues or a plus-one. */
+  checkInNotes: string | null;
 }
 
 export interface RegistrationWithGuest extends Registration {
@@ -150,7 +204,50 @@ export interface RegistrationDraft {
   eventId: string;
   guestId: string;
   status?: RegistrationStatus;
+  segment?: string | null;
+  organization?: string | null;
 }
+
+export interface RegistrationCheckInPatch {
+  checkedInAt: IsoDateTime | null;
+  checkInStation?: string | null;
+  checkInNotes?: string | null;
+}
+
+/** One atomic front-desk action: create a new person, register them, and record arrival. */
+export interface WalkInRegistrationDraft {
+  name: string;
+  contact: string;
+  segment?: string | null;
+  organization?: string | null;
+  checkInStation?: string | null;
+  checkInNotes?: string | null;
+}
+
+/** A persistent operating position at an event entrance. */
+export interface CheckInStation {
+  id: string;
+  eventId: string;
+  name: string;
+  /** Which guests this station should handle, such as A-M, VIPs or walk-ins. */
+  lane: string;
+  lead: string | null;
+  deviceCount: number;
+  notes: string | null;
+  sortOrder: number;
+  createdAt: IsoDateTime;
+}
+
+export interface CheckInStationDraft {
+  name: string;
+  lane: string;
+  lead?: string | null;
+  deviceCount?: number;
+  notes?: string | null;
+  sortOrder?: number;
+}
+
+export type CheckInStationPatch = Partial<CheckInStationDraft>;
 
 /* -------------------------------------------------------------------- vendors */
 
@@ -259,6 +356,14 @@ export interface ChecklistItem {
   completed: boolean;
   dueDate: IsoDateTime | null;
   assignedTo: string | null;
+  /**
+   * Where to reach the assignee.
+   *
+   * Separate from `assignedTo`, which is a name and always has been. A name cannot be
+   * notified, so assigning from the team list records the address alongside it; typing a
+   * name that belongs to nobody in the workspace leaves this null and sends nothing.
+   */
+  assignedEmail: string | null;
   category: string;
   sortOrder: number;
   createdAt: IsoDateTime;
@@ -270,6 +375,7 @@ export interface ChecklistItemDraft {
   completed?: boolean;
   dueDate?: IsoDateTime | null;
   assignedTo?: string | null;
+  assignedEmail?: string | null;
   category?: string;
   sortOrder?: number;
 }
@@ -279,6 +385,8 @@ export type ChecklistItemPatch = Partial<ChecklistItemDraft>;
 export interface RunOfShowItem {
   id: string;
   eventId: string;
+  /** One-based day within the event. Existing schedules default to Day 1. */
+  dayNumber: number;
   /** `HH:mm` local to the event. */
   startTime: string;
   /** Minutes. */
@@ -291,6 +399,7 @@ export interface RunOfShowItem {
 }
 
 export interface RunOfShowItemDraft {
+  dayNumber?: number;
   startTime: string;
   duration?: number | null;
   title: string;
@@ -300,6 +409,41 @@ export interface RunOfShowItemDraft {
 }
 
 export type RunOfShowItemPatch = Partial<RunOfShowItemDraft>;
+
+export const VOLUNTEER_STATUSES = ["scheduled", "confirmed", "checked_in", "completed", "cancelled"] as const;
+export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
+
+/** One person's event-day commitment, including the exact shift and operating notes. */
+export interface VolunteerShift {
+  id: string;
+  eventId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  /** `HH:mm` local to the event. */
+  startTime: string;
+  /** `HH:mm` local to the event. */
+  endTime: string;
+  status: VolunteerStatus;
+  notes: string | null;
+  sortOrder: number;
+  createdAt: IsoDateTime;
+}
+
+export interface VolunteerShiftDraft {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  role: string;
+  startTime: string;
+  endTime: string;
+  status?: VolunteerStatus;
+  notes?: string | null;
+  sortOrder?: number;
+}
+
+export type VolunteerShiftPatch = Partial<VolunteerShiftDraft>;
 
 export type BudgetLineType = "expense" | "revenue";
 
@@ -426,6 +570,8 @@ export const FLOORPLAN_SHAPES = [
   "dancefloor",
   "booth",
   "av",
+  "tree",
+  "chair",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
@@ -439,9 +585,17 @@ export interface FloorplanItem {
   y: number;
   /** Null for objects nobody sits at. */
   seats: number | null;
+  /** Fixed site features stay in place until a planner explicitly unlocks them. */
+  locked?: boolean;
 }
 
+/**
+ * One room. An event has as many as it needs — indoor and outdoor, upstairs and
+ * downstairs — which is why this is keyed by its own id rather than by the event: a
+ * single plan per event could not describe a party that spills onto a terrace.
+ */
 export interface Floorplan {
+  id: string;
   eventId: string;
   name: string;
   items: FloorplanItem[];
@@ -459,7 +613,9 @@ export const HISTORY_RESOURCES = [
   "event",
   "vendor-booking",
   "checklist",
+  "check-in-station",
   "run-of-show",
+  "volunteer",
   "budget",
   "menu",
   "mood-board",
@@ -647,6 +803,180 @@ export interface SponsorshipDraft {
 
 export type SponsorshipPatch = Partial<SponsorshipDraft>;
 
+/* ----------------------------------------------------------------------- rfps */
+
+export const RFP_STATUSES = ["draft", "sent", "closed"] as const;
+export type RfpStatus = (typeof RFP_STATUSES)[number];
+
+export const RFP_RESPONSE_STATUSES = ["pending", "received", "accepted", "declined"] as const;
+export type RfpResponseStatus = (typeof RFP_RESPONSE_STATUSES)[number];
+
+/**
+ * A request for proposal put out to one vendor category.
+ *
+ * Budget is a range rather than a single figure, because an RFP asks the market what
+ * something costs rather than telling it. Both bounds are cents like every other money
+ * field in the product, so `formatMoney` works without a special case.
+ */
+export interface Rfp {
+  id: string;
+  eventId: string;
+  title: string;
+  vendorCategory: string;
+  description: string | null;
+  budgetMinCents: Cents | null;
+  budgetMaxCents: Cents | null;
+  headcount: number | null;
+  /** Responses are due by this date. */
+  deadline: IsoDateTime | null;
+  requirements: string | null;
+  status: RfpStatus;
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
+
+export interface RfpDraft {
+  title: string;
+  vendorCategory: string;
+  description?: string | null;
+  budgetMinCents?: Cents | null;
+  budgetMaxCents?: Cents | null;
+  headcount?: number | null;
+  deadline?: IsoDateTime | null;
+  requirements?: string | null;
+  status?: RfpStatus;
+}
+
+export type RfpPatch = Partial<RfpDraft>;
+
+/** One vendor's reply to an RFP. */
+export interface RfpResponse {
+  id: string;
+  rfpId: string;
+  vendorName: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  quotedAmountCents: Cents | null;
+  notes: string | null;
+  status: RfpResponseStatus;
+  createdAt: IsoDateTime;
+}
+
+export interface RfpResponseDraft {
+  vendorName: string;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  quotedAmountCents?: Cents | null;
+  notes?: string | null;
+  status?: RfpResponseStatus;
+}
+
+/** An RFP with its replies, which is the only shape the RFP tab ever renders. */
+export interface RfpWithResponses extends Rfp {
+  responses: RfpResponse[];
+}
+
+/* ------------------------------------------------------------------- deposits */
+
+export const DEPOSIT_STATUSES = ["pending", "paid", "overdue", "refunded"] as const;
+export type DepositStatus = (typeof DEPOSIT_STATUSES)[number];
+
+/**
+ * Money committed to a vendor ahead of the event.
+ *
+ * `status` is stored rather than derived, because "overdue" is a decision someone made
+ * about an unpaid deposit, not simply a date in the past — a deposit can be past its due
+ * date and still agreed as fine.
+ */
+export interface Deposit {
+  id: string;
+  eventId: string;
+  vendorName: string;
+  amountCents: Cents;
+  dueDate: IsoDateTime | null;
+  paidDate: IsoDateTime | null;
+  paidBy: string | null;
+  paymentMethod: string | null;
+  status: DepositStatus;
+  notes: string | null;
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
+
+export interface DepositDraft {
+  vendorName: string;
+  amountCents: Cents;
+  dueDate?: IsoDateTime | null;
+  paidDate?: IsoDateTime | null;
+  paidBy?: string | null;
+  paymentMethod?: string | null;
+  status?: DepositStatus;
+  notes?: string | null;
+}
+
+export type DepositPatch = Partial<DepositDraft>;
+
+/* --------------------------------------------------------------- workspace team */
+
+export const WORKSPACE_ROLES = ["owner", "admin", "member"] as const;
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
+
+/**
+ * Someone with access to the workspace.
+ *
+ * Roles have existed since the schema was written and the API has always enforced them,
+ * but nothing could ever assign one — so every member sat at the default and the
+ * permission system was invisible. This is the missing half.
+ */
+export interface WorkspaceMember {
+  /** Null until an invited person signs in for the first time. */
+  userId: string | null;
+  role: WorkspaceRole;
+  /** `invited` means the seat is granted but unclaimed — they have never signed in. */
+  status: "active" | "invited";
+  /** From the identity provider; null when the account has since been deleted there. */
+  name: string | null;
+  email: string | null;
+  /** So the UI can stop someone locking themselves out of their own workspace. */
+  isSelf: boolean;
+  /** When they joined, or when they were invited if they have not yet. */
+  joinedAt: IsoDateTime;
+}
+
+/**
+ * The result of inviting someone.
+ *
+ * `emailSent` is reported rather than assumed: the seat is granted by the invite whether
+ * or not the mail goes out, and telling an owner "we emailed them" when we did not is how
+ * a colleague ends up waiting for a message that never arrives.
+ */
+export interface InviteResult {
+  member: WorkspaceMember;
+  emailSent: boolean;
+}
+
+/* ----------------------------------------------------------------- team hours */
+
+/** Staff time booked against an event, the labour half of what an event really cost. */
+export interface TeamHoursEntry {
+  id: string;
+  eventId: string;
+  staffMember: string;
+  role: string;
+  hours: number;
+  createdAt: IsoDateTime;
+}
+
+export interface TeamHoursDraft {
+  staffMember: string;
+  role: string;
+  hours: number;
+}
+
+export type TeamHoursPatch = Partial<TeamHoursDraft>;
+
 /* ------------------------------------------------------------------ templates */
 
 export interface Template extends OwnedRecord {
@@ -676,10 +1006,7 @@ export type TemplateDetail = Template & TemplateContents;
 
 /* -------------------------------------------------------------- user settings */
 
-/**
- * Per-user preferences. Persisted server-side in `userSettings/{uid}` — never in
- * localStorage, so a preference set on a laptop follows the user to their phone.
- */
+/** Home grouping follows the user; currency and time zone are shared by the workspace. */
 /**
  * Everything a guest on a share link is allowed to see, and nothing else.
  *
@@ -707,6 +1034,43 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   currency: "USD",
   timeZone: "America/Los_Angeles",
 };
+
+/* ----------------------------------------------------------- product feedback */
+
+export const FEEDBACK_CATEGORIES = ["general", "bug", "idea", "praise"] as const;
+export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
+export const DEFAULT_FEEDBACK_CATEGORY: FeedbackCategory = "general";
+export const FEEDBACK_INBOX_PATH = "/app/feedback";
+export const FEEDBACK_LIMITS = {
+  minMessageLength: 3,
+  maxMessageLength: 2_000,
+  maxPagePathLength: 500,
+} as const;
+
+/** One note submitted through the signed-in feedback conversation. */
+export interface ProductFeedback {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  category: FeedbackCategory;
+  message: string;
+  /** The product page the user was viewing when they sent the note. */
+  pagePath: string | null;
+  createdAt: IsoDateTime;
+}
+
+export interface ProductFeedbackDraft {
+  category: FeedbackCategory;
+  message: string;
+  pagePath?: string | null;
+}
+
+/** Feedback enriched for the private Beebizy team inbox. */
+export interface FeedbackInboxItem extends ProductFeedback {
+  userName: string | null;
+  userEmail: string | null;
+  workspaceName: string;
+}
 
 /* ----------------------------------------------------------------- derived */
 
@@ -739,6 +1103,22 @@ export interface EventHealth {
   ticketRevenueCents: Cents;
   fundraisingCents: Cents;
   risks: EventRisk[];
+}
+
+export interface CustomReportRow {
+  eventId: string;
+  title: string;
+  date: IsoDateTime;
+  status: EventStatus;
+  category: string;
+  location: string | null;
+  capacity: number | null;
+  registrations: number;
+  readiness: number;
+  budgetPlannedCents: Cents;
+  budgetSpentCents: Cents;
+  revenueCents: Cents;
+  riskCount: number;
 }
 
 export type EventSectionId = "overview" | "plan" | "guests" | "vendors" | "budget" | "share";

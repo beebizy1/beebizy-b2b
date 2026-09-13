@@ -3,6 +3,182 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+/* Check-in print jobs stay out of the app layout and become the only visible content
+   when the browser print dialog opens. This supports ordinary office printers and
+   dedicated badge printers without a vendor-specific integration. */
+.check-in-print-area {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .check-in-print-area,
+  .check-in-print-area * {
+    visibility: visible !important;
+  }
+
+  .check-in-print-area {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    color: #111827;
+    background: #fff;
+    font-family: Arial, sans-serif;
+  }
+
+  .check-in-guest-list header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 18px;
+    border-bottom: 4px solid #f8d810;
+  }
+
+  .check-in-guest-list h1 {
+    margin: 2px 0 4px;
+    font-size: 24px;
+  }
+
+  .check-in-guest-list header p {
+    margin: 0;
+    color: #4b5563;
+    font-size: 11px;
+  }
+
+  .check-in-print-kicker {
+    color: #111827 !important;
+    font-size: 9px !important;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+  }
+
+  .check-in-print-total {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .check-in-print-total strong {
+    font-size: 28px;
+    line-height: 1;
+  }
+
+  .check-in-print-total span {
+    margin-top: 3px;
+    color: #4b5563;
+    font-size: 10px;
+  }
+
+  .check-in-guest-list table {
+    width: 100%;
+    margin-top: 14px;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+
+  .check-in-guest-list thead {
+    display: table-header-group;
+  }
+
+  .check-in-guest-list tr {
+    break-inside: avoid;
+  }
+
+  .check-in-guest-list th,
+  .check-in-guest-list td {
+    padding: 7px 6px;
+    border-bottom: 1px solid #d1d5db;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .check-in-guest-list th {
+    color: #374151;
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .check-in-badge {
+    position: relative;
+    box-sizing: border-box;
+    width: 4in;
+    height: 3in;
+    padding: 0.28in;
+    overflow: hidden;
+    border: 1px solid #d1d5db;
+    border-top: 0.14in solid #f8d810;
+  }
+
+  .check-in-badge-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .check-in-badge-brand span {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: #f8d810;
+    box-shadow: inset 0 0 0 2px #111827;
+  }
+
+  .check-in-badge-event {
+    margin: 20px 0 0;
+    color: #4b5563;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .check-in-badge h1 {
+    margin: 8px 0 0;
+    font-size: 32px;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+  }
+
+  .check-in-badge-organization {
+    margin: 7px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .check-in-badge-role {
+    display: inline-block;
+    margin: 9px 0 0;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #fef9c3;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .check-in-badge footer {
+    position: absolute;
+    right: 0.28in;
+    bottom: 0.24in;
+    left: 0.28in;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #d1d5db;
+    color: #4b5563;
+    font-size: 9px;
+  }
+}
+
 /*
   Design tokens.
 
@@ -49,9 +225,8 @@
      white, so anything set in the brand colour uses this darker tone instead. */
   --color-primary-text: hsl(var(--primary-text));
 
-  /* Brand ink: the second half of the two-colour identity. Marketing surfaces sit on
-     this near-black navy in both themes — the way Binance keeps its marketing dark and
-     flips only transactional screens — with yellow carrying the voltage on top. */
+  /* Warm brand grounding tones. Marketing surfaces use espresso and honey instead of
+     black, with yellow carrying the energy on top. */
   --color-brand-ink: hsl(var(--brand-ink));
   --color-brand-surface: hsl(var(--brand-surface));
   --color-brand-hairline: hsl(var(--brand-hairline));
@@ -163,29 +338,28 @@
   --popover-foreground: 222 47% 11%;
   --popover-border: 220 16% 89%;
 
-  /*
-    Brand yellow, sampled from the logo itself (#f8d810), with a deeper step for hover
-    and active. The logo is yellow and black on white, so those are the two colours the
-    product uses — an invented navy would have been a third brand nobody asked for.
-  */
+  /* Brand yellow, sampled from the logo itself (#f8d810), with a deeper step for hover
+     and active. Yellow carries ink-black, not brown: the logo is black on yellow and the
+     brown treatment read as muddy against it. */
   --primary: 52 94% 52%;
   --primary-hover: 48 92% 45%;
-  /* Black on brand yellow measures 12.6:1. */
-  --primary-foreground: 0 0% 4%;
+  --primary-foreground: 222 47% 11%;
   /* Soft honey wash for tinted surfaces and section bands. */
   --primary-muted: 51 94% 92%;
   --primary-wash: 51 96% 96%;
   /* Yellow as small text is unreadable at fill brightness; this is 5.4:1 on white. */
   --primary-text: 36 88% 29%;
 
-  /* The logo's black, used for grounding bands and the secondary button. */
-  --brand-ink: 0 0% 4%;
-  --brand-surface: 0 0% 9%;
-  --brand-hairline: 0 0% 18%;
+  /* Feature bands and secondary actions ground in ink, not espresso. The palette is
+     black and yellow with green for done and red for outstanding; a brown mid-tone
+     muddied all three and read as a different product. */
+  --brand-ink: 222 47% 11%;
+  --brand-surface: 222 40% 16%;
+  --brand-hairline: 220 18% 32%;
   --brand-foreground: 0 0% 100%;
-  --brand-muted: 0 0% 72%;
+  --brand-muted: 220 14% 82%;
 
-  --secondary: 0 0% 6%;
+  --secondary: 222 47% 11%;
   --secondary-foreground: 0 0% 100%;
 
   --muted: 220 20% 95%;
@@ -360,7 +534,7 @@
     color: hsl(var(--primary-text));
   }
 
-  /* Marketing surface: brand ink in both themes, with yellow doing the talking. */
+  /* Marketing surface: warm brand ink with yellow doing the talking. */
   .brand-canvas {
     background-color: hsl(var(--brand-ink));
     color: hsl(var(--brand-foreground));
@@ -380,7 +554,7 @@
   .honeycomb {
     background-image:
       radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.10), transparent 60%),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%23000' stroke-opacity='0.045'/%3E%3C/svg%3E");
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'%3E%3Cpath d='M14 0l14 8v16l-14 8L0 24V8z' fill='none' stroke='%236f5328' stroke-opacity='0.06'/%3E%3Cpath d='M42 0l14 8v16l-14 8-14-8V8z' fill='none' stroke='%236f5328' stroke-opacity='0.06'/%3E%3C/svg%3E");
   }
   /* A yellow band with the comb pattern, for section grounds. */
   .honey-band {

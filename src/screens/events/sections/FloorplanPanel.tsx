@@ -12,14 +12,25 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { GripVertical, LayoutGrid, Lock, Plus, RotateCcw, Save, Trash2, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useFloorplan, useSaveFloorplan } from "@/data/hooks";
-import { FLOORPLAN_SHAPES, type Event, type FloorplanItem, type FloorplanShape } from "@/data/entities";
+import {
+  useCreateFloorplan,
+  useDeleteFloorplan,
+  useFloorplans,
+  useSaveFloorplan,
+} from "@/data/hooks";
+import {
+  FLOORPLAN_SHAPES,
+  type Event,
+  type Floorplan,
+  type FloorplanItem,
+  type FloorplanShape,
+} from "@/data/entities";
 
 interface ShapeSpec {
   label: string;
@@ -40,6 +51,8 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   dancefloor: { label: "Dance floor", width: 24, height: 20, seats: null, round: false, className: "bg-surface-sunken border-dashed border-muted-foreground/50 text-muted-foreground" },
   booth: { label: "Booth", width: 10, height: 10, seats: 4, round: false, className: "bg-warning-tint border-warning/40 text-warning-text" },
   av: { label: "AV desk", width: 9, height: 7, seats: null, round: false, className: "bg-muted border-muted-foreground/40 text-muted-foreground" },
+  tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
+  chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
@@ -48,8 +61,11 @@ function newItemId(): string {
   return `fp-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
 }
 
-export default function FloorplanPanel({ event }: { event: Event }) {
-  const { data: saved, isLoading } = useFloorplan(event.id);
+/**
+ * One room's editor. Remounted per room by the panel below (via `key`), so the local
+ * unsaved state cannot leak from the terrace layout into the ballroom's.
+ */
+function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const savePlan = useSaveFloorplan();
 
   const [name, setName] = useState<string | null>(null);
@@ -57,6 +73,8 @@ export default function FloorplanPanel({ event }: { event: Event }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
+  const suppressPaletteClick = useRef(false);
 
   // Local edits win until saved or reset; otherwise mirror the stored plan. Memoized so
   // the derived values below don't recompute on every render.
@@ -75,7 +93,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const addShape = (shape: FloorplanShape) => {
+  const addShape = (shape: FloorplanShape, position?: { x: number; y: number }) => {
     const spec = SHAPES[shape];
     const sameShape = workingItems.filter((item) => item.shape === shape).length;
     const item: FloorplanItem = {
@@ -83,16 +101,53 @@ export default function FloorplanPanel({ event }: { event: Event }) {
       shape,
       label: spec.seats === null ? spec.label : String(sameShape + 1),
       // Stagger new objects so they don't stack on the same spot.
-      x: clamp(20 + ((sameShape * 13) % 60)),
-      y: clamp(24 + ((sameShape * 9) % 50)),
+      x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
+      y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
       seats: spec.seats,
+      // Existing landscape features should not be nudged accidentally while the
+      // team arranges temporary furniture around them.
+      locked: shape === "tree",
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
   };
 
+  const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
+    const room = roomRef.current;
+    if (!room) return false;
+    const rect = room.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
+    addShape(shape, {
+      x: ((clientX - rect.left) / rect.width) * 100,
+      y: ((clientY - rect.top) / rect.height) * 100,
+    });
+    return true;
+  };
+
+  const onPalettePointerDown = (pointerEvent: React.PointerEvent<HTMLButtonElement>, shape: FloorplanShape) => {
+    if (pointerEvent.button !== 0) return;
+    paletteDragState.current = { shape, startX: pointerEvent.clientX, startY: pointerEvent.clientY };
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+  };
+
+  const onPalettePointerUp = (pointerEvent: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = paletteDragState.current;
+    paletteDragState.current = null;
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+    }
+    if (!drag) return;
+    const moved = Math.hypot(pointerEvent.clientX - drag.startX, pointerEvent.clientY - drag.startY) > 6;
+    if (!moved) return;
+    suppressPaletteClick.current = true;
+    addShapeAtPointer(drag.shape, pointerEvent.clientX, pointerEvent.clientY);
+    window.setTimeout(() => {
+      suppressPaletteClick.current = false;
+    }, 0);
+  };
+
   const removeSelected = () => {
-    if (!selected) return;
+    if (!selected || selected.locked) return;
     setItems(workingItems.filter((item) => item.id !== selected.id));
     setSelectedId(null);
   };
@@ -100,13 +155,14 @@ export default function FloorplanPanel({ event }: { event: Event }) {
   /* --------------------------------------------------------------- dragging */
 
   const onPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>, item: FloorplanItem) => {
+    setSelectedId(item.id);
+    if (item.locked) return;
     const room = roomRef.current;
     if (!room) return;
     const rect = room.getBoundingClientRect();
     const pointerX = ((pointerEvent.clientX - rect.left) / rect.width) * 100;
     const pointerY = ((pointerEvent.clientY - rect.top) / rect.height) * 100;
     dragState.current = { id: item.id, offsetX: pointerX - item.x, offsetY: pointerY - item.y };
-    setSelectedId(item.id);
     pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
   };
 
@@ -137,6 +193,8 @@ export default function FloorplanPanel({ event }: { event: Event }) {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
       const { selected: target, workingItems: current } = latest.current;
       if (!target) return;
+
+      if (target.locked) return;
 
       const step = keyEvent.shiftKey ? 5 : 1;
       const moves: Record<string, [number, number]> = {
@@ -192,7 +250,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
     <Panel>
       <PanelHeader
         title="Floorplan"
-        description={isLoading ? "Loading…" : capacityNote}
+        description={capacityNote}
         actions={
           <div className="flex items-center gap-2">
             {dirty ? <Pill tone="warning">unsaved</Pill> : null}
@@ -215,7 +273,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
               disabled={!dirty || savePlan.isPending}
               onClick={() =>
                 savePlan.mutate(
-                  { eventId: event.id, draft: { name: workingName, items: workingItems } },
+                  { id: saved.id, eventId: event.id, draft: { name: workingName, items: workingItems } },
                   {
                     onSuccess: () => {
                       setItems(null);
@@ -241,22 +299,37 @@ export default function FloorplanPanel({ event }: { event: Event }) {
           aria-label="Floorplan name"
           className="h-8 w-52"
         />
-        <span className="text-xs text-muted-foreground">Add:</span>
+        <span className="text-xs text-muted-foreground">Drag into the room:</span>
         {FLOORPLAN_SHAPES.map((shape) => (
-          <Button key={shape} variant="outline" size="sm" onClick={() => addShape(shape)}>
-            <Plus className="mr-1 size-3" />
+          <Button
+            key={shape}
+            type="button"
+            variant="outline"
+            size="sm"
+            className="touch-none cursor-grab active:cursor-grabbing"
+            onPointerDown={(pointerEvent) => onPalettePointerDown(pointerEvent, shape)}
+            onPointerUp={onPalettePointerUp}
+            onPointerCancel={() => {
+              paletteDragState.current = null;
+            }}
+            onClick={() => {
+              if (suppressPaletteClick.current) return;
+              addShape(shape);
+            }}
+            title={`Drag ${SHAPES[shape].label.toLowerCase()} into the room, or click to add`}
+          >
+            <GripVertical className="mr-1 size-3" />
             {SHAPES[shape].label}
           </Button>
         ))}
       </div>
 
-      {isLoading ? (
-        <LoadingRows rows={4} className="p-4" />
-      ) : (
+      {(
         <>
           <div className="p-5">
             <div
               ref={roomRef}
+              aria-label="Floorplan room"
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
@@ -273,7 +346,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
                   <EmptyState
                     icon={LayoutGrid}
                     title="Empty room"
-                    description="Add tables and objects from the row above, then drag them into place."
+                    description="Drag tables and objects from the toolbar into this blank room. You can also click an object to add it."
                   />
                 </div>
               ) : null}
@@ -286,12 +359,13 @@ export default function FloorplanPanel({ event }: { event: Event }) {
                     key={item.id}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}`}
+                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}${item.locked ? ", fixed in place" : ""}`}
                     aria-pressed={isSelected}
                     onPointerDown={(pointerEvent) => onPointerDown(pointerEvent, item)}
                     onFocus={() => setSelectedId(item.id)}
                     className={cn(
-                      "absolute flex cursor-grab touch-none select-none items-center justify-center border text-center text-[10px] font-semibold leading-tight shadow-xs transition-shadow active:cursor-grabbing",
+                      "absolute flex touch-none select-none items-center justify-center border text-center text-[10px] font-semibold leading-tight shadow-xs transition-shadow",
+                      item.locked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
                       spec.round ? "rounded-full" : "rounded-md",
                       spec.className,
                       isSelected && "ring-2 ring-ring ring-offset-1",
@@ -305,14 +379,15 @@ export default function FloorplanPanel({ event }: { event: Event }) {
                     }}
                   >
                     <span className="px-1">{item.label}</span>
+                    {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>
                 );
               })}
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag to move. Tab to an object and use the arrow keys to nudge it, shift for a bigger step, delete to
-              remove.
+              Drag objects from the toolbar to place them. Trees start fixed in place. Select an object to lock or
+              unlock it, then use drag or the arrow keys to move it.
             </p>
           </div>
 
@@ -345,7 +420,15 @@ export default function FloorplanPanel({ event }: { event: Event }) {
                 </label>
               ) : null}
               <Pill tone={capacityTone}>{capacityNote}</Pill>
-              <Button variant="outline" size="sm" onClick={removeSelected}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => updateItem(selected.id, { locked: !selected.locked })}
+              >
+                {selected.locked ? <Unlock className="mr-1.5 size-3.5" /> : <Lock className="mr-1.5 size-3.5" />}
+                {selected.locked ? "Unlock position" : "Lock position"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={removeSelected} disabled={selected.locked}>
                 <Trash2 className="mr-1.5 size-3.5 text-danger-text" />
                 Remove
               </Button>
@@ -354,5 +437,119 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         </>
       )}
     </Panel>
+  );
+}
+
+/**
+ * The rooms of an event.
+ *
+ * Most events are one room and should feel like it: a single room renders as it always
+ * did, with the tab strip only earning its space once there is a second. "Add a room" is
+ * what makes indoor/outdoor and upstairs/downstairs describable at all — before this an
+ * event had exactly one plan, so the second space simply had nowhere to live.
+ */
+export default function FloorplanPanel({ event }: { event: Event }) {
+  const { data: plans, isLoading } = useFloorplans(event.id);
+  const createPlan = useCreateFloorplan();
+  const deletePlan = useDeleteFloorplan();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const rooms = plans ?? [];
+  // Falls back to the first room whenever the selection is stale — after a delete, or
+  // before anything has been picked.
+  const current = rooms.find((room) => room.id === selectedId) ?? rooms[0] ?? null;
+
+  const addRoom = () => {
+    const name = `Room ${rooms.length + 1}`;
+    createPlan.mutate(
+      { eventId: event.id, draft: { name, items: [] } },
+      {
+        onSuccess: (created) => setSelectedId(created.id),
+        onError: (error) => toast({ title: "Couldn't add the room", description: error.message }),
+      },
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <Panel>
+        <PanelHeader title="Floorplan" description="Loading…" />
+        <LoadingRows rows={4} className="p-4" />
+      </Panel>
+    );
+  }
+
+  if (current === null) {
+    return (
+      <Panel>
+        <PanelHeader title="Floorplan" description="No rooms yet" />
+        <EmptyState
+          icon={LayoutGrid}
+          title="No floorplan yet"
+          description="Add a room to start placing tables, a stage, a bar and the rest."
+          action={
+            <Button size="sm" onClick={addRoom} disabled={createPlan.isPending}>
+              <Plus className="mr-1.5 size-3.5" />
+              Add a room
+            </Button>
+          }
+        />
+      </Panel>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {rooms.map((room) => (
+          <button
+            key={room.id}
+            type="button"
+            onClick={() => setSelectedId(room.id)}
+            aria-pressed={room.id === current.id}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              room.id === current.id
+                ? "border-primary bg-secondary text-secondary-foreground"
+                : "border-hairline text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {room.name}
+          </button>
+        ))}
+
+        <Button variant="outline" size="sm" onClick={addRoom} disabled={createPlan.isPending}>
+          <Plus className="mr-1.5 size-3.5" />
+          Add a room
+        </Button>
+
+        {(
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={deletePlan.isPending}
+            onClick={() => {
+              // Deleting a drawn room loses work, so it is confirmed. The last room is
+              // deletable too: a room added by mistake would otherwise be stuck on the
+              // event forever, and removing it lands on the empty state, which offers to
+              // add one straight back.
+              if (!window.confirm(`Delete "${current.name}" and everything drawn in it?`)) return;
+              deletePlan.mutate(
+                { id: current.id, eventId: event.id },
+                {
+                  onSuccess: () => setSelectedId(null),
+                  onError: (error) => toast({ title: "Couldn't delete the room", description: error.message }),
+                },
+              );
+            }}
+          >
+            <Trash2 className="mr-1.5 size-3.5" />
+            Delete room
+          </Button>
+        )}
+      </div>
+
+      <RoomEditor key={current.id} event={event} plan={current} />
+    </div>
   );
 }

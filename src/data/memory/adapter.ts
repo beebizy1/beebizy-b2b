@@ -16,10 +16,13 @@ import type {
   EventScopedRepository,
   EventsRepository,
   FloorplanRepository,
+  MembersRepository,
   EventHistoryRepository,
+  FeedbackRepository,
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
+  RfpsRepository,
   RoiRepository,
   SettingsRepository,
   TemplatesRepository,
@@ -28,6 +31,7 @@ import type {
 } from "../adapter";
 import { DataError } from "../adapter";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
+import { compareRunOfShowItems } from "../eventDays";
 import type {
   Guest,
   GuestDraft,
@@ -45,10 +49,17 @@ import type {
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  CheckInStation,
+  CheckInStationDraft,
+  CheckInStationPatch,
+  Deposit,
+  DepositDraft,
+  DepositPatch,
   Event,
   EventFilter,
   EventHealth,
   EventHistoryChange,
+  FeedbackInboxItem,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -66,9 +77,17 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RaffleTicket,
+  Rfp,
+  RfpDraft,
+  RfpPatch,
+  RfpResponse,
+  TeamHoursEntry,
+  TeamHoursDraft,
+  TeamHoursPatch,
   Registration,
   RegistrationStatus,
   RegistrationWithGuest,
+  WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -88,9 +107,17 @@ import type {
   VendorDraft,
   VendorMessage,
   VendorPatch,
+  VolunteerShift,
+  VolunteerShiftDraft,
+  VolunteerShiftPatch,
+  WorkspaceMember,
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
 import { describeHistoryChange } from "../history";
+import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../planner";
+import { nextTurn } from "../assistantChat";
+import { googleSheetCsvUrl } from "../import";
+import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -269,7 +296,9 @@ function eventScoped<T extends { id: string; eventId: string; sortOrder?: number
 
 const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "checklist",
+  "checkInStations",
   "runOfShow",
+  "volunteers",
   "budget",
   "menu",
   "moodBoard",
@@ -279,6 +308,9 @@ const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "raffleTickets",
   "sponsorships",
   "eventVendors",
+  "rfps",
+  "deposits",
+  "teamHours",
 ];
 
 const events: EventsRepository = {
@@ -407,7 +439,7 @@ const events: EventsRepository = {
       event,
       agenda: store()
         .runOfShow.filter((item) => item.eventId === event.id)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+        .sort(compareRunOfShowItems),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
       timeZone: store().settings.timeZone,
     });
@@ -617,12 +649,61 @@ const registrations: RegistrationsRepository = {
       eventTitle: event.title,
       guestId: draft.guestId,
       status: draft.status ?? "pending",
+      segment: draft.segment?.trim() || null,
+      organization: draft.organization?.trim() || null,
       registeredAt: nowIso(),
+      checkedInAt: null,
+      checkInStation: null,
+      checkInNotes: null,
       createdAt: nowIso(),
     };
     state.registrations.push(registration);
     syncRegistrationCount(draft.eventId);
     return copy(registration);
+  },
+  async createWalkIn(eventId: string, draft: WalkInRegistrationDraft) {
+    await wait();
+    const event = requireEvent(eventId);
+    const state = store();
+    const name = draft.name.trim();
+    const contact = draft.contact.trim();
+    if (!name) throw new DataError("invalid", "name is required.");
+    if (!contact) throw new DataError("invalid", "contact is required.");
+    if (state.guests.some((candidate) => candidate.contact.toLowerCase() === contact.toLowerCase())) {
+      throw new DataError("conflict", "That email is already in the people list. Search for the guest and check them in instead.");
+    }
+    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+      throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
+    }
+
+    const now = nowIso();
+    const guest: Guest = {
+      id: newId("att"),
+      ownerId: DEMO_OWNER_ID,
+      name,
+      contact,
+      notes: "Registered at event check-in.",
+      createdAt: now,
+    };
+    const registration: Registration = {
+      id: newId("reg"),
+      ownerId: DEMO_OWNER_ID,
+      eventId,
+      eventTitle: event.title,
+      guestId: guest.id,
+      status: "confirmed",
+      segment: draft.segment?.trim() || "Walk-in",
+      organization: draft.organization?.trim() || null,
+      registeredAt: now,
+      checkedInAt: now,
+      checkInStation: draft.checkInStation?.trim() || null,
+      checkInNotes: draft.checkInNotes?.trim() || "Registered on site.",
+      createdAt: now,
+    };
+    state.guests.push(guest);
+    state.registrations.push(registration);
+    syncRegistrationCount(eventId);
+    return copy({ ...registration, guest });
   },
   async setStatus(id, status: RegistrationStatus) {
     await wait();
@@ -633,6 +714,42 @@ const registrations: RegistrationsRepository = {
     registration.status = status;
     registration.updatedAt = nowIso();
     syncRegistrationCount(registration.eventId);
+    return copy(registration);
+  },
+  async setSegment(id, segment) {
+    await wait();
+    const registration = required(
+      store().registrations.find((r) => r.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    registration.segment = segment?.trim() || null;
+    registration.updatedAt = nowIso();
+    return copy(registration);
+  },
+  async setOrganization(id, organization) {
+    await wait();
+    const registration = required(
+      store().registrations.find((r) => r.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    registration.organization = organization?.trim() || null;
+    registration.updatedAt = nowIso();
+    return copy(registration);
+  },
+  async setCheckIn(id, patch) {
+    await wait();
+    const registration = required(
+      store().registrations.find((r) => r.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    registration.checkedInAt = patch.checkedInAt;
+    if (patch.checkedInAt && registration.status === "pending") {
+      registration.status = "confirmed";
+      syncRegistrationCount(registration.eventId);
+    }
+    if ("checkInStation" in patch) registration.checkInStation = patch.checkInStation?.trim() || null;
+    if ("checkInNotes" in patch) registration.checkInNotes = patch.checkInNotes?.trim() || null;
+    registration.updatedAt = nowIso();
     return copy(registration);
   },
   async remove(id) {
@@ -769,10 +886,28 @@ const checklist = eventScoped<ChecklistItem, ChecklistItemDraft, ChecklistItemPa
     completed: draft.completed ?? false,
     dueDate: draft.dueDate ?? null,
     assignedTo: draft.assignedTo ?? null,
+    assignedEmail: draft.assignedEmail ?? null,
     category: draft.category ?? "General",
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),
   }),
+);
+
+const checkInStations = eventScoped<CheckInStation, CheckInStationDraft, CheckInStationPatch>(
+  () => store().checkInStations,
+  "station",
+  (eventId, draft, sortOrder) => ({
+    id: "",
+    eventId,
+    name: draft.name.trim(),
+    lane: draft.lane.trim(),
+    lead: draft.lead?.trim() || null,
+    deviceCount: Math.max(0, Math.trunc(draft.deviceCount ?? 1)),
+    notes: draft.notes?.trim() || null,
+    sortOrder: draft.sortOrder ?? sortOrder,
+    createdAt: nowIso(),
+  }),
+  "check-in-station",
 );
 
 const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>(
@@ -781,6 +916,7 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
   (eventId, draft, sortOrder) => ({
     id: "",
     eventId,
+    dayNumber: Math.max(1, Math.trunc(draft.dayNumber ?? 1)),
     startTime: draft.startTime,
     duration: draft.duration ?? null,
     title: draft.title,
@@ -790,7 +926,28 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
     createdAt: nowIso(),
   }),
   "run-of-show",
-  (a, b) => a.startTime.localeCompare(b.startTime) || a.sortOrder - b.sortOrder,
+  compareRunOfShowItems,
+);
+
+const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>(
+  () => store().volunteers,
+  "vol",
+  (eventId, draft, sortOrder) => ({
+    id: "",
+    eventId,
+    name: draft.name.trim(),
+    email: draft.email?.trim() || null,
+    phone: draft.phone?.trim() || null,
+    role: draft.role.trim(),
+    startTime: draft.startTime,
+    endTime: draft.endTime,
+    status: draft.status ?? "scheduled",
+    notes: draft.notes?.trim() || null,
+    sortOrder: draft.sortOrder ?? sortOrder,
+    createdAt: nowIso(),
+  }),
+  "volunteer",
+  (a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name),
 );
 
 const budget = eventScoped<BudgetItem, BudgetItemDraft, BudgetItemPatch>(
@@ -968,8 +1125,14 @@ const tickets: TicketsRepository = {
       eventId: event.id,
       eventTitle: event.title,
       guestId: guest.id,
+      // Bought a ticket rather than being invited, so no category until an organizer sets one.
+      segment: null,
+      organization: null,
       status: "confirmed",
       registeredAt: nowIso(),
+      checkedInAt: null,
+      checkInStation: null,
+      checkInNotes: null,
       createdAt: nowIso(),
     });
     syncRegistrationCount(event.id);
@@ -1065,6 +1228,145 @@ const raffle: RaffleRepository = {
 };
 
 /* ----------------------------------------------------------------- templates */
+
+/* ---------------------------------------------------------------------- rfps */
+
+const rfpsBase = eventScoped<Rfp, RfpDraft, RfpPatch>(
+  () => store().rfps,
+  "rfp",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    title: draft.title,
+    vendorCategory: draft.vendorCategory,
+    description: draft.description ?? null,
+    budgetMinCents: draft.budgetMinCents ?? null,
+    budgetMaxCents: draft.budgetMaxCents ?? null,
+    headcount: draft.headcount ?? null,
+    deadline: draft.deadline ?? null,
+    requirements: draft.requirements ?? null,
+    status: draft.status ?? "draft",
+    createdAt: nowIso(),
+  }),
+  undefined,
+  (a, b) => b.createdAt.localeCompare(a.createdAt),
+);
+
+/** The RFP has to belong to the event before its responses can be touched. */
+function requireRfp(eventId: string, rfpId: string): Rfp {
+  return required(
+    store().rfps.find((row) => row.id === rfpId && row.eventId === eventId),
+    `RFP ${rfpId} no longer exists.`,
+  );
+}
+
+const rfps: RfpsRepository = {
+  ...rfpsBase,
+
+  async list(eventId) {
+    await wait();
+    const responses = store().rfpResponses;
+    return copy(
+      store()
+        .rfps.filter((row) => row.eventId === eventId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((rfp) => ({
+          ...rfp,
+          responses: responses
+            .filter((response) => response.rfpId === rfp.id)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+        })),
+    );
+  },
+
+  async remove(eventId, id) {
+    await rfpsBase.remove(eventId, id);
+    // Responses are owned by the RFP, so they go with it.
+    const responses = store().rfpResponses;
+    for (let i = responses.length - 1; i >= 0; i -= 1) {
+      if (responses[i]!.rfpId === id) responses.splice(i, 1);
+    }
+  },
+
+  async addResponse(eventId, rfpId, draft) {
+    await wait();
+    requireRfp(eventId, rfpId);
+    const response: RfpResponse = {
+      id: newId("rfpres"),
+      rfpId,
+      vendorName: draft.vendorName,
+      contactName: draft.contactName ?? null,
+      contactEmail: draft.contactEmail ?? null,
+      contactPhone: draft.contactPhone ?? null,
+      quotedAmountCents: draft.quotedAmountCents ?? null,
+      notes: draft.notes ?? null,
+      status: draft.status ?? "pending",
+      createdAt: nowIso(),
+    };
+    store().rfpResponses.push(response);
+    return copy(response);
+  },
+
+  async setResponseStatus(eventId, rfpId, responseId, status) {
+    await wait();
+    requireRfp(eventId, rfpId);
+    const response = required(
+      store().rfpResponses.find((row) => row.id === responseId && row.rfpId === rfpId),
+      `Response ${responseId} no longer exists.`,
+    );
+    response.status = status;
+    return copy(response);
+  },
+
+  async removeResponse(eventId, rfpId, responseId) {
+    await wait();
+    requireRfp(eventId, rfpId);
+    const responses = store().rfpResponses;
+    const index = responses.findIndex((row) => row.id === responseId && row.rfpId === rfpId);
+    if (index === -1) throw new DataError("not-found", `Response ${responseId} no longer exists.`);
+    responses.splice(index, 1);
+  },
+};
+
+/* ------------------------------------------------------------------ deposits */
+
+const deposits = eventScoped<Deposit, DepositDraft, DepositPatch>(
+  () => store().deposits,
+  "dep",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    vendorName: draft.vendorName,
+    amountCents: draft.amountCents,
+    dueDate: draft.dueDate ?? null,
+    paidDate: draft.paidDate ?? null,
+    paidBy: draft.paidBy ?? null,
+    paymentMethod: draft.paymentMethod ?? null,
+    status: draft.status ?? "pending",
+    notes: draft.notes ?? null,
+    createdAt: nowIso(),
+  }),
+  undefined,
+  // Soonest due first; deposits with no due date sink to the bottom.
+  (a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
+);
+
+/* ---------------------------------------------------------------- team hours */
+
+const teamHours = eventScoped<TeamHoursEntry, TeamHoursDraft, TeamHoursPatch>(
+  () => store().teamHours,
+  "hrs",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    staffMember: draft.staffMember,
+    role: draft.role,
+    hours: draft.hours,
+    createdAt: nowIso(),
+  }),
+  undefined,
+  (a, b) => b.hours - a.hours,
+);
 
 const templates: TemplatesRepository = {
   async list() {
@@ -1192,35 +1494,178 @@ const canvases: CanvasesRepository = {
 
 /* --------------------------------------------------------------- floorplan */
 
+/** The event context every floorplan history entry carries, so a plan can be read back. */
+function floorplanContext(eventId: string) {
+  const event = requireEvent(eventId);
+  return {
+    locationId: event.locationId,
+    location: event.location,
+    guestCount: event.registrationCount,
+    capacity: event.capacity,
+  };
+}
+
 const floorplan: FloorplanRepository = {
-  async get(eventId) {
+  async list(eventId) {
     await wait();
-    return copy(store().floorplans.find((plan) => plan.eventId === eventId) ?? null);
+    return copy(store().floorplans.filter((plan) => plan.eventId === eventId));
   },
-  async save(eventId, draft: FloorplanDraft) {
+  async create(eventId, draft: FloorplanDraft) {
     await wait();
-    const event = requireEvent(eventId);
-    const state = store();
-    const record: Floorplan = { eventId, name: draft.name, items: copy(draft.items), updatedAt: nowIso() };
-    const existing = state.floorplans.find((plan) => plan.eventId === eventId);
-    const before = existing ? (copy(existing) as unknown as Record<string, unknown>) : null;
-    if (existing) Object.assign(existing, record);
-    else state.floorplans.push(record);
+    const context = floorplanContext(eventId);
+    const record: Floorplan = {
+      id: newId("fp"),
+      eventId,
+      name: draft.name,
+      items: copy(draft.items),
+      updatedAt: nowIso(),
+    };
+    store().floorplans.push(record);
     appendHistory({
       eventId,
       resource: "floorplan",
-      resourceId: eventId,
-      action: before ? "updated" : "created",
-      before,
-      after: {
-        ...copy(record),
-        locationId: event.locationId,
-        location: event.location,
-        guestCount: event.registrationCount,
-        capacity: event.capacity,
-      } as unknown as Record<string, unknown>,
+      resourceId: record.id,
+      action: "created",
+      before: null,
+      after: { ...copy(record), ...context } as unknown as Record<string, unknown>,
     });
     return copy(record);
+  },
+  async save(id, draft: FloorplanDraft) {
+    await wait();
+    const existing = required(
+      store().floorplans.find((plan) => plan.id === id),
+      `Floorplan ${id} no longer exists.`,
+    );
+    const context = floorplanContext(existing.eventId);
+    const before = copy(existing) as unknown as Record<string, unknown>;
+    existing.name = draft.name;
+    existing.items = copy(draft.items);
+    existing.updatedAt = nowIso();
+    appendHistory({
+      eventId: existing.eventId,
+      resource: "floorplan",
+      resourceId: id,
+      action: "updated",
+      before,
+      after: { ...copy(existing), ...context } as unknown as Record<string, unknown>,
+    });
+    return copy(existing);
+  },
+  async remove(id) {
+    await wait();
+    const state = store();
+    const index = state.floorplans.findIndex((plan) => plan.id === id);
+    if (index === -1) throw new DataError("not-found", `Floorplan ${id} no longer exists.`);
+    const [removed] = state.floorplans.splice(index, 1);
+    appendHistory({
+      eventId: removed!.eventId,
+      resource: "floorplan",
+      resourceId: id,
+      action: "deleted",
+      before: copy(removed!) as unknown as Record<string, unknown>,
+      after: null,
+    });
+  },
+};
+
+/**
+ * Demo mode has exactly one person, so the team list shows them and nothing else. The
+ * mutations refuse rather than pretending: a workspace of one has no role to change and
+ * nobody to remove, and silently succeeding would teach the UI the wrong lesson.
+ */
+/** Demo invites live for the life of the tab; there is no server to persist them to. */
+const invited: WorkspaceMember[] = [];
+
+const members: MembersRepository = {
+  async list() {
+    await wait();
+    return [
+      {
+        userId: DEMO_OWNER_ID,
+        role: "owner",
+        status: "active",
+        name: "Demo organiser",
+        email: "demo@beebizy.com",
+        isSelf: true,
+        joinedAt: nowIso(),
+      },
+      ...invited,
+    ];
+  },
+  async invite(email, role) {
+    await wait();
+    const normalized = email.trim().toLowerCase();
+    const member: WorkspaceMember = {
+      userId: null,
+      role,
+      status: "invited",
+      name: null,
+      email: normalized,
+      isSelf: false,
+      joinedAt: nowIso(),
+    };
+    const existing = invited.findIndex((row) => row.email === normalized);
+    if (existing === -1) invited.push(member);
+    else invited[existing] = member;
+    // Demo mode has no identity provider behind it, so nothing is emailed and it says so.
+    return { member: copy(member), emailSent: false };
+  },
+  async revokeInvite(email) {
+    await wait();
+    const normalized = email.trim().toLowerCase();
+    const index = invited.findIndex((row) => row.email === normalized);
+    if (index !== -1) invited.splice(index, 1);
+  },
+  async setRole() {
+    await wait();
+    throw new DataError("conflict", "A workspace needs at least one owner. Make someone else an owner first.");
+  },
+  async remove() {
+    await wait();
+    throw new DataError("conflict", "A workspace needs at least one owner. Make someone else an owner first.");
+  },
+};
+
+const feedback: FeedbackRepository = {
+  async list() {
+    await wait();
+    return copy(
+      store().feedback.sort(
+        (a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+      ),
+    );
+  },
+  async create(draft) {
+    await wait();
+    const parsed = feedbackDraftSchema.safeParse(draft);
+    if (!parsed.success) throw new DataError("invalid", feedbackValidationMessage(parsed.error));
+    const { message, category, pagePath } = parsed.data;
+
+    const record = {
+      id: newId("feedback"),
+      workspaceId: DEMO_OWNER_ID,
+      userId: DEMO_OWNER_ID,
+      category,
+      message,
+      pagePath,
+      createdAt: nowIso(),
+    };
+    store().feedback.push(record);
+    return copy(record);
+  },
+  async listInbox(): Promise<FeedbackInboxItem[]> {
+    await wait();
+    return copy(
+      store().feedback
+        .map((item) => ({
+          ...item,
+          userName: "Demo organiser",
+          userEmail: "demo@beebizy.com",
+          workspaceName: "Demo workspace",
+        }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
+    );
   },
 };
 
@@ -1290,6 +1735,29 @@ function healthFor(eventIds?: string[]): EventHealth[] {
 }
 
 const analytics: AnalyticsRepository = {
+  async customReport() {
+    await wait();
+    const state = store();
+    const healthByEvent = new Map(healthFor().map((health) => [health.eventId, health]));
+    return state.events.map((event) => {
+      const health = healthByEvent.get(event.id);
+      return {
+        eventId: event.id,
+        title: event.title,
+        date: event.date,
+        status: event.status,
+        category: event.category,
+        location: event.location,
+        capacity: event.capacity,
+        registrations: event.registrationCount,
+        readiness: health?.readiness ?? 0,
+        budgetPlannedCents: health?.budgetPlannedCents ?? 0,
+        budgetSpentCents: health?.budgetSpentCents ?? 0,
+        revenueCents: (health?.ticketRevenueCents ?? 0) + (health?.fundraisingCents ?? 0),
+        riskCount: health?.risks.length ?? 0,
+      };
+    });
+  },
   async portfolio() {
     await wait();
     const state = store();
@@ -1348,18 +1816,108 @@ const analytics: AnalyticsRepository = {
 
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
+  cacheScope: "demo",
 
   // The demo has a single implicit workspace and no roles to speak of.
-  me: async () => ({ userId: DEMO_OWNER_ID, workspaceId: DEMO_OWNER_ID, role: "owner" }),
+  me: async () => {
+    const started = new Date();
+    const ends = new Date(started);
+    ends.setMonth(ends.getMonth() + 3);
+    return {
+      userId: DEMO_OWNER_ID,
+      workspaceId: DEMO_OWNER_ID,
+      role: "owner",
+      canReviewFeedback: false,
+      experience: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" ? "santa-clara" : "standard",
+      canSwitchExperience: false,
+      access: {
+        status: "beta",
+        plan: null,
+        betaStartedAt: started.toISOString(),
+        betaEndsAt: ends.toISOString(),
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+      },
+    };
+  },
+  billing: {
+    checkout: async () => ({ url: "/pricing?demo=true" }),
+    portal: async () => ({ url: "/pricing?demo=true" }),
+  },
+  assistant: {
+    chat: async ({ messages }) => {
+      await wait();
+      return nextTurn(messages);
+    },
+    plan: async (brief) => {
+      await wait();
+      const event = requireEvent(brief.eventId);
+      const current = store();
+      const memory: PastEventPlanningRecord[] = current.events
+        .filter((candidate) => candidate.status === "completed" && candidate.id !== event.id)
+        .map((candidate) => ({
+          event: candidate,
+          budget: current.budget.filter((line) => line.eventId === candidate.id).map((line) => ({
+            name: line.name,
+            category: line.category,
+            type: line.type,
+            estimatedCents: line.estimatedCents,
+            actualCents: line.actualCents,
+            notes: line.notes,
+            sortOrder: line.sortOrder,
+          })),
+          checklist: current.checklist.filter((item) => item.eventId === candidate.id).map((item) => ({
+            title: item.title,
+            description: item.description,
+            completed: item.completed,
+            assignedTo: item.assignedTo,
+            category: item.category,
+            sortOrder: item.sortOrder,
+            dueDaysBefore: item.dueDate
+              ? Math.max(0, Math.round((new Date(candidate.date).getTime() - new Date(item.dueDate).getTime()) / 86_400_000))
+              : 14,
+          })),
+          runOfShow: current.runOfShow.filter((cue) => cue.eventId === candidate.id).map((cue) => ({
+            dayNumber: cue.dayNumber,
+            startTime: cue.startTime,
+            duration: cue.duration,
+            title: cue.title,
+            description: cue.description,
+            responsible: cue.responsible,
+            sortOrder: cue.sortOrder,
+          })),
+          moodCaptions: current.moodBoard
+            .filter((image) => image.eventId === candidate.id && image.caption)
+            .map((image) => image.caption!),
+          floorplanShapes: current.floorplans
+            .find((plan) => plan.eventId === candidate.id)?.items.map((item) => item.shape) ?? [],
+        }));
+      return buildRuleBasedSuggestions(event, brief, memory, current.settings.timeZone);
+    },
+  },
+  imports: {
+    loadGoogleSheet: async (url) => {
+      const response = await fetch(googleSheetCsvUrl(url));
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (!response.ok || contentType.includes("text/html")) {
+        throw new DataError("invalid", 'Set Google Sheets sharing to "Anyone with the link can view," then try again.');
+      }
+      const csv = await response.text();
+      if (csv.length > 2 * 1024 * 1024) throw new DataError("invalid", "This sheet is larger than the 2 MB import limit.");
+      return { name: "Google Sheet", csv };
+    },
+  },
   events,
   locations,
   guests,
   registrations,
+  checkInStations,
   vendors,
   vendorMessages,
   eventVendors,
   checklist,
   runOfShow,
+  volunteers,
   budget,
   menu,
   moodBoard,
@@ -1367,10 +1925,15 @@ export const memoryAdapter: DataAdapter = {
   auction,
   raffle,
   sponsorships,
+  rfps,
+  deposits,
+  teamHours,
   templates,
   canvases,
   settings,
   floorplan,
+  members,
+  feedback,
   history,
   roi,
   analytics,

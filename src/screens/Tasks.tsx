@@ -133,7 +133,6 @@ export default function Tasks() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Tasks"
         title="Everything still open"
         description="Across every live event. Completed and cancelled events are left out — ticking here writes to the event's own checklist."
       />

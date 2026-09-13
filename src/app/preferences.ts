@@ -15,6 +15,7 @@
 import { useMemo } from "react";
 
 import { useSettings } from "@/data/hooks";
+import type { UserSettings } from "@/data/entities";
 import { DEFAULT_USER_SETTINGS } from "@/data/entities";
 import { formatMoney, setDisplayCurrency, type Cents, type FormatMoneyOptions } from "@/data/money";
 import {
@@ -31,6 +32,8 @@ export interface Preferences {
   /** Short name for the zone, e.g. "PDT". Show it wherever times are the point. */
   timeZoneLabel: string;
   currency: string;
+  /** How the dashboard's upcoming list is grouped. */
+  grouping: UserSettings["homeGrouping"];
   /** A date in the workspace zone. Missing or unparseable renders as an em dash. */
   date: (iso: string | Date | null | undefined, style?: DateStyle) => string;
   /** "in 6 days", "tomorrow" — counted in civil days in the workspace zone. */
@@ -51,6 +54,7 @@ export function usePreferences(): Preferences {
   // placeholders — and the defaults are the same ones the server writes.
   const timeZone = data?.timeZone ?? DEFAULT_USER_SETTINGS.timeZone;
   const currency = data?.currency ?? DEFAULT_USER_SETTINGS.currency;
+  const grouping = data?.homeGrouping ?? DEFAULT_USER_SETTINGS.homeGrouping;
 
   // Set once, so the forty-odd bare `formatMoney(...)` calls in row components agree
   // with `money(...)` without every one of them having to ask for the preference.
@@ -64,11 +68,12 @@ export function usePreferences(): Preferences {
       timeZone,
       timeZoneLabel: timeZoneLabel(timeZone),
       currency,
+      grouping,
       date: (iso, style) => formatInZone(iso, timeZone, style),
       when: (iso) => describeWhenInZone(iso, timeZone),
       daysUntil: (iso) => daysBetweenInZone(iso, timeZone),
       money: (cents, options) => formatMoney(cents, { currency, ...options }),
     }),
-    [timeZone, currency],
+    [timeZone, currency, grouping],
   );
 }

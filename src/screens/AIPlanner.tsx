@@ -1,0 +1,509 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Coins,
+  ExternalLink,
+  FileSpreadsheet,
+  Loader2,
+  Palette,
+  PencilLine,
+  Sparkles,
+  Store,
+  WandSparkles,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PageHeader, Panel, PanelHeader, Pill } from "@/components/primitives";
+import {
+  useAddBudgetItem,
+  useAddChecklistItem,
+  useAddMoodBoardImage,
+  useAddRunOfShowItem,
+  useCreateEvent,
+  useMe,
+} from "@/data/hooks";
+import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
+import {
+  buildBudgetSuggestions,
+  marketplaceSearchUrl,
+  moodConceptDataUrl,
+  PLANNING_LIMITS,
+  suggestedTotalBudgetCents,
+} from "@/data/planner";
+import { toast } from "@/hooks/use-toast";
+import { formatClockTime } from "@/lib/datetime";
+import { EVENT_CATEGORIES, type ChecklistItemDraft, type EventCategory, type RunOfShowItemDraft } from "@/data/entities";
+import SpreadsheetImporter from "@/screens/import/SpreadsheetImporter";
+import { effectivePlan, planHasCapability } from "@/data/plans";
+import { useAccountExperience } from "@/app/useAccountExperience";
+
+type PlannerMode = "choose" | "agent" | "plan" | "import";
+
+const themeDirections = {
+  "Modern garden": {
+    description: "Natural materials, sculptural greenery and warm candlelight.",
+    variations: [
+      { name: "Botanical minimal", note: "Airy greens, linen and restrained florals", colors: ["#1f5138", "#b9d6b5", "#f4efe2"] },
+      { name: "Golden hour garden", note: "Amber light, meadow flowers and oak", colors: ["#9f5f2e", "#f2c66d", "#efe6d2"] },
+      { name: "Evening conservatory", note: "Deep foliage, bronze accents and glass", colors: ["#102d25", "#365f4d", "#c8b989"] },
+    ],
+  },
+  "Bold brand launch": {
+    description: "High-energy staging, graphic moments and camera-ready reveals.",
+    variations: [
+      { name: "Color field", note: "Oversized brand blocks and clean typography", colors: ["#f8d810", "#6f5328", "#ffffff"] },
+      { name: "Future studio", note: "Chrome, projection and electric highlights", colors: ["#24263b", "#765cff", "#d8f6ff"] },
+      { name: "Editorial reveal", note: "Warm neutral sets with one sharp accent", colors: ["#76542f", "#f0e4cf", "#ff5a36"] },
+    ],
+  },
+  "Black tie": {
+    description: "Formal pacing, cinematic lighting and elevated table details.",
+    variations: [
+      { name: "Classic gala", note: "Espresso, ivory and polished gold", colors: ["#513d2a", "#f5f0e6", "#b9954e"] },
+      { name: "Jewel box", note: "Emerald velvet, brass and dramatic florals", colors: ["#123d32", "#8f1e3b", "#c5a25d"] },
+      { name: "Moonlit modern", note: "Ink blue, silver and architectural light", colors: ["#111d36", "#8995a8", "#eef1f5"] },
+    ],
+  },
+  "Community celebration": {
+    description: "Welcoming, flexible and built around shared participation.",
+    variations: [
+      { name: "Neighborhood table", note: "Long tables, local color and handmade signs", colors: ["#e67451", "#f2c14e", "#4d9078"] },
+      { name: "Bright commons", note: "Playful wayfinding and modular gathering zones", colors: ["#2e6f9e", "#f7d84b", "#f7f2e8"] },
+      { name: "Evening block party", note: "String lights, deep blue and festive patterns", colors: ["#183153", "#df6c4f", "#f0c75e"] },
+    ],
+  },
+} as const;
+
+type ThemeName = keyof typeof themeDirections;
+
+const marketplaceSuggestions = [
+  { name: "Golden Gate Catering", category: "Catering", city: "San Francisco", why: "Strong large-format service and dietary coverage" },
+  { name: "Northstar Production", category: "AV", city: "Los Angeles", why: "Integrated staging, lighting and show calling" },
+  { name: "Field & Form", category: "Florals", city: "New York", why: "Theme-led installations with reusable materials" },
+  { name: "Signal House", category: "Entertainment", city: "Chicago", why: "Curated talent and event-specific music direction" },
+];
+
+function isoDateIn(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+const checklistDraft: ChecklistItemDraft[] = [
+  { title: "Confirm venue hold and capacity", category: "Venue", sortOrder: 0 },
+  { title: "Approve catering direction and dietary plan", category: "Catering", sortOrder: 1 },
+  { title: "Send guest invitations", category: "Marketing", sortOrder: 2 },
+  { title: "Confirm AV, staging and show caller", category: "AV", sortOrder: 3 },
+  { title: "Review final run of show with every vendor", category: "Programme", sortOrder: 4 },
+];
+
+const runOfShowDraft: RunOfShowItemDraft[] = [
+  { startTime: "15:00", duration: 90, title: "Vendor load-in and room set", responsible: "Production", sortOrder: 0 },
+  { startTime: "16:30", duration: 45, title: "Technical rehearsal", responsible: "AV lead", sortOrder: 1 },
+  { startTime: "17:30", duration: 60, title: "Guest arrival and welcome", responsible: "Guest experience", sortOrder: 2 },
+  { startTime: "18:30", duration: 15, title: "Opening remarks", responsible: "Host", sortOrder: 3 },
+  { startTime: "18:45", duration: 90, title: "Main programme", responsible: "Programme lead", sortOrder: 4 },
+  { startTime: "20:15", duration: 75, title: "Reception and entertainment", responsible: "Event lead", sortOrder: 5 },
+  { startTime: "21:30", duration: 60, title: "Guest departure and strike", responsible: "Production", sortOrder: 6 },
+];
+
+export default function AIPlanner() {
+  const [, navigate] = useLocation();
+  const createEvent = useCreateEvent();
+  const addBudget = useAddBudgetItem();
+  const addChecklist = useAddChecklistItem();
+  const addMood = useAddMoodBoardImage();
+  const addRunOfShow = useAddRunOfShowItem();
+  const { data: identity } = useMe();
+  const { experience } = useAccountExperience();
+  const [mode, setMode] = useState<PlannerMode>("choose");
+  const [eventType, setEventType] = useState<string>(EVENT_CATEGORIES[0]);
+  const [headcount, setHeadcount] = useState("200");
+  const [budgetInput, setBudgetInput] = useState(() => centsToInput(suggestedTotalBudgetCents(200)));
+  const [budgetEdited, setBudgetEdited] = useState(false);
+  const [theme, setTheme] = useState<ThemeName>("Modern garden");
+  const [city, setCity] = useState("San Francisco");
+  const [eventDate, setEventDate] = useState(() => isoDateIn(45));
+  const [isSaving, setIsSaving] = useState(false);
+
+  const guests = Math.max(1, Number.parseInt(headcount, 10) || 1);
+  const parsedBudget = centsFromInput(budgetInput);
+  const budgetIsValid =
+    parsedBudget !== null &&
+    parsedBudget >= PLANNING_LIMITS.minBudgetCents &&
+    parsedBudget <= PLANNING_LIMITS.maxBudgetCents;
+  const totalBudget = budgetIsValid ? parsedBudget : suggestedTotalBudgetCents(guests);
+  const budget = useMemo(() => buildBudgetSuggestions(totalBudget), [totalBudget]);
+  const direction = themeDirections[theme];
+  const canSaveMoodBoard = planHasCapability(effectivePlan(identity?.access), "inspirationBoards");
+
+  useEffect(() => {
+    if (budgetEdited) return;
+    setBudgetInput(centsToInput(suggestedTotalBudgetCents(guests)));
+  }, [budgetEdited, guests]);
+
+  const createWorkingEvent = async () => {
+    if (!budgetIsValid) return;
+    setIsSaving(true);
+    try {
+      const created = await createEvent.mutateAsync({
+        title: `${eventType} in ${city}`,
+        description: `${theme} direction. Initial plan drafted with Bee AI for ${guests} guests.`,
+        date: new Date(`${eventDate}T17:30:00`).toISOString(),
+        location: city,
+        capacity: guests,
+        status: "draft",
+        category: eventType as EventCategory,
+      });
+
+      const writes = await Promise.allSettled([
+        ...budget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
+        ...checklistDraft.map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
+        ...runOfShowDraft.map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
+        ...(canSaveMoodBoard
+          ? direction.variations.map((variation) =>
+              addMood.mutateAsync({
+                eventId: created.id,
+                url: moodConceptDataUrl({
+                  name: variation.name,
+                  description: variation.note,
+                  palette: [variation.colors[0], variation.colors[1], variation.colors[2], "#ffffff"],
+                  keywords: [theme, variation.name, eventType],
+                }),
+                caption: `${variation.name} · ${variation.note}`,
+              }),
+            )
+          : []),
+      ]);
+      const failed = writes.filter((result) => result.status === "rejected").length;
+      toast({
+        title: failed ? "Event created with a partial plan" : "Working event created",
+        description: failed
+          ? `${writes.length - failed} suggestions were added. Review the event workspace for anything missing.`
+          : "Budget, checklist and run of show are ready to edit.",
+      });
+      navigate(`/app/events/${created.id}/budget`);
+    } catch (error) {
+      toast({ title: "Couldn't create the event", description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (experience === "santa-clara") {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Santa Clara pilot workspace"
+          title="Import an existing event plan"
+          description="Bring in the team's Excel, CSV, or Google Sheet and review every recognized record before creating the event."
+        />
+        <SpreadsheetImporter onBack={() => navigate("/app")} includeMoodBoard={false} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Your planning workspace"
+        title="How would you like to plan?"
+        description="Use Bee as a planning partner, or start with the regular tools. You can switch approaches at any time."
+      />
+
+      {mode === "choose" ? (
+        <div className="grid gap-5 lg:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => setMode("agent")}
+            className="group rounded-2xl border border-primary/45 bg-card p-7 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="grid size-12 place-items-center rounded-xl bg-primary-muted text-primary-text">
+              <WandSparkles className="size-6" aria-hidden="true" />
+            </span>
+            <h2 className="mt-5 text-xl font-bold text-foreground">Plan with the AI agent</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Tell Bee about the event and get an editable budget, checklist, run of show, theme directions and vendor shortlist.
+            </p>
+            <ul className="mt-5 space-y-2 text-sm text-foreground">
+              {[
+                "Budget based on headcount",
+                canSaveMoodBoard ? "Theme and mood board variations" : "Editable theme direction ideas",
+                "Working event plan in one click",
+              ].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-success-text" aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <span className="mt-6 inline-flex items-center gap-2 font-semibold text-primary-text">
+              Open Bee AI <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </button>
+
+          <Link
+            href="/app/events/new"
+            className="group rounded-2xl border border-card-border bg-card p-7 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="grid size-12 place-items-center rounded-xl bg-muted text-foreground">
+              <PencilLine className="size-6" aria-hidden="true" />
+            </span>
+            <h2 className="mt-5 text-xl font-bold text-foreground">Plan it yourself</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Start blank or choose a template, then add vendors, budgets, invitations and schedules at your own pace.
+            </p>
+            <ul className="mt-5 space-y-2 text-sm text-foreground">
+              {["Create a blank event in minutes", "Use your own budget and vendors", "Keep control of every decision"].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-success-text" aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <span className="mt-6 inline-flex items-center gap-2 font-semibold text-foreground">
+              Create manually <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setMode("import")}
+            className="group rounded-2xl border border-card-border bg-card p-7 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="grid size-12 place-items-center rounded-xl bg-primary-muted text-primary-text">
+              <FileSpreadsheet className="size-6" aria-hidden="true" />
+            </span>
+            <h2 className="mt-5 text-xl font-bold text-foreground">Import an existing plan</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Turn an Excel file, CSV, or public Google Sheet into a draft event you can review before saving.
+            </p>
+            <ul className="mt-5 space-y-2 text-sm text-foreground">
+              {["Map event details", "Bring checklists, schedules and budgets", "Preview every record first"].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-success-text" aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <span className="mt-6 inline-flex items-center gap-2 font-semibold text-primary-text">
+              Import spreadsheet <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </span>
+          </button>
+        </div>
+      ) : null}
+
+      {mode === "import" ? <SpreadsheetImporter onBack={() => setMode("choose")} /> : null}
+
+      {mode === "agent" ? (
+        <Panel>
+          <PanelHeader
+            title="Give Bee the shape of the event"
+            description="These answers create the first draft. Everything remains editable."
+            actions={<Pill tone="warning">Draft only</Pill>}
+          />
+          <form
+            className="grid gap-5 p-5 sm:grid-cols-2 lg:grid-cols-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!budgetIsValid) return;
+              setMode("plan");
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="planner-event-type">Event type</Label>
+              <Select value={eventType} onValueChange={setEventType}>
+                <SelectTrigger id="planner-event-type"><SelectValue /></SelectTrigger>
+                <SelectContent className="max-h-80">
+                  {EVENT_CATEGORIES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="planner-headcount">Headcount</Label>
+              <Input id="planner-headcount" type="number" min={1} value={headcount} onChange={(event) => setHeadcount(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="planner-budget">Total budget</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">$</span>
+                <Input
+                  id="planner-budget"
+                  inputMode="decimal"
+                  value={budgetInput}
+                  onChange={(event) => {
+                    setBudgetEdited(true);
+                    setBudgetInput(event.target.value);
+                  }}
+                  className="pl-7"
+                  aria-invalid={!budgetIsValid}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Theme direction</Label>
+              <Select value={theme} onValueChange={(value) => setTheme(value as ThemeName)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.keys(themeDirections).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="planner-city">City</Label>
+              <Input id="planner-city" value={city} onChange={(event) => setCity(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="planner-date">Event date</Label>
+              <Input id="planner-date" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />
+            </div>
+            <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-6">
+              <Button type="submit" disabled={!budgetIsValid}><Sparkles className="mr-1.5 size-4" />Build my plan</Button>
+              <Button type="button" variant="outline" onClick={() => setMode("choose")}>Back</Button>
+            </div>
+          </form>
+        </Panel>
+      ) : null}
+
+      {mode === "plan" ? (
+        <div className="space-y-6">
+          <section className="overflow-hidden rounded-2xl border border-brand-hairline bg-brand-surface text-brand-foreground shadow-sm">
+            <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end sm:p-8">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Bee AI working plan</p>
+                <h2 className="mt-3 text-3xl font-extrabold tracking-tight">{eventType} for {guests} guests</h2>
+                <p className="mt-2 max-w-2xl text-sm text-brand-muted">{theme} in {city}. {direction.description}</p>
+              </div>
+              <Button onClick={() => void createWorkingEvent()} disabled={isSaving || !budgetIsValid}>
+                {isSaving ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Sparkles className="mr-1.5 size-4" />}
+                Create working event
+              </Button>
+            </div>
+          </section>
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            <Panel>
+              <PanelHeader
+                title="Editable budget"
+                description={`Based on ${guests} guests · ${formatMoney(Math.round(totalBudget / guests))} per guest`}
+                actions={<Coins className="size-5 text-primary-text" />}
+              />
+              <div className="border-b border-hairline bg-primary-wash px-5 py-4">
+                <Label htmlFor="planner-budget-review" className="text-xs font-semibold uppercase tracking-wide text-primary-text">
+                  Total budget
+                </Label>
+                <div className="relative mt-2 max-w-64">
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">$</span>
+                  <Input
+                    id="planner-budget-review"
+                    inputMode="decimal"
+                    value={budgetInput}
+                    onChange={(event) => {
+                      setBudgetEdited(true);
+                      setBudgetInput(event.target.value);
+                    }}
+                    className="h-11 pl-7 text-lg font-bold"
+                    aria-invalid={!budgetIsValid}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Change the total here. Bee reallocates every budget line immediately.
+                </p>
+              </div>
+              <dl className="divide-y divide-hairline">
+                {budget.map((line) => (
+                  <div key={line.name} className="flex items-center justify-between gap-4 px-5 py-2.5 text-sm">
+                    <dt className="text-muted-foreground">{line.name}</dt>
+                    <dd data-numeric className="font-semibold text-foreground">{formatMoney(line.estimatedCents)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Panel>
+
+            <Panel>
+              <PanelHeader title="Run of show" description="A practical first pass for the event day" actions={<Clock3 className="size-5 text-primary-text" />} />
+              <ol className="divide-y divide-hairline">
+                {runOfShowDraft.map((cue) => (
+                  <li key={cue.startTime} className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2.5">
+                    <span data-numeric className="font-mono text-xs font-semibold text-primary-text">
+                      {formatClockTime(cue.startTime)}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">{cue.title}</span>
+                    <span className="text-xs text-muted-foreground">{cue.duration} min</span>
+                  </li>
+                ))}
+              </ol>
+            </Panel>
+          </div>
+
+          <Panel>
+            <PanelHeader title="Mood board directions" description={`Three variations on “${theme}”`} actions={<Palette className="size-5 text-primary-text" />} />
+            <div className="grid gap-4 p-5 md:grid-cols-3">
+              {direction.variations.map((variation) => (
+                <article key={variation.name} className="overflow-hidden rounded-xl border border-hairline bg-card">
+                  <div className="grid h-28 grid-cols-3" aria-label={`${variation.name} colour palette`}>
+                    {variation.colors.map((color) => <span key={color} style={{ backgroundColor: color }} />)}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-semibold text-foreground">{variation.name}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{variation.note}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </Panel>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Panel>
+              <PanelHeader title="Checklist starter" description={`${checklistDraft.length} recommended actions`} />
+              <ul className="divide-y divide-hairline">
+                {checklistDraft.map((item) => (
+                  <li key={item.title} className="flex items-center gap-3 px-5 py-3 text-sm">
+                    <CheckCircle2 className="size-4 shrink-0 text-success-text" aria-hidden="true" />
+                    <span className="flex-1 text-foreground">{item.title}</span>
+                    <Pill>{item.category}</Pill>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+
+            <Panel>
+              <PanelHeader title="Marketplace vendor suggestions" description="Curated from the Beebizy marketplace" actions={<Store className="size-5 text-primary-text" />} />
+              <ul className="divide-y divide-hairline">
+                {marketplaceSuggestions.map((vendor) => (
+                  <li key={vendor.name} className="px-5 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={marketplaceSearchUrl(vendor.name)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm font-semibold text-foreground hover:underline"
+                      >
+                        {vendor.name}
+                        <ExternalLink className="size-3" aria-hidden="true" />
+                      </a>
+                      <Pill tone="info">{vendor.category}</Pill>
+                      <span className="text-xs text-muted-foreground">{vendor.city}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{vendor.why}</p>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void createWorkingEvent()} disabled={isSaving || !budgetIsValid}>
+              {isSaving ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Sparkles className="mr-1.5 size-4" />}
+              Create working event
+            </Button>
+            <Button variant="outline" onClick={() => setMode("agent")}>Adjust answers</Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

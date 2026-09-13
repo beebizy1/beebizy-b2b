@@ -1,0 +1,321 @@
+/**
+ * The planning conversation.
+ *
+ * The assistant interviews rather than presents a form: one question at a time, until it
+ * knows enough to draft a plan. What it is gathering is a `PlanningBrief` — headcount,
+ * budget and theme — after which the existing planner does the work. The chat is the way
+ * in, not a second planner.
+ *
+ * Everything here is deterministic and model-free. It backs the demo, it is the fallback
+ * when no gateway credential is configured, and it is what the tests exercise. The model
+ * path in `server/planner.ts` answers in better prose but must return the same shape, so
+ * a conversation behaves the same either way.
+ */
+
+export interface AssistantChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** What the interview has established so far. */
+export interface PartialBrief {
+  eventType: string | null;
+  headcount: number | null;
+  totalBudgetCents: number | null;
+  theme: string | null;
+}
+
+export interface AssistantTurn {
+  reply: string;
+  /** Set once there is enough to draft against; null while still interviewing. */
+  brief: { headcount: number; totalBudgetCents: number; theme: string } | null;
+  /** What the assistant still wants, for the UI to show as progress. */
+  collected: PartialBrief;
+  source: "ai" | "rules";
+}
+
+export const EMPTY_BRIEF: PartialBrief = {
+  eventType: null,
+  headcount: null,
+  totalBudgetCents: null,
+  theme: null,
+};
+
+const EVENT_TYPES: Array<[RegExp, string]> = [
+  [/\b(?:non[- ]?profits?|ngo|foundation events?)\b/i, "Nonprofit Event"],
+  [/\b(?:school|pta|pso|campus|graduation|homecoming|prom)\b/i, "School Event"],
+  [/\b(?:community|neighbou?rhood|street fair|festival|block party)\b/i, "Community Event"],
+  [/\bgala|fundrais|charit|benefit|auction\b/i, "Gala"],
+  [/\bconferenc|summit|symposium\b/i, "Conference"],
+  [/\bkick\s?off|sales meeting\b/i, "Summit"],
+  [/\blaunch|press day|analyst day|unveil/i, "Product Launch"],
+  [/\bworkshop|training|bootcamp|course\b/i, "Training"],
+  [/\boffsite|retreat|team building|away day\b/i, "Offsite"],
+  [/\btown\s?hall|all[- ]hands\b/i, "Town Hall"],
+  [/\bwedding\b/i, "Wedding"],
+  [/\bbirthday|anniversar|party\b/i, "Celebration"],
+  [/\bnetworking|mixer|reception\b/i, "Reception"],
+  [/\bdinner|banquet|luncheon|breakfast\b/i, "Dinner"],
+  [/\bawards?|ceremony|prize giving\b/i, "Awards"],
+  [/\bholiday|christmas|end of year|festive\b/i, "Celebration"],
+  [/\bexpo|trade show|exhibition|showcase\b/i, "Expo"],
+  [/\bpanel|fireside|talk|seminar|webinar\b/i, "Conference"],
+  [/\bopening|ribbon cutting|groundbreaking\b/i, "Reception"],
+];
+
+/** The first event type mentioned anywhere in the transcript. */
+export function extractEventType(text: string): string | null {
+  for (const [pattern, label] of EVENT_TYPES) if (pattern.test(text)) return label;
+  return null;
+}
+
+/**
+ * A headcount, ignoring numbers that are clearly money or a year.
+ *
+ * "$70,000 for 200 guests" has to yield 200, so anything preceded by a currency symbol or
+ * followed by a magnitude suffix is skipped, as is anything that looks like a year.
+ */
+export function extractHeadcount(text: string): number | null {
+  const explicit = text.match(
+    /(\d[\d,]*)\s*(?:\+\s*)?(?:guests?|people|attendees?|pax|heads?|seats?|persons?|delegates?)/i,
+  );
+  if (explicit?.[1]) {
+    const n = Number(explicit[1].replace(/,/g, ""));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  const bare = [...text.matchAll(/(?<![$£€])\b(\d[\d,]*)\b(?!\s*(?:k\b|m\b|%|,\d{3}))/gi)];
+  for (const match of bare) {
+    const n = Number(match[1]!.replace(/,/g, ""));
+    // Years read as headcounts otherwise: "in 2026" is not 2,026 people.
+    if (!Number.isFinite(n) || n <= 0 || n > 100_000) continue;
+    if (n >= 1990 && n <= 2100) continue;
+    return n;
+  }
+  return null;
+}
+
+/** A budget in cents. Understands "$70k", "70,000", "70000 dollars", "£12.5k". */
+export function extractBudgetCents(text: string): number | null {
+  const withSuffix = text.match(/[$£€]?\s*(\d[\d,]*(?:\.\d+)?)\s*([km])\b/i);
+  if (withSuffix?.[1]) {
+    const base = Number(withSuffix[1].replace(/,/g, ""));
+    const scale = withSuffix[2]!.toLowerCase() === "m" ? 1_000_000 : 1_000;
+    if (Number.isFinite(base)) return Math.round(base * scale * 100);
+  }
+
+  const currency = text.match(/[$£€]\s*(\d[\d,]*(?:\.\d+)?)/);
+  if (currency?.[1]) {
+    const n = Number(currency[1].replace(/,/g, ""));
+    if (Number.isFinite(n)) return Math.round(n * 100);
+  }
+
+  const spelled = text.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:dollars?|usd|budget|pounds?|euros?)/i);
+  if (spelled?.[1]) {
+    const n = Number(spelled[1].replace(/,/g, ""));
+    if (Number.isFinite(n)) return Math.round(n * 100);
+  }
+  return null;
+}
+
+/** "yes", "sounds good", "that works" — agreeing without repeating the number. */
+const AFFIRMATIVE =
+  /^(?:yes|yep|yeah|yup|sure|ok|okay|sounds? (?:good|right|about right)|that works|works for me|perfect|great|fine|correct|agreed|go ahead|lets? do (?:that|it))\b/i;
+
+/** The assistant asking what the budget is — the only place a bare number means money. */
+function asksAboutBudget(content: string): boolean {
+  return /budget|number in mind/i.test(content);
+}
+
+/**
+ * A plain number, read as dollars.
+ *
+ * Only ever applied to the reply to the budget question. "50000" carries no currency
+ * symbol and no magnitude suffix, so nothing else could tell it apart from a headcount —
+ * but answering "what is your budget" with a number is the most natural thing a person
+ * can do, and refusing to understand it left the assistant asking the same question
+ * forever.
+ */
+function bareAmountCents(text: string): number | null {
+  const match = text.trim().match(/^(?:about|around|roughly|maybe|approx\.?|approximately)?\s*(\d[\d,]*(?:\.\d+)?)\b/i);
+  if (!match?.[1]) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return Math.round(amount * 100);
+}
+
+/** The figure the assistant itself put on the table, so agreeing to it can be honoured. */
+function suggestedBudgetInAssistantMessage(content: string): number | null {
+  const match = content.match(/budget around\s*\$?([\d,]+)/i);
+  if (!match?.[1]) return null;
+  const n = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+
+/**
+ * Reads the whole transcript rather than only the latest message, so answering two
+ * questions at once ("a gala for 300, budget about $120k") is understood.
+ */
+export function collectBrief(messages: AssistantChatMessage[]): PartialBrief {
+  const said = messages.filter((m) => m.role === "user");
+  const all = said.map((m) => m.content).join("\n");
+
+  const collected: PartialBrief = {
+    eventType: extractEventType(all),
+    headcount: extractHeadcount(all),
+    totalBudgetCents: extractBudgetCents(all),
+    theme: null,
+  };
+
+  /*
+   * When the keywords miss, believe them anyway.
+   *
+   * The opening question is "what kind of event", so the first thing they say is the
+   * answer to it. Demanding it match a known list meant "we are planning a large company
+   * dinner" was met with "what kind of event is it?" — the assistant asking again for
+   * something it had just been told, which reads as not listening. Their own words become
+   * the event type instead; the list only exists to pick a sensible per-head budget.
+   */
+  if (!collected.eventType) {
+    const firstAnswer = said[0]?.content.trim();
+    if (firstAnswer && firstAnswer.length > 2) {
+      collected.eventType = firstAnswer
+        .replace(/^(?:we(?:'re| are)?\s+)?(?:planning|organi[sz]ing|doing|hosting|running)\s+/i, "")
+        .replace(/^(?:an?|the)\s+/i, "")
+        .slice(0, 60);
+    }
+  }
+
+  /*
+   * Agreeing to a suggested budget counts as naming it. Without this, "yes that works"
+   * carried no number, the budget stayed unknown, and the assistant asked the same
+   * question forever — the conversation could not be finished by agreeing with it.
+   */
+  if (collected.totalBudgetCents == null) {
+    for (const [index, message] of messages.entries()) {
+      if (message.role !== "assistant" || !asksAboutBudget(message.content)) continue;
+      const answer = messages[index + 1];
+      if (answer?.role !== "user") continue;
+      const said = answer.content.trim();
+
+      // Agreeing to the figure the assistant suggested counts as naming it.
+      const suggestion = suggestedBudgetInAssistantMessage(message.content);
+      if (suggestion != null && AFFIRMATIVE.test(said)) {
+        collected.totalBudgetCents = suggestion;
+        break;
+      }
+
+      // Otherwise take what they typed — with a currency symbol, a suffix, or neither.
+      const named = extractBudgetCents(said) ?? bareAmountCents(said);
+      if (named != null) {
+        collected.totalBudgetCents = named;
+        break;
+      }
+    }
+  }
+
+  // The theme is whatever they said after being asked for it, so it is only read from
+  // replies that follow the assistant's theme question.
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== "assistant" || !/vibe|aesthetic|theme|feel|look/i.test(message.content)) continue;
+    const answer = messages[index + 1];
+    const said = answer?.content.trim() ?? "";
+    // "yes" describes no aesthetic, so it does not become the theme.
+    if (answer?.role === "user" && said.length > 2 && !AFFIRMATIVE.test(said)) {
+      collected.theme = said.slice(0, 120);
+      break;
+    }
+  }
+  return collected;
+}
+
+const OPENER =
+  "Hi, I'm Bee. I'll help you shape this event — what kind of event are you planning? A community, school, nonprofit, corporate or social event?";
+
+/** Suggested spend per head, used only when someone declines to name a budget. */
+const PER_HEAD_CENTS: Record<string, number> = {
+  "Community Event": 25_000,
+  "School Event": 18_000,
+  "Nonprofit Event": 30_000,
+  Gala: 40_000,
+  Conference: 32_000,
+  "Product Launch": 45_000,
+  Training: 18_000,
+  Offsite: 22_000,
+  "Town Hall": 12_000,
+  Wedding: 55_000,
+  Celebration: 30_000,
+  Reception: 25_000,
+  Summit: 35_000,
+};
+
+function money(cents: number): string {
+  return `$${Math.round(cents / 100).toLocaleString("en-US")}`;
+}
+
+/**
+ * The next thing to say, given everything said so far.
+ *
+ * Asks for one missing thing at a time, in the order that matters: what it is, how many
+ * people, what it costs, how it should feel. Budget is the one it will guess at, because
+ * a suggested number is easier to react to than a blank field.
+ */
+export function nextTurn(messages: AssistantChatMessage[]): AssistantTurn {
+  const collected = collectBrief(messages);
+  const rules = { source: "rules" as const, collected };
+
+  if (messages.length === 0) return { ...rules, reply: OPENER, brief: null };
+
+  if (!collected.eventType) {
+    return {
+      ...rules,
+      reply:
+        "Got it. Is it a community event, school event, nonprofit event, gala, conference, launch, training day or team offsite?",
+      brief: null,
+    };
+  }
+
+  if (!collected.headcount) {
+    return {
+      ...rules,
+      reply: `A ${collected.eventType.toLowerCase()} — good. Roughly how many people are you expecting?`,
+      brief: null,
+    };
+  }
+
+  if (!collected.totalBudgetCents) {
+    const perHead = PER_HEAD_CENTS[collected.eventType] ?? 30_000;
+    const suggested = perHead * collected.headcount;
+    return {
+      ...rules,
+      reply: `${collected.headcount} people. For a ${collected.eventType.toLowerCase()} that size I'd budget around ${money(
+        suggested,
+      )} all in. Does that sound right, or do you have a number in mind?`,
+      brief: null,
+    };
+  }
+
+  if (!collected.theme) {
+    return {
+      ...rules,
+      reply: `${money(
+        collected.totalBudgetCents,
+      )} it is. Last thing — what vibe are you going for? Anything from "black tie and classic" to "relaxed and outdoors" helps.`,
+      brief: null,
+    };
+  }
+
+  return {
+    ...rules,
+    reply: `That's everything I need: a ${collected.eventType.toLowerCase()} for ${collected.headcount}, around ${money(
+      collected.totalBudgetCents,
+    )}, feeling ${collected.theme.toLowerCase()}. Building your plan now — budget breakdown, checklist, run of show and a vendor shortlist. Nothing is added to the event until you approve it.`,
+    brief: {
+      headcount: collected.headcount,
+      totalBudgetCents: collected.totalBudgetCents,
+      theme: collected.theme,
+    },
+  };
+}
+
+export const ASSISTANT_OPENER = OPENER;

@@ -6,14 +6,16 @@
  * the readiness score above updates with it.
  */
 
-import { useMemo, useState } from "react";
-import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import ChecklistLibrarySheet from "./ChecklistLibrarySheet";
 import { cn } from "@/lib/utils";
+import { formatClockTime } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
 import {
   EmptyState,
@@ -36,9 +38,26 @@ import {
   useRemoveRunOfShowItem,
   useRunOfShow,
   useUpdateChecklistItem,
+  useMembers,
   useUpdateRunOfShowItem,
 } from "@/data/hooks";
-import type { ChecklistItem, Event, RunOfShowItem } from "@/data/entities";
+import type { ChecklistItem, Event, RunOfShowItem, WorkspaceMember } from "@/data/entities";
+import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
+
+/**
+ * The teammate a typed name refers to, if any.
+ *
+ * Assignment stays free text — plenty of tasks belong to a caterer or a volunteer with no
+ * login — but when the name does match someone in the workspace their address is captured
+ * too, because that is the difference between a task that can notify and one that cannot.
+ */
+function matchMember(members: WorkspaceMember[] | undefined, typed: string): WorkspaceMember | undefined {
+  const needle = typed.trim().toLowerCase();
+  if (!needle) return undefined;
+  return (members ?? []).find(
+    (member) => member.name?.toLowerCase() === needle || member.email?.toLowerCase() === needle,
+  );
+}
 
 const CHECKLIST_AREAS = [
   "Venue",
@@ -115,16 +134,25 @@ function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem 
   );
 }
 
-function ChecklistPanel({ event }: { event: Event }) {
+export function ChecklistPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useChecklist(event.id);
   const add = useAddChecklistItem();
+  const { data: members } = useMembers();
   const [title, setTitle] = useState("");
   const [area, setArea] = useState("General");
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [owner, setOwner] = useState("");
+  // Completed items stay on the list. Hiding them made ticking a task look like it
+  // deleted the task — the row vanished and only the progress bar moved, so the tick
+  // you just earned was never visible.
+  const [showCompleted, setShowCompleted] = useState(true);
 
   const done = (items ?? []).filter((item) => item.completed).length;
   const total = items?.length ?? 0;
   const overdueCount = (items ?? []).filter(isOverdue).length;
+
+  // The library hides anything already here, matched on title.
+  const existingTitles = useMemo(() => new Set((items ?? []).map((item) => item.title)), [items]);
+  const nextOrder = (items ?? []).reduce((max, item) => Math.max(max, item.sortOrder), 0) + 1;
 
   /** Overdue areas float to the top; completed items hide behind a toggle. */
   const groups = useMemo(() => {
@@ -148,9 +176,24 @@ function ChecklistPanel({ event }: { event: Event }) {
     const trimmed = title.trim();
     if (!trimmed) return;
     add.mutate(
-      { eventId: event.id, draft: { title: trimmed, category: area } },
       {
-        onSuccess: () => setTitle(""),
+        eventId: event.id,
+        // An unowned task is the one nobody does, so the owner is captured up front
+        // rather than through a second edit nobody makes.
+        draft: {
+          title: trimmed,
+          category: area,
+          assignedTo: owner.trim() || null,
+          // Matching a teammate is what makes the assignment notifiable. A name matching
+          // nobody is still a valid assignment — it just cannot be emailed.
+          assignedEmail: matchMember(members, owner)?.email ?? null,
+        },
+      },
+      {
+        onSuccess: () => {
+          setTitle("");
+          setOwner("");
+        },
         onError: (mutationError) => toast({ title: "Couldn't add task", description: mutationError.message }),
       },
     );
@@ -162,11 +205,18 @@ function ChecklistPanel({ event }: { event: Event }) {
         title="Checklist"
         description={total > 0 ? `${done} of ${total} done${overdueCount ? ` · ${overdueCount} overdue` : ""}` : "Nothing yet"}
         actions={
-          total > done ? (
-            <Button variant="outline" size="sm" onClick={() => setShowCompleted((previous) => !previous)}>
-              {showCompleted ? "Hide done" : "Show done"}
-            </Button>
-          ) : null
+          <>
+            <ChecklistLibrarySheet
+              eventId={event.id}
+              existingTitles={existingTitles}
+              nextOrder={nextOrder}
+            />
+            {done > 0 ? (
+              <Button variant="outline" size="sm" onClick={() => setShowCompleted((previous) => !previous)}>
+                {showCompleted ? `Hide done (${done})` : `Show done (${done})`}
+              </Button>
+            ) : null}
+          </>
         }
       />
 
@@ -195,6 +245,19 @@ function ChecklistPanel({ event }: { event: Event }) {
           aria-label="New task"
           className="min-w-[12rem] flex-1"
         />
+        <Input
+          value={owner}
+          onChange={(inputEvent) => setOwner(inputEvent.target.value)}
+          placeholder="Who's responsible?"
+          aria-label="Assign this task to someone"
+          list="task-assignee-suggestions"
+          className="w-[172px]"
+        />
+        <datalist id="task-assignee-suggestions">
+          {(members ?? []).map((member) => (
+            <option key={member.userId ?? member.email} value={member.name ?? member.email ?? ""} />
+          ))}
+        </datalist>
         <Select value={area} onValueChange={setArea}>
           <SelectTrigger className="w-[150px]" aria-label="Task area">
             <SelectValue />
@@ -248,11 +311,20 @@ function ChecklistPanel({ event }: { event: Event }) {
   );
 }
 
-function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem }) {
+function RunOfShowRow({
+  eventId,
+  cue,
+  days,
+}: {
+  eventId: string;
+  cue: RunOfShowItem;
+  days: EventDayOption[];
+}) {
   const update = useUpdateRunOfShowItem();
   const remove = useRemoveRunOfShowItem();
   const [editing, setEditing] = useState(false);
   const currentDraft = () => ({
+    dayNumber: cue.dayNumber,
     startTime: cue.startTime,
     title: cue.title,
     duration: cue.duration === null ? "" : String(cue.duration),
@@ -275,7 +347,7 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
     return (
       <li className="bg-surface-sunken px-5 py-4">
         <form
-          className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_90px]"
+          className="flex flex-wrap gap-2"
           onSubmit={(formEvent) => {
             formEvent.preventDefault();
             const title = draft.title.trim();
@@ -286,6 +358,7 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
                 eventId,
                 id: cue.id,
                 patch: {
+                  dayNumber: draft.dayNumber,
                   startTime: draft.startTime,
                   title,
                   duration: Number.isFinite(parsedDuration) ? parsedDuration : null,
@@ -300,16 +373,35 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
             );
           }}
         >
+          {days.length > 1 ? (
+            <Select
+              value={String(draft.dayNumber)}
+              onValueChange={(value) => setDraft((current) => ({ ...current, dayNumber: Number(value) }))}
+            >
+              <SelectTrigger aria-label={`Conference day for ${cue.title}`} className="w-[170px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {days.map((day) => (
+                  <SelectItem key={day.dayNumber} value={String(day.dayNumber)}>
+                    {formatEventDayLabel(day)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Input
             type="time"
             value={draft.startTime}
             onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
             aria-label={`Start time for ${cue.title}`}
+            className="w-[110px]"
           />
           <Input
             value={draft.title}
             onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
             aria-label="Cue title"
+            className="min-w-[12rem] flex-1"
           />
           <Input
             type="number"
@@ -318,22 +410,23 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
             onChange={(event) => setDraft((current) => ({ ...current, duration: event.target.value }))}
             aria-label="Duration in minutes"
             placeholder="mins"
+            className="w-[90px]"
           />
           <Input
             value={draft.responsible}
             onChange={(event) => setDraft((current) => ({ ...current, responsible: event.target.value }))}
             aria-label="Cue owner"
             placeholder="Owner or team"
-            className="sm:col-span-1"
+            className="min-w-[12rem] flex-1"
           />
           <Input
             value={draft.description}
             onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
             aria-label="Cue notes"
             placeholder="Notes, handoffs, or dependencies"
-            className="sm:col-span-2"
+            className="min-w-[14rem] flex-[2]"
           />
-          <div className="flex justify-end gap-2 sm:col-span-3">
+          <div className="flex w-full justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={cancelEditing}>
               <X className="mr-1.5 size-3.5" />
               Cancel
@@ -350,8 +443,8 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
 
   return (
     <li className="group flex items-start gap-4 px-5 py-3">
-      <span data-numeric className="w-14 shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
-        {cue.startTime}
+      <span data-numeric className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
+        {formatClockTime(cue.startTime)}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>
@@ -384,15 +477,25 @@ function RunOfShowRow({ eventId, cue }: { eventId: string; cue: RunOfShowItem })
   );
 }
 
-function RunOfShowPanel({ event }: { event: Event }) {
-  const { timeZoneLabel } = usePreferences();
+export function RunOfShowPanel({ event }: { event: Event }) {
+  const { timeZone, timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const add = useAddRunOfShowItem();
+  const days = useMemo(
+    () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(cues ?? []).map((cue) => cue.dayNumber))),
+    [cues, event.date, event.endDate, timeZone],
+  );
+  const [selectedDay, setSelectedDay] = useState(1);
   const [startTime, setStartTime] = useState("09:00");
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
   const [responsible, setResponsible] = useState("");
   const [description, setDescription] = useState("");
+  const dayCues = (cues ?? []).filter((cue) => cue.dayNumber === selectedDay);
+
+  useEffect(() => {
+    if (!days.some((day) => day.dayNumber === selectedDay)) setSelectedDay(1);
+  }, [days, selectedDay]);
 
   const submit = () => {
     const trimmed = title.trim();
@@ -402,6 +505,7 @@ function RunOfShowPanel({ event }: { event: Event }) {
       {
         eventId: event.id,
         draft: {
+          dayNumber: selectedDay,
           startTime,
           title: trimmed,
           duration: Number.isFinite(parsedDuration) ? parsedDuration : undefined,
@@ -423,7 +527,46 @@ function RunOfShowPanel({ event }: { event: Event }) {
 
   return (
     <Panel>
-      <PanelHeader title="Run of show" description={`Cue times in ${timeZoneLabel}, the workspace\u2019s zone`} />
+      <PanelHeader
+        title="Run of show"
+        description={`${days.length > 1 ? `${days.length}-day schedule · ` : ""}Cue times in ${timeZoneLabel}, the workspace\u2019s zone`}
+      />
+
+      {days.length > 1 ? (
+        <div
+          className="flex gap-2 overflow-x-auto border-b border-hairline bg-surface-sunken px-5 py-3"
+          aria-label="Conference days"
+        >
+          {days.map((day) => {
+            const active = day.dayNumber === selectedDay;
+            const cueCount = (cues ?? []).filter((cue) => cue.dayNumber === day.dayNumber).length;
+            return (
+              <button
+                key={day.dayNumber}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSelectedDay(day.dayNumber)}
+                className={cn(
+                  "min-w-[9.5rem] rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-hairline bg-surface text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                )}
+              >
+                <span className="block text-xs font-semibold">{formatEventDayLabel(day)}</span>
+                <span
+                  className={cn(
+                    "mt-0.5 block text-[11px]",
+                    active ? "text-primary-foreground/75" : "text-muted-foreground",
+                  )}
+                >
+                  {cueCount} {cueCount === 1 ? "cue" : "cues"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
@@ -432,6 +575,11 @@ function RunOfShowPanel({ event }: { event: Event }) {
           submit();
         }}
       >
+        {days.length > 1 ? (
+          <div className="flex h-9 items-center rounded-md border border-input bg-surface px-3 text-xs font-semibold text-foreground">
+            Day {selectedDay}
+          </div>
+        ) : null}
         <Input
           type="time"
           value={startTime}
@@ -477,27 +625,97 @@ function RunOfShowPanel({ event }: { event: Event }) {
 
       {isLoading ? (
         <LoadingRows rows={3} className="p-4" />
-      ) : (cues ?? []).length === 0 ? (
-        <EmptyState icon={Clock} title="No cues yet" description="Build the order of the day above." />
+      ) : dayCues.length === 0 ? (
+        <EmptyState
+          icon={Clock}
+          title={days.length > 1 ? `No cues for Day ${selectedDay}` : "No cues yet"}
+          description={
+            days.length > 1 ? "Add the first cue for this conference day above." : "Build the order of the day above."
+          }
+        />
       ) : (
         <ol className="divide-y divide-hairline">
-          {(cues ?? []).map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} />)}
+          {dayCues.map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} days={days} />)}
         </ol>
       )}
     </Panel>
   );
 }
 
-function MoodBoardPanel({ event }: { event: Event }) {
+/**
+ * A few reference images to start a board from.
+ *
+ * Unsplash source URLs rather than bundled assets: the board stores a URL, so a sample
+ * has to be one, and shipping image binaries for a starter suggestion is not worth the
+ * bundle.
+ */
+const SAMPLE_REFERENCES = [
+  { caption: "Warm candlelit tables", url: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=1200&q=80" },
+  { caption: "Stage and LED backdrop", url: "https://images.unsplash.com/photo-1505236858219-8359eb29e329?w=1200&q=80" },
+  { caption: "Garden reception", url: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=1200&q=80" },
+  { caption: "Minimal conference set", url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80" },
+];
+
+export function MoodBoardPanel({ event }: { event: Event }) {
   const { data: images, isLoading } = useMoodBoard(event.id);
   const add = useAddMoodBoardImage();
   const remove = useRemoveMoodBoardImage();
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [theme, setTheme] = useState("Modern garden");
+  const [showVariations, setShowVariations] = useState(false);
+
+  const variations = [
+    {
+      name: "Airy",
+      note: `A light, restrained take on ${theme.toLowerCase()} with natural texture and generous negative space.`,
+      swatches: ["bg-[#e9efe6]", "bg-[#adc6a8]", "bg-[#f3ead9]"],
+    },
+    {
+      name: "Warm",
+      note: `A welcoming ${theme.toLowerCase()} direction built around amber light, layered materials and social energy.`,
+      swatches: ["bg-[#8c5d3f]", "bg-[#e8bd6d]", "bg-[#efe1cb]"],
+    },
+    {
+      name: "Dramatic",
+      note: `A higher-contrast ${theme.toLowerCase()} variation for evening lighting, focal moments and photography.`,
+      swatches: ["bg-[#172922]", "bg-[#4b6555]", "bg-[#bba875]"],
+    },
+  ];
 
   return (
     <Panel>
       <PanelHeader title="Mood board" description="Reference images for decor, staging and lighting" />
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-hairline bg-primary-wash px-5 py-3">
+        <Sparkles className="size-4 text-primary-text" aria-hidden="true" />
+        <Input
+          value={theme}
+          onChange={(inputEvent) => setTheme(inputEvent.target.value)}
+          placeholder="Describe a theme"
+          aria-label="Mood board theme"
+          className="min-w-[12rem] flex-1 bg-surface"
+        />
+        <Button type="button" size="sm" onClick={() => setShowVariations(true)} disabled={!theme.trim()}>
+          Create theme variations
+        </Button>
+      </div>
+
+      {showVariations ? (
+        <div className="grid gap-3 border-b border-hairline p-5 md:grid-cols-3">
+          {variations.map((variation) => (
+            <article key={variation.name} className="overflow-hidden rounded-xl border border-hairline bg-card">
+              <div className="grid h-16 grid-cols-3">
+                {variation.swatches.map((swatch) => <span key={swatch} className={swatch} />)}
+              </div>
+              <div className="p-3.5">
+                <h3 className="text-sm font-semibold text-foreground">{variation.name} · {theme}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{variation.note}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
@@ -538,6 +756,25 @@ function MoodBoardPanel({ event }: { event: Event }) {
         </Button>
       </form>
 
+      {/* Starting from a blank URL field is a cold start. These fill it in one click so
+          the board has something to react to. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-2.5">
+        <span className="text-xs font-medium text-muted-foreground">Or pick a sample</span>
+        {SAMPLE_REFERENCES.map((sample) => (
+          <button
+            key={sample.url}
+            type="button"
+            onClick={() => {
+              setUrl(sample.url);
+              setCaption(sample.caption);
+            }}
+            className="rounded-full border border-hairline px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
+            {sample.caption}
+          </button>
+        ))}
+      </div>
+
       {isLoading ? (
         <LoadingRows rows={2} className="p-4" />
       ) : (images ?? []).length === 0 ? (
@@ -575,19 +812,5 @@ function MoodBoardPanel({ event }: { event: Event }) {
         </ul>
       )}
     </Panel>
-  );
-}
-
-export default function PlanSection({ event }: { event: Event }) {
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        <ChecklistPanel event={event} />
-        <RunOfShowPanel event={event} />
-      </div>
-      {/* Full width, below the two working panels: reference images are for judging a look,
-          and at sidebar width they were too small to judge anything by. */}
-      <MoodBoardPanel event={event} />
-    </div>
   );
 }

@@ -30,7 +30,7 @@ const DataContext = createContext<DataContextValue | null>(null);
 
 /** Live backend: the API, authorized by the caller's Clerk session. */
 function LiveDataProvider({ children }: { children: ReactNode }) {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
 
   const value = useMemo<DataContextValue>(
     () => ({
@@ -38,11 +38,11 @@ function LiveDataProvider({ children }: { children: ReactNode }) {
       // unconditionally blocked sign-up entirely. Workspaces and roles live in our own
       // `workspace_members` table, so the server resolves a personal workspace when no org
       // header arrives and nothing here has to know the difference.
-      adapter: createHttpAdapter({ getToken: () => getToken() }),
+      adapter: createHttpAdapter({ getToken: () => getToken(), cacheScope: userId ?? "anonymous" }),
       mode: "live",
       demoReason: null,
     }),
-    [getToken],
+    [getToken, userId],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
@@ -62,9 +62,18 @@ function DemoDataProvider({ children, adapter }: { children: ReactNode; adapter?
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
-export function DataProvider({ children, adapter }: { children: ReactNode; adapter?: DataAdapter }) {
+export function DataProvider({
+  children,
+  adapter,
+  forceDemo = false,
+}: {
+  children: ReactNode;
+  adapter?: DataAdapter;
+  forceDemo?: boolean;
+}) {
   // An injected adapter always wins, which is what lets a test mount a screen against a stub.
   if (adapter) return <DemoDataProvider adapter={adapter}>{children}</DemoDataProvider>;
+  if (forceDemo) return <DemoDataProvider>{children}</DemoDataProvider>;
   return isClerkConfigured ? (
     <LiveDataProvider>{children}</LiveDataProvider>
   ) : (

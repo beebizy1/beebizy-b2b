@@ -18,8 +18,9 @@ import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "
 import { BrandLogo } from "@/components/BrandLogo";
 import { useEventByShareToken, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
-import { describeWhenInZone, formatInZone, timeZoneLabel } from "@/lib/datetime";
+import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import type { Event } from "@/data/entities";
+import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 
 function PublicFrame({ children }: { children: React.ReactNode }) {
   return (
@@ -31,9 +32,7 @@ function PublicFrame({ children }: { children: React.ReactNode }) {
       </header>
       <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
       <footer className="mx-auto max-w-3xl px-6 pb-10">
-        <p className="text-xs text-muted-foreground">
-          Event page powered by Beebizy. <Link href="/" className="underline hover:text-foreground">What's this?</Link>
-        </p>
+        <p className="text-xs text-muted-foreground">Event page powered by Beebizy.</p>
       </footer>
     </div>
   );
@@ -68,9 +67,10 @@ function EventHeading({ event, timeZone }: { event: Event; timeZone: string }) {
         <div className="flex items-center gap-1.5">
           <CalendarDays className="size-4" aria-hidden="true" />
           <dt className="sr-only">When</dt>
-          <dd>
-            {formatInZone(event.date, timeZone, "full")}{" "}
-            <span className="text-muted-foreground/70">{timeZoneLabel(timeZone, new Date(event.date))}</span>
+         <dd>
+            {formatInZone(event.date, timeZone, "full")}
+            {event.endDate ? ` to ${formatInZone(event.endDate, timeZone, "full")}` : ""}{" "}
+           <span className="text-muted-foreground/70">{timeZoneLabel(timeZone, new Date(event.date))}</span>
           </dd>
         </div>
         {event.locationRecord || event.location ? (
@@ -122,6 +122,9 @@ export function PublicEventPage({ token }: { token: string }) {
   }
   if (!event) return <EventNotFound />;
 
+  const maxScheduledDay = Math.max(1, ...(agenda ?? []).map((cue) => cue.dayNumber));
+  const eventDays = eventDayOptions(event.date, event.endDate, timeZone, maxScheduledDay);
+
   const onSale = (tickets ?? []).filter(
     (ticket) => ticket.isActive && (ticket.quantityTotal === 0 || ticket.quantitySold < ticket.quantityTotal),
   );
@@ -153,26 +156,39 @@ export function PublicEventPage({ token }: { token: string }) {
         {(agenda ?? []).length > 0 ? (
           <Panel>
             <PanelHeader title="Agenda" description={`Times shown in ${timeZoneLabel(timeZone, new Date(event.date))}, the venue\u2019s zone`} />
-            <ol className="divide-y divide-hairline">
-              {(agenda ?? []).map((cue) => (
-                <li key={cue.id} className="flex items-baseline gap-4 px-5 py-3">
-                  <span data-numeric className="w-14 shrink-0 font-mono text-xs font-semibold text-foreground">
-                    {cue.startTime}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">{cue.title}</span>
-                    {cue.description ? (
-                      <span className="block text-xs text-muted-foreground">{cue.description}</span>
-                    ) : null}
-                  </span>
-                  {cue.duration ? (
-                    <span data-numeric className="shrink-0 text-xs text-muted-foreground">
-                      {cue.duration}m
-                    </span>
+            {eventDays.map((day) => {
+              const dayAgenda = (agenda ?? []).filter((cue) => cue.dayNumber === day.dayNumber);
+              if (dayAgenda.length === 0) return null;
+              return (
+                <section key={day.dayNumber}>
+                  {eventDays.length > 1 ? (
+                    <div className="border-b border-hairline bg-surface-sunken px-5 py-2 text-xs font-semibold text-foreground">
+                      {formatEventDayLabel(day)}
+                    </div>
                   ) : null}
-                </li>
-              ))}
-            </ol>
+                  <ol className="divide-y divide-hairline">
+                    {dayAgenda.map((cue) => (
+                      <li key={cue.id} className="flex items-baseline gap-4 px-5 py-3">
+                        <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
+                          {formatClockTime(cue.startTime)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-foreground">{cue.title}</span>
+                          {cue.description ? (
+                            <span className="block text-xs text-muted-foreground">{cue.description}</span>
+                          ) : null}
+                        </span>
+                        {cue.duration ? (
+                          <span data-numeric className="shrink-0 text-xs text-muted-foreground">
+                            {cue.duration}m
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              );
+            })}
           </Panel>
         ) : null}
       </div>

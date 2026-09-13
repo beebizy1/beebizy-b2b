@@ -2,33 +2,45 @@
  * Routes and providers.
  *
  * Three route families:
- *   public marketing  — `/`
- *   public guest      — `/e/:token`, `/e/:token/tickets`, and Clerk's sign-in / sign-up
- *   the product       — `/app/*`, behind `RequireSession` and inside `AppShell`
+ *   private beta entry - `/`, which enters the authenticated product
+ *   public guest      - `/e/:token`, `/e/:token/tickets`, and Clerk sign-in
+ *   the product       - `/app/*`, behind `RequireSession` and inside `AppShell`
  *
  * The old build put the product under `/dashboard` with thirty flat routes and no
  * guard, so `/dashboard/settings` rendered a frame of the app before bouncing to login.
  * `/dashboard/*` now redirects into `/app` so existing links keep working.
  */
 
-import { Redirect, Route, Router as WouterRouter, Switch } from "wouter";
+import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { ClerkGate } from "@/app/ClerkGate";
 import { DataProvider } from "@/data/provider";
+import { FEEDBACK_INBOX_PATH } from "@/data/entities";
+import { useMe } from "@/data/hooks";
+import { effectivePlan, planHasCapability, SELF_SERVE_BILLING_ENABLED, type PlanCapability } from "@/data/plans";
 import { isDataError } from "@/data/adapter";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { RequireSession, SessionProvider } from "@/app/session";
 import { AppShell } from "@/app/shell/AppShell";
 
 import LandingPage from "@/pages/LandingPage";
+import AboutPage from "@/pages/AboutPage";
 import LoginPage from "@/pages/LoginPage";
 import SignupPage from "@/pages/SignupPage";
+import AcceptInvitationPage from "@/pages/AcceptInvitationPage";
+import AccessDeniedPage from "@/pages/AccessDeniedPage";
+import SubscriptionRequiredPage from "@/pages/SubscriptionRequiredPage";
+import PricingPage from "@/pages/PricingPage";
+import ContactSalesPage from "@/pages/ContactSalesPage";
+import BillingSuccessPage from "@/pages/BillingSuccessPage";
 import NotFound from "@/pages/not-found";
 
 import Today from "@/screens/Today";
+import AIPlanner from "@/screens/AIPlanner";
 import EventsIndex from "@/screens/events/EventsIndex";
+import CalendarView from "@/screens/CalendarView";
 import EventForm from "@/screens/events/EventForm";
 import EventWorkspace from "@/screens/events/EventWorkspace";
 import Guests from "@/screens/Guests";
@@ -36,12 +48,35 @@ import VendorsIndex from "@/screens/vendors/VendorsIndex";
 import VendorDetail from "@/screens/vendors/VendorDetail";
 import VendorForm from "@/screens/vendors/VendorForm";
 import Budget from "@/screens/Budget";
+import Reporting from "@/screens/Reporting";
+import History from "@/screens/History";
+import Messages from "@/screens/Messages";
 import Tasks from "@/screens/Tasks";
 import Library from "@/screens/Library";
 import TemplateDetail from "@/screens/library/TemplateDetail";
 import BoardDetail from "@/screens/library/BoardDetail";
+import LocationsIndex from "@/screens/locations/LocationsIndex";
+import LocationForm from "@/screens/locations/LocationForm";
+import LocationDetail from "@/screens/locations/LocationDetail";
+import RegistrationsIndex from "@/screens/registrations/RegistrationsIndex";
+import RegistrationForm from "@/screens/registrations/RegistrationForm";
+import PostEventSummary from "@/screens/events/PostEventSummary";
+import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
+import FeedbackInbox from "@/screens/FeedbackInbox";
 import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
+import { isDemoSession } from "@/app/demo";
+import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
+import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
+import { isAppPathAllowed } from "@/app/shell/nav";
+import { useAccountExperience } from "@/app/useAccountExperience";
+
+function PlanGate({ capability, children }: { capability: PlanCapability; children: React.ReactNode }) {
+  const { data: identity, isLoading } = useMe();
+  if (isLoading || !identity) return null;
+  if (!planHasCapability(effectivePlan(identity.access), capability)) return <Redirect to={SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales"} replace />;
+  return <>{children}</>;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,32 +93,61 @@ const queryClient = new QueryClient({
 });
 
 /** Everything inside the product chrome. */
+function AccountExperienceGate({ children }: { children: React.ReactNode }) {
+  const [pathname] = useLocation();
+  const { experience } = useAccountExperience();
+  if (!isAppPathAllowed(pathname, experience)) return <Redirect to="/app" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <RequireSession>
       <AppShell>
-        <Switch>
+        <AccountExperienceGate>
+          <Switch>
           <Route path="/app" component={Today} />
-          <Route path="/app/events" component={EventsIndex} />
+          <Route path="/app/plan" component={AIPlanner} />
+          <Route path="/app/calendar" component={CalendarView} />
+          <Route path="/app/events">{() => <EventsIndex />}</Route>
           <Route path="/app/events/new">{() => <EventForm />}</Route>
           <Route path="/app/events/:id/edit">{(params) => <EventForm id={params.id} />}</Route>
+          <Route path="/app/events/:id/summary">{(params) => <PostEventSummary id={params.id} />}</Route>
           <Route path="/app/events/:id/:section">
             {(params) => <EventWorkspace id={params.id} section={params.section} />}
           </Route>
           <Route path="/app/events/:id">{(params) => <EventWorkspace id={params.id} />}</Route>
-          <Route path="/app/guests" component={Guests} />
-          <Route path="/app/guests/new" component={Guests} />
-          <Route path="/app/vendors" component={VendorsIndex} />
-          <Route path="/app/vendors/new">{() => <VendorForm />}</Route>
-          <Route path="/app/vendors/:id">{(params) => <VendorDetail id={params.id} />}</Route>
-          <Route path="/app/budget" component={Budget} />
+          <Route path="/app/attendees" component={Guests} />
+          <Route path="/app/attendees/new" component={Guests} />
+          <Route path="/app/locations">{() => <PlanGate capability="multiLocation"><LocationsIndex /></PlanGate>}</Route>
+          <Route path="/app/locations/new">{() => <PlanGate capability="multiLocation"><LocationForm /></PlanGate>}</Route>
+          <Route path="/app/locations/:id/edit">{(params) => <PlanGate capability="multiLocation"><LocationForm id={params.id} /></PlanGate>}</Route>
+          <Route path="/app/locations/:id">{(params) => <PlanGate capability="multiLocation"><LocationDetail id={params.id} /></PlanGate>}</Route>
+          <Route path="/app/registrations" component={RegistrationsIndex} />
+          <Route path="/app/registrations/new">{() => <RegistrationForm />}</Route>
+          <Route path="/app/vendors">{() => <PlanGate capability="vendorManagement"><VendorsIndex /></PlanGate>}</Route>
+          <Route path="/app/vendors/new">{() => <PlanGate capability="vendorManagement"><VendorForm /></PlanGate>}</Route>
+          <Route path="/app/vendors/:id">{(params) => <PlanGate capability="vendorManagement"><VendorDetail id={params.id} /></PlanGate>}</Route>
+          <Route path="/app/budget">{() => <Budget />}</Route>
+          <Route path="/app/history" component={History} />
+          <Route path="/app/reporting">
+            {() => (
+              <PlanGate capability="customReporting">
+                <Reporting />
+              </PlanGate>
+            )}
+          </Route>
+          <Route path="/app/messages">{() => <PlanGate capability="vendorManagement"><Messages /></PlanGate>}</Route>
           <Route path="/app/tasks" component={Tasks} />
-          <Route path="/app/library" component={Library} />
-          <Route path="/app/library/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
-          <Route path="/app/library/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
+          <Route path="/app/tickets" component={TicketSales} />
+          <Route path="/app/templates" component={Library} />
+          <Route path="/app/templates/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
+          <Route path="/app/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
-          <Route component={NotFound} />
-        </Switch>
+          <Route path={FEEDBACK_INBOX_PATH} component={FeedbackInbox} />
+            <Route component={NotFound} />
+          </Switch>
+        </AccountExperienceGate>
       </AppShell>
     </RequireSession>
   );
@@ -92,10 +156,25 @@ function AppRoutes() {
 function Routes() {
   return (
     <Switch>
-      <Route path="/" component={LandingPage} />
-      <Route path="/about">{() => <Redirect to="/#about" replace />}</Route>
+      {/* Studio is the front door, and the guard behind it sends anyone without a session
+          to sign in. Pricing held this slot while Solo was sold self-serve; putting a
+          price list in front of an approved-accounts product only asks people to shop for
+          something they cannot buy here. */}
+      <Route path="/">{() => <Redirect to="/app" replace />}</Route>
+      <Route path="/marketing-preview" component={LandingPage} />
+      <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
+      <Route path={INVITATION_ACCEPTANCE_PATH} component={AcceptInvitationPage} />
+      <Route path="/access-denied" component={AccessDeniedPage} />
+      <Route path="/subscription-required" component={SubscriptionRequiredPage} />
+      {/* Kept as a redirect rather than deleted: links to it are already out in emails
+          and bookmarks, and a dead route would 404 them instead of reaching sales. */}
+      <Route path="/pricing">
+        {() => (SELF_SERVE_BILLING_ENABLED ? <PricingPage /> : <Redirect to="/contact-sales" replace />)}
+      </Route>
+      <Route path="/contact-sales" component={ContactSalesPage} />
+      <Route path="/billing/success" component={BillingSuccessPage} />
       <Route path="/signup" component={SignupPage} />
       <Route path="/signup/*" component={SignupPage} />
 
@@ -109,18 +188,27 @@ function Routes() {
         bookmarked, and a dead bookmark is a worse welcome than a redirect.
       */}
       <Route path="/app/money">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/app/people">{() => <Redirect to="/app/guests" replace />}</Route>
+      <Route path="/app/people">{() => <Redirect to="/app/attendees" replace />}</Route>
+      {/* The rail moved Guests to Attendees, Library to Templates and Reports to
+          Reporting when the vocabulary aligned with the reference design. All three
+          were live long enough to be bookmarked. */}
+      <Route path="/app/guests">{() => <Redirect to="/app/attendees" replace />}</Route>
+      <Route path="/app/guests/new">{() => <Redirect to="/app/attendees/new" replace />}</Route>
+      <Route path="/app/reports">{() => <Redirect to="/app/reporting" replace />}</Route>
+      <Route path="/app/library">{() => <Redirect to="/app/templates" replace />}</Route>
+      <Route path="/app/library/templates/:id">{(params) => <Redirect to={`/app/templates/${params.id}`} replace />}</Route>
+      <Route path="/app/library/boards/:id">{(params) => <Redirect to={`/app/templates/boards/${params.id}`} replace />}</Route>
       <Route path="/dashboard">{() => <Redirect to="/app" replace />}</Route>
       <Route path="/dashboard/events">{() => <Redirect to="/app/events" replace />}</Route>
       <Route path="/dashboard/events/:id">{(params) => <Redirect to={`/app/events/${params.id}`} replace />}</Route>
       <Route path="/dashboard/vendors">{() => <Redirect to="/app/vendors" replace />}</Route>
-      <Route path="/dashboard/guests">{() => <Redirect to="/app/guests" replace />}</Route>
-      <Route path="/dashboard/registrations">{() => <Redirect to="/app/guests" replace />}</Route>
-      <Route path="/dashboard/tickets">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/dashboard/reporting">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/dashboard/history">{() => <Redirect to="/app/budget" replace />}</Route>
-      <Route path="/dashboard/templates">{() => <Redirect to="/app/library" replace />}</Route>
-      <Route path="/dashboard/locations">{() => <Redirect to="/app/library" replace />}</Route>
+      <Route path="/dashboard/guests">{() => <Redirect to="/app/attendees" replace />}</Route>
+      <Route path="/dashboard/registrations">{() => <Redirect to="/app/registrations" replace />}</Route>
+      <Route path="/dashboard/tickets">{() => <Redirect to="/app/tickets" replace />}</Route>
+      <Route path="/dashboard/reporting">{() => <Redirect to="/app/reporting" replace />}</Route>
+      <Route path="/dashboard/history">{() => <Redirect to="/app/history" replace />}</Route>
+      <Route path="/dashboard/templates">{() => <Redirect to="/app/templates" replace />}</Route>
+      <Route path="/dashboard/locations">{() => <Redirect to="/app/locations" replace />}</Route>
       <Route path="/dashboard/settings">{() => <Redirect to="/app/settings" replace />}</Route>
       <Route path="/buy/:token">{(params) => <Redirect to={`/e/${params.token}/tickets`} replace />}</Route>
       <Route path="/share/:token">{(params) => <Redirect to={`/e/${params.token}`} replace />}</Route>
@@ -136,12 +224,19 @@ function Routes() {
 }
 
 export default function App() {
+  if (!isPrivateBetaHost(window.location.hostname)) {
+    window.location.replace(privateBetaUrl(window.location.pathname, window.location.search, window.location.hash));
+    return null;
+  }
+
+  const demoSession = isDemoSession();
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ClerkGate>
-          <DataProvider>
-            <SessionProvider>
+          <DataProvider forceDemo={demoSession}>
+            <SessionProvider forceDemo={demoSession}>
               <TooltipProvider>
                 <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                   <Routes />

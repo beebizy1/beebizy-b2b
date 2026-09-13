@@ -1,0 +1,66 @@
+<div id="sales-dialog" class="hidden fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto bg-slate-900/40 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Talk to sales">
+  <div class="my-8 w-full max-w-lg rounded-2xl bg-white p-6 sm:p-8 shadow-2xl">
+
+    <div id="sales-step-form">
+      <h2 class="text-2xl font-extrabold tracking-tight text-slate-900">Talk to sales</h2>
+      <p class="mt-2 text-sm text-slate-500">Tell us a little about your team and we'll be in touch within one business day. You'll get the working demo link as soon as you submit.</p>
+
+      <form id="sales-form" class="mt-6 space-y-4">
+        <div>
+          <label for="lead-name" class="block text-sm font-semibold text-slate-900">Name</label>
+          <input id="lead-name" name="name" required="" autocomplete="name" class="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200">
+        </div>
+        <div>
+          <label for="lead-email" class="block text-sm font-semibold text-slate-900">Work email</label>
+          <input id="lead-email" name="email" type="email" required="" autocomplete="email" class="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200">
+        </div>
+        <div>
+          <label for="lead-company" class="block text-sm font-semibold text-slate-900">Company</label>
+          <input id="lead-company" name="company" required="" autocomplete="organization" class="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200">
+        </div>
+        <div>
+          <label for="lead-phone" class="block text-sm font-semibold text-slate-900">Phone <span class="font-normal text-slate-400">optional</span></label>
+          <input id="lead-phone" name="phone" type="tel" autocomplete="tel" class="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200">
+        </div>
+        <div>
+          <label for="lead-volume" class="block text-sm font-semibold text-slate-900">How many events do you run a year?</label>
+          <select id="lead-volume" name="volume" required="" class="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200">
+            <option value="" selected="" disabled="">Select one</option>
+            <option value="1-5">1–5</option>
+            <option value="6-20">6–20</option>
+            <option value="20+">20+</option>
+          </select>
+        </div>
+
+        <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" class="absolute left-[-9999px] h-0 w-0 opacity-0">
+
+        <p id="sales-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+
+        <div class="flex items-center gap-3 pt-1">
+          <button id="sales-submit" type="submit" class="rounded-lg bg-amber-400 px-5 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-amber-500 disabled:opacity-60">Send</button>
+          <button type="button" data-close-sales="" class="text-sm font-semibold text-slate-500 hover:text-slate-900">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="sales-step-done" class="hidden text-center">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-2xl">🐝</div>
+      <h2 class="mt-4 text-2xl font-extrabold tracking-tight text-slate-900">Thanks — we've got it.</h2>
+      <!-- Copy for the no-booking case. src/main.ts rewrites this when a Calendly
+           widget is actually going to render, so the text never promises a
+           scheduler that isn't there. -->
+      <p id="sales-done-sub" class="mx-auto mt-2 max-w-md text-sm text-slate-500">Someone from the team will be in touch within one business day.</p>
+
+      <!-- Calendly inline booking. The widget script is injected by src/main.ts only
+           when this step is reached, so it never costs the landing page anything.
+           If CALENDLY_URL isn't set, this stays hidden and the fallback below shows. -->
+      <div id="calendly-mount" class="mt-5 hidden">
+        <div id="calendly-widget" class="calendly-inline-widget" style="min-width:320px;height:640px;"></div>
+      </div>
+
+
+      <button data-close-sales="" class="mt-4 block w-full text-sm font-semibold text-slate-500 hover:text-slate-900">Back to the site</button>
+    </div>
+
+  </div>
+</div>

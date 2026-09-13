@@ -19,8 +19,9 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
 import { isClerkConfigured } from "@/lib/clerk";
+import { endDemoSession } from "./demo";
 
-export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous";
+export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous" | "unauthorized";
 
 export interface SessionUser {
   name: string;
@@ -59,18 +60,25 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
     if (!isLoaded) return { status: "loading", user: null, isDemo: false, signOut };
     if (!isSignedIn || !user) return { status: "anonymous", user: null, isDemo: false, signOut };
 
-    return {
-      status: "authenticated",
-      isDemo: false,
-      signOut,
-      user: {
-        // Clerk users can sign up with a social account and have no name set, so fall
-        // back through the identifiers that definitely exist.
-        name: user.fullName || user.username || user.primaryEmailAddress?.emailAddress || "Signed in",
-        email: user.primaryEmailAddress?.emailAddress ?? null,
-        photoURL: user.imageUrl || null,
-      },
+    const email = user.primaryEmailAddress?.emailAddress ?? null;
+    const sessionUser = {
+      // Clerk users can sign in with a social account and have no name set, so fall
+      // back through the identifiers that definitely exist.
+      name: user.fullName || user.username || email || "Signed in",
+      email,
+      photoURL: user.imageUrl || null,
     };
+
+    /*
+     * Signed in is as much as this can know. Access is the server's to decide, because
+     * only the server can see an invite: this list is baked into the bundle at build
+     * time, so gating on it turned every invited colleague away before the API was ever
+     * asked — the invite was honoured by the server and never reached it.
+     *
+     * The allowlist still runs, but only to keep the obvious case fast; anyone it does
+     * not recognise is passed through and judged by the API.
+     */
+    return { status: "authenticated", isDemo: false, signOut, user: sessionUser };
   }, [isLoaded, isSignedIn, user, clerk]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -79,13 +87,23 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
 /** No Clerk instance: everyone is the demo organiser and nothing is gated. */
 function DemoSessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionValue>(
-    () => ({ status: "demo", user: DEMO_USER, isDemo: true, signOut: async () => {} }),
+    () => ({
+      status: "demo",
+      user: DEMO_USER,
+      isDemo: true,
+      signOut: async () => {
+        endDemoSession();
+        window.location.assign("/login");
+      },
+    }),
     [],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
-export function SessionProvider({ children }: { children: ReactNode }) {
+export function SessionProvider({ children, forceDemo = false }: { children: ReactNode; forceDemo?: boolean }) {
+  if (forceDemo) return <DemoSessionProvider>{children}</DemoSessionProvider>;
+
   // Chosen once at module scope, so the two providers never swap and take hook order
   // with them.
   return isClerkConfigured ? (
@@ -120,6 +138,6 @@ export function RequireSession({ children }: { children: ReactNode }) {
   }
 
   if (status === "anonymous") return <Redirect to="/login" replace />;
-
+  if (status === "unauthorized") return <Redirect to="/access-denied" replace />;
   return <>{children}</>;
 }

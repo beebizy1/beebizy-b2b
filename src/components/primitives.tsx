@@ -8,6 +8,7 @@
  */
 
 import type { ComponentProps, ReactNode } from "react";
+import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -33,11 +34,11 @@ export function PageHeader({
   return (
     <header className={cn("flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="min-w-0 space-y-1.5">
-        {eyebrow ? (
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</p>
-        ) : null}
-        <h1 className="display-md text-foreground">{title}</h1>
-        {description ? <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
+        {/* An eyebrow is the exception, not the pattern: the planning workspace uses one,
+            the table screens lead with the title alone. Amber, not grey micro-caps. */}
+        {eyebrow ? <p className="text-base font-medium text-primary-text">{eyebrow}</p> : null}
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        {description ? <p className="max-w-2xl leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>
@@ -108,6 +109,7 @@ export function StatTile({
   icon: Icon,
   tone = "neutral",
   loading = false,
+  href,
 }: {
   label: string;
   value: ReactNode;
@@ -115,9 +117,11 @@ export function StatTile({
   icon?: LucideIcon;
   tone?: Tone;
   loading?: boolean;
+  /** Where the number came from. A figure worth showing is usually worth opening. */
+  href?: string;
 }) {
-  return (
-    <Panel className="p-4">
+  const tile = (
+    <Panel className={cn("h-full p-4", href && "transition-colors hover:border-primary/50 hover:bg-accent/40")}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         {Icon ? (
@@ -135,6 +139,17 @@ export function StatTile({
       )}
       {sublabel ? <p className="mt-1 text-xs text-muted-foreground">{sublabel}</p> : null}
     </Panel>
+  );
+
+  if (!href) return tile;
+
+  return (
+    <Link
+      href={href}
+      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+    >
+      {tile}
+    </Link>
   );
 }
 
@@ -198,7 +213,13 @@ export function ReadinessRing({ value, size = 56, label }: { value: number; size
   const stroke = Math.max(4, Math.round(size * 0.1));
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const tone: Tone = clamped >= 80 ? "success" : clamped >= 50 ? "warning" : "danger";
+  /**
+   * The arc is how much is done, so it is green at any value — the same meaning a tick
+   * carries everywhere else. Amber at half-done read as a warning about being on
+   * schedule, which is not what this number measures; the risk strip says that, in words.
+   * Only a genuinely unstarted event is called out, in red.
+   */
+  const tone: Tone = clamped === 0 ? "danger" : "success";
   const strokeClass: Record<Tone, string> = {
     neutral: "stroke-muted-foreground",
     brand: "stroke-primary",

@@ -1,0 +1,1 @@
+ALTER TABLE "workspaces" ALTER COLUMN "stripe_last_event_created" SET DATA TYPE bigint;

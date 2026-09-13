@@ -20,9 +20,13 @@ import type {
   Canvas,
   CanvasCard,
   ChecklistItem,
+  CheckInStation,
+  CustomReportRow,
+  Deposit,
   Event,
   EventHealth,
   EventHistoryEntry,
+  FeedbackInboxItem,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -31,13 +35,18 @@ import type {
   MenuItem,
   OpenTask,
   PortfolioSummary,
+  ProductFeedback,
   PublicEventPayload,
   RaffleItem,
   RaffleTicket,
   Registration,
   RegistrationWithGuest,
+  Rfp,
+  RfpResponse,
+  RfpWithResponses,
   RunOfShowItem,
   Sponsorship,
+  TeamHoursEntry,
   Template,
   TemplateContents,
   TemplateDetail,
@@ -46,11 +55,18 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerShift,
+  InviteResult,
+  WorkspaceMember,
 } from "../entities";
+import type { PlanningBrief, PlanningSuggestions } from "../planner";
+import type { AssistantTurn } from "../assistantChat";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
   getToken: () => Promise<string | null>;
+  /** Current Clerk user id, used only to isolate browser query caches. */
+  cacheScope: string;
   /** Clerk organization id, when the user is acting inside one. */
   getOrgId?: () => string | null;
   baseUrl?: string;
@@ -142,8 +158,23 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
   return {
     kind: "postgres",
+    cacheScope: options.cacheScope,
 
     me: () => client.get<Identity>("/me"),
+
+    billing: {
+      checkout: (interval) => client.post<{ url: string }>("/billing/checkout", { interval }),
+      portal: () => client.post<{ url: string }>("/billing/portal"),
+    },
+
+    assistant: {
+      plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
+      chat: (input) => client.post<AssistantTurn>("/assistant/chat", input),
+    },
+
+    imports: {
+      loadGoogleSheet: (url: string) => client.post<{ name: string; csv: string }>("/imports/google-sheet", { url }),
+    },
 
     events: {
       list: (filter) => {
@@ -198,7 +229,13 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: () => client.get<RegistrationWithGuest[]>("/registrations"),
       listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
+      createWalkIn: (eventId, draft) =>
+        client.post<RegistrationWithGuest>(`/events/${eventId}/walk-ins`, draft),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
+      setSegment: (id, segment) => client.patch<Registration>(`/registrations/${id}`, { segment }),
+      setOrganization: (id, organization) =>
+        client.patch<Registration>(`/registrations/${id}`, { organization }),
+      setCheckIn: (id, patch) => client.patch<Registration>(`/registrations/${id}`, patch),
       remove: async (id) => {
         await client.del(`/registrations/${id}`);
       },
@@ -223,13 +260,32 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
+    checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
     runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
+    volunteers: eventScoped<VolunteerShift, never, never>(client, "volunteers") as DataAdapter["volunteers"],
     budget: eventScoped<BudgetItem, never, never>(client, "budget") as DataAdapter["budget"],
     menu: eventScoped<MenuItem, never, never>(client, "menu") as DataAdapter["menu"],
     moodBoard: eventScoped<MoodBoardImage, never, never>(client, "mood-board") as DataAdapter["moodBoard"],
     auction: eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"],
     sponsorships: eventScoped<Sponsorship, never, never>(client, "sponsorships") as DataAdapter["sponsorships"],
+
+    // `list` returns each RFP with its responses attached, matching the memory adapter,
+    // so the tab never has to fetch replies per row.
+    rfps: {
+      ...(eventScoped<Rfp, never, never>(client, "rfps") as DataAdapter["rfps"]),
+      list: (eventId) => client.get<RfpWithResponses[]>(`/events/${eventId}/rfps`),
+      addResponse: (eventId, rfpId, draft) =>
+        client.post<RfpResponse>(`/events/${eventId}/rfps/${rfpId}/responses`, draft),
+      setResponseStatus: (eventId, rfpId, responseId, status) =>
+        client.patch<RfpResponse>(`/events/${eventId}/rfps/${rfpId}/responses/${responseId}`, { status }),
+      removeResponse: async (eventId, rfpId, responseId) => {
+        await client.del(`/events/${eventId}/rfps/${rfpId}/responses/${responseId}`);
+      },
+    },
+
+    deposits: eventScoped<Deposit, never, never>(client, "deposits") as DataAdapter["deposits"],
+    teamHours: eventScoped<TeamHoursEntry, never, never>(client, "team-hours") as DataAdapter["teamHours"],
 
     tickets: {
       ...(eventScoped<TicketType, never, never>(client, "ticket-types") as DataAdapter["tickets"]),
@@ -274,8 +330,30 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     floorplan: {
-      get: (eventId) => client.get<Floorplan | null>(`/events/${eventId}/floorplan`),
-      save: (eventId, draft) => client.put<Floorplan>(`/events/${eventId}/floorplan`, draft),
+      list: (eventId) => client.get<Floorplan[]>(`/events/${eventId}/floorplans`),
+      create: (eventId, draft) => client.post<Floorplan>(`/events/${eventId}/floorplans`, draft),
+      save: (id, draft) => client.put<Floorplan>(`/floorplans/${id}`, draft),
+      remove: async (id) => {
+        await client.del(`/floorplans/${id}`);
+      },
+    },
+
+    members: {
+      list: () => client.get<WorkspaceMember[]>("/members"),
+      invite: (email, role) => client.post<InviteResult>("/invites", { email, role }),
+      revokeInvite: async (email) => {
+        await client.del(`/invites/${encodeURIComponent(email)}`);
+      },
+      setRole: (userId, role) => client.patch<WorkspaceMember>(`/members/${userId}`, { role }),
+      remove: async (userId) => {
+        await client.del(`/members/${userId}`);
+      },
+    },
+
+    feedback: {
+      list: () => client.get<ProductFeedback[]>("/feedback"),
+      listInbox: () => client.get<FeedbackInboxItem[]>("/feedback/inbox"),
+      create: (draft) => client.post<ProductFeedback>("/feedback", draft),
     },
 
     history: {
@@ -293,6 +371,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     analytics: {
+      customReport: () => client.get<CustomReportRow[]>("/analytics/custom-report"),
       portfolio: () => client.get<PortfolioSummary>("/analytics/portfolio"),
       health: (eventIds) =>
         client.get<EventHealth[]>(`/analytics/health${eventIds?.length ? `?eventIds=${eventIds.join(",")}` : ""}`),

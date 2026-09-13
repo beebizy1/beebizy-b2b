@@ -263,7 +263,6 @@ export default function BoardDetail({ id }: { id: string }) {
       </Link>
 
       <PageHeader
-        eyebrow="Board"
         title={board.name}
         description={board.description ?? "A freeform space for working out a look before it becomes an event."}
         actions={

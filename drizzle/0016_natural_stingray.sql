@@ -1,0 +1,3 @@
+CREATE TYPE "public"."volunteer_status" AS ENUM('scheduled', 'confirmed', 'checked_in', 'completed', 'cancelled');--> statement-breakpoint
+ALTER TABLE "volunteer_shifts" ALTER COLUMN "status" SET DEFAULT 'scheduled'::"public"."volunteer_status";--> statement-breakpoint
+ALTER TABLE "volunteer_shifts" ALTER COLUMN "status" SET DATA TYPE "public"."volunteer_status" USING "status"::"public"."volunteer_status";

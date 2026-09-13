@@ -4,6 +4,9 @@ Event operations for teams that run events but aren't event companies — corpor
 lean startups, nonprofits. Plan the event, staff it with vendors, sell tickets and
 fundraise, then report on what it cost and what came back.
 
+The completed P0 and V1 Core scope, verification evidence, and rollout dependencies are
+recorded in [`docs/P0-V1-COMPLETION.md`](docs/P0-V1-COMPLETION.md).
+
 ## Run it
 
 ```bash
@@ -11,10 +14,10 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-No credentials needed. With no `.env` the app starts in **demo mode**: an in-memory
-store seeded with a realistic portfolio — an event six days out with unconfirmed
-catering, a gala with live fundraising, two completed events, a cancelled roadshow.
-Every screen and every write works; nothing is persisted, and a banner says so.
+Local development without Clerk needs no credentials. In that environment the product
+uses an isolated, session-scoped in-memory workspace seeded with a realistic portfolio.
+Every screen and write works, a banner says the data is temporary, and the demo never
+reads or writes a signed-in workspace.
 
 **Sign-in is Clerk**, provisioned through the Vercel Marketplace:
 
@@ -23,11 +26,26 @@ vercel integration add clerk    # writes the keys into every environment
 vercel env pull --yes           # and into .env.local for local dev
 ```
 
-With a Clerk publishable key present, `/app` requires a session and `/login` renders
-Clerk's own widget (Google, email, MFA, password reset). Without one, the app falls back
-to the demo session so the credential-free demo keeps working.
+With a Clerk publishable key present, normal `/app` visits require a session and `/login`
+renders Clerk's own widget (Google, email, MFA, password reset). Landing-page product
+CTAs enter through that sign-in route. Without Clerk, the whole app falls back to the
+demo session described above so local development remains credential-free.
 
-Persistence is the separate half and is **not** wired yet — see *Firebase* below.
+The hosted Studio is a private beta. Internal Beebizy addresses remain permanently
+approved. Give an invited tester the Clerk public metadata below to start a 90-day trial
+from their account creation time:
+
+```json
+{ "beebizyBeta": true }
+```
+
+After 90 days both the client and API deny product access and send the tester to the paid
+subscription screen. Once billing confirms payment, set `subscriptionStatus` to `active`
+in Clerk public metadata. Payment-provider checkout and webhook setup are deployment
+configuration and are intentionally not simulated by the preview.
+
+Authenticated workspaces use the HTTP adapter backed by PostgreSQL. Demo sessions use a
+separate in-memory adapter and never read or write production data.
 
 ```bash
 npm run verify       # typecheck + lint + test + build, the same as CI
@@ -42,7 +60,8 @@ npm run build
 ```
 src/
   data/          the only thing that talks to storage
-    entities.ts    domain model — money in cents, dates as ISO strings
+    entities.ts    persisted domain model — money in cents, dates as ISO strings
+    planner.ts     planning-proposal model, deterministic budgets and safe fallback
     adapter.ts     the DataAdapter interface every backend implements
     derive.ts      pure functions: event health, risks, the attention worklist
     money.ts       integer-cent money, parsing and formatting
@@ -53,7 +72,7 @@ src/
   components/
     primitives.tsx shared vocabulary: PageHeader, StatTile, Meter, Pill, EmptyState…
     ui/            shadcn primitives
-  pages/         marketing pages, plus Clerk's sign-in and sign-up
+  pages/         marketing pages, plus Clerk sign-in and access-denied routes
 ```
 
 **Screens never import a backend.** They call `useData()` and get whatever adapter the
@@ -78,19 +97,22 @@ records they summarise.
 
 ## Navigation
 
-Six destinations, not fourteen:
+The Studio workspace uses these focused destinations:
 
 | Where | What it answers |
 | --- | --- |
-| Today | What needs a decision right now, ranked, linking to the fix |
-| Events | Every event, its readiness, and anything wrong with it |
-| People | Attendees and the events each is registered for |
-| Vendors | Suppliers, bookings and conversations |
-| Money | Ticket sales, budgets, fundraising |
-| Library | Templates and venues |
+| Dashboard | Portfolio health, decisions, and upcoming work |
+| Plan an event | AI-guided budget, run of show, checklist, mood board, and vendors |
+| Calendar | Every event on one operating calendar |
+| Events | Analytics, plan, invites, vendors, budget, and publishing per event |
+| Vendor Hub | The team's vendors plus Beebizy marketplace suggestions |
+| Templates | Reusable events, checklists, run of show, and boards |
+| History | Past events, spend, and planning decisions |
+| Reports | Portfolio spend, revenue, attendance, and ROI |
+| Messages | Vendor conversations in one inbox |
 
-Each event opens a workspace with six sections — Overview, Plan, People, Suppliers,
-Money, Share — replacing the fourteen tabs that used to compete for one row.
+Each event opens a workspace with Analytics, Plan, Invites & guests, Vendors,
+Budget & reporting, and Publish sections.
 
 `⌘K` searches every event and jumps to any section.
 
@@ -106,24 +128,36 @@ Budgets, vendor fees, the guest list, attendee contacts, sponsorship amounts and
 auction bids are never on a public page. The Share section states this before you send
 the link.
 
-## Firebase
+## Persistence
 
-Firebase is now **database only** — Clerk replaced Firebase Auth, so `src/lib/firebase.ts`
-exists for a future Firestore adapter and nothing else. `firestore.rules` and
-`storage.rules` are deployed with the Firebase CLI. Three things to know before running
-against a real project:
+Approved signed-in users use `src/data/http/adapter.ts`, the Vercel API router, and
+PostgreSQL repositories under `src/server/`. An approved first-time user receives a
+personal workspace, and every request is scoped to that workspace. Event planning
+decisions are also written to the append-only `event_history` table as structured
+before-and-after snapshots.
 
-- **The Firestore adapter is not written.** Setting the env vars does not switch the app
-  off demo data by itself; `DataProvider` still resolves to the in-memory adapter.
+The beta app is restricted to `https://beebizy-studio-preview.vercel.app`. The three
+Beebizy operators are always approved. Additional testers are invited without a code
+change by adding comma-separated emails to `BETA_ACCESS_EMAILS` in the Vercel Preview
+environment and redeploying, then re-pointing the
+`beebizy-studio-preview.vercel.app` alias at the new deployment. Only the server reads
+the allowlist, so there is no client-side counterpart. Each new workspace starts
+with three free months; expired, past-due, and cancelled access states are enforced by
+the API and shown explicitly in the app.
 
-- **`firestore.indexes.json` is empty.** Composite indexes need to be added for the
-  filtered-and-ordered queries a Firestore adapter will issue, or those reads fail at
-  runtime with `failed-precondition`.
-- **Share tokens are not verified by the rules.** `allow read: if
-  resource.data.shareToken != null` lets anyone read *any* share-enabled event, so the
-  token gates nothing. Fixing it properly means mirroring public event data into a
-  `publicEvents/{shareToken}` document and reading that instead — a schema change, not a
-  rules tweak.
+The in-memory adapter remains the intentional public demo backend. Its writes are
+session-scoped and are never mixed with authenticated workspaces.
+
+## Static asset caching
+
+`vercel.json` deliberately sets **no** `Cache-Control` override on `/assets/*`.
+
+A Vercel `headers` rule matches on path, not on status, so `max-age=31536000, immutable`
+was also stamped onto 404s for that prefix. A browser that requested a hashed bundle in
+the seconds between a new `index.html` going live and that asset propagating cached the
+404 for a year, and `immutable` meant it would never revalidate: the app rendered a blank
+page with no console error, and reloading could not clear it. Vite already fingerprints
+these filenames and Vercel caches its own static output, so the override bought nothing.
 
 ## Conventions
 

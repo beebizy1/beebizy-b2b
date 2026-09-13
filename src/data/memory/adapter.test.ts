@@ -121,6 +121,27 @@ describe("events", () => {
   });
 });
 
+describe("run of show", () => {
+  it("stores a conference day and orders cues by day before time", async () => {
+    const dayTwo = await memoryAdapter.runOfShow.create("evt-cab", {
+      dayNumber: 2,
+      startTime: "08:00",
+      title: "Day two breakfast",
+    });
+    const dayOne = await memoryAdapter.runOfShow.create("evt-cab", {
+      startTime: "17:00",
+      title: "Day one reception",
+    });
+
+    expect(dayTwo.dayNumber).toBe(2);
+    expect(dayOne.dayNumber).toBe(1);
+    const added = (await memoryAdapter.runOfShow.list("evt-cab")).filter((cue) =>
+      [dayOne.id, dayTwo.id].includes(cue.id),
+    );
+    expect(added.map((cue) => cue.id)).toEqual([dayOne.id, dayTwo.id]);
+  });
+});
+
 describe("registrations", () => {
   it("keeps the event's registration count in sync and excludes cancellations", async () => {
     const event = (await memoryAdapter.events.get("evt-atlas"))!;
@@ -139,6 +160,115 @@ describe("registrations", () => {
 
     await memoryAdapter.registrations.setStatus(created.id, "cancelled");
     expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(event.registrationCount);
+  });
+
+  it("carries a segment through creation and lets it be changed or cleared", async () => {
+    const guests = await memoryAdapter.guests.list();
+    const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
+    const guest = guests.find((candidate) => !taken.has(candidate.id))!;
+
+    const created = await memoryAdapter.registrations.create({
+      eventId: "evt-atlas",
+      guestId: guest.id,
+      // Whitespace is the realistic input, and it must not become a second category
+      // that looks identical to "Sponsor" in the picker.
+      segment: "  Sponsor  ",
+    });
+    expect(created.segment).toBe("Sponsor");
+
+    expect((await memoryAdapter.registrations.setSegment(created.id, "VIP")).segment).toBe("VIP");
+    expect((await memoryAdapter.registrations.setSegment(created.id, null)).segment).toBeNull();
+    // An empty string is the same intent as null, not a category named "".
+    await memoryAdapter.registrations.setSegment(created.id, "VIP");
+    expect((await memoryAdapter.registrations.setSegment(created.id, "   ")).segment).toBeNull();
+  });
+
+  it("records which organization a guest represents, and clears it", async () => {
+    // Santa Clara's ask: not just how many investors, but which funds they came from.
+    const guests = await memoryAdapter.guests.list();
+    const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
+    const guest = guests.find((candidate) => !taken.has(candidate.id))!;
+
+    const created = await memoryAdapter.registrations.create({
+      eventId: "evt-atlas",
+      guestId: guest.id,
+      segment: "Investor",
+      organization: "  Sequoia Capital  ",
+    });
+    expect(created.segment).toBe("Investor");
+    expect(created.organization).toBe("Sequoia Capital");
+
+    expect((await memoryAdapter.registrations.setOrganization(created.id, "Kleiner Perkins")).organization).toBe(
+      "Kleiner Perkins",
+    );
+    expect((await memoryAdapter.registrations.setOrganization(created.id, "  ")).organization).toBeNull();
+  });
+
+  it("defaults to no segment when none was given", async () => {
+    const guests = await memoryAdapter.guests.list();
+    const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
+    const guest = guests.find((candidate) => !taken.has(candidate.id))!;
+    const created = await memoryAdapter.registrations.create({ eventId: "evt-atlas", guestId: guest.id });
+    expect(created.segment).toBeNull();
+    expect(created.organization).toBeNull();
+    expect(created.checkedInAt).toBeNull();
+  });
+
+  it("records arrival details and supports undoing a check-in", async () => {
+    const row = (await memoryAdapter.registrations.listForEvent("evt-cab"))[0]!;
+    const arrivedAt = new Date().toISOString();
+
+    const checkedIn = await memoryAdapter.registrations.setCheckIn(row.id, {
+      checkedInAt: arrivedAt,
+      checkInStation: "  North entrance  ",
+      checkInNotes: "  Badge reprinted  ",
+    });
+    expect(checkedIn).toMatchObject({
+      checkedInAt: arrivedAt,
+      checkInStation: "North entrance",
+      checkInNotes: "Badge reprinted",
+    });
+
+    const undone = await memoryAdapter.registrations.setCheckIn(row.id, { checkedInAt: null });
+    expect(undone.checkedInAt).toBeNull();
+    expect(undone.checkInStation).toBe("North entrance");
+  });
+
+  it("confirms an invited guest when they arrive", async () => {
+    const pending = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "pending")!;
+    const checkedIn = await memoryAdapter.registrations.setCheckIn(pending.id, { checkedInAt: new Date().toISOString() });
+    expect(checkedIn.status).toBe("confirmed");
+  });
+
+  it("creates a walk-in guest, confirmed registration and arrival as one operation", async () => {
+    const before = (await memoryAdapter.events.get("evt-atlas"))!.registrationCount;
+    const row = await memoryAdapter.registrations.createWalkIn("evt-atlas", {
+      name: "Ada Walkin",
+      contact: "ada.walkin@example.com",
+      organization: "Analytical Engines",
+      checkInStation: "East entrance",
+    });
+    expect(row).toMatchObject({
+      status: "confirmed",
+      segment: "Walk-in",
+      organization: "Analytical Engines",
+      checkInStation: "East entrance",
+      guest: { name: "Ada Walkin", contact: "ada.walkin@example.com" },
+    });
+    expect(row.checkedInAt).not.toBeNull();
+    expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(before + 1);
+  });
+
+  it("does not leave a walk-in guest behind when the event is full", async () => {
+    const event = (await memoryAdapter.events.get("evt-cab"))!;
+    await memoryAdapter.events.update(event.id, { capacity: event.registrationCount });
+    await expect(
+      memoryAdapter.registrations.createWalkIn(event.id, {
+        name: "Capacity Test",
+        contact: "capacity.walkin@example.com",
+      }),
+    ).rejects.toThrow(/capacity/i);
+    expect((await memoryAdapter.guests.list()).some((guest) => guest.contact === "capacity.walkin@example.com")).toBe(false);
   });
 
   it("refuses a duplicate registration", async () => {
@@ -173,6 +303,63 @@ describe("registrations", () => {
     const before = (await memoryAdapter.events.get("evt-cab"))!.registrationCount;
     await memoryAdapter.guests.remove(target.guestId);
     expect((await memoryAdapter.events.get("evt-cab"))!.registrationCount).toBe(before - 1);
+  });
+});
+
+describe("volunteers", () => {
+  it("creates, updates and removes event-scoped shifts", async () => {
+    const created = await memoryAdapter.volunteers.create("evt-cab", {
+      name: "Cassandra Gomez",
+      role: "Welcome desk",
+      email: "cassandra@example.com",
+      startTime: "08:00",
+      endTime: "12:00",
+      notes: "Arrive at the east entrance.",
+    });
+    expect(created.status).toBe("scheduled");
+    expect((await memoryAdapter.volunteers.list("evt-cab")).some((row) => row.id === created.id)).toBe(true);
+    expect((await memoryAdapter.volunteers.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
+
+    const updated = await memoryAdapter.volunteers.update("evt-cab", created.id, {
+      status: "confirmed",
+      startTime: "07:45",
+    });
+    expect(updated).toMatchObject({ status: "confirmed", startTime: "07:45" });
+
+    await memoryAdapter.volunteers.remove("evt-cab", created.id);
+    expect((await memoryAdapter.volunteers.list("evt-cab")).some((row) => row.id === created.id)).toBe(false);
+  });
+
+  it("removes volunteer shifts when their event is deleted", async () => {
+    expect((await memoryAdapter.volunteers.list("evt-gala")).length).toBeGreaterThan(0);
+    await memoryAdapter.events.remove("evt-gala");
+    expect(await memoryAdapter.volunteers.list("evt-gala")).toEqual([]);
+  });
+});
+
+describe("check-in stations", () => {
+  it("stores an event's entrance lanes and equipment plan", async () => {
+    const created = await memoryAdapter.checkInStations.create("evt-cab", {
+      name: "East entrance",
+      lane: "Last names A-M",
+      lead: "Jordan Lee",
+      deviceCount: 3,
+      notes: "Keep accessibility lane clear.",
+    });
+    expect(created).toMatchObject({ name: "East entrance", lane: "Last names A-M", deviceCount: 3 });
+    expect((await memoryAdapter.checkInStations.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
+
+    const updated = await memoryAdapter.checkInStations.update("evt-cab", created.id, { deviceCount: 4 });
+    expect(updated.deviceCount).toBe(4);
+
+    await memoryAdapter.checkInStations.remove("evt-cab", created.id);
+    expect((await memoryAdapter.checkInStations.list("evt-cab")).some((row) => row.id === created.id)).toBe(false);
+  });
+
+  it("removes station plans when their event is deleted", async () => {
+    expect((await memoryAdapter.checkInStations.list("evt-skickoff")).length).toBeGreaterThan(0);
+    await memoryAdapter.events.remove("evt-skickoff");
+    expect(await memoryAdapter.checkInStations.list("evt-skickoff")).toEqual([]);
   });
 });
 
@@ -328,21 +515,21 @@ describe("analytics", () => {
 });
 
 describe("floorplan", () => {
-  it("reads the seeded plan and totals its seats", async () => {
-    const plan = await memoryAdapter.floorplan.get("evt-gala");
-    expect(plan).not.toBeNull();
-    expect(plan!.items.length).toBeGreaterThan(10);
-    const seats = plan!.items.reduce((total, item) => total + (item.seats ?? 0), 0);
+  it("reads the seeded rooms and totals the ballroom's seats", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    expect(plans.length).toBeGreaterThan(1);
+    const ballroom = plans.find((plan) => plan.name.startsWith("Ballroom"))!;
+    expect(ballroom.items.length).toBeGreaterThan(10);
     // Eleven ten-seat tables in the seed.
-    expect(seats).toBe(110);
+    expect(ballroom.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(110);
   });
 
-  it("returns null for an event with no plan", async () => {
-    expect(await memoryAdapter.floorplan.get("evt-cab")).toBeNull();
+  it("returns an empty list for an event with no rooms", async () => {
+    expect(await memoryAdapter.floorplan.list("evt-cab")).toEqual([]);
   });
 
-  it("round-trips a saved plan", async () => {
-    const saved = await memoryAdapter.floorplan.save("evt-cab", {
+  it("round-trips a saved room", async () => {
+    const created = await memoryAdapter.floorplan.create("evt-cab", {
       name: "U-shape, 24 seats",
       items: [
         { id: "a", shape: "long-table", label: "Top", x: 50, y: 20, seats: 8 },
@@ -350,32 +537,64 @@ describe("floorplan", () => {
         { id: "c", shape: "long-table", label: "Right", x: 80, y: 50, seats: 8 },
       ],
     });
-    expect(saved.name).toBe("U-shape, 24 seats");
+    expect(created.name).toBe("U-shape, 24 seats");
 
-    const reread = await memoryAdapter.floorplan.get("evt-cab");
+    const [reread] = await memoryAdapter.floorplan.list("evt-cab");
     expect(reread!.items).toHaveLength(3);
     expect(reread!.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(24);
   });
 
-  it("overwrites rather than appending a second plan", async () => {
-    await memoryAdapter.floorplan.save("evt-cab", { name: "First", items: [] });
-    await memoryAdapter.floorplan.save("evt-cab", { name: "Second", items: [] });
-    expect((await memoryAdapter.floorplan.get("evt-cab"))!.name).toBe("Second");
+  it("adds rooms alongside each other rather than overwriting", async () => {
+    // The whole point of the change: a second room used to replace the first, so
+    // indoor-plus-outdoor was impossible to describe.
+    await memoryAdapter.floorplan.create("evt-cab", { name: "Indoors", items: [] });
+    await memoryAdapter.floorplan.create("evt-cab", { name: "Garden", items: [] });
+    expect((await memoryAdapter.floorplan.list("evt-cab")).map((plan) => plan.name)).toEqual([
+      "Indoors",
+      "Garden",
+    ]);
+  });
+
+  it("saves one room without touching its neighbours", async () => {
+    const indoors = await memoryAdapter.floorplan.create("evt-cab", { name: "Indoors", items: [] });
+    await memoryAdapter.floorplan.create("evt-cab", { name: "Garden", items: [] });
+    await memoryAdapter.floorplan.save(indoors.id, { name: "Indoors — revised", items: [] });
+    expect((await memoryAdapter.floorplan.list("evt-cab")).map((plan) => plan.name)).toEqual([
+      "Indoors — revised",
+      "Garden",
+    ]);
+  });
+
+  it("removes a single room and leaves the rest", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    await memoryAdapter.floorplan.remove(plans[0]!.id);
+    const remaining = await memoryAdapter.floorplan.list("evt-gala");
+    expect(remaining).toHaveLength(plans.length - 1);
+    expect(remaining.some((plan) => plan.id === plans[0]!.id)).toBe(false);
   });
 
   it("hands back a detached copy", async () => {
-    const plan = await memoryAdapter.floorplan.get("evt-gala");
+    const [plan] = await memoryAdapter.floorplan.list("evt-gala");
     plan!.items[0]!.label = "Mutated";
-    expect((await memoryAdapter.floorplan.get("evt-gala"))!.items[0]!.label).not.toBe("Mutated");
+    const [reread] = await memoryAdapter.floorplan.list("evt-gala");
+    expect(reread!.items[0]!.label).not.toBe("Mutated");
   });
 
   it("goes away when the event is deleted", async () => {
     await memoryAdapter.events.remove("evt-gala");
-    expect(await memoryAdapter.floorplan.get("evt-gala")).toBeNull();
+    expect(await memoryAdapter.floorplan.list("evt-gala")).toEqual([]);
   });
 
-  it("refuses a plan for an event that does not exist", async () => {
-    await expect(memoryAdapter.floorplan.save("nope", { name: "x", items: [] })).rejects.toThrow(/no longer exists/i);
+  it("refuses a room on an event that does not exist", async () => {
+    await expect(memoryAdapter.floorplan.create("nope", { name: "x", items: [] })).rejects.toThrow(
+      /no longer exists/i,
+    );
+  });
+
+  it("refuses to save a room that no longer exists", async () => {
+    await expect(memoryAdapter.floorplan.save("nope", { name: "x", items: [] })).rejects.toThrow(
+      /no longer exists/i,
+    );
   });
 });
 
@@ -495,5 +714,129 @@ describe("settings", () => {
     const settings = await memoryAdapter.settings.get();
     expect(settings.homeGrouping).toBe("category");
     expect(settings.currency).toBe("GBP");
+  });
+});
+
+describe("rfps", () => {
+  it("returns each RFP with its responses attached, newest RFP first", async () => {
+    const rfps = await memoryAdapter.rfps.list("evt-gala");
+    expect(rfps.length).toBe(2);
+    for (let i = 1; i < rfps.length; i += 1) {
+      expect(rfps[i - 1]!.createdAt >= rfps[i]!.createdAt).toBe(true);
+    }
+    const catering = rfps.find((rfp) => rfp.id === "rfp-gala-catering")!;
+    expect(catering.responses.length).toBe(3);
+    expect(catering.responses.map((r) => r.vendorName)).toContain("Golden Gate Catering");
+  });
+
+  it("scopes RFPs to their event", async () => {
+    const kickoff = await memoryAdapter.rfps.list("evt-skickoff");
+    expect(kickoff.every((rfp) => rfp.eventId === "evt-skickoff")).toBe(true);
+    expect(kickoff.map((rfp) => rfp.id)).not.toContain("rfp-gala-catering");
+  });
+
+  it("adds a response and moves it through its statuses", async () => {
+    const added = await memoryAdapter.rfps.addResponse("evt-gala", "rfp-gala-catering", {
+      vendorName: "Marina Feasts",
+      quotedAmountCents: 2_600_000,
+    });
+    expect(added.status).toBe("pending");
+
+    const accepted = await memoryAdapter.rfps.setResponseStatus(
+      "evt-gala",
+      "rfp-gala-catering",
+      added.id,
+      "accepted",
+    );
+    expect(accepted.status).toBe("accepted");
+
+    const stored = (await memoryAdapter.rfps.list("evt-gala"))
+      .find((rfp) => rfp.id === "rfp-gala-catering")!;
+    expect(stored.responses.find((r) => r.id === added.id)!.status).toBe("accepted");
+  });
+
+  it("refuses to touch a response through the wrong event", async () => {
+    await expect(
+      memoryAdapter.rfps.addResponse("evt-skickoff", "rfp-gala-catering", { vendorName: "Nope" }),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("deletes an RFP's responses along with it", async () => {
+    await memoryAdapter.rfps.remove("evt-gala", "rfp-gala-catering");
+    const rfps = await memoryAdapter.rfps.list("evt-gala");
+    expect(rfps.map((rfp) => rfp.id)).not.toContain("rfp-gala-catering");
+    await expect(
+      memoryAdapter.rfps.setResponseStatus("evt-gala", "rfp-gala-catering", "rfpres-gala-catering-1", "received"),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+});
+
+describe("deposits", () => {
+  it("lists an event's deposits soonest-due first", async () => {
+    const deposits = await memoryAdapter.deposits.list("evt-gala");
+    expect(deposits.length).toBe(3);
+    const due = deposits.map((deposit) => deposit.dueDate ?? "9999");
+    expect([...due].sort()).toEqual(due);
+  });
+
+  it("creates, updates and removes a deposit", async () => {
+    const created = await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      amountCents: 120_000,
+    });
+    expect(created.status).toBe("pending");
+
+    const paid = await memoryAdapter.deposits.update("evt-gala", created.id, {
+      status: "paid",
+      paidBy: "Dana Kim",
+    });
+    expect(paid.status).toBe("paid");
+    expect(paid.paidBy).toBe("Dana Kim");
+
+    await memoryAdapter.deposits.remove("evt-gala", created.id);
+    const remaining = await memoryAdapter.deposits.list("evt-gala");
+    expect(remaining.map((deposit) => deposit.id)).not.toContain(created.id);
+  });
+});
+
+describe("team hours", () => {
+  it("lists an event's staff time, largest booking first", async () => {
+    const hours = await memoryAdapter.teamHours.list("evt-gala");
+    expect(hours.length).toBeGreaterThan(0);
+    const values = hours.map((entry) => entry.hours);
+    expect([...values].sort((a, b) => b - a)).toEqual(values);
+  });
+
+  it("scopes entries to their event", async () => {
+    const hours = await memoryAdapter.teamHours.list("evt-townhall");
+    expect(hours.every((entry) => entry.eventId === "evt-townhall")).toBe(true);
+  });
+});
+
+describe("product feedback", () => {
+  it("stores feedback for the signed-in user and returns it newest first", async () => {
+    const first = await memoryAdapter.feedback.create({
+      category: "idea",
+      message: "Let me duplicate an event from the calendar.",
+      pagePath: "/app/calendar",
+    });
+    const second = await memoryAdapter.feedback.create({
+      category: "bug",
+      message: "The checklist did not keep my filter.",
+      pagePath: "/app/events/evt-gala/checklist",
+    });
+
+    expect(first.userId).toBe("demo-owner");
+    expect(first.workspaceId).toBe("demo-owner");
+    expect(await memoryAdapter.feedback.list()).toEqual([second, first]);
+  });
+});
+
+describe("event deletion", () => {
+  it("cascades into rfps, deposits and team hours", async () => {
+    await memoryAdapter.events.remove("evt-gala");
+    expect(await memoryAdapter.rfps.list("evt-gala")).toEqual([]);
+    expect(await memoryAdapter.deposits.list("evt-gala")).toEqual([]);
+    expect(await memoryAdapter.teamHours.list("evt-gala")).toEqual([]);
   });
 });

@@ -30,11 +30,19 @@ import type {
   ChecklistItem,
   ChecklistItemDraft,
   ChecklistItemPatch,
+  CheckInStation,
+  CheckInStationDraft,
+  CheckInStationPatch,
+  Deposit,
+  DepositDraft,
+  DepositPatch,
   Event,
+  CustomReportRow,
   EventDraft,
   EventFilter,
   EventHealth,
   EventHistoryEntry,
+  FeedbackInboxItem,
   MoodBoardImage,
   EventPatch,
   EventRoi,
@@ -51,15 +59,32 @@ import type {
   MenuItemPatch,
   OpenTask,
   PortfolioSummary,
+  ProductFeedback,
+  ProductFeedbackDraft,
   PublicEventPayload,
   RaffleItem,
   RaffleItemDraft,
   RaffleItemPatch,
   RaffleTicket,
+  Rfp,
+  RfpDraft,
+  RfpPatch,
+  RfpResponse,
+  RfpResponseDraft,
+  RfpResponseStatus,
+  RfpWithResponses,
+  TeamHoursEntry,
+  TeamHoursDraft,
+  TeamHoursPatch,
   Registration,
+  RegistrationCheckInPatch,
   RegistrationDraft,
+  InviteResult,
+  WorkspaceMember,
+  WorkspaceRole,
   RegistrationStatus,
   RegistrationWithGuest,
+  WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
   RunOfShowItemPatch,
@@ -80,7 +105,15 @@ import type {
   VendorMessage,
   VendorMessageDraft,
   VendorPatch,
+  VolunteerShift,
+  VolunteerShiftDraft,
+  VolunteerShiftPatch,
 } from "./entities";
+import type { BillingInterval, PlanId } from "./plans";
+import type { WorkspaceAccessStatus } from "./workspaceAccess";
+import type { AccountExperience } from "./accountExperience";
+import type { PlanningBrief, PlanningSuggestions } from "./planner";
+import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -117,7 +150,15 @@ export interface RegistrationsRepository {
   list(): Promise<RegistrationWithGuest[]>;
   listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
+  /** Atomically creates a guest, confirmed registration and arrival record. */
+  createWalkIn(eventId: string, draft: WalkInRegistrationDraft): Promise<RegistrationWithGuest>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
+  /** Null clears the category. */
+  setSegment(id: string, segment: string | null): Promise<Registration>;
+  /** Null clears the organization. */
+  setOrganization(id: string, organization: string | null): Promise<Registration>;
+  /** Records arrival details, or clears the arrival timestamp to undo a check-in. */
+  setCheckIn(id: string, patch: RegistrationCheckInPatch): Promise<Registration>;
   remove(id: string): Promise<void>;
 }
 
@@ -139,6 +180,19 @@ export interface TicketsRepository extends EventScopedRepository<TicketType, Tic
   listAll(): Promise<TicketTypeWithEvent[]>;
   /** Public checkout against a share token. Fails if the allocation is exhausted. */
   purchase(shareToken: string, ticketTypeId: string, buyer: { name: string; contact: string; quantity: number }): Promise<void>;
+}
+
+/**
+ * RFPs and their replies.
+ *
+ * `list` returns each RFP with its responses already attached, because the tab has no
+ * view that shows an RFP without them and a per-RFP fetch would be N+1 for nothing.
+ */
+export interface RfpsRepository extends EventScopedRepository<Rfp, RfpDraft, RfpPatch> {
+  list(eventId: string): Promise<RfpWithResponses[]>;
+  addResponse(eventId: string, rfpId: string, draft: RfpResponseDraft): Promise<RfpResponse>;
+  setResponseStatus(eventId: string, rfpId: string, responseId: string, status: RfpResponseStatus): Promise<RfpResponse>;
+  removeResponse(eventId: string, rfpId: string, responseId: string): Promise<void>;
 }
 
 export interface TemplatesRepository {
@@ -166,8 +220,11 @@ export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft,
 }
 
 export interface FloorplanRepository {
-  get(eventId: string): Promise<Floorplan | null>;
-  save(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
+  /** Every room on the event, oldest first, so tab order is stable across reloads. */
+  list(eventId: string): Promise<Floorplan[]>;
+  create(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
+  save(id: string, draft: FloorplanDraft): Promise<Floorplan>;
+  remove(id: string): Promise<void>;
 }
 
 export interface EventHistoryRepository {
@@ -201,6 +258,45 @@ export interface AnalyticsRepository {
    * dashboard shipped.
    */
   openTasks(): Promise<OpenTask[]>;
+  /** Enterprise-only event-level dataset used for filters and CSV export. */
+  customReport(): Promise<CustomReportRow[]>;
+}
+
+export interface PlanningAssistantRepository {
+  /** Returns a proposal only. Applying any part of it is a separate, explicit write. */
+  plan(brief: PlanningBrief): Promise<PlanningSuggestions>;
+  /**
+   * One turn of the planning conversation. The transcript is sent whole rather than held
+   * server-side, so a reload or a second tab resumes the same conversation.
+   */
+  chat(input: { eventId: string; messages: AssistantChatMessage[] }): Promise<AssistantTurn>;
+}
+
+export interface SpreadsheetImportsRepository {
+  /** Reads one public Google Sheets tab through the authenticated server proxy. */
+  loadGoogleSheet(url: string): Promise<{ name: string; csv: string }>;
+}
+
+export interface MembersRepository {
+  list(): Promise<WorkspaceMember[]>;
+  /** Grants a seat to someone who has never signed in, and emails them a sign-in link. */
+  invite(email: string, role: WorkspaceRole): Promise<InviteResult>;
+  revokeInvite(email: string): Promise<void>;
+  setRole(userId: string, role: WorkspaceRole): Promise<WorkspaceMember>;
+  remove(userId: string): Promise<void>;
+}
+
+export interface FeedbackRepository {
+  /** Feedback belongs to the signed-in user, newest first. */
+  list(): Promise<ProductFeedback[]>;
+  /** Cross-workspace inbox. The API permits only approved Beebizy operators. */
+  listInbox(): Promise<FeedbackInboxItem[]>;
+  create(draft: ProductFeedbackDraft): Promise<ProductFeedback>;
+}
+
+export interface BillingRepository {
+  checkout(interval: BillingInterval): Promise<{ url: string }>;
+  portal(): Promise<{ url: string }>;
 }
 
 /** Identity and authorization as the server sees them. */
@@ -208,21 +304,39 @@ export interface Identity {
   userId: string;
   workspaceId: string;
   role: "owner" | "admin" | "member";
+  canReviewFeedback: boolean;
+  /** Presentation profile selected from the verified account, never from client input. */
+  experience: AccountExperience;
+  /** Whether this verified account may preview another customer's presentation. */
+  canSwitchExperience: boolean;
+  access: {
+    status: WorkspaceAccessStatus;
+    plan: PlanId | null;
+    betaStartedAt: string;
+    betaEndsAt: string;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    billingPortalAvailable?: boolean;
+  };
 }
 
 export interface DataAdapter {
   readonly kind: "memory" | "postgres";
+  /** Stable identity used to isolate authenticated query caches. */
+  readonly cacheScope: string;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
   events: EventsRepository;
   locations: OwnedRepository<Location, LocationDraft, LocationPatch>;
   guests: OwnedRepository<Guest, GuestDraft, GuestPatch>;
   registrations: RegistrationsRepository;
+  checkInStations: EventScopedRepository<CheckInStation, CheckInStationDraft, CheckInStationPatch>;
   vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch>;
   vendorMessages: VendorMessagesRepository;
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
+  volunteers: EventScopedRepository<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>;
   budget: EventScopedRepository<BudgetItem, BudgetItemDraft, BudgetItemPatch>;
   menu: EventScopedRepository<MenuItem, MenuItemDraft, MenuItemPatch>;
   moodBoard: EventScopedRepository<MoodBoardImage, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>;
@@ -230,13 +344,21 @@ export interface DataAdapter {
   auction: EventScopedRepository<AuctionItem, AuctionItemDraft, AuctionItemPatch>;
   raffle: RaffleRepository;
   sponsorships: EventScopedRepository<Sponsorship, SponsorshipDraft, SponsorshipPatch>;
+  rfps: RfpsRepository;
+  deposits: EventScopedRepository<Deposit, DepositDraft, DepositPatch>;
+  teamHours: EventScopedRepository<TeamHoursEntry, TeamHoursDraft, TeamHoursPatch>;
   templates: TemplatesRepository;
   canvases: CanvasesRepository;
   settings: SettingsRepository;
   floorplan: FloorplanRepository;
+  members: MembersRepository;
+  feedback: FeedbackRepository;
+  billing: BillingRepository;
   history: EventHistoryRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;
+  assistant: PlanningAssistantRepository;
+  imports: SpreadsheetImportsRepository;
 }
 
 /** Thrown by adapters so the UI can render a specific, non-generic message. */

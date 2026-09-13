@@ -8,6 +8,7 @@
  * old page never said: how ready this event is and what is wrong with it.
  */
 
+import { useEffect, useRef, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import {
   ArrowLeft,
@@ -47,16 +48,44 @@ import {
   ReadinessRing,
   RiskPill,
 } from "@/components/primitives";
-import { useDeleteEvent, useEvent, useEventHealth, useSaveEventAsTemplate } from "@/data/hooks";
+import {
+  useAddChecklistItem,
+  useChecklist,
+  useDeleteEvent,
+  useEvent,
+  useEventHealth,
+  useMe,
+  useSaveEventAsTemplate,
+} from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
-import { EVENT_SECTIONS, eventSectionHref, sectionFromSlug } from "@/app/shell/nav";
-import type { Event, EventHealth, EventSectionId } from "@/data/entities";
+import { eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
+import type { Event, EventHealth } from "@/data/entities";
+import { effectivePlan, type PlanId } from "@/data/plans";
+import type { AccountExperience } from "@/data/accountExperience";
+import { useAccountExperience } from "@/app/useAccountExperience";
 import OverviewSection from "./sections/OverviewSection";
-import PlanSection from "./sections/PlanSection";
 import GuestsSection from "./sections/GuestsSection";
-import VendorsSection from "./sections/VendorsSection";
-import BudgetSection from "./sections/BudgetSection";
 import ShareSection from "./sections/ShareSection";
+import FloorplanPanel from "./sections/FloorplanPanel";
+import RfpPanel from "./sections/RfpPanel";
+import DepositsPanel from "./sections/DepositsPanel";
+import AnalyticsPanel from "./sections/AnalyticsPanel";
+import { CheckInPanel } from "./sections/CheckInPanel";
+import VolunteersPanel from "./sections/VolunteersPanel";
+import FundraisingPanel from "./sections/FundraisingPanel";
+import LiveAuctionPanel from "./sections/LiveAuctionPanel";
+import PlanningAssistantPanel from "./sections/PlanningAssistantPanel";
+import { ChecklistPanel, MoodBoardPanel, RunOfShowPanel } from "./sections/PlanSection";
+import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/VendorsSection";
+import {
+  AuctionPanel,
+  BudgetPanel,
+  BudgetRoiSummary,
+  BudgetTotals,
+  RafflePanel,
+  RoiPanel,
+  TicketsPanel,
+} from "./sections/BudgetSection";
 
 /**
  * "12 Mar 2026, 6:00 PM – 11:00 PM" for a single day, "– 13 Mar, 2:00 AM" when it runs
@@ -71,24 +100,44 @@ function formatRange(event: Event, prefs: Preferences): string {
   return `${startText} – ${endText}`;
 }
 
-function SectionTabs({ eventId, active }: { eventId: string; active: EventSectionId }) {
+function SectionTabs({
+  eventId,
+  active,
+  plan,
+  experience,
+}: {
+  eventId: string;
+  active: EventTabId;
+  plan: PlanId;
+  experience: AccountExperience;
+}) {
+  const activeRef = useRef<HTMLAnchorElement>(null);
+
+  // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
+  // a late tab like Deposits shows a bar that does not contain the tab you are on.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
+
   return (
     <nav aria-label="Event sections" className="-mb-px flex gap-1 overflow-x-auto">
-      {EVENT_SECTIONS.map((section) => {
-        const isActive = section.id === active;
+      {visibleEventTabs(plan, experience).map((tab) => {
+        const isActive = tab.id === active;
         return (
           <Link
-            key={section.id}
-            href={eventSectionHref(eventId, section.id)}
+            key={tab.id}
+            ref={isActive ? activeRef : undefined}
+            href={eventTabHref(eventId, tab.id)}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm transition-colors",
+              "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
               isActive
-                ? "border-primary font-semibold text-foreground"
-                : "border-transparent font-medium text-muted-foreground hover:border-hairline hover:text-foreground",
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:border-hairline hover:text-foreground",
             )}
           >
-            {section.label}
+            {tab.icon ? <tab.icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+            {tab.label}
           </Link>
         );
       })}
@@ -109,7 +158,7 @@ function RiskStrip({ health, eventId }: { health: EventHealth; eventId: string }
             <RiskPill level={risk.level} />
             <span className="min-w-0 flex-1 truncate text-foreground">{risk.message}</span>
             <span className="shrink-0 text-xs font-medium text-muted-foreground">
-              Fix in {EVENT_SECTIONS.find((s) => s.id === risk.section)?.label}
+              Fix in {eventSectionLabel(risk.section)}
             </span>
           </Link>
         </li>
@@ -122,10 +171,14 @@ function WorkspaceHeader({
   event,
   health,
   active,
+  plan,
+  experience,
 }: {
   event: Event;
   health: EventHealth | null | undefined;
-  active: EventSectionId;
+  active: EventTabId;
+  plan: PlanId;
+  experience: AccountExperience;
 }) {
   const [, navigate] = useLocation();
   const prefs = usePreferences();
@@ -192,14 +245,16 @@ function WorkspaceHeader({
                 Edit
               </Link>
             </Button>
-            <Button asChild size="sm">
-              <Link href={eventSectionHref(event.id, "share")}>
-                <Share2 className="mr-1.5 size-3.5" />
-                Share
-              </Link>
-            </Button>
+            {experience === "standard" ? (
+              <Button asChild size="sm">
+                <Link href={eventSectionHref(event.id, "share")}>
+                  <Share2 className="mr-1.5 size-3.5" />
+                  Share
+                </Link>
+              </Button>
+            ) : null}
 
-            <DropdownMenu>
+            {experience === "standard" ? <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" aria-label="More actions">
                   ···
@@ -225,7 +280,7 @@ function WorkspaceHeader({
                   Save as template
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu> : null}
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -237,7 +292,7 @@ function WorkspaceHeader({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete “{event.title}”?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This also deletes its checklist, run of show, budget, vendors, tickets, fundraising and{" "}
+                    This also deletes its checklist, run of show, volunteers, budget, vendors, tickets, fundraising and{" "}
                     {event.registrationCount} registration{event.registrationCount === 1 ? "" : "s"}. It cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -266,11 +321,104 @@ function WorkspaceHeader({
         </div>
       </div>
 
-      {health ? <RiskStrip health={health} eventId={event.id} /> : null}
+      {health && experience === "standard" ? <RiskStrip health={health} eventId={event.id} /> : null}
 
       <div className="border-b border-hairline">
-        <SectionTabs eventId={event.id} active={active} />
+        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} />
       </div>
+    </div>
+  );
+}
+
+function ChecklistWorkspace({ event }: { event: Event }) {
+  const { data: checklist } = useChecklist(event.id);
+  const [showPlanningAssistant, setShowPlanningAssistant] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (checklist === undefined) return;
+    setShowPlanningAssistant((current) => current ?? checklist.length === 0);
+  }, [checklist]);
+
+  return (
+    <div className="space-y-6">
+      {showPlanningAssistant ? (
+        <PlanningAssistantPanel event={event} />
+      ) : showPlanningAssistant === false ? (
+        <Panel className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Need a new AI draft?</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Your saved checklist stays below. Open Bee only when you want new suggestions.
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setShowPlanningAssistant(true)}>
+            Open AI planner
+          </Button>
+        </Panel>
+      ) : null}
+      <ChecklistPanel event={event} />
+    </div>
+  );
+}
+
+const CONTINGENCY_STARTER = [
+  {
+    title: "Set the weather decision deadline",
+    description: "Choose the exact time and owner for the final go, modify or move decision.",
+  },
+  {
+    title: "Confirm the backup venue or indoor layout",
+    description: "Document capacity, access, power and vendor load-in changes for the fallback space.",
+  },
+  {
+    title: "Write guest and vendor weather messages",
+    description: "Prepare the email, text and on-site wording before a fast decision is needed.",
+  },
+  {
+    title: "Review safety, transport and accessibility impacts",
+    description: "Cover heat, rain, wind, parking, mobility routes and emergency responsibilities.",
+  },
+] as const;
+
+function ContingencyWorkspace({ event }: { event: Event }) {
+  const { data: checklist } = useChecklist(event.id);
+  const add = useAddChecklistItem();
+  const existing = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
+  const missing = CONTINGENCY_STARTER.filter((item) => !existing.has(item.title.toLowerCase()));
+
+  const addStarter = async () => {
+    const results = await Promise.allSettled(
+      missing.map((item, index) =>
+        add.mutateAsync({
+          eventId: event.id,
+          draft: { ...item, category: "Contingency", sortOrder: (checklist?.length ?? 0) + index + 1 },
+        }),
+      ),
+    );
+    const added = results.filter((result) => result.status === "fulfilled").length;
+    toast({
+      title: added === missing.length ? "Contingency plan started" : "Some contingency tasks could not be added",
+      description: `${added} editable task${added === 1 ? "" : "s"} added to the event checklist.`,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Panel className="p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-text">Team planning</p>
+            <h2 className="mt-1 text-lg font-bold text-foreground">Weather and contingency plan</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Turn backup decisions into owned, editable tasks before weather, access or safety conditions change.
+            </p>
+          </div>
+          <Button type="button" size="sm" onClick={() => void addStarter()} disabled={missing.length === 0 || add.isPending}>
+            {missing.length === 0 ? "Starter added" : `Add ${missing.length} starter tasks`}
+          </Button>
+        </div>
+      </Panel>
+      <ChecklistPanel event={event} />
     </div>
   );
 }
@@ -278,7 +426,10 @@ function WorkspaceHeader({
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
   const { data: health } = useEventHealth(id);
-  const active = sectionFromSlug(slug);
+  const { data: identity } = useMe();
+  const { experience } = useAccountExperience();
+  const active = tabFromSlug(slug);
+  const plan = effectivePlan(identity?.access);
 
   if (isLoading) {
     return (
@@ -306,19 +457,58 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   }
 
   // An unknown slug lands on Overview rather than a blank pane.
-  if (slug && !EVENT_SECTIONS.some((s) => s.slug === slug)) {
+  if (active === null) {
     return <Redirect to={`/app/events/${id}`} replace />;
+  }
+
+  if (experience === "santa-clara" && active === "overview") {
+    return <Redirect to={eventTabHref(id, "run-of-show")} replace />;
+  }
+
+  if (!visibleEventTabs(plan, experience).some((tab) => tab.id === active) && (active !== "share" || experience !== "standard")) {
+    return <Redirect to={experience === "santa-clara" ? eventTabHref(id, "run-of-show") : "/pricing"} replace />;
   }
 
   return (
     <div className="space-y-6">
-      <WorkspaceHeader event={event} health={health} active={active} />
+      <WorkspaceHeader event={event} health={health} active={active} plan={plan} experience={experience} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
-      {active === "plan" ? <PlanSection event={event} /> : null}
-      {active === "guests" ? <GuestsSection event={event} /> : null}
-      {active === "vendors" ? <VendorsSection event={event} /> : null}
-      {active === "budget" ? <BudgetSection event={event} /> : null}
+      {active === "registrations" ? <GuestsSection event={event} /> : null}
+      {active === "check-in" ? <CheckInPanel event={event} /> : null}
+      {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
+      {active === "checklist" ? <ChecklistWorkspace key={event.id} event={event} /> : null}
+      {active === "volunteers" ? <VolunteersPanel event={event} /> : null}
+      {active === "contingency" ? <ContingencyWorkspace key={event.id} event={event} /> : null}
+      {active === "vendors" ? (
+        <div className="space-y-6">
+          <VendorsPanel event={event} />
+          <VendorCoveragePanel event={event} />
+        </div>
+      ) : null}
+      {active === "budget" ? (
+        experience === "santa-clara" ? (
+          <BudgetPanel event={event} />
+        ) : (
+          <div className="space-y-6">
+            <BudgetTotals event={event} />
+            <BudgetPanel event={event} />
+            <BudgetRoiSummary event={event} />
+            <RoiPanel event={event} />
+          </div>
+        )
+      ) : null}
+      {active === "floorplan" ? <FloorplanPanel event={event} /> : null}
+      {active === "inspiration" ? <MoodBoardPanel event={event} /> : null}
+      {active === "fundraising" ? <FundraisingPanel event={event} /> : null}
+      {active === "analytics" ? <AnalyticsPanel event={event} /> : null}
       {active === "share" ? <ShareSection event={event} /> : null}
+      {active === "menu" ? <MenuPanel event={event} /> : null}
+      {active === "tickets" ? <TicketsPanel event={event} /> : null}
+      {active === "raffle" ? <RafflePanel event={event} /> : null}
+      {active === "silent-auction" ? <AuctionPanel event={event} only="silent" /> : null}
+      {active === "live-auction" ? <LiveAuctionPanel event={event} /> : null}
+      {active === "rfp" ? <RfpPanel event={event} /> : null}
+      {active === "deposits" ? <DepositsPanel event={event} /> : null}
     </div>
   );
 }
