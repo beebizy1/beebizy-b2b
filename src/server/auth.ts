@@ -26,6 +26,7 @@ import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
 import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
 import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
 import { accountExperienceForEmail } from "../data/accountExperience.ts";
+import { workspaceMemberInsertSelection } from "./workspaceMemberInsert.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -195,11 +196,7 @@ async function addWorkspaceMember(
     .insert(workspaceMembers)
     .select(
       db
-        .select({
-          workspaceId: workspaces.id,
-          userId: sql<string>`${userId}::text`.as("user_id"),
-          role: sql<Role>`${role}::workspace_role`.as("role"),
-        })
+        .select(workspaceMemberInsertSelection(userId, role))
         .from(workspaces)
         .where(
           and(
