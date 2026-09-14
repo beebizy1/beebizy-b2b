@@ -9,7 +9,7 @@ function occupiedSeats(workspaceId: string | SQLWrapper, additionalSeats: number
     (select count(*) from ${workspaceInvites}
       where ${workspaceInvites.workspaceId} = ${workspaceId}
         and ${workspaceInvites.acceptedAt} is null)
-    + ${additionalSeats}
+    + ${additionalSeats}::bigint
   )`;
 }
 
@@ -20,7 +20,7 @@ function occupiedSeats(workspaceId: string | SQLWrapper, additionalSeats: number
  * is still pending and its own plan cannot answer the question.
  */
 export function workspaceFitsSoloSeatLimit(workspaceId: string | SQLWrapper, additionalSeats = 0) {
-  return sql`${occupiedSeats(workspaceId, additionalSeats)} <= ${SOLO_LIMITS.teamMembers}`;
+  return sql`${occupiedSeats(workspaceId, additionalSeats)} <= ${SOLO_LIMITS.teamMembers}::bigint`;
 }
 
 /**
@@ -36,9 +36,9 @@ export function workspaceFitsPlanSeatLimit(workspaceId: string | SQLWrapper, add
     ${workspaces.subscriptionStatus} <> 'active'
     or ${workspaces.subscriptionPlan} is null
     or ${occupiedSeats(workspaceId, additionalSeats)} <= case ${workspaces.subscriptionPlan}
-         when 'solo' then ${SOLO_LIMITS.teamMembers}
-         when 'team' then ${TEAM_LIMITS.teamMembers}
-         else ${Number.MAX_SAFE_INTEGER}
+         when 'solo' then ${SOLO_LIMITS.teamMembers}::bigint
+         when 'team' then ${TEAM_LIMITS.teamMembers}::bigint
+         else ${Number.MAX_SAFE_INTEGER}::bigint
        end
   )`;
 }
