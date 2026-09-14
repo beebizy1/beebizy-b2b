@@ -35,6 +35,7 @@ import {
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { BOOKING_STATUSES, type BookingStatus, type Event } from "@/data/entities";
+import VendorCsvImportDialog from "@/screens/vendors/VendorCsvImportDialog";
 
 const COURSES = ["Breakfast", "Starter", "Main", "Dessert", "Lunch", "Canapés", "Drinks", "Other"];
 
@@ -227,6 +228,7 @@ export function VendorsPanel({ event }: { event: Event }) {
         <Button asChild variant="outline" size="sm">
           <Link href="/app/vendors/new">New vendor</Link>
         </Button>
+        <VendorCsvImportDialog eventId={event.id} />
       </form>
 
       {isError ? (

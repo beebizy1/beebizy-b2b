@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Clock3, HeartHandshake, Pencil, Plus, Search, Trash2, UserCheck } from "lucide-react";
+import { Clock3, HeartHandshake, Mail, Pencil, Plus, Search, Trash2, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -93,6 +93,7 @@ function VolunteerEditor({
       <label className="space-y-1 text-xs font-medium text-muted-foreground">
         Email
         <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Optional" maxLength={320} />
+        <span className="block font-normal">Adding an email sends the shift and a Beebizy link.</span>
       </label>
       <label className="space-y-1 text-xs font-medium text-muted-foreground">
         Phone
@@ -251,6 +252,7 @@ export default function VolunteersPanel({ event }: { event: Event }) {
                           <Clock3 className="size-3.5" />{volunteer.startTime}–{volunteer.endTime} · {shiftLength(volunteer.startTime, volunteer.endTime)}
                         </span>
                         {volunteer.email ? <span>{volunteer.email}</span> : null}
+                        {volunteer.email ? <span className="inline-flex items-center gap-1 text-info-text"><Mail className="size-3.5" />Email notification enabled</span> : null}
                         {volunteer.phone ? <span>{volunteer.phone}</span> : null}
                       </div>
                       {volunteer.notes ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{volunteer.notes}</p> : null}

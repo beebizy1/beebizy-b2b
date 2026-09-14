@@ -18,6 +18,7 @@ import type {
   FloorplanRepository,
   MembersRepository,
   EventHistoryRepository,
+  TeamUpdatesRepository,
   FeedbackRepository,
   OwnedRepository,
   RaffleRepository,
@@ -32,6 +33,7 @@ import type {
 import { DataError } from "../adapter";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
+import { teamUpdateFromHistory } from "../teamUpdates";
 import type {
   Guest,
   GuestDraft,
@@ -84,6 +86,8 @@ import type {
   TeamHoursEntry,
   TeamHoursDraft,
   TeamHoursPatch,
+  TeamUpdate,
+  TeamUpdateDraft,
   Registration,
   RegistrationStatus,
   RegistrationWithGuest,
@@ -1682,6 +1686,34 @@ const history: EventHistoryRepository = {
   },
 };
 
+const teamUpdates: TeamUpdatesRepository = {
+  async list(eventId) {
+    await wait();
+    return store().history
+      .filter((entry) => entry.eventId === eventId && entry.resource === "team-update")
+      .map(teamUpdateFromHistory)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async create(eventId, draft: TeamUpdateDraft) {
+    await wait();
+    requireEvent(eventId);
+    const record: TeamUpdate = { id: newId("update"), eventId, actorId: DEMO_OWNER_ID, kind: draft.kind, message: draft.message.trim(), createdAt: nowIso() };
+    store().history.push({
+      id: record.id,
+      eventId,
+      actorId: record.actorId,
+      resource: "team-update",
+      resourceId: record.id,
+      action: "created",
+      summary: record.message,
+      before: null,
+      after: { kind: record.kind, message: record.message },
+      createdAt: record.createdAt,
+    });
+    return copy(record);
+  },
+};
+
 const roi: RoiRepository = {
   async get(eventId) {
     await wait();
@@ -1937,6 +1969,7 @@ export const memoryAdapter: DataAdapter = {
   members,
   feedback,
   history,
+  teamUpdates,
   roi,
   analytics,
 };

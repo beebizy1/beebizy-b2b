@@ -3,7 +3,8 @@ import type { Event, RegistrationWithGuest } from "@/data/entities";
 
 export type CheckInPrintJob =
   | { kind: "guest-list" }
-  | { kind: "badge"; row: RegistrationWithGuest };
+  | { kind: "badge"; row: RegistrationWithGuest }
+  | { kind: "printer-test" };
 
 interface CheckInPrintSheetProps {
   event: Event;
@@ -25,7 +26,7 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
 
   return (
     <section className="check-in-print-area" aria-hidden="true">
-      <style>{job.kind === "badge" ? "@page { size: 4in 3in; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
+      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { size: 4in 3in; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
       {job.kind === "badge" ? (
         <div className="check-in-badge">
           <div className="check-in-badge-brand"><span />beebizy</div>
@@ -37,6 +38,14 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
             <span>{formatDate(event.date, "dayMonth")}</span>
             <span>{event.locationRecord?.name ?? event.location ?? ""}</span>
           </footer>
+        </div>
+      ) : job.kind === "printer-test" ? (
+        <div className="check-in-badge">
+          <div className="check-in-badge-brand"><span />beebizy</div>
+          <p className="check-in-badge-event">Printer test</p>
+          <h1>Badge ready</h1>
+          <p className="check-in-badge-organization">{event.title}</p>
+          <footer><span>4 × 3 inch badge</span><span>AirPrint test</span></footer>
         </div>
       ) : (
         <div className="check-in-guest-list">

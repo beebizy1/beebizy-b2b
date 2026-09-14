@@ -53,6 +53,20 @@ export function parseFloorplanDraft(input: unknown): FloorplanDraft {
   return floorplanDraftSchema.parse(input);
 }
 
+/** Physical area represented by the room outline, rounded to a whole square foot. */
+export function floorplanRoomSquareFeet(room: FloorplanRoom): number {
+  if (room.shape === "rectangle") return Math.round(room.widthFeet * room.lengthFeet);
+  if (room.shape === "oval") return Math.round(room.widthFeet * room.lengthFeet * Math.PI / 4);
+  if (room.points.length < 3) return 0;
+
+  const doubledArea = room.points.reduce((sum, point, index) => {
+    const next = room.points[(index + 1) % room.points.length]!;
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0);
+  const normalizedArea = Math.abs(doubledArea) / 2 / 10_000;
+  return Math.round(room.widthFeet * room.lengthFeet * normalizedArea);
+}
+
 interface StoredFloorplanDocument {
   version: 2;
   items: FloorplanItem[];

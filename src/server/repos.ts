@@ -60,16 +60,19 @@ import type {
   VolunteerShift,
   WalkInRegistrationDraft,
   WorkspaceMember,
+  TeamUpdate,
+  PublicAssignmentPayload,
 } from "../data/entities.ts";
 
-import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { REGISTRATION_STATUSES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
-import { notifyTaskAssignment } from "./notify.ts";
+import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
+import { notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 
@@ -713,6 +716,69 @@ export async function publicTickets(eventId: string) {
   return rows.map(map.toTicketType);
 }
 
+/** Public, token-scoped read that exposes one current assignment and no surrounding workspace data. */
+export async function publicAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+  const [link] = await db.select().from(s.eventHistory)
+    .where(and(eq(s.eventHistory.resource, "assignment-link"), eq(s.eventHistory.resourceId, token)))
+    .limit(1);
+  if (!link || !link.after) return null;
+  const kind = link.after.kind;
+  const assignmentId = link.after.assignmentId;
+  const email = link.after.email;
+  if ((kind !== "checklist" && kind !== "volunteer") || typeof assignmentId !== "string" || typeof email !== "string") return null;
+
+  const [eventRow] = await db.select({ event: s.events, location: s.locations }).from(s.events)
+    .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
+    .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId))).limit(1);
+  if (!eventRow) return null;
+  const eventFields = {
+    eventTitle: eventRow.event.title,
+    eventDate: eventRow.event.startsAt.toISOString(),
+    eventEndDate: eventRow.event.endsAt?.toISOString() ?? null,
+    location: eventRow.location
+      ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
+      : eventRow.event.venue,
+  };
+
+  if (kind === "checklist") {
+    const [item] = await db.select().from(s.checklistItems).where(and(
+      eq(s.checklistItems.id, assignmentId),
+      eq(s.checklistItems.eventId, link.eventId),
+      eq(s.checklistItems.workspaceId, link.workspaceId),
+      eq(s.checklistItems.assignedEmail, email),
+    )).limit(1);
+    if (!item) return null;
+    return {
+      kind,
+      ...eventFields,
+      assignee: item.assignedTo ?? email,
+      title: item.title,
+      description: item.description,
+      dueDate: item.dueDate?.toISOString() ?? null,
+      startTime: null,
+      endTime: null,
+    };
+  }
+
+  const [shift] = await db.select().from(s.volunteerShifts).where(and(
+    eq(s.volunteerShifts.id, assignmentId),
+    eq(s.volunteerShifts.eventId, link.eventId),
+    eq(s.volunteerShifts.workspaceId, link.workspaceId),
+    eq(s.volunteerShifts.email, email),
+  )).limit(1);
+  if (!shift) return null;
+  return {
+    kind,
+    ...eventFields,
+    assignee: shift.name,
+    title: shift.role,
+    description: shift.notes,
+    dueDate: null,
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+  };
+}
+
 /* ------------------------------------------------------------- locations */
 
 export const locations = {
@@ -1319,6 +1385,35 @@ function eventScoped<Entity>(config: {
 
 const scope = (ctx: RequestContext, eventId: string) => ({ workspaceId: ctx.workspaceId, eventId });
 
+const optionalEmail = (body: Body, key: string): string | null => {
+  const email = labelFrom(body, key, 320)?.toLowerCase() ?? null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpError(400, `${key} must be a valid email address.`);
+  }
+  return email;
+};
+
+async function createAssignmentAccess(
+  ctx: RequestContext,
+  eventId: string,
+  assignment: { kind: "checklist" | "volunteer"; id: string; email: string },
+): Promise<string> {
+  const token = newId("assignment");
+  await db.insert(s.eventHistory).values({
+    id: newId("hist"),
+    workspaceId: ctx.workspaceId,
+    eventId,
+    actorId: ctx.userId,
+    resource: "assignment-link",
+    resourceId: token,
+    action: "created",
+    summary: "Created a secure assignment link",
+    before: null,
+    after: { kind: assignment.kind, assignmentId: assignment.id, email: assignment.email },
+  });
+  return `${appOrigin()}/assignment/${token}`;
+}
+
 export const checklist = eventScoped({
   table: s.checklistItems as never,
   mapper: map.toChecklistItem as never,
@@ -1330,7 +1425,7 @@ export const checklist = eventScoped({
     completed: Boolean(body.completed),
     dueDate: parseOptionalDate(body.dueDate, "dueDate"),
     assignedTo: optStr(body, "assignedTo"),
-    assignedEmail: labelFrom(body, "assignedEmail", 320),
+    assignedEmail: optionalEmail(body, "assignedEmail"),
     category: str(body, "category", "General"),
     sortOrder,
   }),
@@ -1340,7 +1435,7 @@ export const checklist = eventScoped({
     completed: (b) => Boolean(b.completed),
     dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
     assignedTo: (b) => optStr(b, "assignedTo"),
-    assignedEmail: (b) => labelFrom(b, "assignedEmail", 320),
+    assignedEmail: (b) => optionalEmail(b, "assignedEmail"),
     category: (b) => str(b, "category", "General"),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
   },
@@ -1361,14 +1456,19 @@ export const checklist = eventScoped({
     const event = await events.get(ctx, eventId);
     if (!event) return;
 
-    await notifyTaskAssignment({
-      to: item.assignedEmail,
-      assigneeName: item.assignedTo,
-      taskTitle: item.title,
-      eventTitle: event.title,
-      dueDate: item.dueDate,
-      url: `${appOrigin()}/app/events/${eventId}/checklist`,
-    });
+    try {
+      const url = await createAssignmentAccess(ctx, eventId, { kind: "checklist", id: item.id, email: item.assignedEmail });
+      await notifyTaskAssignment({
+        to: item.assignedEmail,
+        assigneeName: item.assignedTo,
+        taskTitle: item.title,
+        eventTitle: event.title,
+        dueDate: item.dueDate,
+        url,
+      });
+    } catch (error) {
+      console.warn("TASK_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
+    }
   },
 });
 
@@ -1444,7 +1544,7 @@ export const volunteers = eventScoped({
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
     name: labelFrom(body, "name", 120) ?? str(body, "name"),
-    email: labelFrom(body, "email", 320),
+    email: optionalEmail(body, "email"),
     phone: labelFrom(body, "phone", 60),
     role: labelFrom(body, "role", 120) ?? str(body, "role"),
     startTime: localTime(body, "startTime"),
@@ -1455,7 +1555,7 @@ export const volunteers = eventScoped({
   }),
   patch: {
     name: (b) => labelFrom(b, "name", 120) ?? str(b, "name"),
-    email: (b) => labelFrom(b, "email", 320),
+    email: (b) => optionalEmail(b, "email"),
     phone: (b) => labelFrom(b, "phone", 60),
     role: (b) => labelFrom(b, "role", 120) ?? str(b, "role"),
     startTime: (b) => localTime(b, "startTime"),
@@ -1463,6 +1563,27 @@ export const volunteers = eventScoped({
     status: (b) => volunteerStatus(b),
     notes: (b) => labelFrom(b, "notes", 1_000),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+  afterWrite: async (ctx, eventId, after, before) => {
+    const shift = after as VolunteerShift;
+    const previous = before as VolunteerShift | null;
+    if (!shift.email || shift.email === previous?.email) return;
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    try {
+      const url = await createAssignmentAccess(ctx, eventId, { kind: "volunteer", id: shift.id, email: shift.email });
+      await notifyVolunteerAssignment({
+        to: shift.email,
+        volunteerName: shift.name,
+        role: shift.role,
+        eventTitle: event.title,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        url,
+      });
+    } catch (error) {
+      console.warn("VOLUNTEER_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
+    }
   },
 });
 
@@ -2366,6 +2487,43 @@ export const history = {
       .orderBy(desc(s.eventHistory.createdAt))
       .limit(100);
     return rows.map(map.toEventHistory);
+  },
+};
+
+export const teamUpdates = {
+  async list(ctx: RequestContext, eventId: string): Promise<TeamUpdate[]> {
+    await requireOwnedEvent(ctx, eventId);
+    const rows = await db.select().from(s.eventHistory)
+      .where(and(eq(s.eventHistory.workspaceId, ctx.workspaceId), eq(s.eventHistory.eventId, eventId), eq(s.eventHistory.resource, "team-update")))
+      .orderBy(desc(s.eventHistory.createdAt)).limit(50);
+    return rows.map(map.toEventHistory).map(teamUpdateFromHistory);
+  },
+  async create(ctx: RequestContext, eventId: string, body: Body): Promise<TeamUpdate> {
+    await requireOwnedEvent(ctx, eventId);
+    const message = labelFrom(body, "message", 1_000);
+    if (!message) throw new HttpError(400, "Write an update before sending it.");
+    const kind = str(body, "kind", "general");
+    if (!(TEAM_UPDATE_KINDS as readonly string[]).includes(kind)) throw new HttpError(400, "Choose a valid update type.");
+    const parsedKind = teamUpdateKind(kind);
+    const id = newId("update");
+    const createdAt = new Date();
+    await db.insert(s.eventHistory).values({
+      id, workspaceId: ctx.workspaceId, eventId, actorId: ctx.userId, resource: "team-update", resourceId: id,
+      action: "created", summary: message, before: null, after: { kind, message }, createdAt,
+    });
+    const update: TeamUpdate = { id, eventId, actorId: ctx.userId, kind: parsedKind, message, createdAt: createdAt.toISOString() };
+    const [event, team] = await Promise.all([events.get(ctx, eventId), members.list(ctx)]);
+    if (event) {
+      const outcomes = await Promise.all(team.filter((member) => member.status === "active" && member.email).map((member) => notifyTeamUpdate({
+        to: member.email!, eventTitle: event.title, kind: parsedKind,
+        message, url: `${appOrigin()}/app/events/${eventId}`,
+      })));
+      update.emailDelivery = {
+        sent: outcomes.filter((outcome) => outcome.status === "sent").length,
+        notSent: outcomes.filter((outcome) => outcome.status !== "sent").length,
+      };
+    }
+    return update;
   },
 };
 

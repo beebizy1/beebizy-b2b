@@ -67,6 +67,7 @@ import type {
   DepositPatch,
   TeamHoursDraft,
   TeamHoursPatch,
+  TeamUpdateDraft,
   TemplateContents,
   TemplateDraft,
   TicketTypeDraft,
@@ -139,6 +140,7 @@ export const qk = {
   settings: ["settings"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
   history: (eventId: string) => ["history", eventId] as const,
+  teamUpdates: (eventId: string) => ["teamUpdates", eventId] as const,
   roi: (eventId: string) => ["roi", eventId] as const,
 };
 
@@ -155,7 +157,7 @@ function eventDerivedKeys(eventId?: string): QueryKey[] {
 function useAdapterQuery<T>(
   key: QueryKey,
   select: (adapter: DataAdapter) => Promise<T>,
-  options?: { enabled?: boolean; staleTime?: number },
+  options?: { enabled?: boolean; staleTime?: number; refetchInterval?: number },
 ): UseQueryResult<T, Error> {
   const adapter = useData();
   return useQuery({
@@ -163,6 +165,7 @@ function useAdapterQuery<T>(
     queryFn: () => select(adapter),
     enabled: options?.enabled ?? true,
     staleTime: options?.staleTime ?? 15_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -604,6 +607,21 @@ export function useBudget(eventId: string) {
 
 export function useEventHistory(eventId: string) {
   return useAdapterQuery(qk.history(eventId), (a) => a.history.list(eventId), { enabled: !!eventId });
+}
+
+export function useTeamUpdates(eventId: string) {
+  return useAdapterQuery(qk.teamUpdates(eventId), (a) => a.teamUpdates.list(eventId), {
+    enabled: !!eventId,
+    staleTime: 0,
+    refetchInterval: 10_000,
+  });
+}
+
+export function usePostTeamUpdate() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: TeamUpdateDraft }) => a.teamUpdates.create(vars.eventId, vars.draft),
+    (vars) => [qk.teamUpdates(vars.eventId), qk.history(vars.eventId)],
+  );
 }
 
 export function useAddBudgetItem() {

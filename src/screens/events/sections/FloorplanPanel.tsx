@@ -48,6 +48,7 @@ import {
   type FloorplanRoomShape,
   type FloorplanShape,
 } from "@/data/entities";
+import { floorplanRoomSquareFeet } from "@/data/floorplan";
 import {
   DEFAULT_FLOORPLAN_ROOM,
   addRoomCorner,
@@ -78,6 +79,7 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   av: { label: "AV desk", width: 9, height: 7, seats: null, round: false, className: "bg-muted border-muted-foreground/40 text-muted-foreground" },
   tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
   chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
+  "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
@@ -458,6 +460,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
           <div className="pb-1 text-xs text-muted-foreground">
             {workingRoom.widthFeet} × {workingRoom.lengthFeet} ft
+            <span className="ml-1.5 font-medium text-foreground">· {floorplanRoomSquareFeet(workingRoom).toLocaleString()} sq ft</span>
             <span className="ml-1.5 text-[11px]">· canvas scales to fit</span>
           </div>
         </div>

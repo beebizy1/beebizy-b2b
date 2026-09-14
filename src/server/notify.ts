@@ -1,14 +1,16 @@
+import type { TeamUpdateKind } from "../data/entities.ts";
+
 /**
  * Outbound email.
  *
  * One function, one provider call, on purpose. The provider is the part most likely to
- * change — a Vercel Marketplace integration may replace it — so everything else in the
+ * change - a Vercel Marketplace integration may replace it - so everything else in the
  * codebase asks for `sendEmail` and knows nothing about who delivers it.
  *
  * Without a credential this reports `skipped` rather than throwing. A task assignment
  * must not fail because notification is unconfigured: the assignment is the user's work,
  * the email is a courtesy on top of it. The caller logs the outcome so an unconfigured
- * provider is visible in the logs instead of looking like a delivered message — the same
+ * provider is visible in the logs instead of looking like a delivered message - the same
  * failure that made the planner look like it was working when no model was running.
  */
 
@@ -23,9 +25,9 @@ export interface EmailMessage {
 
 export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
+  const from = process.env.EMAIL_FROM?.trim() || process.env.MAIL_FROM?.trim();
   if (!apiKey || !from) {
-    return { status: "skipped", reason: "RESEND_API_KEY or EMAIL_FROM is not configured" };
+    return { status: "skipped", reason: "RESEND_API_KEY or an email sender is not configured" };
   }
 
   try {
@@ -47,7 +49,7 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
 /**
  * Tells someone a task is theirs.
  *
- * Deliberately says what it is, when it is due and where to find it — an email that only
+ * Deliberately says what it is, when it is due and where to find it - an email that only
  * says "you have been assigned a task" makes the reader open the app to learn anything,
  * which is a notification that costs more attention than it saves.
  */
@@ -65,7 +67,7 @@ export async function notifyTaskAssignment(input: {
 
   const outcome = await sendEmail({
     to: input.to,
-    subject: `${input.taskTitle} — ${input.eventTitle}`,
+    subject: `${input.taskTitle} - ${input.eventTitle}`,
     text: [
       `${input.assigneeName ? `Hi ${input.assigneeName},` : "Hi,"}`,
       "",
@@ -81,5 +83,47 @@ export async function notifyTaskAssignment(input: {
   if (outcome.status !== "sent") {
     console.warn("TASK_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
   }
+  return outcome;
+}
+
+export async function notifyVolunteerAssignment(input: {
+  to: string;
+  volunteerName: string;
+  role: string;
+  eventTitle: string;
+  startTime: string;
+  endTime: string;
+  url: string;
+}): Promise<EmailOutcome> {
+  const outcome = await sendEmail({
+    to: input.to,
+    subject: `Your ${input.role} shift - ${input.eventTitle}`,
+    text: [
+      `Hi ${input.volunteerName},`,
+      "",
+      `You've been assigned to ${input.eventTitle}.`,
+      `Role: ${input.role}`,
+      `Shift: ${input.startTime}–${input.endTime}`,
+      "",
+      `View your private assignment here: ${input.url}`,
+    ].join("\n"),
+  });
+  if (outcome.status !== "sent") console.warn("VOLUNTEER_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
+  return outcome;
+}
+
+export async function notifyTeamUpdate(input: {
+  to: string;
+  eventTitle: string;
+  kind: TeamUpdateKind;
+  message: string;
+  url: string;
+}): Promise<EmailOutcome> {
+  const outcome = await sendEmail({
+    to: input.to,
+    subject: `Live ${input.kind === "vendor-delay" ? "vendor delay" : input.kind} update - ${input.eventTitle}`,
+    text: ["Hi team,", "", `A live update was posted for ${input.eventTitle}:`, "", input.message, "", `Open the event: ${input.url}`].join("\n"),
+  });
+  if (outcome.status !== "sent") console.warn("TEAM_UPDATE_EMAIL_NOT_SENT", outcome.status, outcome.reason);
   return outcome;
 }

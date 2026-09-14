@@ -59,6 +59,7 @@ describe("product navigation", () => {
       "Registrations",
       "Check-in",
       "Volunteers",
+      "Vendors",
     ]);
     expect(isAppPathAllowed("/app/events/event-1/checklist", "santa-clara")).toBe(true);
     expect(isAppPathAllowed("/app/plan", "santa-clara")).toBe(true);

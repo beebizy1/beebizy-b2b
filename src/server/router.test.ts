@@ -15,6 +15,7 @@ vi.mock("./repos", () => {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
     publicTickets: vi.fn(),
+    publicAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
     runOfShow: child,
@@ -33,6 +34,7 @@ vi.mock("./repos", () => {
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
     analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
     feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn() },
+    teamUpdates: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({ id: "update-1" }) },
   };
 });
 vi.mock("./billing", () => ({
@@ -43,7 +45,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback } = await import("./repos");
+const { feedback, publicAssignment } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -142,6 +144,38 @@ describe("public lead endpoint", () => {
     sendEmail.mockRestore();
     error.mockRestore();
     log.mockRestore();
+  });
+});
+
+describe("public assignment endpoint", () => {
+  it("returns one active assignment without requiring a user session", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicAssignment).mockResolvedValue({
+      kind: "volunteer",
+      eventTitle: "Demo Day",
+      eventDate: "2026-09-21T16:00:00.000Z",
+      eventEndDate: "2026-09-21T20:00:00.000Z",
+      location: "Mission Gardens",
+      assignee: "Ada",
+      title: "Welcome desk",
+      description: "Check in guests at the east entrance.",
+      dueDate: null,
+      startTime: "08:00",
+      endTime: "12:00",
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/assignment-token"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ title: "Welcome desk", assignee: "Ada" });
+    expect(publicAssignment).toHaveBeenCalledWith("assignment-token");
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when an assignment link is inactive", async () => {
+    vi.mocked(publicAssignment).mockResolvedValue(null);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token"));
+    expect(response.status).toBe(404);
   });
 });
 
@@ -325,5 +359,17 @@ describe("billing endpoints", () => {
     vi.mocked(authorize).mockResolvedValue({ ...owner, access: { ...owner.access, plan: "enterprise" } });
     expect((await handleRequest(new Request("http://localhost/api/boards"))).status).toBe(200);
     expect((await handleRequest(new Request("http://localhost/api/analytics/custom-report"))).status).toBe(200);
+  });
+
+  it("reads and posts live updates through the event route", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    const list = await handleRequest(new Request("http://localhost/api/events/evt-1/updates"));
+    const create = await handleRequest(new Request("http://localhost/api/events/evt-1/updates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "schedule", message: "Doors move to 8 AM" }),
+    }));
+    expect(list.status).toBe(200);
+    expect(create.status).toBe(201);
   });
 });

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, ImagePlus, ListChecks, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,6 +59,13 @@ function matchMember(members: WorkspaceMember[] | undefined, typed: string): Wor
   );
 }
 
+const ASSIGNEE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function assignmentEmail(members: WorkspaceMember[] | undefined, typed: string): string | null {
+  const value = typed.trim().toLowerCase();
+  return matchMember(members, typed)?.email ?? (ASSIGNEE_EMAIL.test(value) ? value : null);
+}
+
 const CHECKLIST_AREAS = [
   "Venue",
   "Catering",
@@ -84,10 +91,75 @@ function DueLabel({ item }: { item: ChecklistItem }) {
   return <>{date(item.dueDate, "dayMonth")}</>;
 }
 
-function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem }) {
+function dateInputValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function ChecklistRow({ eventId, item, members }: { eventId: string; item: ChecklistItem; members: WorkspaceMember[] | undefined }) {
   const update = useUpdateChecklistItem();
   const remove = useRemoveChecklistItem();
   const overdue = isOverdue(item);
+  const currentDraft = () => ({
+    title: item.title,
+    description: item.description ?? "",
+    dueDate: dateInputValue(item.dueDate),
+    assignedTo: item.assignedTo ?? "",
+    category: item.category,
+  });
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(currentDraft);
+  const assigneeListId = `checklist-assignees-${item.id}`;
+
+  if (editing) {
+    return (
+      <li className="bg-surface-sunken px-5 py-4">
+        <form
+          className="grid gap-2 md:grid-cols-2 xl:grid-cols-4"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            const title = draft.title.trim();
+            if (!title) return;
+            update.mutate(
+              {
+                eventId,
+                id: item.id,
+                patch: {
+                  title,
+                  description: draft.description.trim() || null,
+                  dueDate: draft.dueDate ? new Date(`${draft.dueDate}T12:00:00`).toISOString() : null,
+                  assignedTo: draft.assignedTo.trim() || null,
+                  assignedEmail: assignmentEmail(members, draft.assignedTo),
+                  category: draft.category,
+                },
+              },
+              {
+                onSuccess: () => setEditing(false),
+                onError: (error) => toast({ title: "Couldn't update task", description: error.message }),
+              },
+            );
+          }}
+        >
+          <Input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} aria-label="Task title" className="min-w-[12rem]" />
+          <Input value={draft.assignedTo} onChange={(event) => setDraft((current) => ({ ...current, assignedTo: event.target.value }))} aria-label="Task assignee name or email" placeholder="Name or email" list={assigneeListId} />
+          <datalist id={assigneeListId}>{(members ?? []).map((member) => <option key={member.userId ?? member.email} value={member.name ?? member.email ?? ""} />)}</datalist>
+          <Select value={draft.category} onValueChange={(category) => setDraft((current) => ({ ...current, category }))}>
+            <SelectTrigger aria-label="Task area"><SelectValue /></SelectTrigger>
+            <SelectContent>{CHECKLIST_AREAS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+          </Select>
+          <Input type="date" value={draft.dueDate} onChange={(event) => setDraft((current) => ({ ...current, dueDate: event.target.value }))} aria-label="Task due date" />
+          <Input value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} aria-label="Task notes" placeholder="Notes or instructions" className="md:col-span-2 xl:col-span-3" />
+          <div className="flex justify-end gap-2 md:col-span-2 xl:col-span-4">
+            <Button type="button" variant="outline" size="sm" onClick={() => { setDraft(currentDraft()); setEditing(false); }}><X className="mr-1.5 size-3.5" />Cancel</Button>
+            <Button type="submit" size="sm" disabled={!draft.title.trim() || update.isPending}><Check className="mr-1.5 size-3.5" />Save task</Button>
+          </div>
+        </form>
+      </li>
+    );
+  }
 
   return (
     <li className="group flex items-start gap-3 px-5 py-2.5">
@@ -115,8 +187,17 @@ function ChecklistRow({ eventId, item }: { eventId: string; item: ChecklistItem 
             </Pill>
           ) : null}
           {item.assignedTo ? <span className="text-xs text-muted-foreground">{item.assignedTo}</span> : null}
+          {item.assignedEmail ? <Pill tone="info"><Mail className="mr-1 size-3" />Email notification enabled</Pill> : null}
         </div>
       </div>
+      <button
+        type="button"
+        aria-label={`Edit task “${item.title}”`}
+        onClick={() => { setDraft(currentDraft()); setEditing(true); }}
+        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Pencil className="size-3.5" />
+      </button>
       <button
         type="button"
         aria-label={`Delete “${item.title}”`}
@@ -186,7 +267,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
           assignedTo: owner.trim() || null,
           // Matching a teammate is what makes the assignment notifiable. A name matching
           // nobody is still a valid assignment — it just cannot be emailed.
-          assignedEmail: matchMember(members, owner)?.email ?? null,
+          assignedEmail: assignmentEmail(members, owner),
         },
       },
       {
@@ -300,7 +381,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
               </GroupLabel>
               <ul className="divide-y divide-hairline">
                 {group.rows.map((item) => (
-                  <ChecklistRow key={item.id} eventId={event.id} item={item} />
+                  <ChecklistRow key={item.id} eventId={event.id} item={item} members={members} />
                 ))}
               </ul>
             </section>

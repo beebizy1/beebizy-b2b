@@ -229,6 +229,11 @@ async function handlePublic(segments: string[], method: string, request: Request
     return json({ event: shared.event, agenda, tickets, timeZone: shared.timeZone });
   }
 
+  if (segments[0] === "public" && segments[1] === "assignments" && segments[2] && method === "GET") {
+    const assignment = await repos.publicAssignment(segments[2]);
+    return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
+  }
+
   return null;
 }
 
@@ -373,6 +378,8 @@ async function handleAuthed(
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
         if (b === "walk-ins" && !c && method === "POST") return json(await repos.registrations.createWalkIn(ctx, a, body), 201);
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
+        if (b === "updates" && !c && method === "GET") return json(await repos.teamUpdates.list(ctx, a));
+        if (b === "updates" && !c && method === "POST") return json(await repos.teamUpdates.create(ctx, a, body), 201);
         if (b === "floorplans" && !c && method === "GET") return json(await repos.floorplan.list(ctx, a));
         if (b === "floorplans" && !c && method === "POST") {
           const draft = readFloorplanDraft(body);

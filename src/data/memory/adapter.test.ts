@@ -337,6 +337,19 @@ describe("volunteers", () => {
   });
 });
 
+describe("live team updates", () => {
+  it("stores an event-scoped update in newest-first order and event history", async () => {
+    const created = await memoryAdapter.teamUpdates.create("evt-cab", {
+      kind: "vendor-delay",
+      message: "Catering is 20 minutes late.",
+    });
+    expect(created).toMatchObject({ kind: "vendor-delay", message: "Catering is 20 minutes late." });
+    expect((await memoryAdapter.teamUpdates.list("evt-cab"))[0]).toMatchObject({ id: created.id });
+    expect((await memoryAdapter.teamUpdates.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
+    expect((await memoryAdapter.history.list("evt-cab")).some((row) => row.id === created.id && row.resource === "team-update")).toBe(true);
+  });
+});
+
 describe("check-in stations", () => {
   it("stores an event's entrance lanes and equipment plan", async () => {
     const created = await memoryAdapter.checkInStations.create("evt-cab", {

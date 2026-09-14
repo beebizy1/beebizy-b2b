@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Mail, UserPlus, Users } from "lucide-react";
+import { ListFilter, Mail, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -477,6 +477,24 @@ export default function GuestsSection({ event }: { event: Event }) {
           }
           actions={
             <>
+              <Select
+                value={segmentFilter ?? "__all__"}
+                onValueChange={(value) => {
+                  setSegmentFilter(value === "__all__" ? null : value);
+                  setOrganizationFilter(null);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[175px]" aria-label="Filter registrations by category">
+                  <ListFilter className="mr-1.5 size-3.5" aria-hidden="true" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All categories · {segments.reduce((total, [, count]) => total + count, 0)}</SelectItem>
+                  {segments.map(([key, count]) => (
+                    <SelectItem key={key} value={key}>{key === UNCATEGORISED ? "Uncategorised" : key} · {count}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
                 type="search"
                 value={search}

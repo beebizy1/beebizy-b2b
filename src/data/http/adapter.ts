@@ -47,6 +47,7 @@ import type {
   RunOfShowItem,
   Sponsorship,
   TeamHoursEntry,
+  TeamUpdate,
   Template,
   TemplateContents,
   TemplateDetail,
@@ -286,6 +287,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     deposits: eventScoped<Deposit, never, never>(client, "deposits") as DataAdapter["deposits"],
     teamHours: eventScoped<TeamHoursEntry, never, never>(client, "team-hours") as DataAdapter["teamHours"],
+    teamUpdates: {
+      list: (eventId) => client.get<TeamUpdate[]>(`/events/${eventId}/updates`),
+      create: (eventId, draft) => client.post<TeamUpdate>(`/events/${eventId}/updates`, draft),
+    },
 
     tickets: {
       ...(eventScoped<TicketType, never, never>(client, "ticket-types") as DataAdapter["tickets"]),

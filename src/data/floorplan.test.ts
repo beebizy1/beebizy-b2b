@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { parseFloorplanDraft, readStoredFloorplan, writeStoredFloorplan } from "./floorplan";
+import { floorplanRoomSquareFeet, parseFloorplanDraft, readStoredFloorplan, writeStoredFloorplan } from "./floorplan";
 import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
   it("supports Santa Clara site features and individual seating", () => {
-    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair"]));
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row"]));
+  });
+
+  it("calculates usable square footage for rectangular, oval and traced rooms", () => {
+    expect(floorplanRoomSquareFeet({ shape: "rectangle", widthFeet: 100, lengthFeet: 50, points: [] })).toBe(5_000);
+    expect(floorplanRoomSquareFeet({ shape: "oval", widthFeet: 100, lengthFeet: 50, points: [] })).toBe(3_927);
+    expect(floorplanRoomSquareFeet({
+      shape: "custom",
+      widthFeet: 100,
+      lengthFeet: 50,
+      points: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 100 }, { x: 0, y: 100 }],
+    })).toBe(2_500);
   });
   it("accepts a structured room layout", () => {
     expect(

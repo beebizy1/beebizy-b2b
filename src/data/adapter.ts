@@ -76,6 +76,8 @@ import type {
   TeamHoursEntry,
   TeamHoursDraft,
   TeamHoursPatch,
+  TeamUpdate,
+  TeamUpdateDraft,
   Registration,
   RegistrationCheckInPatch,
   RegistrationDraft,
@@ -232,6 +234,11 @@ export interface EventHistoryRepository {
   list(eventId: string): Promise<EventHistoryEntry[]>;
 }
 
+export interface TeamUpdatesRepository {
+  list(eventId: string): Promise<TeamUpdate[]>;
+  create(eventId: string, draft: TeamUpdateDraft): Promise<TeamUpdate>;
+}
+
 export interface RoiRepository {
   get(eventId: string): Promise<EventRoi | null>;
   save(eventId: string, roi: Omit<EventRoi, "eventId" | "updatedAt">): Promise<EventRoi>;
@@ -355,6 +362,7 @@ export interface DataAdapter {
   feedback: FeedbackRepository;
   billing: BillingRepository;
   history: EventHistoryRepository;
+  teamUpdates: TeamUpdatesRepository;
   roi: RoiRepository;
   analytics: AnalyticsRepository;
   assistant: PlanningAssistantRepository;

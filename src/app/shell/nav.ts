@@ -234,6 +234,7 @@ const SANTA_CLARA_EVENT_TAB_IDS: readonly EventTabId[] = [
   "registrations",
   "check-in",
   "volunteers",
+  "vendors",
 ];
 
 const SANTA_CLARA_EVENT_HINTS: Partial<Record<EventTabId, string>> = {
@@ -244,6 +245,7 @@ const SANTA_CLARA_EVENT_HINTS: Partial<Record<EventTabId, string>> = {
   registrations: "Group guests as investor, company or general",
   "check-in": "Import lists, record arrivals and print badges",
   volunteers: "Assign roles, shift times and operating notes",
+  vendors: "Import the vendor list and track bookings and delays",
 };
 
 export function visibleEventTabs(

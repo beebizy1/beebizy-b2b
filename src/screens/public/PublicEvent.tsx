@@ -22,7 +22,7 @@ import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from
 import type { Event } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 
-function PublicFrame({ children }: { children: React.ReactNode }) {
+export function PublicFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background">
       <header className="honeycomb border-b border-hairline">

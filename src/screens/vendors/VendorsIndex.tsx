@@ -27,6 +27,7 @@ import { useCreateVendor, useVendors } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import type { Vendor } from "@/data/entities";
 import { toast } from "@/hooks/use-toast";
+import VendorCsvImportDialog from "./VendorCsvImportDialog";
 
 const ALL = "__all__";
 
@@ -209,6 +210,7 @@ export default function VendorsIndex() {
         description="Add vendors your team already trusts or use marketplace suggestions by category and city. Book them from the event's Vendors section."
         actions={
           <div className="flex flex-wrap gap-2">
+            <VendorCsvImportDialog />
             <Button asChild variant="outline">
               <a href="https://app.beebizy.com/client-app/search-v2" target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="mr-1.5 size-4" />

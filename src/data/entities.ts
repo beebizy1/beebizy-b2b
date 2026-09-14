@@ -157,6 +157,7 @@ export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
  */
 export const REGISTRATION_SEGMENTS = [
   "Investor",
+  "Student",
   "Company",
   "General",
   "VIP",
@@ -572,6 +573,7 @@ export const FLOORPLAN_SHAPES = [
   "av",
   "tree",
   "chair",
+  "chair-row",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
@@ -648,6 +650,8 @@ export const HISTORY_RESOURCES = [
   "sponsorship",
   "raffle",
   "floorplan",
+  "team-update",
+  "assignment-link",
 ] as const;
 export type HistoryResource = (typeof HISTORY_RESOURCES)[number];
 export type HistoryAction = "created" | "updated" | "deleted";
@@ -668,6 +672,39 @@ export interface EventHistoryEntry {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   createdAt: IsoDateTime;
+}
+
+export const TEAM_UPDATE_KINDS = ["schedule", "vendor-delay", "general"] as const;
+export type TeamUpdateKind = (typeof TEAM_UPDATE_KINDS)[number];
+
+export interface TeamUpdate {
+  id: string;
+  eventId: string;
+  kind: TeamUpdateKind;
+  message: string;
+  actorId: string;
+  createdAt: IsoDateTime;
+  /** Present on a newly posted update. Historical reads do not replay delivery state. */
+  emailDelivery?: { sent: number; notSent: number };
+}
+
+export interface TeamUpdateDraft {
+  kind: TeamUpdateKind;
+  message: string;
+}
+
+export interface PublicAssignmentPayload {
+  kind: "checklist" | "volunteer";
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  eventEndDate: IsoDateTime | null;
+  location: string | null;
+  assignee: string;
+  title: string;
+  description: string | null;
+  dueDate: IsoDateTime | null;
+  startTime: string | null;
+  endTime: string | null;
 }
 
 export type EventHistoryChange = Pick<
