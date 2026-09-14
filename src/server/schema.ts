@@ -530,8 +530,8 @@ export const floorplans = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull().default("Room layout"),
-    /** Typed objects, validated at the API boundary — not the opaque blob Firestore held. */
-    items: jsonb("items").$type<unknown[]>().notNull().default([]),
+    /** Versioned room document. Legacy rows contain a bare array and are decoded compatibly. */
+    items: jsonb("items").$type<unknown>().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

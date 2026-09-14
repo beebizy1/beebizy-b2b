@@ -376,7 +376,7 @@ async function handleAuthed(
         if (b === "floorplans" && !c && method === "GET") return json(await repos.floorplan.list(ctx, a));
         if (b === "floorplans" && !c && method === "POST") {
           const draft = readFloorplanDraft(body);
-          return json(await repos.floorplan.create(ctx, a, draft.name, draft.items), 201);
+          return json(await repos.floorplan.create(ctx, a, draft), 201);
         }
         if (b === "roi" && method === "GET") return json(await repos.roi.get(ctx, a));
         if (b === "roi" && method === "PUT") return json(await repos.roi.save(ctx, a, body));
@@ -448,7 +448,7 @@ async function handleAuthed(
     case "floorplans": {
       if (a && method === "PUT") {
         const draft = readFloorplanDraft(body);
-        return json(await repos.floorplan.save(ctx, a, draft.name, draft.items));
+        return json(await repos.floorplan.save(ctx, a, draft));
       }
       if (a && method === "DELETE") {
         await repos.floorplan.remove(ctx, a);

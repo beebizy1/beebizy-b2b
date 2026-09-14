@@ -531,6 +531,19 @@ describe("floorplan", () => {
   it("round-trips a saved room", async () => {
     const created = await memoryAdapter.floorplan.create("evt-cab", {
       name: "U-shape, 24 seats",
+      room: {
+        shape: "l-shape",
+        widthFeet: 90,
+        lengthFeet: 60,
+        points: [
+          { x: 2, y: 2 },
+          { x: 98, y: 2 },
+          { x: 98, y: 48 },
+          { x: 58, y: 48 },
+          { x: 58, y: 98 },
+          { x: 2, y: 98 },
+        ],
+      },
       items: [
         { id: "a", shape: "long-table", label: "Top", x: 50, y: 20, seats: 8 },
         { id: "b", shape: "long-table", label: "Left", x: 20, y: 50, seats: 8 },
@@ -541,6 +554,7 @@ describe("floorplan", () => {
 
     const [reread] = await memoryAdapter.floorplan.list("evt-cab");
     expect(reread!.items).toHaveLength(3);
+    expect(reread!.room).toMatchObject({ shape: "l-shape", widthFeet: 90, lengthFeet: 60 });
     expect(reread!.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(24);
   });
 

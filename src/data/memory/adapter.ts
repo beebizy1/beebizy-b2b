@@ -1518,6 +1518,7 @@ const floorplan: FloorplanRepository = {
       eventId,
       name: draft.name,
       items: copy(draft.items),
+      room: draft.room ? copy(draft.room) : undefined,
       updatedAt: nowIso(),
     };
     store().floorplans.push(record);
@@ -1541,6 +1542,7 @@ const floorplan: FloorplanRepository = {
     const before = copy(existing) as unknown as Record<string, unknown>;
     existing.name = draft.name;
     existing.items = copy(draft.items);
+    existing.room = draft.room ? copy(draft.room) : undefined;
     existing.updatedAt = nowIso();
     appendHistory({
       eventId: existing.eventId,

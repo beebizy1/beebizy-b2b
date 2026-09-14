@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { FLOORPLAN_SHAPES, type FloorplanDraft } from "./entities.ts";
+import {
+  FLOORPLAN_ROOM_SHAPES,
+  FLOORPLAN_SHAPES,
+  type FloorplanDraft,
+  type FloorplanItem,
+  type FloorplanRoom,
+} from "./entities.ts";
+import { DEFAULT_FLOORPLAN_ROOM } from "./floorplanGeometry.ts";
 
 const floorplanItemSchema = z.object({
   id: z.string().trim().min(1).max(80),
@@ -11,9 +18,22 @@ const floorplanItemSchema = z.object({
   locked: z.boolean().optional(),
 });
 
+const floorplanPointSchema = z.object({
+  x: z.number().finite().min(0).max(100),
+  y: z.number().finite().min(0).max(100),
+});
+
+const floorplanRoomSchema = z.object({
+  shape: z.enum(FLOORPLAN_ROOM_SHAPES),
+  widthFeet: z.number().finite().positive().max(10_000),
+  lengthFeet: z.number().finite().positive().max(10_000),
+  points: z.array(floorplanPointSchema).min(3).max(24),
+});
+
 const floorplanDraftSchema = z.object({
   name: z.string().trim().min(1).max(120),
   items: z.array(floorplanItemSchema).max(500),
+  room: floorplanRoomSchema.optional(),
 }).superRefine((draft, context) => {
   const ids = new Set<string>();
   for (const [index, item] of draft.items.entries()) {
@@ -31,4 +51,45 @@ const floorplanDraftSchema = z.object({
 
 export function parseFloorplanDraft(input: unknown): FloorplanDraft {
   return floorplanDraftSchema.parse(input);
+}
+
+interface StoredFloorplanDocument {
+  version: 2;
+  items: FloorplanItem[];
+  room: FloorplanRoom;
+}
+
+/** Existing rows stored a bare item array. New rows keep room metadata beside it. */
+export function readStoredFloorplan(value: unknown): Pick<FloorplanDraft, "items" | "room"> {
+  if (Array.isArray(value)) {
+    const parsed = parseFloorplanDraft({ name: "Stored floorplan", items: value });
+    return { items: parsed.items, room: { ...DEFAULT_FLOORPLAN_ROOM, points: roomPointsCopy(DEFAULT_FLOORPLAN_ROOM) } };
+  }
+
+  if (value && typeof value === "object") {
+    const candidate = value as Partial<StoredFloorplanDocument>;
+    const parsed = parseFloorplanDraft({
+      name: "Stored floorplan",
+      items: candidate.items,
+      room: candidate.room,
+    });
+    return {
+      items: parsed.items,
+      room: parsed.room ?? { ...DEFAULT_FLOORPLAN_ROOM, points: roomPointsCopy(DEFAULT_FLOORPLAN_ROOM) },
+    };
+  }
+
+  throw new Error("Stored floorplan is not a valid document.");
+}
+
+function roomPointsCopy(room: FloorplanRoom) {
+  return room.points.map((point) => ({ ...point }));
+}
+
+export function writeStoredFloorplan(draft: FloorplanDraft): StoredFloorplanDocument {
+  return {
+    version: 2,
+    items: draft.items,
+    room: draft.room ?? { ...DEFAULT_FLOORPLAN_ROOM, points: roomPointsCopy(DEFAULT_FLOORPLAN_ROOM) },
+  };
 }

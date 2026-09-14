@@ -42,7 +42,7 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   Floorplan,
-  FloorplanItem,
+  FloorplanDraft,
   Location,
   OpenTask,
   PortfolioSummary,
@@ -68,7 +68,7 @@ import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
-import { parseFloorplanDraft } from "../data/floorplan.ts";
+import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { notifyTaskAssignment } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
@@ -2061,14 +2061,15 @@ export const floorplan = {
     return rows.map(map.toFloorplan);
   },
 
-  async create(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+  async create(ctx: RequestContext, eventId: string, draft: FloorplanDraft): Promise<Floorplan> {
     const context = await floorplanContext(ctx, eventId);
     const id = newId("fp");
     const updatedAt = new Date();
+    const stored = writeStoredFloorplan(draft);
     const [saved] = await db.batch([
       db
         .insert(s.floorplans)
-        .values({ id, eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
+        .values({ id, eventId, workspaceId: ctx.workspaceId, name: draft.name, items: stored, updatedAt })
         .returning(),
       db.insert(s.eventHistory).values(
         historyValues(ctx, {
@@ -2077,21 +2078,22 @@ export const floorplan = {
           resourceId: id,
           action: "created",
           before: null,
-          after: { id, eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
+          after: { id, eventId, ...draft, updatedAt: updatedAt.toISOString(), ...context },
         }),
       ),
     ]);
     return map.toFloorplan(saved[0]!);
   },
 
-  async save(ctx: RequestContext, id: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+  async save(ctx: RequestContext, id: string, draft: FloorplanDraft): Promise<Floorplan> {
     const before = await ownedFloorplan(ctx, id);
     const context = await floorplanContext(ctx, before.eventId);
     const updatedAt = new Date();
+    const stored = writeStoredFloorplan(draft);
     const [saved] = await db.batch([
       db
         .update(s.floorplans)
-        .set({ name, items, updatedAt })
+        .set({ name: draft.name, items: stored, updatedAt })
         .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
         .returning(),
       db.insert(s.eventHistory).values(
@@ -2101,7 +2103,7 @@ export const floorplan = {
           resourceId: id,
           action: "updated",
           before: map.toFloorplan(before) as unknown as Record<string, unknown>,
-          after: { id, eventId: before.eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
+          after: { id, eventId: before.eventId, ...draft, updatedAt: updatedAt.toISOString(), ...context },
         }),
       ),
     ]);
@@ -2397,8 +2399,8 @@ export const planningMemory = {
       const floorplanShapes: PastEventPlanningRecord["floorplanShapes"] = [];
       for (const row of planRows.filter((plan) => plan.eventId === event.id)) {
         try {
-          const parsed = parseFloorplanDraft({ name: row.name, items: row.items });
-          floorplanShapes.push(...parsed.items.map((item) => item.shape));
+          const stored = readStoredFloorplan(row.items);
+          floorplanShapes.push(...stored.items.map((item) => item.shape));
         } catch {
           // Older opaque layouts should not prevent the rest of the event evidence
           // from informing a new plan.

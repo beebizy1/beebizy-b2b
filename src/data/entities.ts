@@ -575,6 +575,26 @@ export const FLOORPLAN_SHAPES = [
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
+export const FLOORPLAN_ROOM_SHAPES = ["rectangle", "oval", "l-shape", "custom"] as const;
+export type FloorplanRoomShape = (typeof FLOORPLAN_ROOM_SHAPES)[number];
+
+export interface FloorplanPoint {
+  /** 0-100, percent of the floorplan canvas width. */
+  x: number;
+  /** 0-100, percent of the floorplan canvas height. */
+  y: number;
+}
+
+export interface FloorplanRoom {
+  shape: FloorplanRoomShape;
+  /** Physical room width in feet. */
+  widthFeet: number;
+  /** Physical room length in feet. */
+  lengthFeet: number;
+  /** Normalized outline vertices. Used by polygon rooms and editable in custom mode. */
+  points: FloorplanPoint[];
+}
+
 export interface FloorplanItem {
   id: string;
   shape: FloorplanShape;
@@ -599,12 +619,16 @@ export interface Floorplan {
   eventId: string;
   name: string;
   items: FloorplanItem[];
+  /** Optional for records created before room outlines were introduced. */
+  room?: FloorplanRoom;
   updatedAt: IsoDateTime;
 }
 
 export interface FloorplanDraft {
   name: string;
   items: FloorplanItem[];
+  /** Optional so older clients and stored plans remain valid. */
+  room?: FloorplanRoom;
 }
 
 /* ------------------------------------------------------------ event history */
