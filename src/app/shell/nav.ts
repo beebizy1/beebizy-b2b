@@ -240,7 +240,7 @@ const SANTA_CLARA_EVENT_HINTS: Partial<Record<EventTabId, string>> = {
   "run-of-show": "Build the minute-by-minute event schedule",
   checklist: "Assign every task, owner and due date",
   budget: "Track planned and actual line-item spend",
-  floorplan: "Place fixed trees, chairs, tables and event zones",
+  floorplan: "Place trees, chairs, tables and event zones",
   registrations: "Group guests as investor, company or general",
   "check-in": "Import lists, record arrivals and print badges",
   volunteers: "Assign roles, shift times and operating notes",

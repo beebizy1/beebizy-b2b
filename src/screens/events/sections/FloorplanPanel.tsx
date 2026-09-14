@@ -104,9 +104,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
       y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
       seats: spec.seats,
-      // Existing landscape features should not be nudged accidentally while the
-      // team arranges temporary furniture around them.
-      locked: shape === "tree",
+      // Every object starts movable. Teams can lock true fixed features after they
+      // have placed them, using the same control available for furniture.
+      locked: false,
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
@@ -386,8 +386,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag objects from the toolbar to place them. Trees start fixed in place. Select an object to lock or
-              unlock it, then use drag or the arrow keys to move it.
+              Drag objects from the toolbar to place them. Select any object to lock or unlock its position, then use
+              drag or the arrow keys to move it.
             </p>
           </div>
 
