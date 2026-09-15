@@ -19,6 +19,7 @@ describe("internal access allowlist", () => {
     expect(hasInternalAccess(" LAILA@BEEBIZY.COM ")).toBe(true);
     expect(hasInternalAccess("mary@beebizy.com")).toBe(true);
     expect(hasInternalAccess("Tarang@Beebizy.com")).toBe(true);
+    expect(hasInternalAccess(" SM.SHREYAMAHAJAN@GMAIL.COM ")).toBe(true);
   });
 
   it("rejects addresses outside the domain, and look-alikes of it", () => {
@@ -44,6 +45,7 @@ describe("internal access allowlist", () => {
     expect(isBeebizyOperator("mary@beebizy.com")).toBe(true);
     expect(isBeebizyOperator("tarang@beebizy.com")).toBe(true);
     expect(isBeebizyOperator("sabina@beebizy.com")).toBe(true);
+    expect(isBeebizyOperator("sm.shreyamahajan@gmail.com")).toBe(true);
     expect(isBeebizyOperator("partner@example.com")).toBe(false);
     // A pilot customer is not staff, however much they use the product.
     expect(isBeebizyOperator("carlin@page-oneevents.com")).toBe(false);

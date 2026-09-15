@@ -21,9 +21,10 @@ describe("account experience", () => {
     expect(accountExperienceForEmail(null)).toBe("standard");
   });
 
-  it("lets only Laila and Tarang switch between account experiences", () => {
+  it("lets approved product operators switch between account experiences", () => {
     expect(canSwitchAccountExperience("laila@beebizy.com")).toBe(true);
     expect(canSwitchAccountExperience(" TARANG@BEEBIZY.COM ")).toBe(true);
+    expect(canSwitchAccountExperience(" SM.SHREYAMAHAJAN@GMAIL.COM ")).toBe(true);
     expect(canSwitchAccountExperience("mary@beebizy.com")).toBe(false);
     expect(canSwitchAccountExperience("ccismasflorea@scu.edu")).toBe(false);
     expect(canSwitchAccountExperience(null)).toBe(false);

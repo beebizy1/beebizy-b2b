@@ -1,3 +1,5 @@
+import { PRODUCT_OPERATOR_EMAILS } from "@/lib/internalAccess";
+
 /**
  * Reversible account-specific product profiles.
  *
@@ -14,10 +16,7 @@ export const SANTA_CLARA_PILOT_EMAILS = [
 ] as const;
 
 /** Product owners who may preview customer-specific presentations after signing in. */
-export const ACCOUNT_EXPERIENCE_SWITCHER_EMAILS = [
-  "laila@beebizy.com",
-  "tarang@beebizy.com",
-] as const;
+export const ACCOUNT_EXPERIENCE_SWITCHER_EMAILS = PRODUCT_OPERATOR_EMAILS;
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 

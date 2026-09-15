@@ -9,8 +9,17 @@
  */
 export const INTERNAL_EMAIL_DOMAIN = "beebizy.com";
 
+/** Product operators who receive founder-level product controls. */
+export const PRODUCT_OPERATOR_EMAILS = [
+  "laila@beebizy.com",
+  "tarang@beebizy.com",
+  "sm.shreyamahajan@gmail.com",
+] as const;
+
 /** Staff who sign in with an address outside the domain. */
-export const INTERNAL_ACCESS_EMAILS: readonly string[] = [];
+export const INTERNAL_ACCESS_EMAILS: readonly string[] = PRODUCT_OPERATOR_EMAILS.filter(
+  (email) => !email.endsWith(`@${INTERNAL_EMAIL_DOMAIN}`),
+);
 
 const internalAccessEmailSet = new Set<string>(INTERNAL_ACCESS_EMAILS);
 
