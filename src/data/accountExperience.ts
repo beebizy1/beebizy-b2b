@@ -1,4 +1,4 @@
-import { PRODUCT_OPERATOR_EMAILS } from "@/lib/internalAccess";
+import { PRODUCT_OPERATOR_EMAILS } from "../lib/internalAccess.ts";
 
 /**
  * Reversible account-specific product profiles.

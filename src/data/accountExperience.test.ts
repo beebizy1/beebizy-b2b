@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   accountExperienceForEmail,
@@ -7,6 +8,12 @@ import {
 } from "./accountExperience";
 
 describe("account experience", () => {
+  it("uses Node-resolvable imports because the module also runs inside the Vercel API function", () => {
+    const source = readFileSync(new URL("./accountExperience.ts", import.meta.url), "utf8");
+
+    expect(source).not.toMatch(/from\s+["']@\//);
+  });
+
   it("recognizes only the two verified Santa Clara pilot accounts", () => {
     expect(accountExperienceForEmail("ccismasflorea@scu.edu")).toBe("santa-clara");
     expect(accountExperienceForEmail(" PoorviShukla27@Gmail.com ")).toBe("santa-clara");
