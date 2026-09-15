@@ -7,7 +7,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Link } from "wouter";
+import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,8 +41,9 @@ import {
   useUpdateChecklistItem,
   useMembers,
   useUpdateRunOfShowItem,
+  useVendors,
 } from "@/data/hooks";
-import type { ChecklistItem, Event, RunOfShowItem, WorkspaceMember } from "@/data/entities";
+import type { ChecklistItem, Event, RunOfShowItem, Vendor, WorkspaceMember } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
 
 /**
@@ -99,7 +101,7 @@ function dateInputValue(value: string | null): string {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-function ChecklistRow({ eventId, item, members }: { eventId: string; item: ChecklistItem; members: WorkspaceMember[] | undefined }) {
+function ChecklistRow({ eventId, item, members, vendors }: { eventId: string; item: ChecklistItem; members: WorkspaceMember[] | undefined; vendors: Vendor[] | undefined }) {
   const update = useUpdateChecklistItem();
   const remove = useRemoveChecklistItem();
   const overdue = isOverdue(item);
@@ -108,11 +110,13 @@ function ChecklistRow({ eventId, item, members }: { eventId: string; item: Check
     description: item.description ?? "",
     dueDate: dateInputValue(item.dueDate),
     assignedTo: item.assignedTo ?? "",
+    vendorId: item.vendorId ?? "__none__",
     category: item.category,
   });
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(currentDraft);
   const assigneeListId = `checklist-assignees-${item.id}`;
+  const linkedVendor = vendors?.find((vendor) => vendor.id === item.vendorId);
 
   if (editing) {
     return (
@@ -133,6 +137,7 @@ function ChecklistRow({ eventId, item, members }: { eventId: string; item: Check
                   dueDate: draft.dueDate ? new Date(`${draft.dueDate}T12:00:00`).toISOString() : null,
                   assignedTo: draft.assignedTo.trim() || null,
                   assignedEmail: assignmentEmail(members, draft.assignedTo),
+                  vendorId: draft.vendorId === "__none__" ? null : draft.vendorId,
                   category: draft.category,
                 },
               },
@@ -151,6 +156,10 @@ function ChecklistRow({ eventId, item, members }: { eventId: string; item: Check
             <SelectContent>{CHECKLIST_AREAS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
           </Select>
           <Input type="date" value={draft.dueDate} onChange={(event) => setDraft((current) => ({ ...current, dueDate: event.target.value }))} aria-label="Task due date" />
+          <Select value={draft.vendorId} onValueChange={(vendorId) => setDraft((current) => ({ ...current, vendorId }))}>
+            <SelectTrigger aria-label="Linked vendor"><SelectValue placeholder="Link vendor" /></SelectTrigger>
+            <SelectContent><SelectItem value="__none__">No linked vendor</SelectItem>{(vendors ?? []).map((vendor) => <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>)}</SelectContent>
+          </Select>
           <Input value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} aria-label="Task notes" placeholder="Notes or instructions" className="md:col-span-2 xl:col-span-3" />
           <div className="flex justify-end gap-2 md:col-span-2 xl:col-span-4">
             <Button type="button" variant="outline" size="sm" onClick={() => { setDraft(currentDraft()); setEditing(false); }}><X className="mr-1.5 size-3.5" />Cancel</Button>
@@ -187,6 +196,9 @@ function ChecklistRow({ eventId, item, members }: { eventId: string; item: Check
             </Pill>
           ) : null}
           {item.assignedTo ? <span className="text-xs text-muted-foreground">{item.assignedTo}</span> : null}
+          {item.vendorId ? <Link href={`/app/vendors/${item.vendorId}`} className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Pill tone="neutral" className="hover:text-foreground"><Store className="mr-1 size-3" />{linkedVendor?.name ?? "Linked vendor"}</Pill></Link> : null}
+          {linkedVendor?.contactEmail ? <a className="text-xs text-info-text hover:underline" href={`mailto:${linkedVendor.contactEmail}`}>{linkedVendor.contactEmail}</a> : null}
+          {linkedVendor?.contactPhone ? <a className="text-xs text-muted-foreground hover:underline" href={`tel:${linkedVendor.contactPhone}`}>{linkedVendor.contactPhone}</a> : null}
           {item.assignedEmail ? <Pill tone="info"><Mail className="mr-1 size-3" />Email notification enabled</Pill> : null}
         </div>
       </div>
@@ -219,9 +231,12 @@ export function ChecklistPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useChecklist(event.id);
   const add = useAddChecklistItem();
   const { data: members } = useMembers();
+  const { data: vendors } = useVendors();
   const [title, setTitle] = useState("");
   const [area, setArea] = useState("General");
   const [owner, setOwner] = useState("");
+  const [vendorId, setVendorId] = useState("__none__");
+  const [ownerFilter, setOwnerFilter] = useState("__all__");
   // Completed items stay on the list. Hiding them made ticking a task look like it
   // deleted the task — the row vanished and only the progress bar moved, so the tick
   // you just earned was never visible.
@@ -230,6 +245,18 @@ export function ChecklistPanel({ event }: { event: Event }) {
   const done = (items ?? []).filter((item) => item.completed).length;
   const total = items?.length ?? 0;
   const overdueCount = (items ?? []).filter(isOverdue).length;
+  const ownerSummary = useMemo(() => {
+    const tally = new Map<string, { total: number; done: number; overdue: number }>();
+    for (const item of items ?? []) {
+      const key = item.assignedTo?.trim() || "Unassigned";
+      const current = tally.get(key) ?? { total: 0, done: 0, overdue: 0 };
+      current.total += 1;
+      if (item.completed) current.done += 1;
+      if (isOverdue(item)) current.overdue += 1;
+      tally.set(key, current);
+    }
+    return [...tally.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [items]);
 
   // The library hides anything already here, matched on title.
   const existingTitles = useMemo(() => new Set((items ?? []).map((item) => item.title)), [items]);
@@ -237,7 +264,10 @@ export function ChecklistPanel({ event }: { event: Event }) {
 
   /** Overdue areas float to the top; completed items hide behind a toggle. */
   const groups = useMemo(() => {
-    const visible = (items ?? []).filter((item) => showCompleted || !item.completed);
+    const visible = (items ?? []).filter((item) =>
+      (showCompleted || !item.completed) &&
+      (ownerFilter === "__all__" || (item.assignedTo?.trim() || "Unassigned") === ownerFilter),
+    );
     const map = new Map<string, ChecklistItem[]>();
     for (const item of visible) {
       const bucket = map.get(item.category);
@@ -251,11 +281,11 @@ export function ChecklistPanel({ event }: { event: Event }) {
         overdue: rows.filter(isOverdue).length,
       }))
       .sort((a, b) => b.overdue - a.overdue || a.category.localeCompare(b.category));
-  }, [items, showCompleted]);
+  }, [items, ownerFilter, showCompleted]);
 
   const submit = () => {
     const trimmed = title.trim();
-    if (!trimmed) return;
+    if (!trimmed || !owner.trim()) return;
     add.mutate(
       {
         eventId: event.id,
@@ -268,12 +298,14 @@ export function ChecklistPanel({ event }: { event: Event }) {
           // Matching a teammate is what makes the assignment notifiable. A name matching
           // nobody is still a valid assignment — it just cannot be emailed.
           assignedEmail: assignmentEmail(members, owner),
+          vendorId: vendorId === "__none__" ? null : vendorId,
         },
       },
       {
         onSuccess: () => {
           setTitle("");
           setOwner("");
+          setVendorId("__none__");
         },
         onError: (mutationError) => toast({ title: "Couldn't add task", description: mutationError.message }),
       },
@@ -311,6 +343,8 @@ export function ChecklistPanel({ event }: { event: Event }) {
           />
         </div>
       ) : null}
+
+      {ownerSummary.length > 0 ? <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"><span className="text-xs font-medium text-muted-foreground">Status by owner</span><Button variant={ownerFilter === "__all__" ? "secondary" : "outline"} size="sm" onClick={() => setOwnerFilter("__all__")}>Everyone · {total - done} open{overdueCount ? ` · ${overdueCount} overdue` : ""}</Button>{ownerSummary.map(([name, summary]) => <Button key={name} variant={ownerFilter === name ? "secondary" : "outline"} size="sm" onClick={() => setOwnerFilter(ownerFilter === name ? "__all__" : name)}>{name} · {summary.total - summary.done ? `${summary.total - summary.done} open` : "Complete"}{summary.overdue ? ` · ${summary.overdue} overdue` : summary.total !== summary.done ? " · on track" : ""}</Button>)}</div> : null}
 
       <form
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
@@ -351,10 +385,15 @@ export function ChecklistPanel({ event }: { event: Event }) {
             ))}
           </SelectContent>
         </Select>
-        <Button type="submit" size="sm" disabled={!title.trim() || add.isPending}>
+        <Select value={vendorId} onValueChange={(value) => { setVendorId(value); if (!owner.trim() && value !== "__none__") setOwner(vendors?.find((vendor) => vendor.id === value)?.name ?? ""); }}>
+          <SelectTrigger className="w-[175px]" aria-label="Link task to vendor"><SelectValue placeholder="Link vendor" /></SelectTrigger>
+          <SelectContent><SelectItem value="__none__">No linked vendor</SelectItem>{(vendors ?? []).map((vendor) => <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button type="submit" size="sm" disabled={!title.trim() || !owner.trim() || add.isPending}>
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
+        {!owner.trim() ? <span className="w-full text-xs text-warning-text">Assign an owner before adding the task.</span> : null}
       </form>
 
       {isError ? (
@@ -381,7 +420,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
               </GroupLabel>
               <ul className="divide-y divide-hairline">
                 {group.rows.map((item) => (
-                  <ChecklistRow key={item.id} eventId={event.id} item={item} members={members} />
+                  <ChecklistRow key={item.id} eventId={event.id} item={item} members={members} vendors={vendors} />
                 ))}
               </ul>
             </section>

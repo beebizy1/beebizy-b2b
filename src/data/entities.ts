@@ -209,6 +209,14 @@ export interface RegistrationDraft {
   organization?: string | null;
 }
 
+/** Details a guest submits from one of the event's segment-specific registration links. */
+export interface PublicRegistrationDraft {
+  name: string;
+  email: string;
+  segment: string;
+  organization?: string | null;
+}
+
 export interface RegistrationCheckInPatch {
   checkedInAt: IsoDateTime | null;
   checkInStation?: string | null;
@@ -365,6 +373,8 @@ export interface ChecklistItem {
    * name that belongs to nobody in the workspace leaves this null and sends nothing.
    */
   assignedEmail: string | null;
+  /** Optional direct connection to the vendor responsible for this task. */
+  vendorId?: string | null;
   category: string;
   sortOrder: number;
   createdAt: IsoDateTime;
@@ -377,6 +387,7 @@ export interface ChecklistItemDraft {
   dueDate?: IsoDateTime | null;
   assignedTo?: string | null;
   assignedEmail?: string | null;
+  vendorId?: string | null;
   category?: string;
   sortOrder?: number;
 }
@@ -418,6 +429,8 @@ export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
 export interface VolunteerShift {
   id: string;
   eventId: string;
+  /** Staffing requirement this assignment fills. Null for an ad-hoc shift. */
+  needId: string | null;
   name: string;
   email: string | null;
   phone: string | null;
@@ -433,6 +446,7 @@ export interface VolunteerShift {
 }
 
 export interface VolunteerShiftDraft {
+  needId?: string | null;
   name: string;
   email?: string | null;
   phone?: string | null;
@@ -445,6 +459,46 @@ export interface VolunteerShiftDraft {
 }
 
 export type VolunteerShiftPatch = Partial<VolunteerShiftDraft>;
+
+/** A role and time window the organizer needs volunteers to fill. */
+export interface VolunteerNeed {
+  id: string;
+  eventId: string;
+  role: string;
+  startTime: string;
+  endTime: string;
+  requiredCount: number;
+  notes: string | null;
+  signupOpen: boolean;
+  sortOrder: number;
+  createdAt: IsoDateTime;
+}
+
+export interface VolunteerNeedDraft {
+  role: string;
+  startTime: string;
+  endTime: string;
+  requiredCount: number;
+  notes?: string | null;
+  signupOpen?: boolean;
+  sortOrder?: number;
+}
+
+export type VolunteerNeedPatch = Partial<VolunteerNeedDraft>;
+
+/** Public-safe staffing information. Volunteer names and contact details never appear here. */
+export interface VolunteerNeedWithCoverage extends VolunteerNeed {
+  filledCount: number;
+  openCount: number;
+  isFull: boolean;
+}
+
+export interface PublicVolunteerSignupDraft {
+  needId: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+}
 
 export type BudgetLineType = "expense" | "revenue";
 
@@ -1080,6 +1134,7 @@ export interface PublicEventPayload {
   event: Event;
   agenda: RunOfShowItem[];
   tickets: TicketType[];
+  volunteerNeeds: VolunteerNeedWithCoverage[];
   timeZone: string;
 }
 

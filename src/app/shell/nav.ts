@@ -323,6 +323,7 @@ export function isAppPathAllowed(pathname: string, experience: AccountExperience
     pathname === "/app/plan" ||
     pathname === "/app/settings" ||
     pathname === "/app/events" ||
-    pathname.startsWith("/app/events/")
+    pathname.startsWith("/app/events/") ||
+    pathname.startsWith("/app/vendors/")
   );
 }

@@ -42,6 +42,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerNeed,
   VolunteerShift,
 } from "../entities";
 import { DEFAULT_USER_SETTINGS } from "../entities";
@@ -57,6 +58,7 @@ export interface MemoryDb {
   eventVendors: EventVendor[];
   checklist: ChecklistItem[];
   runOfShow: RunOfShowItem[];
+  volunteerNeeds: VolunteerNeed[];
   volunteers: VolunteerShift[];
   budget: BudgetItem[];
   menu: MenuItem[];
@@ -890,6 +892,7 @@ export function buildSeed(): MemoryDb {
     {
       id: "vol-1",
       eventId: "evt-skickoff",
+      needId: "vneed-skickoff-welcome",
       name: "Jordan Lee",
       email: "jordan.lee@example.com",
       phone: "+1 415 555 0130",
@@ -904,6 +907,7 @@ export function buildSeed(): MemoryDb {
     {
       id: "vol-2",
       eventId: "evt-skickoff",
+      needId: null,
       name: "Maya Thompson",
       email: "maya.thompson@example.com",
       phone: null,
@@ -918,6 +922,7 @@ export function buildSeed(): MemoryDb {
     {
       id: "vol-3",
       eventId: "evt-gala",
+      needId: "vneed-gala-runner",
       name: "Alex Rivera",
       email: "alex.rivera@example.com",
       phone: "+1 415 555 0144",
@@ -926,6 +931,33 @@ export function buildSeed(): MemoryDb {
       endTime: "22:00",
       status: "confirmed",
       notes: "Meet the auction lead at stage left.",
+      sortOrder: 1,
+      createdAt: at(-15),
+    },
+  ];
+
+  const volunteerNeeds: VolunteerNeed[] = [
+    {
+      id: "vneed-skickoff-welcome",
+      eventId: "evt-skickoff",
+      role: "Welcome desk",
+      startTime: "07:15",
+      endTime: "10:30",
+      requiredCount: 2,
+      notes: "Check names and direct guests to badge pickup.",
+      signupOpen: true,
+      sortOrder: 1,
+      createdAt: at(-12),
+    },
+    {
+      id: "vneed-gala-runner",
+      eventId: "evt-gala",
+      role: "Auction runner",
+      startTime: "17:30",
+      endTime: "22:00",
+      requiredCount: 1,
+      notes: "Meet the auction lead at stage left.",
+      signupOpen: true,
       sortOrder: 1,
       createdAt: at(-15),
     },
@@ -1779,6 +1811,7 @@ export function buildSeed(): MemoryDb {
     eventVendors,
     checklist,
     runOfShow,
+    volunteerNeeds,
     volunteers,
     budget,
     menu,

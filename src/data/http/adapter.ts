@@ -156,6 +156,26 @@ function eventScoped<T, TDraft, TPatch>(client: Client, segment: string): EventS
 
 export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
   const client = createClient(options);
+  const publicRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+    let response: Response;
+    try {
+      response = await fetch(`${options.baseUrl ?? "/api"}${path}`, {
+        ...init,
+        headers: { "content-type": "application/json", ...init.headers },
+      });
+    } catch {
+      throw new DataError("unavailable", "Couldn't reach the server. Check your connection.");
+    }
+    const text = await response.text();
+    const payload = text ? (JSON.parse(text) as unknown) : null;
+    if (!response.ok) {
+      const message = payload && typeof payload === "object" && "error" in payload
+        ? String((payload as { error: unknown }).error)
+        : `Request failed with ${response.status}.`;
+      throw new DataError(codeFor(response.status), message);
+    }
+    return payload as T;
+  };
 
   return {
     kind: "postgres",
@@ -197,10 +217,12 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       // The only read a guest makes, and the only one that needs no session — so it
       // deliberately skips the authenticated client.
       getByShareToken: async (token) => {
-        const response = await fetch(`${options.baseUrl ?? "/api"}/public/events/${token}`);
-        if (response.status === 404) return null;
-        if (!response.ok) throw new DataError("unavailable", "Couldn't load this event.");
-        return (await response.json()) as PublicEventPayload;
+        try {
+          return await publicRequest<PublicEventPayload>(`/public/events/${token}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
       },
       createFromTemplate: (templateId, draft) => client.post<Event>(`/templates/${templateId}/events`, draft),
       saveAsTemplate: (eventId, draft) => client.post<Template>(`/events/${eventId}/save-as-template`, draft),
@@ -230,6 +252,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: () => client.get<RegistrationWithGuest[]>("/registrations"),
       listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
+      registerPublic: (shareToken, draft) => publicRequest<Registration>(`/public/events/${shareToken}/registrations`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
       createWalkIn: (eventId, draft) =>
         client.post<RegistrationWithGuest>(`/events/${eventId}/walk-ins`, draft),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
@@ -264,6 +290,13 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
     runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
+    volunteerNeeds: {
+      ...(eventScoped(client, "volunteer-needs") as DataAdapter["volunteerNeeds"]),
+      signupPublic: (shareToken, draft) => publicRequest<VolunteerShift>(`/public/events/${shareToken}/volunteers`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
+    },
     volunteers: eventScoped<VolunteerShift, never, never>(client, "volunteers") as DataAdapter["volunteers"],
     budget: eventScoped<BudgetItem, never, never>(client, "budget") as DataAdapter["budget"],
     menu: eventScoped<MenuItem, never, never>(client, "menu") as DataAdapter["menu"],

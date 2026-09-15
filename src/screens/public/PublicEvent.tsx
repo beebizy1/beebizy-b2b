@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { CalendarDays, Check, MapPin, Ticket, Users } from "lucide-react";
+import { CalendarDays, Check, HeartHandshake, MapPin, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +16,12 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { BrandLogo } from "@/components/BrandLogo";
-import { useEventByShareToken, usePurchaseTickets } from "@/data/hooks";
+import { useEventByShareToken, usePublicRegistration, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import type { Event } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
+import { SANTA_CLARA_REGISTRATION_SEGMENTS } from "@/data/santaClara";
 
 export function PublicFrame({ children }: { children: React.ReactNode }) {
   return (
@@ -104,6 +105,7 @@ export function PublicEventPage({ token }: { token: string }) {
   const event = shared?.event ?? null;
   const agenda = shared?.agenda;
   const tickets = shared?.tickets;
+  const volunteerNeeds = shared?.volunteerNeeds ?? [];
   const timeZone = shared?.timeZone ?? "UTC";
 
   if (isLoading) {
@@ -153,6 +155,27 @@ export function PublicEventPage({ token }: { token: string }) {
           </Panel>
         ) : null}
 
+        <Panel className="p-5">
+          <p className="text-sm font-semibold text-foreground">Register for this event</p>
+          <p className="mt-1 text-xs text-muted-foreground">Choose the guest type that best describes you.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {SANTA_CLARA_REGISTRATION_SEGMENTS.map((segment) => (
+              <Button key={segment} asChild variant="outline" size="sm">
+                <Link href={`/e/${token}/register/${encodeURIComponent(segment)}`}>{segment}</Link>
+              </Button>
+            ))}
+          </div>
+        </Panel>
+
+        {volunteerNeeds.length > 0 ? (
+          <Panel className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><p className="text-sm font-semibold text-foreground">Volunteer schedule</p><p className="text-xs text-muted-foreground">See every planned shift and {volunteerNeeds.reduce((sum, need) => sum + (need.signupOpen ? need.openCount : 0), 0)} positions currently open for signup.</p></div>
+              <Button asChild><Link href={`/e/${token}/volunteer`}><HeartHandshake className="mr-1.5 size-4" />View schedule</Link></Button>
+            </div>
+          </Panel>
+        ) : null}
+
         {(agenda ?? []).length > 0 ? (
           <Panel>
             <PanelHeader title="Agenda" description={`Times shown in ${timeZoneLabel(timeZone, new Date(event.date))}, the venue\u2019s zone`} />
@@ -191,6 +214,83 @@ export function PublicEventPage({ token }: { token: string }) {
             })}
           </Panel>
         ) : null}
+      </div>
+    </PublicFrame>
+  );
+}
+
+export function PublicRegistrationPage({ token, segment }: { token: string; segment: string }) {
+  const { data: shared, isLoading } = useEventByShareToken(token);
+  const register = usePublicRegistration();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [done, setDone] = useState(false);
+  const selectedSegment = SANTA_CLARA_REGISTRATION_SEGMENTS.find((item) => item.toLowerCase() === decodeURIComponent(segment).toLowerCase());
+  if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
+  if (!shared?.event || !selectedSegment) return <EventNotFound />;
+  if (done) return <PublicFrame><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
+  const organizationLabel = selectedSegment === "Investor" ? "Firm or fund" : selectedSegment === "Student" ? "School" : "Company";
+  return <PublicFrame><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: selectedSegment === "General" ? null : organization.trim() || null, segment: selectedSegment } }, { onSuccess: () => setDone(true), onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{selectedSegment !== "General" ? <label className="block space-y-1 text-sm font-medium">{organizationLabel}<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
+}
+
+export function PublicVolunteerSignupPage({ token }: { token: string }) {
+  const { data: shared, isLoading } = useEventByShareToken(token);
+  const signup = usePublicVolunteerSignup();
+  const [needId, setNeedId] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [done, setDone] = useState(false);
+  const schedule = shared?.volunteerNeeds ?? [];
+  const openings = schedule.filter((need) => need.signupOpen && need.openCount > 0);
+  const selected = openings.find((need) => need.id === needId);
+  if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
+  if (!shared?.event) return <EventNotFound />;
+  if (done && selected) return <PublicFrame><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">Your shift is confirmed</h1><p className="mt-1 text-sm text-muted-foreground">{selected.role}, {selected.startTime}–{selected.endTime}. The organizer can now see you in the staffing plan.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
+  return (
+    <PublicFrame>
+      <div className="space-y-6">
+        <div>
+          <Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">Volunteer schedule</h1>
+          <p className="mt-1 text-sm text-muted-foreground">See every planned shift. Open shifts can be selected below.</p>
+        </div>
+        {schedule.length === 0 ? (
+          <Panel><EmptyState icon={HeartHandshake} title="No volunteer shifts yet" description="The organizer has not published a volunteer schedule." /></Panel>
+        ) : (
+          <Panel>
+            <PanelHeader title="Event shifts" />
+            <ul className="divide-y divide-hairline">
+              {schedule.map((need) => {
+                const canJoin = need.signupOpen && need.openCount > 0;
+                return (
+                  <li key={need.id}>
+                    <label className={cn("flex items-start gap-3 px-5 py-4", canJoin && "cursor-pointer hover:bg-accent/60", needId === need.id && "bg-primary-muted/60")}>
+                      <input type="radio" name="need" value={need.id} checked={needId === need.id} onChange={() => setNeedId(need.id)} className="mt-1" disabled={!canJoin} />
+                      <span className="flex-1">
+                        <span className="block text-sm font-semibold">{need.role}</span>
+                        <span className="block text-xs text-muted-foreground">{need.startTime}–{need.endTime} · {canJoin ? `${need.openCount} ${need.openCount === 1 ? "position" : "positions"} open` : need.isFull ? "Fully staffed" : "Signup closed"}{need.notes ? ` · ${need.notes}` : ""}</span>
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
+        )}
+        {openings.length === 0 ? (
+          <Panel><EmptyState icon={HeartHandshake} title="No open volunteer positions" description="The complete schedule is shown above, but the organizer does not have any positions open for signup right now." /></Panel>
+        ) : (
+          <form onSubmit={(e) => { e.preventDefault(); if (!selected) return; signup.mutate({ shareToken: token, draft: { needId: selected.id, name: name.trim(), email: email.trim(), phone: phone.trim() || null } }, { onSuccess: () => setDone(true), onError: (caught) => toast({ title: "Couldn't sign up", description: caught.message }) }); }}>
+            <Panel className="grid gap-4 p-5 sm:grid-cols-2">
+              <label className="space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required /></label>
+              <label className="space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+              <label className="space-y-1 text-sm font-medium">Phone<Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" /></label>
+              <div className="flex items-end"><Button className="w-full" disabled={!selected || !name.trim() || !email.trim() || signup.isPending}>{signup.isPending ? "Confirming…" : "Confirm volunteer shift"}</Button></div>
+            </Panel>
+          </form>
+        )}
       </div>
     </PublicFrame>
   );

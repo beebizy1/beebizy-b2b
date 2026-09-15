@@ -144,9 +144,10 @@ async function main() {
   ]);
   await repos.registrations.create(alice, { eventId: event.id, guestId: a1!.id, status: "confirmed" });
   await repos.registrations.create(alice, { eventId: event.id, guestId: a2!.id, status: "confirmed" });
-  await repos.floorplan.create(alice, event.id, "Two-seat test room", [
-    { id: "table-1", shape: "long-table", label: "Table 1", x: 50, y: 50, seats: 2 },
-  ]);
+  await repos.floorplan.create(alice, event.id, {
+    name: "Two-seat test room",
+    items: [{ id: "table-1", shape: "long-table", label: "Table 1", x: 50, y: 50, seats: 2 }],
+  });
 
   const history = await repos.history.list(alice, event.id);
   const resources = new Set(history.map((entry) => entry.resource));
@@ -190,6 +191,21 @@ async function main() {
   check("share token is long and random", shareToken.length >= 32, `${shareToken.length} chars`);
   const shared = await repos.eventByShareToken(shareToken);
   check("share token resolves publicly", shared?.event.id === event.id);
+  const need = await repos.volunteerNeeds.create(alice, event.id, {
+    role: "Welcome desk",
+    startTime: "08:00",
+    endTime: "12:00",
+    requiredCount: 1,
+  });
+  const simultaneousSignups = await Promise.allSettled([
+    repos.publicVolunteerSignup(shareToken, { needId: need.id, name: "First", email: `first-${suffix}@example.com` }),
+    repos.publicVolunteerSignup(shareToken, { needId: need.id, name: "Second", email: `second-${suffix}@example.com` }),
+  ]);
+  check(
+    "concurrent volunteer signups cannot overfill a requirement",
+    simultaneousSignups.filter((result) => result.status === "fulfilled").length === 1 &&
+      (await repos.volunteers.list(alice, event.id)).filter((shift) => shift.needId === need.id).length === 1,
+  );
   // The guest has no settings of their own, so the zone has to come from the workspace —
   // otherwise a shared event page tells a guest in Berlin the wrong start time.
   const [aliceWorkspace] = await db.select().from(s.workspaces).where(eq(s.workspaces.id, alice.workspaceId));

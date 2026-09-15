@@ -214,19 +214,24 @@ async function handlePublic(segments: string[], method: string, request: Request
     return json(await handleStripeWebhook(request));
   }
 
-  // GET /api/public/events/:token
-  if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET") {
+  // Public event read and share-link registration actions.
+  if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "POST") {
+    if (segments[3] === "registrations") return json(await repos.publicRegistration(segments[2], await readBody(request)), 201);
+    if (segments[3] === "volunteers") return json(await repos.publicVolunteerSignup(segments[2], await readBody(request)), 201);
+  }
+  if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET" && !segments[3]) {
     const shared = await eventByShareToken(segments[2]);
     if (!shared) return json({ error: "This link is no longer active." }, 404);
 
-    const [agenda, tickets] = await Promise.all([
+    const [agenda, tickets, volunteerNeeds] = await Promise.all([
       repos.publicAgenda(shared.event.id),
       repos.publicTickets(shared.event.id),
+      repos.publicVolunteerNeeds(shared.event.id),
     ]);
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
     // bids are not in this payload at all, rather than filtered out in the client. The
     // agenda and tickets ride along because the guest has no session to fetch them with.
-    return json({ event: shared.event, agenda, tickets, timeZone: shared.timeZone });
+    return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
   }
 
   if (segments[0] === "public" && segments[1] === "assignments" && segments[2] && method === "GET") {
@@ -602,6 +607,7 @@ const eventChildren: Record<
   checklist: repos.checklist,
   "check-in-stations": repos.checkInStations,
   "run-of-show": repos.runOfShow,
+  "volunteer-needs": repos.volunteerNeeds,
   volunteers: repos.volunteers,
   budget: repos.budget,
   menu: repos.menu,

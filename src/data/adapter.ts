@@ -62,6 +62,8 @@ import type {
   ProductFeedback,
   ProductFeedbackDraft,
   PublicEventPayload,
+  PublicRegistrationDraft,
+  PublicVolunteerSignupDraft,
   RaffleItem,
   RaffleItemDraft,
   RaffleItemPatch,
@@ -110,6 +112,9 @@ import type {
   VolunteerShift,
   VolunteerShiftDraft,
   VolunteerShiftPatch,
+  VolunteerNeed,
+  VolunteerNeedDraft,
+  VolunteerNeedPatch,
 } from "./entities";
 import type { BillingInterval, PlanId } from "./plans";
 import type { WorkspaceAccessStatus } from "./workspaceAccess";
@@ -152,6 +157,8 @@ export interface RegistrationsRepository {
   list(): Promise<RegistrationWithGuest[]>;
   listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
+  /** Public share-link registration. The token identifies the event and workspace. */
+  registerPublic(shareToken: string, draft: PublicRegistrationDraft): Promise<Registration>;
   /** Atomically creates a guest, confirmed registration and arrival record. */
   createWalkIn(eventId: string, draft: WalkInRegistrationDraft): Promise<RegistrationWithGuest>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
@@ -162,6 +169,12 @@ export interface RegistrationsRepository {
   /** Records arrival details, or clears the arrival timestamp to undo a check-in. */
   setCheckIn(id: string, patch: RegistrationCheckInPatch): Promise<Registration>;
   remove(id: string): Promise<void>;
+}
+
+export interface VolunteerNeedsRepository
+  extends EventScopedRepository<VolunteerNeed, VolunteerNeedDraft, VolunteerNeedPatch> {
+  /** Claims one open place without exposing existing volunteers to the visitor. */
+  signupPublic(shareToken: string, draft: PublicVolunteerSignupDraft): Promise<VolunteerShift>;
 }
 
 export interface VendorMessagesRepository {
@@ -343,6 +356,7 @@ export interface DataAdapter {
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
+  volunteerNeeds: VolunteerNeedsRepository;
   volunteers: EventScopedRepository<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>;
   budget: EventScopedRepository<BudgetItem, BudgetItemDraft, BudgetItemPatch>;
   menu: EventScopedRepository<MenuItem, MenuItemDraft, MenuItemPatch>;

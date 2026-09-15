@@ -15,10 +15,14 @@ vi.mock("./repos", () => {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
     publicTickets: vi.fn(),
+    publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
+    publicRegistration: vi.fn(),
+    publicVolunteerSignup: vi.fn(),
     publicAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
     runOfShow: child,
+    volunteerNeeds: child,
     volunteers: child,
     budget: child,
     menu: child,
@@ -45,7 +49,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, publicAssignment } = await import("./repos");
+const { feedback, publicAssignment, publicRegistration, publicVolunteerSignup } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -176,6 +180,38 @@ describe("public assignment endpoint", () => {
     vi.mocked(publicAssignment).mockResolvedValue(null);
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token"));
     expect(response.status).toBe(404);
+  });
+});
+
+describe("public event signup endpoints", () => {
+  it("registers one guest without requiring a user session", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicRegistration).mockResolvedValue({ id: "reg-1" } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/events/share-1/registrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Ada", email: "ada@example.com", segment: "Investor" }),
+    }));
+    expect(response.status).toBe(201);
+    expect(publicRegistration).toHaveBeenCalledWith("share-1", {
+      name: "Ada", email: "ada@example.com", segment: "Investor",
+    });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("claims a volunteer opening without requiring a user session", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicVolunteerSignup).mockResolvedValue({ id: "vol-1" } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/events/share-1/volunteers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ needId: "need-1", name: "Grace", email: "grace@example.com" }),
+    }));
+    expect(response.status).toBe(201);
+    expect(publicVolunteerSignup).toHaveBeenCalledWith("share-1", {
+      needId: "need-1", name: "Grace", email: "grace@example.com",
+    });
+    expect(authorize).not.toHaveBeenCalled();
   });
 });
 

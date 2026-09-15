@@ -423,6 +423,8 @@ export const checklistItems = pgTable(
     assignedTo: text("assigned_to"),
     /** Where to notify the assignee. Null when the name belongs to nobody in the workspace. */
     assignedEmail: text("assigned_email"),
+    /** Links the work directly to the vendor record without exposing vendor data publicly. */
+    vendorId: text("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
     category: text("category").notNull().default("General"),
   },
   (table) => [
@@ -459,10 +461,28 @@ export const checkInStations = pgTable(
   (table) => [index("check_in_stations_event_idx").on(table.eventId, table.sortOrder)],
 );
 
+export const volunteerNeeds = pgTable(
+  "volunteer_needs",
+  {
+    ...eventChild,
+    role: text("role").notNull(),
+    startTime: varchar("start_time", { length: 5 }).notNull(),
+    endTime: varchar("end_time", { length: 5 }).notNull(),
+    requiredCount: integer("required_count").notNull().default(1),
+    notes: text("notes"),
+    signupOpen: boolean("signup_open").notNull().default(true),
+  },
+  (table) => [
+    index("volunteer_needs_event_idx").on(table.eventId, table.startTime),
+    check("volunteer_needs_required_count_check", sql`${table.requiredCount} between 1 and 500`),
+  ],
+);
+
 export const volunteerShifts = pgTable(
   "volunteer_shifts",
   {
     ...eventChild,
+    needId: text("need_id").references(() => volunteerNeeds.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     email: text("email"),
     phone: text("phone"),
@@ -472,7 +492,10 @@ export const volunteerShifts = pgTable(
     status: volunteerStatus("status").notNull().default("scheduled"),
     notes: text("notes"),
   },
-  (table) => [index("volunteer_shifts_event_idx").on(table.eventId, table.startTime)],
+  (table) => [
+    index("volunteer_shifts_event_idx").on(table.eventId, table.startTime),
+    index("volunteer_shifts_need_idx").on(table.needId),
+  ],
 );
 
 export const budgetItems = pgTable(
@@ -768,6 +791,7 @@ export const eventRelations = relations(events, ({ one, many }) => ({
   eventVendors: many(eventVendors),
   checklistItems: many(checklistItems),
   checkInStations: many(checkInStations),
+  volunteerNeeds: many(volunteerNeeds),
   volunteerShifts: many(volunteerShifts),
   budgetItems: many(budgetItems),
   ticketTypes: many(ticketTypes),

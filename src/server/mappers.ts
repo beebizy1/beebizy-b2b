@@ -41,6 +41,7 @@ import type {
   UserSettings,
   Vendor,
   VendorMessage,
+  VolunteerNeed,
   VolunteerShift,
 } from "../data/entities.ts";
 import { readStoredFloorplan } from "../data/floorplan.ts";
@@ -201,6 +202,7 @@ export function toChecklistItem(row: InferSelectModel<typeof s.checklistItems>):
     dueDate: iso(row.dueDate),
     assignedTo: row.assignedTo,
     assignedEmail: row.assignedEmail,
+    vendorId: row.vendorId,
     category: row.category,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
@@ -236,10 +238,26 @@ export function toCheckInStation(row: InferSelectModel<typeof s.checkInStations>
   };
 }
 
+export function toVolunteerNeed(row: InferSelectModel<typeof s.volunteerNeeds>): VolunteerNeed {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    role: row.role,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    requiredCount: row.requiredCount,
+    notes: row.notes,
+    signupOpen: row.signupOpen,
+    sortOrder: row.sortOrder,
+    createdAt: isoRequired(row.createdAt),
+  };
+}
+
 export function toVolunteerShift(row: InferSelectModel<typeof s.volunteerShifts>): VolunteerShift {
   return {
     id: row.id,
     eventId: row.eventId,
+    needId: row.needId,
     name: row.name,
     email: row.email,
     phone: row.phone,

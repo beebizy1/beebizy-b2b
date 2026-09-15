@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ListFilter, Mail, UserPlus, Users } from "lucide-react";
+import { Copy, ListFilter, Mail, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,6 +33,7 @@ import {
   useSetRegistrationOrganization,
   useSetRegistrationSegment,
   useSetRegistrationStatus,
+  useShareEvent,
 } from "@/data/hooks";
 import {
   REGISTRATION_SEGMENTS,
@@ -41,6 +42,7 @@ import {
   type RegistrationStatus,
   type RegistrationWithGuest,
 } from "@/data/entities";
+import { registrationSegmentSummary, SANTA_CLARA_REGISTRATION_SEGMENTS } from "@/data/santaClara";
 
 /** No category is a real choice in a Select, and "" is not a usable option value. */
 const UNCATEGORISED = "__none__";
@@ -297,6 +299,7 @@ export default function GuestsSection({ event }: { event: Event }) {
   const setStatus = useSetRegistrationStatus();
   const setSegment = useSetRegistrationSegment();
   const removeRegistration = useDeleteRegistration();
+  const share = useShareEvent();
   const [search, setSearch] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [organizationFilter, setOrganizationFilter] = useState<string | null>(null);
@@ -315,16 +318,21 @@ export default function GuestsSection({ event }: { event: Event }) {
    * sponsor you are catering for, and counting them would overstate every segment.
    */
   const segments = useMemo(() => {
-    const tally = new Map<string, number>();
-    for (const row of registrations ?? []) {
-      if (row.status === "cancelled") continue;
-      const key = row.segment ?? UNCATEGORISED;
-      tally.set(key, (tally.get(key) ?? 0) + 1);
-    }
-    return [...tally.entries()].sort(([a], [b]) =>
-      a === UNCATEGORISED ? 1 : b === UNCATEGORISED ? -1 : a.localeCompare(b),
-    );
+    const active = (registrations ?? []).filter((row) => row.status !== "cancelled");
+    const summary = registrationSegmentSummary(active);
+    const uncategorised = active.filter((row) => !row.segment?.trim()).length;
+    return uncategorised ? [...summary, [UNCATEGORISED, uncategorised] as [string, number]] : summary;
   }, [registrations]);
+
+  const copyRegistrationLink = async (segment: string) => {
+    try {
+      const token = event.shareToken ?? (await share.mutateAsync({ id: event.id })).shareToken;
+      await navigator.clipboard.writeText(`${window.location.origin}/e/${token}/register/${encodeURIComponent(segment)}`);
+      toast({ title: `${segment} registration link copied` });
+    } catch (caught) {
+      toast({ title: "Couldn't copy registration link", description: caught instanceof Error ? caught.message : undefined });
+    }
+  };
 
   /**
    * Which organizations are represented — counted *within* the chosen segment, because the
@@ -395,6 +403,18 @@ export default function GuestsSection({ event }: { event: Event }) {
           />
         </Panel>
       ) : null}
+
+      <Panel className="p-4">
+        <p className="text-sm font-semibold text-foreground">Registration links by guest type</p>
+        <p className="mt-1 text-xs text-muted-foreground">Share a separate form for each audience. Every response lands here with the category already applied.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {SANTA_CLARA_REGISTRATION_SEGMENTS.map((segment) => (
+            <Button key={segment} variant="outline" size="sm" disabled={share.isPending} onClick={() => void copyRegistrationLink(segment)}>
+              <Copy className="mr-1.5 size-3.5" />{segment}
+            </Button>
+          ))}
+        </div>
+      </Panel>
 
       {segments.length > 0 ? (
         <Panel className="p-4">

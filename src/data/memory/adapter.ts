@@ -23,6 +23,7 @@ import type {
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
+  VolunteerNeedsRepository,
   RfpsRepository,
   RoiRepository,
   SettingsRepository,
@@ -91,6 +92,7 @@ import type {
   Registration,
   RegistrationStatus,
   RegistrationWithGuest,
+  PublicRegistrationDraft,
   WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
@@ -114,6 +116,10 @@ import type {
   VolunteerShift,
   VolunteerShiftDraft,
   VolunteerShiftPatch,
+  VolunteerNeed,
+  VolunteerNeedDraft,
+  VolunteerNeedPatch,
+  PublicVolunteerSignupDraft,
   WorkspaceMember,
 } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
@@ -122,6 +128,7 @@ import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../plan
 import { nextTurn } from "../assistantChat";
 import { googleSheetCsvUrl } from "../import";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
+import { volunteerCoverage } from "../santaClara";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -302,6 +309,7 @@ const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "checklist",
   "checkInStations",
   "runOfShow",
+  "volunteerNeeds",
   "volunteers",
   "budget",
   "menu",
@@ -445,6 +453,10 @@ const events: EventsRepository = {
         .runOfShow.filter((item) => item.eventId === event.id)
         .sort(compareRunOfShowItems),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
+      volunteerNeeds: volunteerCoverage(
+        store().volunteerNeeds.filter((need) => need.eventId === event.id),
+        store().volunteers.filter((shift) => shift.eventId === event.id),
+      ),
       timeZone: store().settings.timeZone,
     });
   },
@@ -663,6 +675,46 @@ const registrations: RegistrationsRepository = {
     };
     state.registrations.push(registration);
     syncRegistrationCount(draft.eventId);
+    return copy(registration);
+  },
+  async registerPublic(shareToken: string, draft: PublicRegistrationDraft) {
+    await wait();
+    const state = store();
+    const event = required(
+      state.events.find((candidate) => candidate.shareToken === shareToken),
+      "This registration link is no longer available.",
+    );
+    const name = draft.name.trim();
+    const email = draft.email.trim().toLowerCase();
+    const segment = draft.segment.trim();
+    if (!name) throw new DataError("invalid", "Name is required.");
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new DataError("invalid", "Enter a valid email address.");
+    if (!segment) throw new DataError("invalid", "Guest type is required.");
+    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+      throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
+    }
+
+    const guest = state.guests.find((candidate) => candidate.contact.toLowerCase() === email) ?? {
+      id: newId("att"),
+      ownerId: DEMO_OWNER_ID,
+      name,
+      contact: email,
+      notes: "Registered through the public event page.",
+      createdAt: nowIso(),
+    };
+    if (!state.guests.some((candidate) => candidate.id === guest.id)) state.guests.push(guest);
+    if (state.registrations.some((row) => row.eventId === event.id && row.guestId === guest.id && row.status !== "cancelled")) {
+      throw new DataError("conflict", "This email is already registered for the event.");
+    }
+    const now = nowIso();
+    const registration: Registration = {
+      id: newId("reg"), ownerId: DEMO_OWNER_ID, eventId: event.id, eventTitle: event.title,
+      guestId: guest.id, status: "confirmed", segment,
+      organization: draft.organization?.trim() || null, registeredAt: now,
+      checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now,
+    };
+    state.registrations.push(registration);
+    syncRegistrationCount(event.id);
     return copy(registration);
   },
   async createWalkIn(eventId: string, draft: WalkInRegistrationDraft) {
@@ -891,6 +943,7 @@ const checklist = eventScoped<ChecklistItem, ChecklistItemDraft, ChecklistItemPa
     dueDate: draft.dueDate ?? null,
     assignedTo: draft.assignedTo ?? null,
     assignedEmail: draft.assignedEmail ?? null,
+    vendorId: draft.vendorId ?? null,
     category: draft.category ?? "General",
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),
@@ -939,6 +992,7 @@ const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShi
   (eventId, draft, sortOrder) => ({
     id: "",
     eventId,
+    needId: draft.needId ?? null,
     name: draft.name.trim(),
     email: draft.email?.trim() || null,
     phone: draft.phone?.trim() || null,
@@ -953,6 +1007,64 @@ const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShi
   "volunteer",
   (a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name),
 );
+
+const volunteerNeedsCrud = eventScoped<VolunteerNeed, VolunteerNeedDraft, VolunteerNeedPatch>(
+  () => store().volunteerNeeds,
+  "vneed",
+  (eventId, draft, sortOrder) => ({
+    id: "",
+    eventId,
+    role: draft.role.trim(),
+    startTime: draft.startTime,
+    endTime: draft.endTime,
+    requiredCount: Math.max(1, Math.min(500, Math.trunc(draft.requiredCount))),
+    notes: draft.notes?.trim() || null,
+    signupOpen: draft.signupOpen ?? true,
+    sortOrder: draft.sortOrder ?? sortOrder,
+    createdAt: nowIso(),
+  }),
+  "volunteer",
+  (a, b) => a.startTime.localeCompare(b.startTime) || a.role.localeCompare(b.role),
+);
+
+const volunteerNeeds: VolunteerNeedsRepository = {
+  ...volunteerNeedsCrud,
+  async signupPublic(shareToken: string, draft: PublicVolunteerSignupDraft) {
+    await wait();
+    const state = store();
+    const event = required(
+      state.events.find((candidate) => candidate.shareToken === shareToken),
+      "This volunteer signup link is no longer available.",
+    );
+    const need = required(
+      state.volunteerNeeds.find((candidate) => candidate.id === draft.needId && candidate.eventId === event.id),
+      "That volunteer shift is no longer available.",
+    );
+    const name = draft.name.trim();
+    const email = draft.email.trim().toLowerCase();
+    if (!need.signupOpen) throw new DataError("conflict", "Signup for this shift is closed.");
+    if (!name) throw new DataError("invalid", "Name is required.");
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new DataError("invalid", "Enter a valid email address.");
+    const coverage = volunteerCoverage([need], state.volunteers.filter((shift) => shift.eventId === event.id))[0];
+    if (!coverage || coverage.isFull) throw new DataError("conflict", "That volunteer shift is already full.");
+    if (state.volunteers.some((shift) =>
+      shift.eventId === event.id && shift.email?.toLowerCase() === email && shift.role === need.role &&
+      shift.startTime === need.startTime && shift.endTime === need.endTime && shift.status !== "cancelled")) {
+      throw new DataError("conflict", "This email is already signed up for that shift.");
+    }
+    return volunteers.create(event.id, {
+      needId: need.id,
+      name,
+      email,
+      phone: draft.phone?.trim() || null,
+      role: need.role,
+      startTime: need.startTime,
+      endTime: need.endTime,
+      status: "confirmed",
+      notes: need.notes,
+    });
+  },
+};
 
 const budget = eventScoped<BudgetItem, BudgetItemDraft, BudgetItemPatch>(
   () => store().budget,
@@ -1951,6 +2063,7 @@ export const memoryAdapter: DataAdapter = {
   eventVendors,
   checklist,
   runOfShow,
+  volunteerNeeds,
   volunteers,
   budget,
   menu,
