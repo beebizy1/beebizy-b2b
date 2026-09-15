@@ -214,19 +214,29 @@ async function handlePublic(segments: string[], method: string, request: Request
     return json(await handleStripeWebhook(request));
   }
 
-  // GET /api/public/events/:token
-  if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET") {
+  // Public event read and share-link registration actions.
+  if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "POST") {
+    if (segments[3] === "registrations") return json(await repos.publicRegistration(segments[2], await readBody(request)), 201);
+    if (segments[3] === "volunteers") return json(await repos.publicVolunteerSignup(segments[2], await readBody(request)), 201);
+  }
+  if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET" && !segments[3]) {
     const shared = await eventByShareToken(segments[2]);
     if (!shared) return json({ error: "This link is no longer active." }, 404);
 
-    const [agenda, tickets] = await Promise.all([
+    const [agenda, tickets, volunteerNeeds] = await Promise.all([
       repos.publicAgenda(shared.event.id),
       repos.publicTickets(shared.event.id),
+      repos.publicVolunteerNeeds(shared.event.id),
     ]);
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
     // bids are not in this payload at all, rather than filtered out in the client. The
     // agenda and tickets ride along because the guest has no session to fetch them with.
-    return json({ event: shared.event, agenda, tickets, timeZone: shared.timeZone });
+    return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
+  }
+
+  if (segments[0] === "public" && segments[1] === "assignments" && segments[2] && method === "GET") {
+    const assignment = await repos.publicAssignment(segments[2]);
+    return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
   }
 
   return null;
@@ -373,10 +383,12 @@ async function handleAuthed(
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
         if (b === "walk-ins" && !c && method === "POST") return json(await repos.registrations.createWalkIn(ctx, a, body), 201);
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
+        if (b === "updates" && !c && method === "GET") return json(await repos.teamUpdates.list(ctx, a));
+        if (b === "updates" && !c && method === "POST") return json(await repos.teamUpdates.create(ctx, a, body), 201);
         if (b === "floorplans" && !c && method === "GET") return json(await repos.floorplan.list(ctx, a));
         if (b === "floorplans" && !c && method === "POST") {
           const draft = readFloorplanDraft(body);
-          return json(await repos.floorplan.create(ctx, a, draft.name, draft.items), 201);
+          return json(await repos.floorplan.create(ctx, a, draft), 201);
         }
         if (b === "roi" && method === "GET") return json(await repos.roi.get(ctx, a));
         if (b === "roi" && method === "PUT") return json(await repos.roi.save(ctx, a, body));
@@ -448,7 +460,7 @@ async function handleAuthed(
     case "floorplans": {
       if (a && method === "PUT") {
         const draft = readFloorplanDraft(body);
-        return json(await repos.floorplan.save(ctx, a, draft.name, draft.items));
+        return json(await repos.floorplan.save(ctx, a, draft));
       }
       if (a && method === "DELETE") {
         await repos.floorplan.remove(ctx, a);
@@ -595,6 +607,7 @@ const eventChildren: Record<
   checklist: repos.checklist,
   "check-in-stations": repos.checkInStations,
   "run-of-show": repos.runOfShow,
+  "volunteer-needs": repos.volunteerNeeds,
   volunteers: repos.volunteers,
   budget: repos.budget,
   menu: repos.menu,

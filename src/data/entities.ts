@@ -157,6 +157,7 @@ export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
  */
 export const REGISTRATION_SEGMENTS = [
   "Investor",
+  "Student",
   "Company",
   "General",
   "VIP",
@@ -205,6 +206,14 @@ export interface RegistrationDraft {
   guestId: string;
   status?: RegistrationStatus;
   segment?: string | null;
+  organization?: string | null;
+}
+
+/** Details a guest submits from one of the event's segment-specific registration links. */
+export interface PublicRegistrationDraft {
+  name: string;
+  email: string;
+  segment: string;
   organization?: string | null;
 }
 
@@ -364,6 +373,8 @@ export interface ChecklistItem {
    * name that belongs to nobody in the workspace leaves this null and sends nothing.
    */
   assignedEmail: string | null;
+  /** Optional direct connection to the vendor responsible for this task. */
+  vendorId?: string | null;
   category: string;
   sortOrder: number;
   createdAt: IsoDateTime;
@@ -376,6 +387,7 @@ export interface ChecklistItemDraft {
   dueDate?: IsoDateTime | null;
   assignedTo?: string | null;
   assignedEmail?: string | null;
+  vendorId?: string | null;
   category?: string;
   sortOrder?: number;
 }
@@ -417,6 +429,8 @@ export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
 export interface VolunteerShift {
   id: string;
   eventId: string;
+  /** Staffing requirement this assignment fills. Null for an ad-hoc shift. */
+  needId: string | null;
   name: string;
   email: string | null;
   phone: string | null;
@@ -432,6 +446,7 @@ export interface VolunteerShift {
 }
 
 export interface VolunteerShiftDraft {
+  needId?: string | null;
   name: string;
   email?: string | null;
   phone?: string | null;
@@ -444,6 +459,46 @@ export interface VolunteerShiftDraft {
 }
 
 export type VolunteerShiftPatch = Partial<VolunteerShiftDraft>;
+
+/** A role and time window the organizer needs volunteers to fill. */
+export interface VolunteerNeed {
+  id: string;
+  eventId: string;
+  role: string;
+  startTime: string;
+  endTime: string;
+  requiredCount: number;
+  notes: string | null;
+  signupOpen: boolean;
+  sortOrder: number;
+  createdAt: IsoDateTime;
+}
+
+export interface VolunteerNeedDraft {
+  role: string;
+  startTime: string;
+  endTime: string;
+  requiredCount: number;
+  notes?: string | null;
+  signupOpen?: boolean;
+  sortOrder?: number;
+}
+
+export type VolunteerNeedPatch = Partial<VolunteerNeedDraft>;
+
+/** Public-safe staffing information. Volunteer names and contact details never appear here. */
+export interface VolunteerNeedWithCoverage extends VolunteerNeed {
+  filledCount: number;
+  openCount: number;
+  isFull: boolean;
+}
+
+export interface PublicVolunteerSignupDraft {
+  needId: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+}
 
 export type BudgetLineType = "expense" | "revenue";
 
@@ -572,8 +627,29 @@ export const FLOORPLAN_SHAPES = [
   "av",
   "tree",
   "chair",
+  "chair-row",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
+
+export const FLOORPLAN_ROOM_SHAPES = ["rectangle", "oval", "l-shape", "custom"] as const;
+export type FloorplanRoomShape = (typeof FLOORPLAN_ROOM_SHAPES)[number];
+
+export interface FloorplanPoint {
+  /** 0-100, percent of the floorplan canvas width. */
+  x: number;
+  /** 0-100, percent of the floorplan canvas height. */
+  y: number;
+}
+
+export interface FloorplanRoom {
+  shape: FloorplanRoomShape;
+  /** Physical room width in feet. */
+  widthFeet: number;
+  /** Physical room length in feet. */
+  lengthFeet: number;
+  /** Normalized outline vertices. Used by polygon rooms and editable in custom mode. */
+  points: FloorplanPoint[];
+}
 
 export interface FloorplanItem {
   id: string;
@@ -599,12 +675,16 @@ export interface Floorplan {
   eventId: string;
   name: string;
   items: FloorplanItem[];
+  /** Optional for records created before room outlines were introduced. */
+  room?: FloorplanRoom;
   updatedAt: IsoDateTime;
 }
 
 export interface FloorplanDraft {
   name: string;
   items: FloorplanItem[];
+  /** Optional so older clients and stored plans remain valid. */
+  room?: FloorplanRoom;
 }
 
 /* ------------------------------------------------------------ event history */
@@ -624,6 +704,8 @@ export const HISTORY_RESOURCES = [
   "sponsorship",
   "raffle",
   "floorplan",
+  "team-update",
+  "assignment-link",
 ] as const;
 export type HistoryResource = (typeof HISTORY_RESOURCES)[number];
 export type HistoryAction = "created" | "updated" | "deleted";
@@ -644,6 +726,39 @@ export interface EventHistoryEntry {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   createdAt: IsoDateTime;
+}
+
+export const TEAM_UPDATE_KINDS = ["schedule", "vendor-delay", "general"] as const;
+export type TeamUpdateKind = (typeof TEAM_UPDATE_KINDS)[number];
+
+export interface TeamUpdate {
+  id: string;
+  eventId: string;
+  kind: TeamUpdateKind;
+  message: string;
+  actorId: string;
+  createdAt: IsoDateTime;
+  /** Present on a newly posted update. Historical reads do not replay delivery state. */
+  emailDelivery?: { sent: number; notSent: number };
+}
+
+export interface TeamUpdateDraft {
+  kind: TeamUpdateKind;
+  message: string;
+}
+
+export interface PublicAssignmentPayload {
+  kind: "checklist" | "volunteer";
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  eventEndDate: IsoDateTime | null;
+  location: string | null;
+  assignee: string;
+  title: string;
+  description: string | null;
+  dueDate: IsoDateTime | null;
+  startTime: string | null;
+  endTime: string | null;
 }
 
 export type EventHistoryChange = Pick<
@@ -1019,6 +1134,7 @@ export interface PublicEventPayload {
   event: Event;
   agenda: RunOfShowItem[];
   tickets: TicketType[];
+  volunteerNeeds: VolunteerNeedWithCoverage[];
   timeZone: string;
 }
 

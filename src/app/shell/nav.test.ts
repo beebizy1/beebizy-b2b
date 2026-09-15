@@ -59,10 +59,12 @@ describe("product navigation", () => {
       "Registrations",
       "Check-in",
       "Volunteers",
+      "Vendors",
     ]);
     expect(isAppPathAllowed("/app/events/event-1/checklist", "santa-clara")).toBe(true);
     expect(isAppPathAllowed("/app/plan", "santa-clara")).toBe(true);
     expect(isAppPathAllowed("/app/vendors", "santa-clara")).toBe(false);
+    expect(isAppPathAllowed("/app/vendors/vendor-1", "santa-clara")).toBe(true);
     expect(isAppPathAllowed("/app/fundraising", "santa-clara")).toBe(false);
   });
 });

@@ -42,7 +42,7 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   Floorplan,
-  FloorplanItem,
+  FloorplanDraft,
   Location,
   OpenTask,
   PortfolioSummary,
@@ -60,18 +60,24 @@ import type {
   VolunteerShift,
   WalkInRegistrationDraft,
   WorkspaceMember,
+  TeamUpdate,
+  PublicAssignmentPayload,
+  PublicRegistrationDraft,
+  PublicVolunteerSignupDraft,
 } from "../data/entities.ts";
 
-import { REGISTRATION_STATUSES, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { REGISTRATION_STATUSES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
-import { parseFloorplanDraft } from "../data/floorplan.ts";
-import { notifyTaskAssignment } from "./notify.ts";
+import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
+import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
+import { notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
+import { volunteerCoverage } from "../data/santaClara.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -177,14 +183,14 @@ function historyValues(
 }
 
 /**
- * Whether a failed write was this unique index rejecting a duplicate.
+ * Whether a failed write was rejected by this named database constraint.
  *
  * The name is not in the error's message. Drizzle reports "Failed query: insert into
  * ..." and hangs the driver's error off `cause`, where Postgres puts the SQLSTATE and the
  * constraint. Matching on the message alone therefore never matched, and a duplicate
  * email came back to the user as a 500 with the raw SQL in it.
  */
-function isUniqueViolation(error: unknown, constraint: string): boolean {
+function isConstraintViolation(error: unknown, constraint: string): boolean {
   for (let current: unknown = error, depth = 0; current != null && depth < 5; depth += 1) {
     const candidate = current as { code?: string; constraint?: string; message?: string; cause?: unknown };
     if (candidate.constraint === constraint) return true;
@@ -713,6 +719,220 @@ export async function publicTickets(eventId: string) {
   return rows.map(map.toTicketType);
 }
 
+/** Public-safe volunteer openings. Names and contact details stay server-side. */
+export async function publicVolunteerNeeds(eventId: string) {
+  const [needs, shifts] = await Promise.all([
+    db.select().from(s.volunteerNeeds)
+      .where(eq(s.volunteerNeeds.eventId, eventId))
+      .orderBy(asc(s.volunteerNeeds.startTime), asc(s.volunteerNeeds.sortOrder)),
+    db.select().from(s.volunteerShifts).where(eq(s.volunteerShifts.eventId, eventId)),
+  ]);
+  return volunteerCoverage(needs.map(map.toVolunteerNeed), shifts.map(map.toVolunteerShift));
+}
+
+async function sharedEventForWrite(token: string) {
+  const [row] = await db.select().from(s.events).where(eq(s.events.shareToken, token)).limit(1);
+  if (!row || row.status === "cancelled" || row.status === "completed") {
+    throw new HttpError(404, "This event link is no longer active.");
+  }
+  return row;
+}
+
+/** Registers a guest from one segment-specific public link. */
+export async function publicRegistration(token: string, body: Body): Promise<Registration> {
+  const event = await sharedEventForWrite(token);
+  const draft: PublicRegistrationDraft = {
+    name: str(body, "name").trim(),
+    email: str(body, "email").trim().toLowerCase(),
+    segment: labelFrom(body, "segment") ?? "General",
+    organization: labelFrom(body, "organization", 120),
+  };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
+  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(s.registrations)
+    .where(and(eq(s.registrations.eventId, event.id), sql`${s.registrations.status} <> 'cancelled'`));
+  if (event.capacity !== null && Number(total) >= event.capacity) {
+    throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
+  }
+
+  const guestId = newId("att");
+  await db.insert(s.guests).values({
+    id: guestId,
+    workspaceId: event.workspaceId,
+    name: draft.name,
+    contact: draft.email,
+    notes: "Registered through the public event page.",
+  }).onConflictDoNothing({ target: [s.guests.workspaceId, s.guests.contact] });
+  const [guest] = await db.select({ id: s.guests.id }).from(s.guests).where(and(
+    eq(s.guests.workspaceId, event.workspaceId),
+    eq(s.guests.contact, draft.email),
+  )).limit(1);
+  if (!guest) throw new HttpError(500, "The guest record could not be created.");
+
+  const id = newId("reg");
+  try {
+    await db.insert(s.registrations).values({
+      id,
+      workspaceId: event.workspaceId,
+      eventId: event.id,
+      guestId: guest.id,
+      status: "confirmed",
+      segment: draft.segment,
+      organization: draft.organization,
+    });
+  } catch (error) {
+    if (isConstraintViolation(error, "registrations_event_guest_idx")) {
+      throw new HttpError(409, "This email is already registered for the event.");
+    }
+    throw error;
+  }
+  const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
+  return map.toRegistration(row!, event.title);
+}
+
+/** Claims an available volunteer opening without exposing the workspace or its roster. */
+export async function publicVolunteerSignup(token: string, body: Body): Promise<VolunteerShift> {
+  const event = await sharedEventForWrite(token);
+  const draft: PublicVolunteerSignupDraft = {
+    needId: str(body, "needId"),
+    name: str(body, "name").trim(),
+    email: str(body, "email").trim().toLowerCase(),
+    phone: labelFrom(body, "phone", 60),
+  };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
+  const [need] = await db.select().from(s.volunteerNeeds).where(and(
+    eq(s.volunteerNeeds.id, draft.needId),
+    eq(s.volunteerNeeds.eventId, event.id),
+    eq(s.volunteerNeeds.workspaceId, event.workspaceId),
+    eq(s.volunteerNeeds.signupOpen, true),
+  )).limit(1);
+  if (!need) throw new HttpError(404, "That volunteer shift is no longer available.");
+  const existing = await db.select({ id: s.volunteerShifts.id }).from(s.volunteerShifts).where(and(
+    eq(s.volunteerShifts.eventId, event.id),
+    eq(s.volunteerShifts.email, draft.email),
+    eq(s.volunteerShifts.needId, need.id),
+    sql`${s.volunteerShifts.status} <> 'cancelled'`,
+  )).limit(1);
+  if (existing.length > 0) throw new HttpError(409, "This email is already signed up for that shift.");
+  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(s.volunteerShifts).where(and(
+    eq(s.volunteerShifts.eventId, event.id),
+    eq(s.volunteerShifts.needId, need.id),
+    sql`${s.volunteerShifts.status} <> 'cancelled'`,
+  ));
+  if (Number(total) >= need.requiredCount) throw new HttpError(409, "That volunteer shift is already full.");
+  const id = newId("vol");
+  try {
+    await db.insert(s.volunteerShifts).values({
+      id,
+      workspaceId: event.workspaceId,
+      eventId: event.id,
+      needId: need.id,
+      name: draft.name,
+      email: draft.email,
+      phone: draft.phone,
+      role: need.role,
+      startTime: need.startTime,
+      endTime: need.endTime,
+      status: "confirmed",
+      notes: need.notes,
+    });
+  } catch (error) {
+    if (isConstraintViolation(error, "volunteer_need_capacity_check")) {
+      throw new HttpError(409, "That volunteer shift is already full.");
+    }
+    throw error;
+  }
+  const [row] = await db.select().from(s.volunteerShifts).where(eq(s.volunteerShifts.id, id)).limit(1);
+  const shift = map.toVolunteerShift(row!);
+  try {
+    const publicContext: RequestContext = {
+      userId: `public:${draft.email}`,
+      email: draft.email,
+      workspaceId: event.workspaceId,
+      role: "member",
+    };
+    const url = await createAssignmentAccess(publicContext, event.id, {
+      kind: "volunteer",
+      id: shift.id,
+      email: draft.email,
+    });
+    await notifyVolunteerAssignment({
+      to: draft.email,
+      volunteerName: shift.name,
+      role: shift.role,
+      eventTitle: event.title,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      url,
+    });
+  } catch (error) {
+    console.warn("VOLUNTEER_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
+  }
+  return shift;
+}
+
+/** Public, token-scoped read that exposes one current assignment and no surrounding workspace data. */
+export async function publicAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+  const [link] = await db.select().from(s.eventHistory)
+    .where(and(eq(s.eventHistory.resource, "assignment-link"), eq(s.eventHistory.resourceId, token)))
+    .limit(1);
+  if (!link || !link.after) return null;
+  const kind = link.after.kind;
+  const assignmentId = link.after.assignmentId;
+  const email = link.after.email;
+  if ((kind !== "checklist" && kind !== "volunteer") || typeof assignmentId !== "string" || typeof email !== "string") return null;
+
+  const [eventRow] = await db.select({ event: s.events, location: s.locations }).from(s.events)
+    .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
+    .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId))).limit(1);
+  if (!eventRow) return null;
+  const eventFields = {
+    eventTitle: eventRow.event.title,
+    eventDate: eventRow.event.startsAt.toISOString(),
+    eventEndDate: eventRow.event.endsAt?.toISOString() ?? null,
+    location: eventRow.location
+      ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
+      : eventRow.event.venue,
+  };
+
+  if (kind === "checklist") {
+    const [item] = await db.select().from(s.checklistItems).where(and(
+      eq(s.checklistItems.id, assignmentId),
+      eq(s.checklistItems.eventId, link.eventId),
+      eq(s.checklistItems.workspaceId, link.workspaceId),
+      eq(s.checklistItems.assignedEmail, email),
+    )).limit(1);
+    if (!item) return null;
+    return {
+      kind,
+      ...eventFields,
+      assignee: item.assignedTo ?? email,
+      title: item.title,
+      description: item.description,
+      dueDate: item.dueDate?.toISOString() ?? null,
+      startTime: null,
+      endTime: null,
+    };
+  }
+
+  const [shift] = await db.select().from(s.volunteerShifts).where(and(
+    eq(s.volunteerShifts.id, assignmentId),
+    eq(s.volunteerShifts.eventId, link.eventId),
+    eq(s.volunteerShifts.workspaceId, link.workspaceId),
+    eq(s.volunteerShifts.email, email),
+  )).limit(1);
+  if (!shift) return null;
+  return {
+    kind,
+    ...eventFields,
+    assignee: shift.name,
+    title: shift.role,
+    description: shift.notes,
+    dueDate: null,
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+  };
+}
+
 /* ------------------------------------------------------------- locations */
 
 export const locations = {
@@ -807,7 +1027,7 @@ export const guests = {
       });
     } catch (error) {
       // The unique index on (workspace, contact) is what makes this a real rule.
-      if (isUniqueViolation(error, "guests_workspace_contact_idx")) {
+      if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, `Someone with the email ${contact} is already in your people list.`);
       }
       throw error;
@@ -903,7 +1123,7 @@ export const registrations = {
         organization: labelFrom(body, "organization", 120),
       });
     } catch (error) {
-      if (isUniqueViolation(error, "registrations_event_guest_idx")) {
+      if (isConstraintViolation(error, "registrations_event_guest_idx")) {
         throw new HttpError(409, "That guest is already registered for this event.");
       }
       throw error;
@@ -970,7 +1190,7 @@ export const registrations = {
       const guest = map.toGuest(guestRows[0]!);
       return { ...map.toRegistration(registrationRows[0]!, event.title), guest };
     } catch (error) {
-      if (isUniqueViolation(error, "guests_workspace_contact_idx")) {
+      if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
       }
       throw error;
@@ -1175,6 +1395,8 @@ function eventScoped<Entity>(config: {
    * settles, but its own errors are swallowed by the implementer, not thrown here.
    */
   afterWrite?: (ctx: RequestContext, eventId: string, after: Entity, before: Entity | null) => Promise<void>;
+  /** Validates related records and tenant ownership before create or patch. */
+  beforeWrite?: (ctx: RequestContext, eventId: string, body: Body, current: Entity | null) => Promise<void>;
 }) {
   const table = config.table as unknown as typeof s.checklistItems;
   const orderColumns = () => {
@@ -1202,6 +1424,7 @@ function eventScoped<Entity>(config: {
 
     async create(ctx: RequestContext, eventId: string, body: Body): Promise<Entity> {
       await requireOwnedEvent(ctx, eventId);
+      await config.beforeWrite?.(ctx, eventId, body, null);
       const [{ maxOrder } = { maxOrder: 0 }] = await db
         .select({ maxOrder: sql<number>`coalesce(max(${table.sortOrder}), 0)` })
         .from(table)
@@ -1238,6 +1461,19 @@ function eventScoped<Entity>(config: {
     },
 
     async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Entity> {
+      let currentRow: typeof table.$inferSelect | null = null;
+      let previous: Entity | null = null;
+      if (config.beforeWrite || config.historyResource || config.afterWrite) {
+        const [current] = await db
+          .select()
+          .from(table)
+          .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
+          .limit(1);
+        if (!current) throw new HttpError(404, "That record no longer exists.");
+        currentRow = current;
+        previous = config.mapper(current as never);
+      }
+      await config.beforeWrite?.(ctx, eventId, body, previous);
       const patch = patchFrom<Record<string, unknown>>(body, config.patch);
       const updatedAt = new Date();
       const buildUpdate = () =>
@@ -1247,17 +1483,10 @@ function eventScoped<Entity>(config: {
           .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
           .returning();
       let updated;
-      let previous: Entity | null = null;
       // The prior row is read when history needs it, and also when a post-write hook does
       // — notifying on assignment requires knowing whether the assignee actually changed.
       if (config.historyResource || config.afterWrite) {
-        const [current] = await db
-          .select()
-          .from(table)
-          .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
-          .limit(1);
-        if (!current) throw new HttpError(404, "That record no longer exists.");
-        previous = config.mapper(current as never);
+        const current = currentRow!;
         const before = previous as Record<string, unknown>;
         [updated] = config.historyResource
           ? await db.batch([
@@ -1319,6 +1548,35 @@ function eventScoped<Entity>(config: {
 
 const scope = (ctx: RequestContext, eventId: string) => ({ workspaceId: ctx.workspaceId, eventId });
 
+const optionalEmail = (body: Body, key: string): string | null => {
+  const email = labelFrom(body, key, 320)?.toLowerCase() ?? null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpError(400, `${key} must be a valid email address.`);
+  }
+  return email;
+};
+
+async function createAssignmentAccess(
+  ctx: RequestContext,
+  eventId: string,
+  assignment: { kind: "checklist" | "volunteer"; id: string; email: string },
+): Promise<string> {
+  const token = newId("assignment");
+  await db.insert(s.eventHistory).values({
+    id: newId("hist"),
+    workspaceId: ctx.workspaceId,
+    eventId,
+    actorId: ctx.userId,
+    resource: "assignment-link",
+    resourceId: token,
+    action: "created",
+    summary: "Created a secure assignment link",
+    before: null,
+    after: { kind: assignment.kind, assignmentId: assignment.id, email: assignment.email },
+  });
+  return `${appOrigin()}/assignment/${token}`;
+}
+
 export const checklist = eventScoped({
   table: s.checklistItems as never,
   mapper: map.toChecklistItem as never,
@@ -1330,7 +1588,8 @@ export const checklist = eventScoped({
     completed: Boolean(body.completed),
     dueDate: parseOptionalDate(body.dueDate, "dueDate"),
     assignedTo: optStr(body, "assignedTo"),
-    assignedEmail: labelFrom(body, "assignedEmail", 320),
+    assignedEmail: optionalEmail(body, "assignedEmail"),
+    vendorId: optStr(body, "vendorId"),
     category: str(body, "category", "General"),
     sortOrder,
   }),
@@ -1340,9 +1599,19 @@ export const checklist = eventScoped({
     completed: (b) => Boolean(b.completed),
     dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
     assignedTo: (b) => optStr(b, "assignedTo"),
-    assignedEmail: (b) => labelFrom(b, "assignedEmail", 320),
+    assignedEmail: (b) => optionalEmail(b, "assignedEmail"),
+    vendorId: (b) => optStr(b, "vendorId"),
     category: (b) => str(b, "category", "General"),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+  beforeWrite: async (ctx, _eventId, body) => {
+    if (!("vendorId" in body) || body.vendorId === null || body.vendorId === "") return;
+    const vendorId = str(body, "vendorId");
+    const [vendor] = await db.select({ id: s.vendors.id }).from(s.vendors).where(and(
+      eq(s.vendors.id, vendorId),
+      eq(s.vendors.workspaceId, ctx.workspaceId),
+    )).limit(1);
+    if (!vendor) throw new HttpError(400, "That vendor is not available in this workspace.");
   },
 
   /**
@@ -1361,14 +1630,19 @@ export const checklist = eventScoped({
     const event = await events.get(ctx, eventId);
     if (!event) return;
 
-    await notifyTaskAssignment({
-      to: item.assignedEmail,
-      assigneeName: item.assignedTo,
-      taskTitle: item.title,
-      eventTitle: event.title,
-      dueDate: item.dueDate,
-      url: `${appOrigin()}/app/events/${eventId}/checklist`,
-    });
+    try {
+      const url = await createAssignmentAccess(ctx, eventId, { kind: "checklist", id: item.id, email: item.assignedEmail });
+      await notifyTaskAssignment({
+        to: item.assignedEmail,
+        assigneeName: item.assignedTo,
+        taskTitle: item.title,
+        eventTitle: event.title,
+        dueDate: item.dueDate,
+        url,
+      });
+    } catch (error) {
+      console.warn("TASK_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
+    }
   },
 });
 
@@ -1436,6 +1710,32 @@ const volunteerStatus = (body: Body): VolunteerShift["status"] => {
   return value as VolunteerShift["status"];
 };
 
+export const volunteerNeeds = eventScoped({
+  table: s.volunteerNeeds as never,
+  mapper: map.toVolunteerNeed as never,
+  idPrefix: "vneed",
+  order: "sortOrder",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    role: labelFrom(body, "role", 120) ?? str(body, "role"),
+    startTime: localTime(body, "startTime"),
+    endTime: localTime(body, "endTime"),
+    requiredCount: Math.min(500, positiveInt(body, "requiredCount")),
+    notes: labelFrom(body, "notes", 1_000),
+    signupOpen: body.signupOpen === undefined ? true : Boolean(body.signupOpen),
+    sortOrder,
+  }),
+  patch: {
+    role: (b) => labelFrom(b, "role", 120) ?? str(b, "role"),
+    startTime: (b) => localTime(b, "startTime"),
+    endTime: (b) => localTime(b, "endTime"),
+    requiredCount: (b) => Math.min(500, positiveInt(b, "requiredCount")),
+    notes: (b) => labelFrom(b, "notes", 1_000),
+    signupOpen: (b) => Boolean(b.signupOpen),
+    sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+});
+
 export const volunteers = eventScoped({
   table: s.volunteerShifts as never,
   mapper: map.toVolunteerShift as never,
@@ -1443,8 +1743,9 @@ export const volunteers = eventScoped({
   historyResource: "volunteer",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
+    needId: optStr(body, "needId"),
     name: labelFrom(body, "name", 120) ?? str(body, "name"),
-    email: labelFrom(body, "email", 320),
+    email: optionalEmail(body, "email"),
     phone: labelFrom(body, "phone", 60),
     role: labelFrom(body, "role", 120) ?? str(body, "role"),
     startTime: localTime(body, "startTime"),
@@ -1454,8 +1755,9 @@ export const volunteers = eventScoped({
     sortOrder,
   }),
   patch: {
+    needId: (b) => optStr(b, "needId"),
     name: (b) => labelFrom(b, "name", 120) ?? str(b, "name"),
-    email: (b) => labelFrom(b, "email", 320),
+    email: (b) => optionalEmail(b, "email"),
     phone: (b) => labelFrom(b, "phone", 60),
     role: (b) => labelFrom(b, "role", 120) ?? str(b, "role"),
     startTime: (b) => localTime(b, "startTime"),
@@ -1463,6 +1765,42 @@ export const volunteers = eventScoped({
     status: (b) => volunteerStatus(b),
     notes: (b) => labelFrom(b, "notes", 1_000),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+  beforeWrite: async (ctx, eventId, body, current) => {
+    const currentShift = current as VolunteerShift | null;
+    const effectiveNeedId = "needId" in body ? optStr(body, "needId") : currentShift?.needId;
+    if (!effectiveNeedId) return;
+    const [need] = await db.select().from(s.volunteerNeeds).where(and(
+      eq(s.volunteerNeeds.id, effectiveNeedId),
+      eq(s.volunteerNeeds.eventId, eventId),
+      eq(s.volunteerNeeds.workspaceId, ctx.workspaceId),
+    )).limit(1);
+    if (!need) throw new HttpError(400, "That staffing requirement is not available for this event.");
+    body.needId = need.id;
+    body.role = need.role;
+    body.startTime = need.startTime;
+    body.endTime = need.endTime;
+  },
+  afterWrite: async (ctx, eventId, after, before) => {
+    const shift = after as VolunteerShift;
+    const previous = before as VolunteerShift | null;
+    if (!shift.email || shift.email === previous?.email) return;
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    try {
+      const url = await createAssignmentAccess(ctx, eventId, { kind: "volunteer", id: shift.id, email: shift.email });
+      await notifyVolunteerAssignment({
+        to: shift.email,
+        volunteerName: shift.name,
+        role: shift.role,
+        eventTitle: event.title,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        url,
+      });
+    } catch (error) {
+      console.warn("VOLUNTEER_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
+    }
   },
 });
 
@@ -1634,7 +1972,7 @@ export const eventVendors = {
         ),
       ]);
     } catch (error) {
-      if (isUniqueViolation(error, "event_vendors_event_vendor_idx")) {
+      if (isConstraintViolation(error, "event_vendors_event_vendor_idx")) {
         throw new HttpError(409, "That vendor is already booked on this event.");
       }
       throw error;
@@ -2061,14 +2399,15 @@ export const floorplan = {
     return rows.map(map.toFloorplan);
   },
 
-  async create(ctx: RequestContext, eventId: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+  async create(ctx: RequestContext, eventId: string, draft: FloorplanDraft): Promise<Floorplan> {
     const context = await floorplanContext(ctx, eventId);
     const id = newId("fp");
     const updatedAt = new Date();
+    const stored = writeStoredFloorplan(draft);
     const [saved] = await db.batch([
       db
         .insert(s.floorplans)
-        .values({ id, eventId, workspaceId: ctx.workspaceId, name, items, updatedAt })
+        .values({ id, eventId, workspaceId: ctx.workspaceId, name: draft.name, items: stored, updatedAt })
         .returning(),
       db.insert(s.eventHistory).values(
         historyValues(ctx, {
@@ -2077,21 +2416,22 @@ export const floorplan = {
           resourceId: id,
           action: "created",
           before: null,
-          after: { id, eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
+          after: { id, eventId, ...draft, updatedAt: updatedAt.toISOString(), ...context },
         }),
       ),
     ]);
     return map.toFloorplan(saved[0]!);
   },
 
-  async save(ctx: RequestContext, id: string, name: string, items: FloorplanItem[]): Promise<Floorplan> {
+  async save(ctx: RequestContext, id: string, draft: FloorplanDraft): Promise<Floorplan> {
     const before = await ownedFloorplan(ctx, id);
     const context = await floorplanContext(ctx, before.eventId);
     const updatedAt = new Date();
+    const stored = writeStoredFloorplan(draft);
     const [saved] = await db.batch([
       db
         .update(s.floorplans)
-        .set({ name, items, updatedAt })
+        .set({ name: draft.name, items: stored, updatedAt })
         .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
         .returning(),
       db.insert(s.eventHistory).values(
@@ -2101,7 +2441,7 @@ export const floorplan = {
           resourceId: id,
           action: "updated",
           before: map.toFloorplan(before) as unknown as Record<string, unknown>,
-          after: { id, eventId: before.eventId, name, items, updatedAt: updatedAt.toISOString(), ...context },
+          after: { id, eventId: before.eventId, ...draft, updatedAt: updatedAt.toISOString(), ...context },
         }),
       ),
     ]);
@@ -2367,6 +2707,43 @@ export const history = {
   },
 };
 
+export const teamUpdates = {
+  async list(ctx: RequestContext, eventId: string): Promise<TeamUpdate[]> {
+    await requireOwnedEvent(ctx, eventId);
+    const rows = await db.select().from(s.eventHistory)
+      .where(and(eq(s.eventHistory.workspaceId, ctx.workspaceId), eq(s.eventHistory.eventId, eventId), eq(s.eventHistory.resource, "team-update")))
+      .orderBy(desc(s.eventHistory.createdAt)).limit(50);
+    return rows.map(map.toEventHistory).map(teamUpdateFromHistory);
+  },
+  async create(ctx: RequestContext, eventId: string, body: Body): Promise<TeamUpdate> {
+    await requireOwnedEvent(ctx, eventId);
+    const message = labelFrom(body, "message", 1_000);
+    if (!message) throw new HttpError(400, "Write an update before sending it.");
+    const kind = str(body, "kind", "general");
+    if (!(TEAM_UPDATE_KINDS as readonly string[]).includes(kind)) throw new HttpError(400, "Choose a valid update type.");
+    const parsedKind = teamUpdateKind(kind);
+    const id = newId("update");
+    const createdAt = new Date();
+    await db.insert(s.eventHistory).values({
+      id, workspaceId: ctx.workspaceId, eventId, actorId: ctx.userId, resource: "team-update", resourceId: id,
+      action: "created", summary: message, before: null, after: { kind, message }, createdAt,
+    });
+    const update: TeamUpdate = { id, eventId, actorId: ctx.userId, kind: parsedKind, message, createdAt: createdAt.toISOString() };
+    const [event, team] = await Promise.all([events.get(ctx, eventId), members.list(ctx)]);
+    if (event) {
+      const outcomes = await Promise.all(team.filter((member) => member.status === "active" && member.email).map((member) => notifyTeamUpdate({
+        to: member.email!, eventTitle: event.title, kind: parsedKind,
+        message, url: `${appOrigin()}/app/events/${eventId}`,
+      })));
+      update.emailDelivery = {
+        sent: outcomes.filter((outcome) => outcome.status === "sent").length,
+        notSent: outcomes.filter((outcome) => outcome.status !== "sent").length,
+      };
+    }
+    return update;
+  },
+};
+
 /**
  * Bounded, workspace-scoped evidence for the planning assistant. This deliberately
  * reads structured completed-event records instead of exposing the raw history log or
@@ -2397,8 +2774,8 @@ export const planningMemory = {
       const floorplanShapes: PastEventPlanningRecord["floorplanShapes"] = [];
       for (const row of planRows.filter((plan) => plan.eventId === event.id)) {
         try {
-          const parsed = parseFloorplanDraft({ name: row.name, items: row.items });
-          floorplanShapes.push(...parsed.items.map((item) => item.shape));
+          const stored = readStoredFloorplan(row.items);
+          floorplanShapes.push(...stored.items.map((item) => item.shape));
         } catch {
           // Older opaque layouts should not prevent the rest of the event evidence
           // from informing a new plan.

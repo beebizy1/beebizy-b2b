@@ -12,7 +12,21 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GripVertical, LayoutGrid, Lock, Plus, RotateCcw, Save, Trash2, Unlock } from "lucide-react";
+import {
+  Circle,
+  GripVertical,
+  LayoutGrid,
+  Lock,
+  Minus,
+  PenTool,
+  Plus,
+  RectangleHorizontal,
+  RotateCcw,
+  Save,
+  Shapes,
+  Trash2,
+  Unlock,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -29,8 +43,20 @@ import {
   type Event,
   type Floorplan,
   type FloorplanItem,
+  type FloorplanPoint,
+  type FloorplanRoom,
+  type FloorplanRoomShape,
   type FloorplanShape,
 } from "@/data/entities";
+import { floorplanRoomSquareFeet } from "@/data/floorplan";
+import {
+  DEFAULT_FLOORPLAN_ROOM,
+  addRoomCorner,
+  nearestPointInsideRoom,
+  pointIsInsideRoom,
+  roomClipPath,
+  roomPointsForShape,
+} from "@/data/floorplanGeometry";
 
 interface ShapeSpec {
   label: string;
@@ -53,9 +79,21 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   av: { label: "AV desk", width: 9, height: 7, seats: null, round: false, className: "bg-muted border-muted-foreground/40 text-muted-foreground" },
   tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
   chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
+  "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
+
+const ROOM_SHAPE_OPTIONS: {
+  value: FloorplanRoomShape;
+  label: string;
+  icon: typeof RectangleHorizontal;
+}[] = [
+  { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
+  { value: "oval", label: "Oval", icon: Circle },
+  { value: "l-shape", label: "L-shape", icon: Shapes },
+  { value: "custom", label: "Custom", icon: PenTool },
+];
 
 function newItemId(): string {
   return `fp-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
@@ -70,9 +108,12 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   const [name, setName] = useState<string | null>(null);
   const [items, setItems] = useState<FloorplanItem[] | null>(null);
+  const [room, setRoom] = useState<FloorplanRoom | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const cornerDragState = useRef<{ index: number } | null>(null);
   const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
   const suppressPaletteClick = useRef(false);
 
@@ -80,7 +121,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   // the derived values below don't recompute on every render.
   const workingItems = useMemo(() => items ?? saved?.items ?? [], [items, saved]);
   const workingName = name ?? saved?.name ?? "Room layout";
-  const dirty = items !== null || name !== null;
+  const workingRoom = useMemo(
+    () => room ?? saved.room ?? DEFAULT_FLOORPLAN_ROOM,
+    [room, saved.room],
+  );
+  const dirty = items !== null || name !== null || room !== null;
 
   const selected = workingItems.find((item) => item.id === selectedId) ?? null;
 
@@ -93,20 +138,48 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
+  const updateRoom = (patch: Partial<FloorplanRoom>) => {
+    setRoom({ ...workingRoom, ...patch });
+  };
+
+  const updateRoomPoint = (index: number, point: FloorplanPoint) => {
+    updateRoom({
+      points: workingRoom.points.map((current, currentIndex) =>
+        currentIndex === index ? point : current,
+      ),
+    });
+  };
+
+  const changeRoomShape = (shape: FloorplanRoomShape) => {
+    updateRoom({
+      shape,
+      points:
+        shape === "custom" && workingRoom.shape === "custom"
+          ? workingRoom.points.map((point) => ({ ...point }))
+          : roomPointsForShape(shape),
+    });
+    setSelectedCorner(shape === "custom" ? 0 : null);
+  };
+
   const addShape = (shape: FloorplanShape, position?: { x: number; y: number }) => {
     const spec = SHAPES[shape];
     const sameShape = workingItems.filter((item) => item.shape === shape).length;
+    const staggered = {
+      x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
+      y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
+    };
+    const fallbackPosition = nearestPointInsideRoom(workingRoom, staggered);
     const item: FloorplanItem = {
       id: newItemId(),
       shape,
       label: spec.seats === null ? spec.label : String(sameShape + 1),
       // Stagger new objects so they don't stack on the same spot.
-      x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
-      y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
+      x: fallbackPosition.x,
+      y: fallbackPosition.y,
       seats: spec.seats,
-      // Existing landscape features should not be nudged accidentally while the
-      // team arranges temporary furniture around them.
-      locked: shape === "tree",
+      // Every object starts movable. Teams can lock true fixed features after they
+      // have placed them, using the same control available for furniture.
+      locked: false,
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
@@ -117,10 +190,12 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     if (!room) return false;
     const rect = room.getBoundingClientRect();
     if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
-    addShape(shape, {
+    const position = {
       x: ((clientX - rect.left) / rect.width) * 100,
       y: ((clientY - rect.top) / rect.height) * 100,
-    });
+    };
+    if (!pointIsInsideRoom(workingRoom, position.x, position.y)) return false;
+    addShape(shape, position);
     return true;
   };
 
@@ -167,18 +242,28 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   };
 
   const onPointerMove = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragState.current;
     const room = roomRef.current;
-    if (!drag || !room) return;
+    if (!room) return;
     const rect = room.getBoundingClientRect();
+    const cornerDrag = cornerDragState.current;
+    if (cornerDrag) {
+      updateRoomPoint(cornerDrag.index, {
+        x: clamp(((pointerEvent.clientX - rect.left) / rect.width) * 100),
+        y: clamp(((pointerEvent.clientY - rect.top) / rect.height) * 100),
+      });
+      return;
+    }
+
+    const drag = dragState.current;
+    if (!drag) return;
     const x = clamp(((pointerEvent.clientX - rect.left) / rect.width) * 100 - drag.offsetX);
     const y = clamp(((pointerEvent.clientY - rect.top) / rect.height) * 100 - drag.offsetY);
-    updateItem(drag.id, { x, y });
+    if (pointIsInsideRoom(workingRoom, x, y)) updateItem(drag.id, { x, y });
   };
 
-  const endDrag = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
-    if (dragState.current) pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+  const endDrag = () => {
     dragState.current = null;
+    cornerDragState.current = null;
   };
 
   /* ------------------------------------------------------------- keyboard */
@@ -186,12 +271,12 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   // The key handler reads through a ref so the listener attaches once and still sees the
   // current selection. Re-subscribing on every render would be the alternative, and
   // depending on `updateItem` (recreated each render) would do exactly that.
-  const latest = useRef({ selected, workingItems });
-  latest.current = { selected, workingItems };
+  const latest = useRef({ selected, workingItems, workingRoom });
+  latest.current = { selected, workingItems, workingRoom };
 
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
-      const { selected: target, workingItems: current } = latest.current;
+      const { selected: target, workingItems: current, workingRoom: currentRoom } = latest.current;
       if (!target) return;
 
       if (target.locked) return;
@@ -207,9 +292,12 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       const move = moves[keyEvent.key];
       if (move) {
         keyEvent.preventDefault();
+        const x = clamp(target.x + move[0]);
+        const y = clamp(target.y + move[1]);
+        if (!pointIsInsideRoom(currentRoom, x, y)) return;
         setItems(
           current.map((item) =>
-            item.id === target.id ? { ...item, x: clamp(item.x + move[0]), y: clamp(item.y + move[1]) } : item,
+            item.id === target.id ? { ...item, x, y } : item,
           ),
         );
         return;
@@ -246,6 +334,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           ? "success"
           : "warning";
 
+  const visualAspectRatio = Math.max(0.65, Math.min(2.4, workingRoom.widthFeet / workingRoom.lengthFeet));
+
   return (
     <Panel>
       <PanelHeader
@@ -261,7 +351,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 onClick={() => {
                   setItems(null);
                   setName(null);
+                  setRoom(null);
                   setSelectedId(null);
+                  setSelectedCorner(null);
                 }}
               >
                 <RotateCcw className="mr-1.5 size-3.5" />
@@ -273,11 +365,16 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
               disabled={!dirty || savePlan.isPending}
               onClick={() =>
                 savePlan.mutate(
-                  { id: saved.id, eventId: event.id, draft: { name: workingName, items: workingItems } },
+                  {
+                    id: saved.id,
+                    eventId: event.id,
+                    draft: { name: workingName, items: workingItems, room: workingRoom },
+                  },
                   {
                     onSuccess: () => {
                       setItems(null);
                       setName(null);
+                      setRoom(null);
                       toast({ title: "Floorplan saved" });
                     },
                     onError: (error) => toast({ title: "Couldn't save", description: error.message }),
@@ -291,6 +388,117 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           </div>
         }
       />
+
+      <div className="border-b border-hairline bg-surface-sunken/60 px-5 py-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <fieldset className="space-y-1.5">
+            <legend className="text-xs font-medium text-muted-foreground">Room shape</legend>
+            <div className="flex flex-wrap gap-1 rounded-lg border border-hairline bg-surface p-1">
+              {ROOM_SHAPE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const active = workingRoom.shape === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => changeRoomShape(option.value)}
+                    className={cn(
+                      "flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      active
+                        ? "bg-secondary text-secondary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <label className="space-y-1.5">
+            <span className="block text-xs font-medium text-muted-foreground">Width</span>
+            <div className="relative">
+              <Input
+                type="number"
+                min="1"
+                max="10000"
+                step="1"
+                value={workingRoom.widthFeet}
+                onChange={(inputEvent) => {
+                  const value = Number(inputEvent.target.value);
+                  if (Number.isFinite(value) && value > 0) updateRoom({ widthFeet: value });
+                }}
+                aria-label="Room width in feet"
+                className="h-9 w-28 pr-8 text-right tabular-nums"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">ft</span>
+            </div>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="block text-xs font-medium text-muted-foreground">Length</span>
+            <div className="relative">
+              <Input
+                type="number"
+                min="1"
+                max="10000"
+                step="1"
+                value={workingRoom.lengthFeet}
+                onChange={(inputEvent) => {
+                  const value = Number(inputEvent.target.value);
+                  if (Number.isFinite(value) && value > 0) updateRoom({ lengthFeet: value });
+                }}
+                aria-label="Room length in feet"
+                className="h-9 w-28 pr-8 text-right tabular-nums"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">ft</span>
+            </div>
+          </label>
+
+          <div className="pb-1 text-xs text-muted-foreground">
+            {workingRoom.widthFeet} × {workingRoom.lengthFeet} ft
+            <span className="ml-1.5 font-medium text-foreground">· {floorplanRoomSquareFeet(workingRoom).toLocaleString()} sq ft</span>
+            <span className="ml-1.5 text-[11px]">· canvas scales to fit</span>
+          </div>
+        </div>
+
+        {workingRoom.shape === "custom" ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-hairline pt-3">
+            <span className="text-xs text-muted-foreground">Drag the yellow corner points to trace the room.</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const result = addRoomCorner(workingRoom.points);
+                updateRoom({ points: result.points });
+                setSelectedCorner(result.index);
+              }}
+              disabled={workingRoom.points.length >= 24}
+            >
+              <Plus className="mr-1.5 size-3.5" />
+              Add corner
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (selectedCorner === null || workingRoom.points.length <= 3) return;
+                updateRoom({ points: workingRoom.points.filter((_, index) => index !== selectedCorner) });
+                setSelectedCorner(null);
+              }}
+              disabled={selectedCorner === null || workingRoom.points.length <= 3}
+            >
+              <Minus className="mr-1.5 size-3.5" />
+              Remove corner
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3">
         <Input
@@ -333,14 +541,38 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
-              className="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-hairline bg-surface-sunken"
-              style={{
-                // A faint grid so objects can be lined up by eye.
-                backgroundImage:
-                  "linear-gradient(to right, hsl(var(--hairline)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--hairline)) 1px, transparent 1px)",
-                backgroundSize: "5% 8.333%",
-              }}
+              className="relative min-h-[360px] w-full overflow-hidden rounded-lg border border-hairline bg-muted/30"
+              style={{ aspectRatio: visualAspectRatio }}
             >
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 bg-surface-sunken shadow-inner"
+                style={{
+                  clipPath: roomClipPath(workingRoom),
+                  backgroundImage:
+                    "linear-gradient(to right, hsl(var(--hairline)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--hairline)) 1px, transparent 1px)",
+                  backgroundSize: "5% 8.333%",
+                }}
+              />
+              <svg
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 size-full text-primary/70"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
+                {workingRoom.shape === "oval" ? (
+                  <ellipse cx="50" cy="50" rx="48" ry="48" fill="none" stroke="currentColor" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+                ) : (
+                  <polygon
+                    points={workingRoom.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="0.5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+              </svg>
+
               {workingItems.length === 0 ? (
                 <div className="absolute inset-0 grid place-items-center">
                   <EmptyState
@@ -383,11 +615,50 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   </div>
                 );
               })}
+
+              {workingRoom.shape === "custom"
+                ? workingRoom.points.map((point, index) => (
+                    <button
+                      key={`corner-${index}`}
+                      type="button"
+                      aria-label={`Room corner ${index + 1}`}
+                      aria-pressed={selectedCorner === index}
+                      onPointerDown={(pointerEvent) => {
+                        pointerEvent.stopPropagation();
+                        setSelectedId(null);
+                        setSelectedCorner(index);
+                        cornerDragState.current = { index };
+                        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+                      }}
+                      onKeyDown={(keyEvent) => {
+                        const movement: Record<string, [number, number]> = {
+                          ArrowUp: [0, -1],
+                          ArrowDown: [0, 1],
+                          ArrowLeft: [-1, 0],
+                          ArrowRight: [1, 0],
+                        };
+                        const delta = movement[keyEvent.key];
+                        if (!delta) return;
+                        keyEvent.preventDefault();
+                        const step = keyEvent.shiftKey ? 5 : 1;
+                        updateRoomPoint(index, {
+                          x: clamp(point.x + delta[0] * step),
+                          y: clamp(point.y + delta[1] * step),
+                        });
+                      }}
+                      className={cn(
+                        "absolute z-30 size-4 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-surface bg-primary shadow-sm transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                        selectedCorner === index && "scale-125 ring-2 ring-ring ring-offset-2",
+                      )}
+                      style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                    />
+                  ))
+                : null}
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag objects from the toolbar to place them. Trees start fixed in place. Select an object to lock or
-              unlock it, then use drag or the arrow keys to move it.
+              Drag objects from the toolbar to place them inside the room outline. Select any object to lock or unlock
+              its position, then use drag or the arrow keys to move it.
             </p>
           </div>
 

@@ -77,6 +77,7 @@ import LiveAuctionPanel from "./sections/LiveAuctionPanel";
 import PlanningAssistantPanel from "./sections/PlanningAssistantPanel";
 import { ChecklistPanel, MoodBoardPanel, RunOfShowPanel } from "./sections/PlanSection";
 import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/VendorsSection";
+import EventLiveUpdates from "./EventLiveUpdates";
 import {
   AuctionPanel,
   BudgetPanel,
@@ -472,6 +473,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   return (
     <div className="space-y-6">
       <WorkspaceHeader event={event} health={health} active={active} plan={plan} experience={experience} />
+      <EventLiveUpdates event={event} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}

@@ -51,6 +51,7 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RegistrationDraft,
+  PublicRegistrationDraft,
   RegistrationCheckInPatch,
   RegistrationStatus,
   WalkInRegistrationDraft,
@@ -67,6 +68,7 @@ import type {
   DepositPatch,
   TeamHoursDraft,
   TeamHoursPatch,
+  TeamUpdateDraft,
   TemplateContents,
   TemplateDraft,
   TicketTypeDraft,
@@ -77,6 +79,9 @@ import type {
   VendorPatch,
   VolunteerShiftDraft,
   VolunteerShiftPatch,
+  VolunteerNeedDraft,
+  VolunteerNeedPatch,
+  PublicVolunteerSignupDraft,
 } from "./entities";
 import type { PlanningBrief } from "./planner";
 import type { AssistantChatMessage } from "./assistantChat";
@@ -115,6 +120,7 @@ export const qk = {
   checklist: (eventId: string) => ["checklist", eventId] as const,
   runOfShow: (eventId: string) => ["runOfShow", eventId] as const,
   volunteers: (eventId: string) => ["volunteers", eventId] as const,
+  volunteerNeeds: (eventId: string) => ["volunteerNeeds", eventId] as const,
   budget: (eventId: string) => ["budget", eventId] as const,
   menu: (eventId: string) => ["menu", eventId] as const,
   moodBoard: (eventId: string) => ["moodBoard", eventId] as const,
@@ -139,6 +145,7 @@ export const qk = {
   settings: ["settings"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
   history: (eventId: string) => ["history", eventId] as const,
+  teamUpdates: (eventId: string) => ["teamUpdates", eventId] as const,
   roi: (eventId: string) => ["roi", eventId] as const,
 };
 
@@ -155,7 +162,7 @@ function eventDerivedKeys(eventId?: string): QueryKey[] {
 function useAdapterQuery<T>(
   key: QueryKey,
   select: (adapter: DataAdapter) => Promise<T>,
-  options?: { enabled?: boolean; staleTime?: number },
+  options?: { enabled?: boolean; staleTime?: number; refetchInterval?: number },
 ): UseQueryResult<T, Error> {
   const adapter = useData();
   return useQuery({
@@ -163,6 +170,7 @@ function useAdapterQuery<T>(
     queryFn: () => select(adapter),
     enabled: options?.enabled ?? true,
     staleTime: options?.staleTime ?? 15_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -363,6 +371,14 @@ export function useCreateRegistration() {
   return useAdapterMutation(
     (a, draft: RegistrationDraft) => a.registrations.create(draft),
     (draft) => [qk.registrations, qk.eventRegistrations(draft.eventId), ...eventDerivedKeys(draft.eventId)],
+  );
+}
+
+export function usePublicRegistration() {
+  return useAdapterMutation(
+    (a, vars: { shareToken: string; draft: PublicRegistrationDraft }) =>
+      a.registrations.registerPublic(vars.shareToken, vars.draft),
+    (vars) => [qk.eventByToken(vars.shareToken), qk.registrations],
   );
 }
 
@@ -570,14 +586,54 @@ export function useRemoveRunOfShowItem() {
 
 /* ---------------------------------------------------------------- volunteers */
 
+export function useVolunteerNeeds(eventId: string) {
+  return useAdapterQuery(qk.volunteerNeeds(eventId), (a) => a.volunteerNeeds.list(eventId), {
+    enabled: !!eventId,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useAddVolunteerNeed() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VolunteerNeedDraft }) => a.volunteerNeeds.create(vars.eventId, vars.draft),
+    (vars) => [qk.volunteerNeeds(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useUpdateVolunteerNeed() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: VolunteerNeedPatch }) =>
+      a.volunteerNeeds.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.volunteerNeeds(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useRemoveVolunteerNeed() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.volunteerNeeds.remove(vars.eventId, vars.id),
+    (vars) => [qk.volunteerNeeds(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function usePublicVolunteerSignup() {
+  return useAdapterMutation(
+    (a, vars: { shareToken: string; draft: PublicVolunteerSignupDraft }) =>
+      a.volunteerNeeds.signupPublic(vars.shareToken, vars.draft),
+    (vars) => [qk.eventByToken(vars.shareToken), ["volunteers"], ["volunteerNeeds"]],
+  );
+}
+
 export function useVolunteers(eventId: string) {
-  return useAdapterQuery(qk.volunteers(eventId), (a) => a.volunteers.list(eventId), { enabled: !!eventId });
+  return useAdapterQuery(qk.volunteers(eventId), (a) => a.volunteers.list(eventId), {
+    enabled: !!eventId,
+    refetchInterval: 10_000,
+  });
 }
 
 export function useAddVolunteer() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: VolunteerShiftDraft }) => a.volunteers.create(vars.eventId, vars.draft),
-    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+    (vars) => [qk.volunteers(vars.eventId), qk.volunteerNeeds(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
@@ -585,14 +641,14 @@ export function useUpdateVolunteer() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string; patch: VolunteerShiftPatch }) =>
       a.volunteers.update(vars.eventId, vars.id, vars.patch),
-    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+    (vars) => [qk.volunteers(vars.eventId), qk.volunteerNeeds(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
 export function useRemoveVolunteer() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.volunteers.remove(vars.eventId, vars.id),
-    (vars) => [qk.volunteers(vars.eventId), qk.history(vars.eventId)],
+    (vars) => [qk.volunteers(vars.eventId), qk.volunteerNeeds(vars.eventId), qk.history(vars.eventId)],
   );
 }
 
@@ -604,6 +660,21 @@ export function useBudget(eventId: string) {
 
 export function useEventHistory(eventId: string) {
   return useAdapterQuery(qk.history(eventId), (a) => a.history.list(eventId), { enabled: !!eventId });
+}
+
+export function useTeamUpdates(eventId: string) {
+  return useAdapterQuery(qk.teamUpdates(eventId), (a) => a.teamUpdates.list(eventId), {
+    enabled: !!eventId,
+    staleTime: 0,
+    refetchInterval: 10_000,
+  });
+}
+
+export function usePostTeamUpdate() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: TeamUpdateDraft }) => a.teamUpdates.create(vars.eventId, vars.draft),
+    (vars) => [qk.teamUpdates(vars.eventId), qk.history(vars.eventId)],
+  );
 }
 
 export function useAddBudgetItem() {

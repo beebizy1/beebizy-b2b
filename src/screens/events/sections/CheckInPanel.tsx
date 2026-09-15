@@ -12,6 +12,8 @@ import {
   Trash2,
   UserCheck,
   UsersRound,
+  Tablet,
+  Wifi,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill, StatTile } from "@/components/primitives";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -187,6 +190,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const [deleteStation, setDeleteStation] = useState<CheckInStation | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(50);
   const [printJob, setPrintJob] = useState<CheckInPrintJob | null>(null);
+  const [showPrinterSetup, setShowPrinterSetup] = useState(false);
   const stationRows = useMemo(() => stations ?? [], [stations]);
 
   const rows = useMemo(
@@ -282,6 +286,9 @@ export function CheckInPanel({ event }: { event: Event }) {
           actions={
             <div className="flex flex-wrap gap-2">
               <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets CSV" registrationStatus="confirmed" />
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowPrinterSetup(true)}>
+                <Tablet className="mr-1.5 size-3.5" aria-hidden="true" />iPad & printer setup
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "guest-list" })} disabled={rows.length === 0}>
                 <Printer className="mr-1.5 size-3.5" aria-hidden="true" />Print guest list
               </Button>
@@ -541,6 +548,26 @@ export function CheckInPanel({ event }: { event: Event }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog open={showPrinterSetup} onOpenChange={setShowPrinterSetup}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Use an iPad at check-in</DialogTitle>
+            <DialogDescription>Beebizy runs in Safari on the iPad. Printing uses Apple AirPrint, so no cable or printer driver is needed.</DialogDescription>
+          </DialogHeader>
+          <ol className="space-y-3 text-sm text-foreground">
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">1</span><span>Connect the iPad and an AirPrint-compatible printer to the same secure Wi-Fi network.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">2</span><span>Open Beebizy in Safari, select the active station, and check in the guest.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">3</span><span>Tap Badge or Print guest list, then choose the printer in the iPad print sheet.</span></li>
+          </ol>
+          <div className="flex items-start gap-2 rounded-lg border border-info/30 bg-info-tint p-3 text-xs text-info-text">
+            <Wifi className="mt-0.5 size-4 shrink-0" />Printers without AirPrint need the printer maker's iPad app or an AirPrint print server. Test the exact printer and badge stock before event day.
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPrinterSetup(false)}>Close</Button>
+            <Button onClick={() => { setShowPrinterSetup(false); setPrintJob({ kind: "printer-test" }); }}><Printer className="mr-1.5 size-4" />Print test badge</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <CheckInPrintSheet event={event} job={printJob} rows={rows} formatDate={formatDate} timeZoneLabel={timeZoneLabel} />
     </div>
   );

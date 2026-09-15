@@ -278,6 +278,20 @@ describe("registrations", () => {
     ).rejects.toThrow(/already registered/i);
   });
 
+  it("accepts a category-specific public registration and updates the organizer list", async () => {
+    const before = (await memoryAdapter.registrations.listForEvent("evt-skickoff")).length;
+    const created = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "Ada Investor",
+      email: "ada.investor@example.com",
+      segment: "Investor",
+      organization: "Analytical Engines",
+    });
+    expect(created).toMatchObject({ status: "confirmed", segment: "Investor", organization: "Analytical Engines" });
+    const after = await memoryAdapter.registrations.listForEvent("evt-skickoff");
+    expect(after).toHaveLength(before + 1);
+    expect(after.find((row) => row.id === created.id)?.guest?.name).toBe("Ada Investor");
+  });
+
   it("refuses to exceed capacity", async () => {
     // The advisory board seats 24 and the seed fills 12; push it to the limit.
     const guests = await memoryAdapter.guests.list();
@@ -334,6 +348,39 @@ describe("volunteers", () => {
     expect((await memoryAdapter.volunteers.list("evt-gala")).length).toBeGreaterThan(0);
     await memoryAdapter.events.remove("evt-gala");
     expect(await memoryAdapter.volunteers.list("evt-gala")).toEqual([]);
+  });
+
+  it("fills an open staffing requirement through public self-signup", async () => {
+    const before = (await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))!.volunteerNeeds[0]!;
+    expect(before).toMatchObject({ role: "Welcome desk", filledCount: 1, openCount: 1, isFull: false });
+    await memoryAdapter.volunteerNeeds.signupPublic("demo-evt-skickoff", {
+      needId: before.id,
+      name: "Grace Volunteer",
+      email: "grace.volunteer@example.com",
+    });
+    const after = (await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))!.volunteerNeeds[0]!;
+    expect(after).toMatchObject({ filledCount: 2, openCount: 0, isFull: true });
+    expect((await memoryAdapter.volunteers.list("evt-skickoff")).some((row) => row.name === "Grace Volunteer")).toBe(true);
+  });
+
+  it("keeps closed and fully staffed requirements visible on the public schedule", async () => {
+    const before = (await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))!.volunteerNeeds[0]!;
+    await memoryAdapter.volunteerNeeds.update("evt-skickoff", before.id, { signupOpen: false });
+    const schedule = (await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))!.volunteerNeeds;
+    expect(schedule).toContainEqual(expect.objectContaining({ id: before.id, signupOpen: false }));
+  });
+});
+
+describe("live team updates", () => {
+  it("stores an event-scoped update in newest-first order and event history", async () => {
+    const created = await memoryAdapter.teamUpdates.create("evt-cab", {
+      kind: "vendor-delay",
+      message: "Catering is 20 minutes late.",
+    });
+    expect(created).toMatchObject({ kind: "vendor-delay", message: "Catering is 20 minutes late." });
+    expect((await memoryAdapter.teamUpdates.list("evt-cab"))[0]).toMatchObject({ id: created.id });
+    expect((await memoryAdapter.teamUpdates.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
+    expect((await memoryAdapter.history.list("evt-cab")).some((row) => row.id === created.id && row.resource === "team-update")).toBe(true);
   });
 });
 
@@ -531,6 +578,19 @@ describe("floorplan", () => {
   it("round-trips a saved room", async () => {
     const created = await memoryAdapter.floorplan.create("evt-cab", {
       name: "U-shape, 24 seats",
+      room: {
+        shape: "l-shape",
+        widthFeet: 90,
+        lengthFeet: 60,
+        points: [
+          { x: 2, y: 2 },
+          { x: 98, y: 2 },
+          { x: 98, y: 48 },
+          { x: 58, y: 48 },
+          { x: 58, y: 98 },
+          { x: 2, y: 98 },
+        ],
+      },
       items: [
         { id: "a", shape: "long-table", label: "Top", x: 50, y: 20, seats: 8 },
         { id: "b", shape: "long-table", label: "Left", x: 20, y: 50, seats: 8 },
@@ -541,6 +601,7 @@ describe("floorplan", () => {
 
     const [reread] = await memoryAdapter.floorplan.list("evt-cab");
     expect(reread!.items).toHaveLength(3);
+    expect(reread!.room).toMatchObject({ shape: "l-shape", widthFeet: 90, lengthFeet: 60 });
     expect(reread!.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(24);
   });
 

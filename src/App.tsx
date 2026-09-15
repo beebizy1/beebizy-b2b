@@ -64,7 +64,8 @@ import PostEventSummary from "@/screens/events/PostEventSummary";
 import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
 import FeedbackInbox from "@/screens/FeedbackInbox";
-import { PublicEventPage, PublicTicketsPage } from "@/screens/public/PublicEvent";
+import { PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
+import PublicAssignment from "@/screens/public/PublicAssignment";
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
@@ -180,7 +181,10 @@ function Routes() {
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>
+      <Route path="/e/:token/register/:segment">{(params) => <PublicRegistrationPage token={params.token} segment={params.segment} />}</Route>
+      <Route path="/e/:token/volunteer">{(params) => <PublicVolunteerSignupPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>
+      <Route path="/assignment/:token">{(params) => <PublicAssignment token={params.token} />}</Route>
 
       {/*
         Legacy links from the previous route layout, plus the two this rebuild moved when
