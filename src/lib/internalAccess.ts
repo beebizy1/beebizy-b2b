@@ -11,6 +11,7 @@ export const INTERNAL_EMAIL_DOMAIN = "beebizy.com";
 
 /** Product operators who receive founder-level product controls. */
 export const PRODUCT_OPERATOR_EMAILS = [
+  "hello@beebizy.com",
   "laila@beebizy.com",
   "tarang@beebizy.com",
   "sm.shreyamahajan@gmail.com",
