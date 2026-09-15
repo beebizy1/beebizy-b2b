@@ -36,7 +36,7 @@ export default function SantaClaraDashboard() {
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-text">Santa Clara pilot workspace</p>
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              Customized for Santa Clara University
+              Santa Clara University
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               One focused place to prepare the program, coordinate people, and run registration on event day.

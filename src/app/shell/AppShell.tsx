@@ -113,9 +113,6 @@ function SidebarContent({
       <div className="mb-4 flex flex-col gap-3 p-4">
         <BrandLogoLink to="/app" size="sm" />
         <div className="border-t border-sidebar-border pt-3">
-          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Customized for
-          </p>
           <WorkspaceMark label={experience === "santa-clara" ? "Santa Clara University" : user?.name ?? "Beebizy Studio"} />
           {canSwitchExperience ? (
             <div className="mt-3 rounded-lg border border-sidebar-border bg-background/70 p-1.5">
