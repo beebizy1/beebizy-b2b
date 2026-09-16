@@ -283,7 +283,7 @@ export const events = {
       status: (optStr(body, "status") ?? "draft") as "draft",
       category: str(body, "category", "Other"),
       imageUrl: optStr(body, "imageUrl"),
-      registrationPage: normalizeRegistrationPage(body.registrationPage),
+      registrationPage: normalizeRegistrationPage(body.registrationPage ?? DEFAULT_REGISTRATION_PAGE),
       createdAt,
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;

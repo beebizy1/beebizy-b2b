@@ -14,6 +14,7 @@ import { formatMoney } from "@/data/money";
 import {
   REGISTRATION_PAGE_TEMPLATES,
   normalizeRegistrationPage,
+  registrationInvitationHtml,
   registrationPageTemplate,
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
@@ -29,6 +30,22 @@ async function copyText(value: string, success: string): Promise<void> {
     toast({ title: success });
   } catch {
     toast({ title: "Couldn't copy", description: "Select the text and copy it manually." });
+  }
+}
+
+async function copyDesignedInvitation(html: string, plain: string): Promise<void> {
+  try {
+    if (!navigator.clipboard.write || typeof ClipboardItem === "undefined") {
+      await copyText(plain, "Invitation text copied");
+      return;
+    }
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([plain], { type: "text/plain" }),
+    })]);
+    toast({ title: "Designed invitation copied", description: "Paste it into your email composer and add recipients." });
+  } catch {
+    await copyText(plain, "Invitation text copied");
   }
 }
 
@@ -101,6 +118,9 @@ export default function ShareSection({ event }: { event: Event }) {
   const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
     ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}`
+    : "";
+  const inviteHtml = eventUrl
+    ? registrationInvitationHtml(published, event.title, event.description, eventUrl)
     : "";
 
   const publish = async () => {
@@ -201,10 +221,10 @@ export default function ShareSection({ event }: { event: Event }) {
               <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
               <Textarea id="invite-copy" readOnly value={inviteMessage} rows={5} className="mt-2" onFocus={(e) => e.currentTarget.select()} />
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => void copyText(inviteMessage, "Invitation copied")}><Copy className="mr-1.5 size-4" /> Copy invitation</Button>
+                <Button variant="outline" size="sm" onClick={() => void copyDesignedInvitation(inviteHtml, inviteMessage)}><Copy className="mr-1.5 size-4" /> Copy designed invitation</Button>
                 <Button asChild variant="outline" size="sm"><a href={`mailto:?subject=${encodeURIComponent(published.headline || event.title)}&body=${encodeURIComponent(inviteMessage)}`}><Mail className="mr-1.5 size-4" /> Open email draft</a></Button>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">The email includes a link to your themed registration site. Beebizy does not send bulk invitation emails from this screen.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Paste the designed version into your email composer, or open a plain-text draft. Beebizy does not send bulk invitation emails from this screen.</p>
             </div>
           </Panel>
         ) : (
