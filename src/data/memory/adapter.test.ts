@@ -101,6 +101,8 @@ describe("events", () => {
         heroImageUrl: "https://images.example.com/garden.jpg",
         showAgenda: false,
         showVolunteerSignup: true,
+        registrationTypes: ["Investor", "Founder"],
+        collectOrganization: true,
       },
     });
 
@@ -109,6 +111,27 @@ describe("events", () => {
       headline: "An evening in the garden",
       showAgenda: false,
     });
+    expect((await memoryAdapter.events.getByShareToken(shareToken))?.agenda).toEqual([]);
+    await expect(memoryAdapter.registrations.registerPublic(shareToken, {
+      name: "Guest", email: "guest@example.com", segment: "General",
+    })).rejects.toThrow(/guest type/i);
+    const registration = await memoryAdapter.registrations.registerPublic(shareToken, {
+      name: "Founder", email: "founder@example.com", segment: "Founder", organization: "Acme",
+    });
+    expect(registration).toMatchObject({ segment: "Founder", organization: "Acme" });
+  });
+
+  it("does not expose or accept volunteer signups when the public section is disabled", async () => {
+    const { shareToken } = await memoryAdapter.events.share("evt-skickoff");
+    const event = (await memoryAdapter.events.get("evt-skickoff"))!;
+    await memoryAdapter.events.update(event.id, {
+      registrationPage: { ...event.registrationPage, showVolunteerSignup: false },
+    });
+    expect((await memoryAdapter.events.getByShareToken(shareToken))?.volunteerNeeds).toEqual([]);
+    const need = (await memoryAdapter.volunteerNeeds.list(event.id))[0]!;
+    await expect(memoryAdapter.volunteerNeeds.signupPublic(shareToken, {
+      needId: need.id, name: "Volunteer", email: "volunteer@example.com",
+    })).rejects.toThrow(/not available/i);
   });
 
   it("copies a template's contents into a new event", async () => {
@@ -300,6 +323,10 @@ describe("registrations", () => {
   });
 
   it("accepts a category-specific public registration and updates the organizer list", async () => {
+    const event = (await memoryAdapter.events.get("evt-skickoff"))!;
+    await memoryAdapter.events.update(event.id, {
+      registrationPage: { ...event.registrationPage, registrationTypes: ["General", "Investor"] },
+    });
     const before = (await memoryAdapter.registrations.listForEvent("evt-skickoff")).length;
     const created = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
       name: "Ada Investor",

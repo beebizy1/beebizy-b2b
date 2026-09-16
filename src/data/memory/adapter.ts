@@ -129,7 +129,7 @@ import { nextTurn } from "../assistantChat";
 import { googleSheetCsvUrl } from "../import";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
-import { DEFAULT_REGISTRATION_PAGE } from "../registrationPage";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -452,11 +452,11 @@ const events: EventsRepository = {
     return copy({
       event,
       agenda: store()
-        .runOfShow.filter((item) => item.eventId === event.id)
+        .runOfShow.filter((item) => item.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showAgenda)
         .sort(compareRunOfShowItems),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
       volunteerNeeds: volunteerCoverage(
-        store().volunteerNeeds.filter((need) => need.eventId === event.id),
+        store().volunteerNeeds.filter((need) => need.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showVolunteerSignup),
         store().volunteers.filter((shift) => shift.eventId === event.id),
       ),
       timeZone: store().settings.timeZone,
@@ -689,9 +689,11 @@ const registrations: RegistrationsRepository = {
     const name = draft.name.trim();
     const email = draft.email.trim().toLowerCase();
     const segment = draft.segment.trim();
+    const page = normalizeRegistrationPage(event.registrationPage);
     if (!name) throw new DataError("invalid", "Name is required.");
     if (!/^\S+@\S+\.\S+$/.test(email)) throw new DataError("invalid", "Enter a valid email address.");
     if (!segment) throw new DataError("invalid", "Guest type is required.");
+    if (!page.registrationTypes.includes(segment)) throw new DataError("invalid", "That guest type is not available for this event.");
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
     }
@@ -712,7 +714,7 @@ const registrations: RegistrationsRepository = {
     const registration: Registration = {
       id: newId("reg"), ownerId: DEMO_OWNER_ID, eventId: event.id, eventTitle: event.title,
       guestId: guest.id, status: "confirmed", segment,
-      organization: draft.organization?.trim() || null, registeredAt: now,
+      organization: page.collectOrganization ? draft.organization?.trim() || null : null, registeredAt: now,
       checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now,
     };
     state.registrations.push(registration);
@@ -1038,6 +1040,9 @@ const volunteerNeeds: VolunteerNeedsRepository = {
       state.events.find((candidate) => candidate.shareToken === shareToken),
       "This volunteer signup link is no longer available.",
     );
+    if (!normalizeRegistrationPage(event.registrationPage).showVolunteerSignup) {
+      throw new DataError("not-found", "Volunteer signup is not available for this event.");
+    }
     const need = required(
       state.volunteerNeeds.find((candidate) => candidate.id === draft.needId && candidate.eventId === event.id),
       "That volunteer shift is no longer available.",

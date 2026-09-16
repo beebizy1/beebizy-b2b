@@ -66,7 +66,7 @@ function CopyRow({ label, url, hint }: { label: string; url: string; hint: strin
 
 function RegistrationPreview({ event, settings }: { event: Event; settings: RegistrationPageSettings }) {
   const template = registrationPageTemplate(settings.template);
-  const style = { backgroundColor: template.background, "--registration-accent": settings.accentColor } as CSSProperties;
+  const style = { backgroundColor: template.background } as CSSProperties;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-hairline shadow-sm" style={style}>
@@ -94,16 +94,32 @@ export default function ShareSection({ event }: { event: Event }) {
   const update = useUpdateEvent();
   const { data: tickets } = useTickets(event.id);
   const [draft, setDraft] = useState<RegistrationPageSettings>(() => normalizeRegistrationPage(event.registrationPage));
+  const [guestTypesInput, setGuestTypesInput] = useState(() => normalizeRegistrationPage(event.registrationPage).registrationTypes.join(", "));
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
   const eventUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}`) : null;
   const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
+  const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
-    ? `${draft.headline || event.title}\n\n${draft.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}`
+    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}`
     : "";
 
+  const publish = async () => {
+    try {
+      const registrationPage = normalizeRegistrationPage({ ...draft, registrationTypes: guestTypesInput.split(",") });
+      setDraft(registrationPage);
+      setGuestTypesInput(registrationPage.registrationTypes.join(", "));
+      await update.mutateAsync({ id: event.id, patch: { registrationPage } });
+      await share.mutateAsync({ id: event.id });
+      toast({ title: "Registration site published", description: "Copy the link and send it to your guests." });
+    } catch (error) {
+      toast({ title: "Couldn't publish the site", description: error instanceof Error ? error.message : "Please try again." });
+    }
+  };
+
   const save = () => {
-    const registrationPage = normalizeRegistrationPage(draft);
+    const registrationPage = normalizeRegistrationPage({ ...draft, registrationTypes: guestTypesInput.split(",") });
     setDraft(registrationPage);
+    setGuestTypesInput(registrationPage.registrationTypes.join(", "));
     update.mutate(
       { id: event.id, patch: { registrationPage } },
       {
@@ -149,6 +165,11 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Input id="registration-hero" type="url" value={draft.heroImageUrl ?? ""} placeholder="https://example.com/event-photo.jpg" onChange={(e) => setDraft((current) => ({ ...current, heroImageUrl: e.target.value || null }))} />
                 <p className="text-xs text-muted-foreground">Use a public HTTPS image link. This image is separate from the internal mood board.</p>
               </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-types">Guest types</Label>
+                <Input id="registration-types" value={guestTypesInput} placeholder="General, VIP, Speaker" onChange={(e) => setGuestTypesInput(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Separate each type with a comma. Guests choose one when they register, and it appears in the segmented list.</p>
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="registration-color">Brand color</Label>
                 <div className="flex items-center gap-2">
@@ -157,6 +178,7 @@ export default function ShareSection({ event }: { event: Event }) {
                 </div>
               </div>
               <div className="space-y-3 rounded-lg border border-hairline p-3">
+                <label className="flex items-center justify-between gap-3 text-sm"><span>Ask for organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show public agenda</span><Switch checked={draft.showAgenda} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showAgenda: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
               </div>
@@ -178,15 +200,19 @@ export default function ShareSection({ event }: { event: Event }) {
             <div className="border-t border-hairline p-5">
               <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
               <Textarea id="invite-copy" readOnly value={inviteMessage} rows={5} className="mt-2" onFocus={(e) => e.currentTarget.select()} />
-              <Button className="mt-3" variant="outline" size="sm" onClick={() => void copyText(inviteMessage, "Invitation copied")}><Mail className="mr-1.5 size-4" /> Copy invitation</Button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => void copyText(inviteMessage, "Invitation copied")}><Copy className="mr-1.5 size-4" /> Copy invitation</Button>
+                <Button asChild variant="outline" size="sm"><a href={`mailto:?subject=${encodeURIComponent(published.headline || event.title)}&body=${encodeURIComponent(inviteMessage)}`}><Mail className="mr-1.5 size-4" /> Open email draft</a></Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">The email includes a link to your themed registration site. Beebizy does not send bulk invitation emails from this screen.</p>
             </div>
           </Panel>
         ) : (
           <Panel>
             <PanelHeader title="Publish registration site" description="Nothing about this event is public until you turn sharing on" />
             <EmptyState icon={Globe} title="Your design is private" description="Publish when it is ready. Beebizy will create one guest link for event details and registration." action={
-              <Button disabled={share.isPending} onClick={() => share.mutate({ id: event.id }, { onSuccess: () => toast({ title: "Registration site published", description: "Copy the link and send it to your guests." }), onError: (error) => toast({ title: "Couldn't publish the site", description: error.message }) })}>
-                <Globe className="mr-1.5 size-4" /> {share.isPending ? "Publishing..." : "Publish registration site"}
+              <Button disabled={share.isPending || update.isPending} onClick={() => void publish()}>
+                <Globe className="mr-1.5 size-4" /> {share.isPending || update.isPending ? "Publishing..." : "Publish registration site"}
               </Button>
             } />
           </Panel>

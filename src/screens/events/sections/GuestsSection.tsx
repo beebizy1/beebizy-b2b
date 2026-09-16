@@ -42,7 +42,8 @@ import {
   type RegistrationStatus,
   type RegistrationWithGuest,
 } from "@/data/entities";
-import { registrationSegmentSummary, SANTA_CLARA_REGISTRATION_SEGMENTS } from "@/data/santaClara";
+import { registrationSegmentSummary } from "@/data/santaClara";
+import { normalizeRegistrationPage } from "@/data/registrationPage";
 
 /** No category is a real choice in a Select, and "" is not a usable option value. */
 const UNCATEGORISED = "__none__";
@@ -408,7 +409,7 @@ export default function GuestsSection({ event }: { event: Event }) {
         <p className="text-sm font-semibold text-foreground">Registration links by guest type</p>
         <p className="mt-1 text-xs text-muted-foreground">Share a separate form for each audience. Every response lands here with the category already applied.</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {SANTA_CLARA_REGISTRATION_SEGMENTS.map((segment) => (
+          {normalizeRegistrationPage(event.registrationPage).registrationTypes.map((segment) => (
             <Button key={segment} variant="outline" size="sm" disabled={share.isPending} onClick={() => void copyRegistrationLink(segment)}>
               <Copy className="mr-1.5 size-3.5" />{segment}
             </Button>

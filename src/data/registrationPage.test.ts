@@ -29,6 +29,8 @@ describe("registration page settings", () => {
         heroImageUrl: "https://images.example.com/garden.jpg",
         showAgenda: false,
         showVolunteerSignup: true,
+        registrationTypes: ["Investor", "Student", "Investor", "  "],
+        collectOrganization: false,
       }),
     ).toEqual({
       template: "garden",
@@ -38,6 +40,8 @@ describe("registration page settings", () => {
       heroImageUrl: "https://images.example.com/garden.jpg",
       showAgenda: false,
       showVolunteerSignup: true,
+      registrationTypes: ["Investor", "Student"],
+      collectOrganization: false,
     });
 
     expect(
@@ -50,6 +54,9 @@ describe("registration page settings", () => {
       template: "warm",
       accentColor: DEFAULT_REGISTRATION_PAGE.accentColor,
       heroImageUrl: null,
+      registrationTypes: ["General"],
     });
+    expect(normalizeRegistrationPage({ accentColor: "#FFFFFF", heroImageUrl: "http://example.com/a.jpg" }))
+      .toMatchObject({ accentColor: DEFAULT_REGISTRATION_PAGE.accentColor, heroImageUrl: null });
   });
 });

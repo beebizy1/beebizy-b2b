@@ -503,7 +503,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       {active === "inspiration" ? <MoodBoardPanel event={event} /> : null}
       {active === "fundraising" ? <FundraisingPanel event={event} /> : null}
       {active === "analytics" ? <AnalyticsPanel event={event} /> : null}
-      {active === "share" ? <ShareSection event={event} /> : null}
+      {active === "share" ? <ShareSection key={event.id} event={event} /> : null}
       {active === "menu" ? <MenuPanel event={event} /> : null}
       {active === "tickets" ? <TicketsPanel event={event} /> : null}
       {active === "raffle" ? <RafflePanel event={event} /> : null}

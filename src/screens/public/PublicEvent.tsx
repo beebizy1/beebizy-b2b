@@ -21,16 +21,12 @@ import { formatMoney } from "@/data/money";
 import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import type { Event } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
-import { SANTA_CLARA_REGISTRATION_SEGMENTS } from "@/data/santaClara";
 import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
 export function PublicFrame({ children, event }: { children: React.ReactNode; event?: Event }) {
   const settings = normalizeRegistrationPage(event?.registrationPage);
   const template = registrationPageTemplate(settings.template);
-  const style = {
-    backgroundColor: template.background,
-    "--registration-accent": settings.accentColor,
-  } as CSSProperties;
+  const style = { backgroundColor: template.background } as CSSProperties;
   return (
     <div className="min-h-dvh" style={style}>
       <header className="border-b border-black/5 bg-white/85 backdrop-blur">
@@ -172,7 +168,7 @@ export function PublicEventPage({ token }: { token: string }) {
           <p className="text-sm font-semibold text-foreground">Register for this event</p>
           <p className="mt-1 text-xs text-muted-foreground">Choose the guest type that best describes you.</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {SANTA_CLARA_REGISTRATION_SEGMENTS.map((segment) => (
+            {registrationPage.registrationTypes.map((segment) => (
               <Button key={segment} asChild variant="outline" size="sm">
                 <Link href={`/e/${token}/register/${encodeURIComponent(segment)}`}>{segment}</Link>
               </Button>
@@ -239,12 +235,12 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
   const [email, setEmail] = useState("");
   const [organization, setOrganization] = useState("");
   const [done, setDone] = useState(false);
-  const selectedSegment = SANTA_CLARA_REGISTRATION_SEGMENTS.find((item) => item.toLowerCase() === decodeURIComponent(segment).toLowerCase());
+  const settings = normalizeRegistrationPage(shared?.event?.registrationPage);
+  const selectedSegment = settings.registrationTypes.find((item) => item.toLowerCase() === decodeURIComponent(segment).toLowerCase());
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !selectedSegment) return <EventNotFound />;
   if (done) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
-  const organizationLabel = selectedSegment === "Investor" ? "Firm or fund" : selectedSegment === "Student" ? "School" : "Company";
-  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: selectedSegment === "General" ? null : organization.trim() || null, segment: selectedSegment } }, { onSuccess: () => setDone(true), onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{selectedSegment !== "General" ? <label className="block space-y-1 text-sm font-medium">{organizationLabel}<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
+  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment } }, { onSuccess: () => setDone(true), onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Organization<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
 }
 
 export function PublicVolunteerSignupPage({ token }: { token: string }) {
@@ -259,7 +255,7 @@ export function PublicVolunteerSignupPage({ token }: { token: string }) {
   const openings = schedule.filter((need) => need.signupOpen && need.openCount > 0);
   const selected = openings.find((need) => need.id === needId);
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
-  if (!shared?.event) return <EventNotFound />;
+  if (!shared?.event || !normalizeRegistrationPage(shared.event.registrationPage).showVolunteerSignup) return <EventNotFound />;
   if (done && selected) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">Your shift is confirmed</h1><p className="mt-1 text-sm text-muted-foreground">{selected.role}, {selected.startTime}–{selected.endTime}. The organizer can now see you in the staffing plan.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
   return (
     <PublicFrame event={shared.event}>

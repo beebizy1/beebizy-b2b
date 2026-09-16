@@ -752,6 +752,9 @@ export async function publicRegistration(token: string, body: Body): Promise<Reg
     segment: labelFrom(body, "segment") ?? "General",
     organization: labelFrom(body, "organization", 120),
   };
+  const page = normalizeRegistrationPage(event.registrationPage);
+  if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
+  if (!page.collectOrganization) draft.organization = null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
   const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(s.registrations)
     .where(and(eq(s.registrations.eventId, event.id), sql`${s.registrations.status} <> 'cancelled'`));
@@ -797,6 +800,9 @@ export async function publicRegistration(token: string, body: Body): Promise<Reg
 /** Claims an available volunteer opening without exposing the workspace or its roster. */
 export async function publicVolunteerSignup(token: string, body: Body): Promise<VolunteerShift> {
   const event = await sharedEventForWrite(token);
+  if (!normalizeRegistrationPage(event.registrationPage).showVolunteerSignup) {
+    throw new HttpError(404, "Volunteer signup is not available for this event.");
+  }
   const draft: PublicVolunteerSignupDraft = {
     needId: str(body, "needId"),
     name: str(body, "name").trim(),

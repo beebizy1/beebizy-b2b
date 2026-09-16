@@ -49,7 +49,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, publicAssignment, publicRegistration, publicVolunteerSignup } = await import("./repos");
+const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicRegistration, publicVolunteerSignup } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -184,6 +184,23 @@ describe("public assignment endpoint", () => {
 });
 
 describe("public event signup endpoints", () => {
+  it("does not fetch internal schedule or volunteer coverage for disabled public sections", async () => {
+    vi.mocked(eventByShareToken).mockResolvedValue({
+      event: {
+        id: "event-1",
+        registrationPage: { showAgenda: false, showVolunteerSignup: false },
+      } as never,
+      timeZone: "America/Los_Angeles",
+    });
+    vi.mocked(publicAgenda).mockClear();
+    vi.mocked(publicVolunteerNeeds).mockClear();
+    const response = await handleRequest(new Request("http://localhost/api/public/events/share-1"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ agenda: [], volunteerNeeds: [] });
+    expect(publicAgenda).not.toHaveBeenCalled();
+    expect(publicVolunteerNeeds).not.toHaveBeenCalled();
+  });
+
   it("registers one guest without requiring a user session", async () => {
     vi.mocked(authorize).mockClear();
     vi.mocked(publicRegistration).mockResolvedValue({ id: "reg-1" } as never);

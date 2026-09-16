@@ -12,6 +12,7 @@
 
 import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
 import { accountExperienceForEmail, canSwitchAccountExperience } from "../src/data/accountExperience.ts";
+import { normalizeRegistrationPage } from "../src/data/registrationPage.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
@@ -222,11 +223,12 @@ async function handlePublic(segments: string[], method: string, request: Request
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET" && !segments[3]) {
     const shared = await eventByShareToken(segments[2]);
     if (!shared) return json({ error: "This link is no longer active." }, 404);
+    const page = normalizeRegistrationPage(shared.event.registrationPage);
 
     const [agenda, tickets, volunteerNeeds] = await Promise.all([
-      repos.publicAgenda(shared.event.id),
+      page.showAgenda ? repos.publicAgenda(shared.event.id) : Promise.resolve([]),
       repos.publicTickets(shared.event.id),
-      repos.publicVolunteerNeeds(shared.event.id),
+      page.showVolunteerSignup ? repos.publicVolunteerNeeds(shared.event.id) : Promise.resolve([]),
     ]);
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
     // bids are not in this payload at all, rather than filtered out in the client. The
