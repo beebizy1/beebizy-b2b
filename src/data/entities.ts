@@ -12,6 +12,7 @@
  */
 
 import type { Cents } from "./money.ts";
+import type { RegistrationPageSettings } from "./registrationPage.ts";
 
 /* ------------------------------------------------------------------ primitives */
 
@@ -76,6 +77,8 @@ export interface Event extends OwnedRecord {
   registrationCount: number;
   /** Present once the organizer has opened the public event page. */
   shareToken: string | null;
+  /** Branding and content for the guest-facing registration site. */
+  registrationPage: RegistrationPageSettings;
 }
 
 export interface EventDraft {
@@ -89,6 +92,7 @@ export interface EventDraft {
   status: EventStatus;
   category: EventCategory;
   imageUrl?: string | null;
+  registrationPage?: RegistrationPageSettings;
 }
 
 export type EventPatch = Partial<EventDraft>;

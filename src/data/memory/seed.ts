@@ -45,6 +45,7 @@ import type {
   VolunteerNeed,
   VolunteerShift,
 } from "../entities";
+import { DEFAULT_REGISTRATION_PAGE } from "../registrationPage";
 import { DEFAULT_USER_SETTINGS } from "../entities";
 
 export interface MemoryDb {
@@ -299,6 +300,7 @@ export function buildSeed(): MemoryDb {
       imageUrl: null,
       registrationCount: 0,
       shareToken: seed.shared ? `demo-${seed.id}` : null,
+      registrationPage: { ...DEFAULT_REGISTRATION_PAGE },
       createdAt: at(seed.dayOffset - 90),
       updatedAt: at(-2, 14),
     };

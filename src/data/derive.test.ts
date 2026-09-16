@@ -16,6 +16,7 @@ import type {
   Sponsorship,
   TicketType,
 } from "./entities";
+import { DEFAULT_REGISTRATION_PAGE } from "./registrationPage";
 
 const NOW = new Date("2027-03-10T12:00:00.000Z");
 
@@ -42,6 +43,7 @@ function makeEvent(overrides: Partial<Event> = {}): Event {
     imageUrl: null,
     registrationCount: 40,
     shareToken: null,
+    registrationPage: { ...DEFAULT_REGISTRATION_PAGE },
     createdAt: iso(-60),
     ...overrides,
   };

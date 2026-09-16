@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Event } from "./entities";
+import { DEFAULT_REGISTRATION_PAGE } from "./registrationPage";
 import {
   buildBudgetSuggestions,
   buildRuleBasedSuggestions,
@@ -26,6 +27,7 @@ const event: Event = {
   imageUrl: null,
   registrationCount: 0,
   shareToken: null,
+  registrationPage: { ...DEFAULT_REGISTRATION_PAGE },
   createdAt: "2026-08-27T00:00:00.000Z",
 };
 

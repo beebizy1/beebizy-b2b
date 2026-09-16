@@ -6,7 +6,7 @@
  * is visible: title, description, when, where, capacity, run of show, tickets on sale.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
 import { CalendarDays, Check, HeartHandshake, MapPin, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,17 +22,25 @@ import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from
 import type { Event } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { SANTA_CLARA_REGISTRATION_SEGMENTS } from "@/data/santaClara";
+import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
-export function PublicFrame({ children }: { children: React.ReactNode }) {
+export function PublicFrame({ children, event }: { children: React.ReactNode; event?: Event }) {
+  const settings = normalizeRegistrationPage(event?.registrationPage);
+  const template = registrationPageTemplate(settings.template);
+  const style = {
+    backgroundColor: template.background,
+    "--registration-accent": settings.accentColor,
+  } as CSSProperties;
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="honeycomb border-b border-hairline">
-        <div className="mx-auto flex max-w-3xl items-center px-6 py-5">
+    <div className="min-h-dvh" style={style}>
+      <header className="border-b border-black/5 bg-white/85 backdrop-blur">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-5">
           <BrandLogo size="sm" />
+          {event ? <span className="text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: settings.accentColor }}>Registration</span> : null}
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
-      <footer className="mx-auto max-w-3xl px-6 pb-10">
+      <main className="mx-auto max-w-4xl px-6 py-10">{children}</main>
+      <footer className="mx-auto max-w-4xl px-6 pb-10">
         <p className="text-xs text-muted-foreground">Event page powered by Beebizy.</p>
       </footer>
     </div>
@@ -54,15 +62,18 @@ function EventNotFound() {
 }
 
 function EventHeading({ event, timeZone }: { event: Event; timeZone: string }) {
+  const settings = normalizeRegistrationPage(event.registrationPage);
   return (
-    <div className="space-y-3">
+    <div className="overflow-hidden rounded-3xl border border-black/5 bg-white shadow-sm">
+      {settings.heroImageUrl ? <div className="h-56 bg-cover bg-center sm:h-72" style={{ backgroundImage: `url(${settings.heroImageUrl})` }} role="img" aria-label={`${event.title} cover`} /> : null}
+      <div className="space-y-4 p-6 sm:p-8">
       <div className="flex flex-wrap items-center gap-2">
-        <Pill tone="brand">{event.category}</Pill>
+        <span className="rounded-full px-2.5 py-1 text-xs font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>{event.category}</span>
         <span className="text-xs font-medium text-muted-foreground">{describeWhenInZone(event.date, timeZone)}</span>
       </div>
-      <h1 className="text-3xl font-bold tracking-tight text-foreground">{event.title}</h1>
-      {event.description ? (
-        <p className="text-base leading-relaxed text-muted-foreground">{event.description}</p>
+      <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{settings.headline || event.title}</h1>
+      {settings.welcomeMessage || event.description ? (
+        <p className="max-w-2xl text-base leading-relaxed text-slate-600">{settings.welcomeMessage || event.description}</p>
       ) : null}
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
         <div className="flex items-center gap-1.5">
@@ -93,6 +104,7 @@ function EventHeading({ event, timeZone }: { event: Event; timeZone: string }) {
           </div>
         ) : null}
       </dl>
+      </div>
     </div>
   );
 }
@@ -123,6 +135,7 @@ export function PublicEventPage({ token }: { token: string }) {
     );
   }
   if (!event) return <EventNotFound />;
+  const registrationPage = normalizeRegistrationPage(event.registrationPage);
 
   const maxScheduledDay = Math.max(1, ...(agenda ?? []).map((cue) => cue.dayNumber));
   const eventDays = eventDayOptions(event.date, event.endDate, timeZone, maxScheduledDay);
@@ -132,7 +145,7 @@ export function PublicEventPage({ token }: { token: string }) {
   );
 
   return (
-    <PublicFrame>
+    <PublicFrame event={event}>
       <div className="space-y-6">
         <EventHeading event={event} timeZone={timeZone} />
 
@@ -167,7 +180,7 @@ export function PublicEventPage({ token }: { token: string }) {
           </div>
         </Panel>
 
-        {volunteerNeeds.length > 0 ? (
+        {registrationPage.showVolunteerSignup && volunteerNeeds.length > 0 ? (
           <Panel className="p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><p className="text-sm font-semibold text-foreground">Volunteer schedule</p><p className="text-xs text-muted-foreground">See every planned shift and {volunteerNeeds.reduce((sum, need) => sum + (need.signupOpen ? need.openCount : 0), 0)} positions currently open for signup.</p></div>
@@ -176,7 +189,7 @@ export function PublicEventPage({ token }: { token: string }) {
           </Panel>
         ) : null}
 
-        {(agenda ?? []).length > 0 ? (
+        {registrationPage.showAgenda && (agenda ?? []).length > 0 ? (
           <Panel>
             <PanelHeader title="Agenda" description={`Times shown in ${timeZoneLabel(timeZone, new Date(event.date))}, the venue\u2019s zone`} />
             {eventDays.map((day) => {
@@ -229,9 +242,9 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
   const selectedSegment = SANTA_CLARA_REGISTRATION_SEGMENTS.find((item) => item.toLowerCase() === decodeURIComponent(segment).toLowerCase());
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !selectedSegment) return <EventNotFound />;
-  if (done) return <PublicFrame><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
+  if (done) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
   const organizationLabel = selectedSegment === "Investor" ? "Firm or fund" : selectedSegment === "Student" ? "School" : "Company";
-  return <PublicFrame><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: selectedSegment === "General" ? null : organization.trim() || null, segment: selectedSegment } }, { onSuccess: () => setDone(true), onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{selectedSegment !== "General" ? <label className="block space-y-1 text-sm font-medium">{organizationLabel}<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
+  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: selectedSegment === "General" ? null : organization.trim() || null, segment: selectedSegment } }, { onSuccess: () => setDone(true), onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{selectedSegment !== "General" ? <label className="block space-y-1 text-sm font-medium">{organizationLabel}<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
 }
 
 export function PublicVolunteerSignupPage({ token }: { token: string }) {
@@ -247,9 +260,9 @@ export function PublicVolunteerSignupPage({ token }: { token: string }) {
   const selected = openings.find((need) => need.id === needId);
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event) return <EventNotFound />;
-  if (done && selected) return <PublicFrame><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">Your shift is confirmed</h1><p className="mt-1 text-sm text-muted-foreground">{selected.role}, {selected.startTime}–{selected.endTime}. The organizer can now see you in the staffing plan.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
+  if (done && selected) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">Your shift is confirmed</h1><p className="mt-1 text-sm text-muted-foreground">{selected.role}, {selected.startTime}–{selected.endTime}. The organizer can now see you in the staffing plan.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
   return (
-    <PublicFrame>
+    <PublicFrame event={shared.event}>
       <div className="space-y-6">
         <div>
           <Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link>
@@ -326,7 +339,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
 
   if (done) {
     return (
-      <PublicFrame>
+      <PublicFrame event={event}>
         <Panel className="p-8 text-center">
           <span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text">
             <Check className="size-5" aria-hidden="true" />
@@ -344,7 +357,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
   }
 
   return (
-    <PublicFrame>
+    <PublicFrame event={event}>
       <div className="space-y-6">
         <div>
           <Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">

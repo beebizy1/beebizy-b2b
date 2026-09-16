@@ -129,6 +129,7 @@ import { nextTurn } from "../assistantChat";
 import { googleSheetCsvUrl } from "../import";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
+import { DEFAULT_REGISTRATION_PAGE } from "../registrationPage";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -367,6 +368,7 @@ const events: EventsRepository = {
       imageUrl: draft.imageUrl ?? null,
       registrationCount: 0,
       shareToken: null,
+      registrationPage: draft.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };

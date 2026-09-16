@@ -38,6 +38,7 @@ import {
 import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
+import type { RegistrationPageSettings } from "../data/registrationPage.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -226,6 +227,7 @@ export const events = pgTable(
     imageUrl: text("image_url"),
     /** Unique so a token can be looked up directly instead of scanning. */
     shareToken: text("share_token").unique(),
+    registrationPage: jsonb("registration_page").$type<RegistrationPageSettings>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

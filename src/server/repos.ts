@@ -78,6 +78,7 @@ import { notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } fro
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -282,6 +283,7 @@ export const events = {
       status: (optStr(body, "status") ?? "draft") as "draft",
       category: str(body, "category", "Other"),
       imageUrl: optStr(body, "imageUrl"),
+      registrationPage: normalizeRegistrationPage(body.registrationPage),
       createdAt,
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
@@ -329,6 +331,7 @@ export const events = {
       imageUrl: values.imageUrl,
       registrationCount: 0,
       shareToken: null,
+      registrationPage: values.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
       createdAt: createdAt.toISOString(),
     };
     const eventInsert = db.insert(s.events).values(values);
@@ -394,6 +397,7 @@ export const events = {
       status: (b) => optStr(b, "status") ?? "draft",
       category: (b) => str(b, "category", "Other"),
       imageUrl: (b) => optStr(b, "imageUrl"),
+      registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
       locationId: (b) => optStr(b, "locationId"),
     });
     if ("date" in body) patch.startsAt = parseDate(body.date, "date");
@@ -407,6 +411,7 @@ export const events = {
     if ("status" in body) after.status = patch.status as Event["status"];
     if ("category" in body) after.category = patch.category as string;
     if ("imageUrl" in body) after.imageUrl = patch.imageUrl as string | null;
+    if ("registrationPage" in body) after.registrationPage = normalizeRegistrationPage(patch.registrationPage);
     if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
     if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
     if ("location" in body) after.location = patch.venue as string | null;

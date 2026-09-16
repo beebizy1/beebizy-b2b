@@ -1,34 +1,45 @@
-/**
- * Share: the public face of the event.
- *
- * The old share dialog handed out a link without ever saying what it exposed. This
- * screen states exactly what a stranger with the link can see, because that is a
- * privacy decision and not a detail.
- */
+/** The organizer-facing builder for the event's public registration site. */
 
-import { useState } from "react";
-import { Check, Copy, ExternalLink, Eye, Globe, Ticket } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { Check, Copy, ExternalLink, Eye, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useShareEvent, useTickets } from "@/data/hooks";
+import { useShareEvent, useTickets, useUpdateEvent } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
+import {
+  REGISTRATION_PAGE_TEMPLATES,
+  normalizeRegistrationPage,
+  registrationPageTemplate,
+  type RegistrationPageSettings,
+} from "@/data/registrationPage";
 import type { Event } from "@/data/entities";
 
 function absoluteUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
 }
 
+async function copyText(value: string, success: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast({ title: success });
+  } catch {
+    toast({ title: "Couldn't copy", description: "Select the text and copy it manually." });
+  }
+}
+
 function CopyRow({ label, url, hint }: { label: string; url: string; hint: string }) {
   const [copied, setCopied] = useState(false);
-
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard is blocked in some embedded browsers; the input is selectable as a fallback.
       toast({ title: "Couldn't copy", description: "Select the link and copy it manually." });
     }
   };
@@ -40,22 +51,39 @@ function CopyRow({ label, url, hint }: { label: string; url: string; hint: strin
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
       <div className="flex items-center gap-2">
-        <input
-          readOnly
-          value={url}
-          onFocus={(event) => event.currentTarget.select()}
-          aria-label={`${label} URL`}
-          className="min-w-0 flex-1 rounded-md border border-hairline bg-surface-sunken px-3 py-2 font-mono text-xs text-foreground"
-        />
+        <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label={`${label} URL`} className="min-w-0 flex-1 rounded-md border border-hairline bg-surface-sunken px-3 py-2 font-mono text-xs text-foreground" />
         <Button variant="outline" size="sm" onClick={() => void copy()}>
           {copied ? <Check className="mr-1.5 size-3.5 text-success-text" /> : <Copy className="mr-1.5 size-3.5" />}
           {copied ? "Copied" : "Copy"}
         </Button>
         <Button asChild variant="outline" size="sm">
-          <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${label}`}>
-            <ExternalLink className="size-3.5" />
-          </a>
+          <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${label}`}><ExternalLink className="size-3.5" /></a>
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function RegistrationPreview({ event, settings }: { event: Event; settings: RegistrationPageSettings }) {
+  const template = registrationPageTemplate(settings.template);
+  const style = { backgroundColor: template.background, "--registration-accent": settings.accentColor } as CSSProperties;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-hairline shadow-sm" style={style}>
+      {settings.heroImageUrl ? (
+        <div className="h-40 bg-cover bg-center" style={{ backgroundImage: `url(${settings.heroImageUrl})` }} />
+      ) : (
+        <div className="grid h-24 place-items-center" style={{ backgroundColor: `${settings.accentColor}18` }}>
+          <Image className="size-6" style={{ color: settings.accentColor }} aria-hidden="true" />
+        </div>
+      )}
+      <div className="space-y-4 p-6" style={{ backgroundColor: template.surface }}>
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: settings.accentColor }}>{event.category}</p>
+          <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{settings.headline || event.title}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
+        </div>
+        <span className="inline-flex rounded-md px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>Register now</span>
       </div>
     </div>
   );
@@ -63,116 +91,128 @@ function CopyRow({ label, url, hint }: { label: string; url: string; hint: strin
 
 export default function ShareSection({ event }: { event: Event }) {
   const share = useShareEvent();
+  const update = useUpdateEvent();
   const { data: tickets } = useTickets(event.id);
-
+  const [draft, setDraft] = useState<RegistrationPageSettings>(() => normalizeRegistrationPage(event.registrationPage));
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
+  const eventUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}`) : null;
+  const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
+  const inviteMessage = eventUrl
+    ? `${draft.headline || event.title}\n\n${draft.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}`
+    : "";
 
-  if (!event.shareToken) {
-    return (
-      <Panel>
-        <PanelHeader title="Public page" description="Off by default — nothing about this event is public" />
-        <EmptyState
-          icon={Globe}
-          title="This event isn't shared"
-          description="Turning sharing on creates one link that shows the agenda and, if you have ticket types on sale, lets people buy. You can see exactly what's exposed before you send it."
-          action={
-            <Button
-              disabled={share.isPending}
-              onClick={() =>
-                share.mutate(
-                  { id: event.id },
-                  {
-                    onSuccess: () => toast({ title: "Public page created", description: "Copy the link below to share it." }),
-                    onError: (error) => toast({ title: "Couldn't create link", description: error.message }),
-                  },
-                )
-              }
-            >
-              <Globe className="mr-1.5 size-4" />
-              Turn on sharing
-            </Button>
-          }
-        />
-      </Panel>
+  const save = () => {
+    const registrationPage = normalizeRegistrationPage(draft);
+    setDraft(registrationPage);
+    update.mutate(
+      { id: event.id, patch: { registrationPage } },
+      {
+        onSuccess: () => toast({ title: "Registration site saved", description: "The public page now uses this design." }),
+        onError: (error) => toast({ title: "Couldn't save the registration site", description: error.message }),
+      },
     );
-  }
-
-  const eventUrl = absoluteUrl(`/e/${event.shareToken}`);
-  const ticketUrl = absoluteUrl(`/e/${event.shareToken}/tickets`);
+  };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
       <div className="space-y-6">
         <Panel>
-          <PanelHeader
-            title="Links"
-            description="Anyone with these can view without signing in"
-            actions={<Pill tone="success">Sharing on</Pill>}
-          />
-          <div className="divide-y divide-hairline">
-            <CopyRow label="Event page" url={eventUrl} hint="Agenda and details" />
-            {onSale.length > 0 ? (
-              <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} type${onSale.length === 1 ? "" : "s"} on sale`} />
-            ) : null}
+          <PanelHeader title="Registration site builder" description="Choose a starting point, then make the guest page match this event" actions={<Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill>} />
+          <div className="space-y-6 p-5">
+            <fieldset>
+              <legend className="flex items-center gap-2 text-sm font-semibold text-foreground"><Palette className="size-4" /> Template</legend>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                {REGISTRATION_PAGE_TEMPLATES.map((template) => {
+                  const selected = draft.template === template.id;
+                  return (
+                    <button key={template.id} type="button" aria-pressed={selected} onClick={() => setDraft((current) => ({ ...current, template: template.id, accentColor: template.accentColor }))} className="rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm" style={{ borderColor: selected ? draft.accentColor : undefined, backgroundColor: template.background }}>
+                      <span className="mb-3 block h-2 rounded-full" style={{ backgroundColor: template.accentColor }} />
+                      <span className="block text-sm font-semibold text-slate-900">{template.name}</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-600">{template.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-headline">Headline</Label>
+                <Input id="registration-headline" value={draft.headline} maxLength={120} placeholder={event.title} onChange={(e) => setDraft((current) => ({ ...current, headline: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-welcome">Welcome message</Label>
+                <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={600} rows={4} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-hero">Hero image URL</Label>
+                <Input id="registration-hero" type="url" value={draft.heroImageUrl ?? ""} placeholder="https://example.com/event-photo.jpg" onChange={(e) => setDraft((current) => ({ ...current, heroImageUrl: e.target.value || null }))} />
+                <p className="text-xs text-muted-foreground">Use a public HTTPS image link. This image is separate from the internal mood board.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="registration-color">Brand color</Label>
+                <div className="flex items-center gap-2">
+                  <input id="registration-color" type="color" value={draft.accentColor} onChange={(e) => setDraft((current) => ({ ...current, accentColor: e.target.value.toUpperCase() }))} className="h-9 w-12 cursor-pointer rounded border border-input bg-background p-1" />
+                  <Input aria-label="Brand color hex value" value={draft.accentColor} maxLength={7} onChange={(e) => setDraft((current) => ({ ...current, accentColor: e.target.value }))} />
+                </div>
+              </div>
+              <div className="space-y-3 rounded-lg border border-hairline p-3">
+                <label className="flex items-center justify-between gap-3 text-sm"><span>Show public agenda</span><Switch checked={draft.showAgenda} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showAgenda: checked }))} /></label>
+                <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-hairline pt-4">
+              <Button onClick={save} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save design"}</Button>
+              {eventUrl ? <Button asChild variant="outline"><a href={eventUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Open live page</a></Button> : null}
+            </div>
           </div>
-          {onSale.length === 0 ? (
-            <p className="border-t border-hairline px-5 py-3 text-xs text-muted-foreground">
-              No ticket types are on sale, so the checkout link is hidden. Add one in Money to start selling.
-            </p>
-          ) : null}
         </Panel>
+
+        {event.shareToken && eventUrl ? (
+          <Panel>
+            <PanelHeader title="Invite guests" description="The registration link works without a Beebizy login" actions={<Pill tone="success">Live</Pill>} />
+            <div className="divide-y divide-hairline">
+              <CopyRow label="Registration site" url={eventUrl} hint="Event details and registration" />
+              {onSale.length > 0 && ticketUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
+            </div>
+            <div className="border-t border-hairline p-5">
+              <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
+              <Textarea id="invite-copy" readOnly value={inviteMessage} rows={5} className="mt-2" onFocus={(e) => e.currentTarget.select()} />
+              <Button className="mt-3" variant="outline" size="sm" onClick={() => void copyText(inviteMessage, "Invitation copied")}><Mail className="mr-1.5 size-4" /> Copy invitation</Button>
+            </div>
+          </Panel>
+        ) : (
+          <Panel>
+            <PanelHeader title="Publish registration site" description="Nothing about this event is public until you turn sharing on" />
+            <EmptyState icon={Globe} title="Your design is private" description="Publish when it is ready. Beebizy will create one guest link for event details and registration." action={
+              <Button disabled={share.isPending} onClick={() => share.mutate({ id: event.id }, { onSuccess: () => toast({ title: "Registration site published", description: "Copy the link and send it to your guests." }), onError: (error) => toast({ title: "Couldn't publish the site", description: error.message }) })}>
+                <Globe className="mr-1.5 size-4" /> {share.isPending ? "Publishing..." : "Publish registration site"}
+              </Button>
+            } />
+          </Panel>
+        )}
 
         {onSale.length > 0 ? (
           <Panel>
-            <PanelHeader title="What buyers see" description="Live prices and remaining allocation" />
+            <PanelHeader title="Ticket options" description="These appear automatically on the registration site" />
             <ul className="divide-y divide-hairline">
-              {onSale.map((ticket) => {
-                const remaining = ticket.quantityTotal === 0 ? null : ticket.quantityTotal - ticket.quantitySold;
-                return (
-                  <li key={ticket.id} className="flex items-center gap-3 px-5 py-3">
-                    <Ticket className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{ticket.name}</p>
-                      {ticket.description ? (
-                        <p className="truncate text-xs text-muted-foreground">{ticket.description}</p>
-                      ) : null}
-                    </div>
-                    <span data-numeric className="text-sm font-semibold text-foreground">
-                      {formatMoney(ticket.priceCents)}
-                    </span>
-                    <span data-numeric className="w-24 text-right text-xs text-muted-foreground">
-                      {remaining === null ? "unlimited" : remaining <= 0 ? "sold out" : `${remaining} left`}
-                    </span>
-                  </li>
-                );
-              })}
+              {onSale.map((ticket) => <li key={ticket.id} className="flex items-center gap-3 px-5 py-3"><Ticket className="size-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{ticket.name}</p><p className="truncate text-xs text-muted-foreground">{ticket.description || "Registration option"}</p></div><span data-numeric className="text-sm font-semibold">{formatMoney(ticket.priceCents)}</span></li>)}
             </ul>
           </Panel>
         ) : null}
       </div>
 
-      <Panel>
-        <PanelHeader title="What the link exposes" description="Be deliberate before you send it" />
-        <div className="space-y-3 px-5 py-4 text-sm">
-          <div className="flex items-start gap-2.5">
-            <Eye className="mt-0.5 size-4 shrink-0 text-success-text" aria-hidden="true" />
-            <p className="text-foreground">
-              <span className="font-medium">Visible:</span> title, description, date, venue, capacity, the run of show, and
-              any ticket types on sale.
-            </p>
+      <div className="space-y-6">
+        <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} /></div></Panel>
+        <Panel>
+          <PanelHeader title="What guests can access" description="Only the public event experience" />
+          <div className="space-y-3 px-5 py-4 text-sm">
+            <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-success-text" /><p><span className="font-medium">Visible:</span> registration branding, event details, registration form, selected agenda, volunteer openings, and tickets on sale.</p></div>
+            <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-danger-text" /><p><span className="font-medium">Never visible:</span> budgets, vendor fees, guest contact details, internal checklists, sponsorship amounts, or bids.</p></div>
+            <p className="border-t border-hairline pt-3 text-xs text-muted-foreground">Every submission is added directly to this event's registration list, ready for filtering and check-in.</p>
           </div>
-          <div className="flex items-start gap-2.5">
-            <Eye className="mt-0.5 size-4 shrink-0 text-danger-text" aria-hidden="true" />
-            <p className="text-foreground">
-              <span className="font-medium">Never visible:</span> your budget, vendor fees, guest list, guest contact
-              details, sponsorship amounts and auction bids.
-            </p>
-          </div>
-          <p className="border-t border-hairline pt-3 text-xs text-muted-foreground">
-            Buying a ticket through this link creates a confirmed registration and adds the buyer to your people list.
-          </p>
-        </div>
-      </Panel>
+        </Panel>
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   filterEventsByLocation,
 } from "./calendar";
 import type { Event } from "@/data/entities";
+import { DEFAULT_REGISTRATION_PAGE } from "@/data/registrationPage";
 
 const makeEvent = (id: string, locationId: string | null): Event => ({
   id,
@@ -23,6 +24,7 @@ const makeEvent = (id: string, locationId: string | null): Event => ({
   imageUrl: null,
   registrationCount: 0,
   shareToken: null,
+  registrationPage: { ...DEFAULT_REGISTRATION_PAGE },
   createdAt: "2026-08-01T00:00:00.000Z",
 });
 

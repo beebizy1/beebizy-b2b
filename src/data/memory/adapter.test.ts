@@ -90,6 +90,27 @@ describe("events", () => {
     expect(shared.timeZone).toBe(DEFAULT_USER_SETTINGS.timeZone);
   });
 
+  it("publishes saved registration-site branding with the guest payload", async () => {
+    const { shareToken } = await memoryAdapter.events.share("evt-cab");
+    await memoryAdapter.events.update("evt-cab", {
+      registrationPage: {
+        template: "garden",
+        accentColor: "#245F45",
+        headline: "An evening in the garden",
+        welcomeMessage: "Reserve your place with the team.",
+        heroImageUrl: "https://images.example.com/garden.jpg",
+        showAgenda: false,
+        showVolunteerSignup: true,
+      },
+    });
+
+    expect((await memoryAdapter.events.getByShareToken(shareToken))?.event.registrationPage).toMatchObject({
+      template: "garden",
+      headline: "An evening in the garden",
+      showAgenda: false,
+    });
+  });
+
   it("copies a template's contents into a new event", async () => {
     const template = (await memoryAdapter.templates.get("tpl-gala"))!;
     const created = await memoryAdapter.events.createFromTemplate("tpl-gala", {

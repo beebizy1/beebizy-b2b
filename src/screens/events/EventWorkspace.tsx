@@ -250,7 +250,7 @@ function WorkspaceHeader({
               <Button asChild size="sm">
                 <Link href={eventSectionHref(event.id, "share")}>
                   <Share2 className="mr-1.5 size-3.5" />
-                  Share
+                  Registration site
                 </Link>
               </Button>
             ) : null}

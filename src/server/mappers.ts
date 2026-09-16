@@ -44,6 +44,7 @@ import type {
   VolunteerNeed,
   VolunteerShift,
 } from "../data/entities.ts";
+import { normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { readStoredFloorplan } from "../data/floorplan.ts";
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
@@ -90,6 +91,7 @@ export function toEvent(
     imageUrl: row.imageUrl,
     registrationCount: extras.registrationCount ?? 0,
     shareToken: row.shareToken,
+    registrationPage: normalizeRegistrationPage(row.registrationPage),
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
   };
