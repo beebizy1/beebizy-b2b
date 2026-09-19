@@ -564,8 +564,12 @@ async function handleAuthed(
         requireBeebizyOperator(ctx.email);
         return json(await repos.feedback.listInbox(ctx));
       }
-      if (method === "GET") return json(await repos.feedback.list(ctx));
-      if (method === "POST") {
+      if (a && b === "notify" && method === "POST") {
+        requireBeebizyOperator(ctx.email);
+        return json(await repos.feedback.notify(ctx, a));
+      }
+      if (!a && method === "GET") return json(await repos.feedback.list(ctx));
+      if (!a && method === "POST") {
         const parsed = feedbackDraftSchema.safeParse(body);
         if (!parsed.success) {
           throw new HttpError(400, feedbackValidationMessage(parsed.error));

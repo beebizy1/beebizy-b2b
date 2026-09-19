@@ -37,7 +37,7 @@ vi.mock("./repos", () => {
     members: { list: vi.fn().mockResolvedValue([]) },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
     analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
-    feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn() },
+    feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn(), notify: vi.fn() },
     teamUpdates: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({ id: "update-1" }) },
   };
 });
@@ -342,6 +342,19 @@ describe("feedback endpoint", () => {
     const denied = await handleRequest(new Request("http://localhost/api/feedback/inbox"));
     expect(denied.status).toBe(403);
     expect(feedback.listInbox).not.toHaveBeenCalled();
+  });
+
+  it("lets an operator email an existing feedback item to the monitored inbox", async () => {
+    vi.mocked(authorize).mockResolvedValue({ ...context, email: "tarang@beebizy.com" });
+    vi.mocked(requireBeebizyOperator).mockReturnValue(undefined);
+    vi.mocked(feedback.notify).mockResolvedValue({ status: "sent" });
+
+    const response = await handleRequest(
+      new Request("http://localhost/api/feedback/feedback-1/notify", { method: "POST" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(feedback.notify).toHaveBeenCalledWith(expect.objectContaining({ email: "tarang@beebizy.com" }), "feedback-1");
   });
 });
 

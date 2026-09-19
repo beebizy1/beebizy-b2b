@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
+import { notifyFeedbackSubmission, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -42,5 +42,32 @@ describe("assignment and live-update email", () => {
     const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
     expect(body.subject).toBe("Live vendor delay update - Demo Day");
     expect(body.text).toContain("The caterer is 20 minutes late.");
+  });
+});
+
+describe("product feedback email", () => {
+  it("sends the exact feedback from every submitter to hello with a stable delivery key", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyFeedbackSubmission({
+      feedbackId: "feedback-123",
+      userName: "Radhika Khandelwal",
+      userEmail: "radhika@example.com",
+      workspaceName: "CCS",
+      category: "general",
+      message: "Exact feedback, including punctuation!",
+      pageUrl: "https://beebizy.test/app/events/one/checklist",
+      createdAt: "2026-09-15T17:58:08.488Z",
+      inboxUrl: "https://beebizy.test/app/feedback",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      to: ["hello@beebizy.com"],
+      reply_to: "radhika@example.com",
+      subject: "New Beebizy feedback from Radhika Khandelwal",
+    });
+    expect(body.text).toContain("Exact feedback:\nExact feedback, including punctuation!");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("product-feedback-feedback-123");
   });
 });

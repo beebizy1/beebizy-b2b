@@ -74,7 +74,12 @@ import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
-import { notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify.ts";
+import {
+  notifyFeedbackSubmission,
+  notifyTaskAssignment,
+  notifyTeamUpdate,
+  notifyVolunteerAssignment,
+} from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
@@ -2954,7 +2959,51 @@ export const feedback = {
         pagePath,
       })
       .returning();
-    return map.toProductFeedback(row!);
+    const stored = map.toProductFeedback(row!);
+    const [workspace] = await db
+      .select({ name: s.workspaces.name })
+      .from(s.workspaces)
+      .where(eq(s.workspaces.id, ctx.workspaceId))
+      .limit(1);
+    await notifyFeedbackSubmission({
+      feedbackId: stored.id,
+      userName: null,
+      userEmail: ctx.email,
+      workspaceName: workspace?.name ?? ctx.workspaceId,
+      category: stored.category,
+      message: stored.message,
+      pageUrl: stored.pagePath ? `${appOrigin()}${stored.pagePath}` : null,
+      createdAt: stored.createdAt,
+      inboxUrl: `${appOrigin()}/app/feedback`,
+    });
+    return stored;
+  },
+
+  /** Operator-only resend for feedback submitted before email notifications existed. */
+  async notify(ctx: RequestContext, id: string) {
+    requireBeebizyOperator(ctx.email);
+    const [stored] = await db
+      .select({ feedback: s.productFeedback, workspaceName: s.workspaces.name })
+      .from(s.productFeedback)
+      .innerJoin(s.workspaces, eq(s.productFeedback.workspaceId, s.workspaces.id))
+      .where(eq(s.productFeedback.id, id))
+      .limit(1);
+    if (!stored) throw new HttpError(404, "Feedback not found.");
+
+    const directory = await lookupUsers([stored.feedback.userId]);
+    const submitter = directory.get(stored.feedback.userId);
+    const item = map.toProductFeedback(stored.feedback);
+    return notifyFeedbackSubmission({
+      feedbackId: item.id,
+      userName: submitter?.name ?? null,
+      userEmail: submitter?.email ?? null,
+      workspaceName: stored.workspaceName,
+      category: item.category,
+      message: item.message,
+      pageUrl: item.pagePath ? `${appOrigin()}${item.pagePath}` : null,
+      createdAt: item.createdAt,
+      inboxUrl: `${appOrigin()}/app/feedback`,
+    });
   },
 };
 

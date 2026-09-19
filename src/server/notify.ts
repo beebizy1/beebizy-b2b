@@ -21,6 +21,10 @@ export interface EmailMessage {
   subject: string;
   /** Plain text. No HTML template until there is a design worth templating. */
   text: string;
+  /** A monitored address so the internal team can answer the person directly. */
+  replyTo?: string | null;
+  /** Stable business-event key. Resend uses it to collapse uncertain retries. */
+  idempotencyKey?: string;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
@@ -33,8 +37,18 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text }),
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        ...(message.idempotencyKey ? { "Idempotency-Key": message.idempotencyKey } : {}),
+      },
+      body: JSON.stringify({
+        from,
+        to: [message.to],
+        subject: message.subject,
+        text: message.text,
+        ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+      }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
@@ -44,6 +58,52 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
   } catch (error) {
     return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
   }
+}
+
+const FEEDBACK_NOTIFICATION_EMAIL = "hello@beebizy.com";
+
+function emailSubjectPart(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/** Sends the exact stored feedback to Beebizy's monitored product inbox. */
+export async function notifyFeedbackSubmission(input: {
+  feedbackId: string;
+  userName: string | null;
+  userEmail: string | null;
+  workspaceName: string;
+  category: string;
+  message: string;
+  pageUrl: string | null;
+  createdAt: string;
+  inboxUrl: string;
+}): Promise<EmailOutcome> {
+  const sender = input.userName || input.userEmail || "a Beebizy user";
+  const outcome = await sendEmail({
+    to: FEEDBACK_NOTIFICATION_EMAIL,
+    replyTo: input.userEmail,
+    idempotencyKey: `product-feedback-${input.feedbackId}`,
+    subject: `New Beebizy feedback from ${emailSubjectPart(sender)}`,
+    text: [
+      "New feedback was submitted in Beebizy.",
+      "",
+      `From: ${input.userName ?? "-"}`,
+      `Email: ${input.userEmail ?? "-"}`,
+      `Workspace: ${input.workspaceName}`,
+      `Category: ${input.category}`,
+      `Submitted: ${input.createdAt}`,
+      input.pageUrl ? `Submitted from: ${input.pageUrl}` : null,
+      "",
+      "Exact feedback:",
+      input.message,
+      "",
+      `Open the private feedback inbox: ${input.inboxUrl}`,
+    ].filter((line): line is string => line !== null).join("\n"),
+  });
+  if (outcome.status !== "sent") {
+    console.warn("PRODUCT_FEEDBACK_EMAIL_NOT_SENT", input.feedbackId, outcome.status, outcome.reason);
+  }
+  return outcome;
 }
 
 /**
