@@ -1792,6 +1792,10 @@ const feedback: FeedbackRepository = {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
     );
   },
+  async notify() {
+    await wait();
+    return { status: "skipped", reason: "Email delivery is unavailable in demo mode." };
+  },
 };
 
 const history: EventHistoryRepository = {

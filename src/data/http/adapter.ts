@@ -27,6 +27,7 @@ import type {
   EventHealth,
   EventHistoryEntry,
   FeedbackInboxItem,
+  FeedbackNotificationOutcome,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -392,6 +393,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: () => client.get<ProductFeedback[]>("/feedback"),
       listInbox: () => client.get<FeedbackInboxItem[]>("/feedback/inbox"),
       create: (draft) => client.post<ProductFeedback>("/feedback", draft),
+      notify: (id) => client.post<FeedbackNotificationOutcome>(`/feedback/${id}/notify`, {}),
     },
 
     history: {

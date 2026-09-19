@@ -1192,6 +1192,11 @@ export interface FeedbackInboxItem extends ProductFeedback {
   workspaceName: string;
 }
 
+export type FeedbackNotificationOutcome =
+  | { status: "sent" }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string };
+
 /* ----------------------------------------------------------------- derived */
 
 /**

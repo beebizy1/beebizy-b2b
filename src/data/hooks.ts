@@ -1127,6 +1127,10 @@ export function useFeedbackInbox(userId: string, enabled: boolean) {
   return useAdapterQuery(qk.feedbackInbox(userId), (a) => a.feedback.listInbox(), { enabled });
 }
 
+export function useNotifyFeedback() {
+  return useAdapterMutation((a, id: string) => a.feedback.notify(id), () => []);
+}
+
 export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {
   return useAdapterQuery(qk.floorplan(eventId), (a) => a.floorplan.list(eventId), { enabled: !!eventId });
 }

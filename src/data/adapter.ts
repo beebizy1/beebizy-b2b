@@ -43,6 +43,7 @@ import type {
   EventHealth,
   EventHistoryEntry,
   FeedbackInboxItem,
+  FeedbackNotificationOutcome,
   MoodBoardImage,
   EventPatch,
   EventRoi,
@@ -312,6 +313,8 @@ export interface FeedbackRepository {
   /** Cross-workspace inbox. The API permits only approved Beebizy operators. */
   listInbox(): Promise<FeedbackInboxItem[]>;
   create(draft: ProductFeedbackDraft): Promise<ProductFeedback>;
+  /** Operator-only delivery or redelivery to the monitored Beebizy inbox. */
+  notify(id: string): Promise<FeedbackNotificationOutcome>;
 }
 
 export interface BillingRepository {

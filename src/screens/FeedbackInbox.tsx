@@ -1,5 +1,6 @@
 import { Redirect, Link } from "wouter";
-import { Bug, Building2, Lightbulb, MessagesSquare } from "lucide-react";
+import { Bug, Building2, Lightbulb, Mail, MessagesSquare } from "lucide-react";
+import { toast } from "sonner";
 import {
   EmptyState,
   ErrorNotice,
@@ -11,8 +12,9 @@ import {
   StatTile,
   type Tone,
 } from "@/components/primitives";
-import { useFeedbackInbox, useMe } from "@/data/hooks";
+import { useFeedbackInbox, useMe, useNotifyFeedback } from "@/data/hooks";
 import type { FeedbackCategory } from "@/data/entities";
+import { Button } from "@/components/ui/button";
 
 const CATEGORY_LABELS: Record<FeedbackCategory, string> = {
   general: "General",
@@ -40,6 +42,7 @@ export default function FeedbackInbox() {
     identity?.userId ?? "anonymous",
     canReview,
   );
+  const notify = useNotifyFeedback();
 
   if (!identityLoading && !canReview) return <Redirect to="/app" replace />;
 
@@ -98,6 +101,24 @@ export default function FeedbackInbox() {
                     </Link>
                   ) : null}
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={notify.isPending}
+                  onClick={() => {
+                    notify.mutate(item.id, {
+                      onSuccess: (outcome) => {
+                        if (outcome.status === "sent") toast.success("Exact feedback emailed to hello@beebizy.com.");
+                        else toast.error(`Email was not sent: ${outcome.reason}`);
+                      },
+                      onError: (sendError) => toast.error(sendError.message),
+                    });
+                  }}
+                >
+                  <Mail aria-hidden="true" />
+                  Email to hello
+                </Button>
               </li>
             ))}
           </ul>
