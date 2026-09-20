@@ -36,6 +36,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
+import type { RfpSpaceRequirement } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 import type { RegistrationPageSettings } from "../data/registrationPage.ts";
@@ -421,6 +422,14 @@ export const rfps = pgTable(
     startTime: varchar("start_time", { length: 5 }),
     endTime: varchar("end_time", { length: 5 }),
     headcount: integer("headcount"),
+    roomBlockRequired: boolean("room_block_required").notNull().default(false),
+    roomsRequired: integer("rooms_required"),
+    checkInDate: timestamp("check_in_date", { withTimezone: true }),
+    checkOutDate: timestamp("check_out_date", { withTimezone: true }),
+    spaceRequirements: jsonb("space_requirements").$type<RfpSpaceRequirement[]>().notNull().default([]),
+    foodBeverageSpendCents: bigint("food_beverage_spend_cents", { mode: "number" }),
+    ancillarySpendCents: bigint("ancillary_spend_cents", { mode: "number" }),
+    ancillarySpendNotes: text("ancillary_spend_notes"),
     city: text("city"),
     location: text("location"),
     budgetMinCents: bigint("budget_min_cents", { mode: "number" }),

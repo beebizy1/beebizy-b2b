@@ -31,10 +31,26 @@ try {
     title: "QA brief", vendorCategory: "Venue", targetType: "venue", description: "Stage and chairs",
     eventDate: "2026-12-01T12:00:00.000Z", startTime: "10:00", endTime: "17:00", headcount: 100,
     city: "Santa Clara", location: "QA venue", budgetMinCents: 10000, budgetMaxCents: 20000,
+    deadline: "2026-11-15T23:59:00.000Z",
+    eventType: "Conference with room block", roomBlockRequired: true, roomsRequired: 50,
+    checkInDate: "2026-11-30T12:00:00.000Z", checkOutDate: "2026-12-03T12:00:00.000Z",
+    foodBeverageSpendCents: 3500000, ancillarySpendCents: 1000000, ancillarySpendNotes: "Parking and AV",
+    spaceRequirements: [
+      { id: "registration", purpose: "Registration", date: "2026-11-30T12:00:00.000Z", startTime: "15:00", endTime: "18:00", capacity: 100, notes: "Foyer" },
+      { id: "breakfast", purpose: "Breakfast", date: "2026-12-01T12:00:00.000Z", startTime: "07:30", endTime: "09:00", capacity: 100, notes: null },
+      { id: "meeting", purpose: "Meeting", date: "2026-12-01T12:00:00.000Z", startTime: "09:00", endTime: "12:00", capacity: 100, notes: null },
+      { id: "lunch", purpose: "Lunch", date: "2026-12-01T12:00:00.000Z", startTime: "12:00", endTime: "13:30", capacity: 100, notes: null },
+    ],
   });
+  const editedRfp = await repos.rfps.update(ctx, event.id, rfp.id, { roomsRequired: 55 });
+  assert.equal(editedRfp.roomsRequired, 55);
   const invitation = await repos.rfps.inviteVendor(ctx, event.id, rfp.id, vendor.id);
   assert.ok(invitation.deliveredAt);
-  assert.equal((await repos.publicRfp(invitation.publicToken))?.rfp.city, "Santa Clara");
+  const publicBrief = await repos.publicRfp(invitation.publicToken);
+  assert.equal(publicBrief?.rfp.city, "Santa Clara");
+  assert.equal(publicBrief?.rfp.roomsRequired, 55);
+  assert.equal(publicBrief?.rfp.spaceRequirements.length, 4);
+  assert.equal(publicBrief?.rfp.foodBeverageSpendCents, 3500000);
   const proposal = await repos.publicRfpResponse(invitation.publicToken, { contactName: "QA", contactEmail: "qa@example.com", quotedAmountCents: 15000, notes: "All included" });
   await repos.rfps.setResponseStatus(ctx, event.id, rfp.id, proposal.id, "accepted");
   const repeated = await repos.publicRfpResponse(invitation.publicToken, { notes: "Must not overwrite" });

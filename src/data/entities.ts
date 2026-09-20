@@ -940,6 +940,29 @@ export type RfpResponseStatus = (typeof RFP_RESPONSE_STATUSES)[number];
 export const RFP_TARGET_TYPES = ["venue", "vendor"] as const;
 export type RfpTargetType = (typeof RFP_TARGET_TYPES)[number];
 
+export const RFP_EVENT_TYPES = [
+  "Conference",
+  "Conference with room block",
+  "Room block",
+  "Dinner",
+  "Meeting",
+  "Summit",
+  "Team summit",
+  "Gala",
+  "Reception",
+  "Other",
+] as const;
+
+export interface RfpSpaceRequirement {
+  id: string;
+  purpose: string;
+  date: IsoDateTime | null;
+  startTime: string | null;
+  endTime: string | null;
+  capacity: number | null;
+  notes: string | null;
+}
+
 /**
  * A request for proposal put out to one vendor category.
  *
@@ -963,6 +986,14 @@ export interface Rfp {
   budgetMinCents: Cents | null;
   budgetMaxCents: Cents | null;
   headcount: number | null;
+  roomBlockRequired: boolean;
+  roomsRequired: number | null;
+  checkInDate: IsoDateTime | null;
+  checkOutDate: IsoDateTime | null;
+  spaceRequirements: RfpSpaceRequirement[];
+  foodBeverageSpendCents: Cents | null;
+  ancillarySpendCents: Cents | null;
+  ancillarySpendNotes: string | null;
   /** Responses are due by this date. */
   deadline: IsoDateTime | null;
   requirements: string | null;
@@ -985,6 +1016,14 @@ export interface RfpDraft {
   budgetMinCents?: Cents | null;
   budgetMaxCents?: Cents | null;
   headcount?: number | null;
+  roomBlockRequired?: boolean;
+  roomsRequired?: number | null;
+  checkInDate?: IsoDateTime | null;
+  checkOutDate?: IsoDateTime | null;
+  spaceRequirements?: RfpSpaceRequirement[];
+  foodBeverageSpendCents?: Cents | null;
+  ancillarySpendCents?: Cents | null;
+  ancillarySpendNotes?: string | null;
   deadline?: IsoDateTime | null;
   requirements?: string | null;
   status?: RfpStatus;

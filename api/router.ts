@@ -24,7 +24,7 @@ import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
 import { effectivePlan, planHasCapability, type PlanCapability } from "../src/data/plans.ts";
 import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
 import { z, ZodError } from "zod";
-import { rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
+import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
 
 export const config = { runtime: "nodejs", api: { bodyParser: false } };
 
@@ -397,7 +397,7 @@ async function handleAuthed(
           const nestedId = segments[5];
           if (!c && method === "GET") return json(await repos.rfps.list(ctx, a));
           if (!c && method === "POST") return json(await repos.rfps.create(ctx, a, rfpDraftSchema.parse(body)), 201);
-          if (c && !action && method === "PATCH") return json(await repos.rfps.update(ctx, a, c, rfpDraftSchema.partial().parse(body)));
+          if (c && !action && method === "PATCH") return json(await repos.rfps.update(ctx, a, c, rfpDraftPatchSchema.parse(body)));
           if (c && !action && method === "DELETE") {
             await repos.rfps.remove(ctx, a, c);
             return json({ ok: true });

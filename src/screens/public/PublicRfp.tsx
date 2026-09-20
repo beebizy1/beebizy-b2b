@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, FileText, MapPin, Users } from "lucide-react";
+import { BedDouble, Check, FileText, MapPin, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,6 +62,34 @@ export default function PublicRfp({ token }: { token: string }) {
               {rfp.budgetMinCents !== null || rfp.budgetMaxCents !== null ? <div><dt className="text-xs font-semibold text-muted-foreground">Budget guidance</dt><dd>{rfp.budgetMinCents !== null ? formatMoney(rfp.budgetMinCents) : "Open"} - {rfp.budgetMaxCents !== null ? formatMoney(rfp.budgetMaxCents) : "Open"}</dd></div> : null}
               {rfp.deadline ? <div><dt className="text-xs font-semibold text-muted-foreground">Proposal due</dt><dd>{eventDate(rfp.deadline)}</dd></div> : null}
             </dl>
+            {rfp.roomBlockRequired ? (
+              <div className="rounded-xl border border-hairline bg-surface-sunken p-4">
+                <p className="flex items-center gap-2 font-semibold text-foreground"><BedDouble className="size-4 text-primary-text" />Hotel room block</p>
+                <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div><dt className="text-xs font-semibold text-muted-foreground">Rooms required</dt><dd>{rfp.roomsRequired}</dd></div>
+                  <div><dt className="text-xs font-semibold text-muted-foreground">Check-in</dt><dd>{eventDate(rfp.checkInDate)}</dd></div>
+                  <div><dt className="text-xs font-semibold text-muted-foreground">Check-out</dt><dd>{eventDate(rfp.checkOutDate)}</dd></div>
+                  <div><dt className="text-xs font-semibold text-muted-foreground">Event guests</dt><dd>{rfp.headcount ?? "Not set"}</dd></div>
+                  {rfp.foodBeverageSpendCents != null ? <div><dt className="text-xs font-semibold text-muted-foreground">Expected food & beverage</dt><dd>{formatMoney(rfp.foodBeverageSpendCents)}</dd></div> : null}
+                  {rfp.ancillarySpendCents != null ? <div><dt className="text-xs font-semibold text-muted-foreground">Other property spend</dt><dd>{formatMoney(rfp.ancillarySpendCents)}</dd></div> : null}
+                </dl>
+                {rfp.ancillarySpendNotes ? <p className="mt-3 whitespace-pre-wrap text-muted-foreground">{rfp.ancillarySpendNotes}</p> : null}
+              </div>
+            ) : null}
+            {rfp.spaceRequirements.length > 0 ? (
+              <div>
+                <p className="mb-2 font-semibold text-foreground">Function spaces required</p>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {rfp.spaceRequirements.map((space) => (
+                    <li key={space.id} className="rounded-xl border border-hairline p-3">
+                      <p className="font-semibold text-foreground">{space.purpose}</p>
+                      <p className="mt-1 text-muted-foreground">{[eventDate(space.date), space.startTime ? `${space.startTime}${space.endTime ? ` - ${space.endTime}` : ""}` : null, space.capacity ? `${space.capacity} people` : null].filter(Boolean).join(" · ")}</p>
+                      {space.notes ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{space.notes}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {rfp.requirements ? <div className="rounded-xl bg-surface-sunken p-4"><p className="text-xs font-semibold text-muted-foreground">Requirements</p><p className="mt-1 whitespace-pre-wrap leading-6">{rfp.requirements}</p></div> : null}
           </div>
         </Panel>

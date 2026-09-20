@@ -70,7 +70,7 @@ import type {
   RfpWithResponses,
 } from "../data/entities.ts";
 
-import { REGISTRATION_STATUSES, RFP_RESPONSE_STATUSES, RFP_STATUSES, RFP_TARGET_TYPES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { REGISTRATION_STATUSES, RFP_EVENT_TYPES, RFP_RESPONSE_STATUSES, RFP_STATUSES, RFP_TARGET_TYPES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
@@ -78,7 +78,7 @@ import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
-import { validRfpBudget } from "../data/rfp.ts";
+import { rfpDraftSchema, rfpSpaceRequirementSchema, validHotelRfp, validRfpBudget } from "../data/rfp.ts";
 import {
   notifyFeedbackSubmission,
   notifyRfpInvitation,
@@ -178,6 +178,11 @@ const optLocalTime = (body: Body, key: string): string | null => {
     throw new HttpError(400, `${key} must use HH:mm.`);
   }
   return value;
+};
+const rfpSpaces = (body: Body) => {
+  const parsed = rfpSpaceRequirementSchema.array().max(50).safeParse(body.spaceRequirements ?? []);
+  if (!parsed.success) throw new HttpError(400, "Check every function space date, time, capacity and description.");
+  return parsed.data;
 };
 
 /** Only assigns keys the client actually sent, so a patch never blanks a field. */
@@ -1470,6 +1475,26 @@ function readRfpTargetType(body: Body): Rfp["targetType"] {
   return value as Rfp["targetType"];
 }
 
+function readRfpEventType(body: Body): Rfp["eventType"] {
+  const value = optStr(body, "eventType");
+  if (value !== null && !(RFP_EVENT_TYPES as readonly string[]).includes(value)) {
+    throw new HttpError(400, "Choose a valid event type.");
+  }
+  return value;
+}
+
+function requireValidRfpDraft(body: Body): void {
+  const parsed = rfpDraftSchema.safeParse(body);
+  if (!parsed.success) throw new HttpError(400, parsed.error.issues[0]?.message ?? "Check the RFP details.");
+}
+
+const RFP_CONTENT_KEYS = new Set([
+  "title", "targetType", "vendorCategory", "description", "eventType", "eventDate", "startTime", "endTime",
+  "headcount", "roomBlockRequired", "roomsRequired", "checkInDate", "checkOutDate", "spaceRequirements",
+  "foodBeverageSpendCents", "ancillarySpendCents", "ancillarySpendNotes", "city", "location", "budgetMinCents",
+  "budgetMaxCents", "deadline", "requirements",
+]);
+
 async function requireRfp(ctx: RequestContext, eventId: string, rfpId: string) {
   const [row] = await db.select().from(s.rfps).where(and(
     eq(s.rfps.id, rfpId),
@@ -1514,7 +1539,9 @@ export const rfps = {
 
   async create(ctx: RequestContext, eventId: string, body: Body): Promise<Rfp> {
     await requireOwnedEvent(ctx, eventId);
+    requireValidRfpDraft(body);
     if (!validRfpBudget(body)) throw new HttpError(400, "The maximum budget must be at least the minimum.");
+    if (!validHotelRfp(body)) throw new HttpError(400, "Room blocks require a room count and check-out after check-in.");
     const id = newId("rfp");
     await db.insert(s.rfps).values({
       id,
@@ -1524,11 +1551,19 @@ export const rfps = {
       targetType: readRfpTargetType(body),
       vendorCategory: str(body, "vendorCategory", "Other"),
       description: optStr(body, "description"),
-      eventType: optStr(body, "eventType"),
+      eventType: readRfpEventType(body),
       eventDate: parseOptionalDate(body.eventDate, "eventDate"),
       startTime: optLocalTime(body, "startTime"),
       endTime: optLocalTime(body, "endTime"),
       headcount: optInt(body, "headcount"),
+      roomBlockRequired: optBool(body, "roomBlockRequired") ?? false,
+      roomsRequired: optInt(body, "roomsRequired"),
+      checkInDate: parseOptionalDate(body.checkInDate, "checkInDate"),
+      checkOutDate: parseOptionalDate(body.checkOutDate, "checkOutDate"),
+      spaceRequirements: rfpSpaces(body),
+      foodBeverageSpendCents: optInt(body, "foodBeverageSpendCents"),
+      ancillarySpendCents: optInt(body, "ancillarySpendCents"),
+      ancillarySpendNotes: optStr(body, "ancillarySpendNotes"),
       city: optStr(body, "city"),
       location: optStr(body, "location"),
       budgetMinCents: optInt(body, "budgetMinCents"),
@@ -1543,17 +1578,27 @@ export const rfps = {
 
   async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Rfp> {
     const current = await requireRfp(ctx, eventId, id);
+    if (Object.keys(body).some((key) => RFP_CONTENT_KEYS.has(key))) requireValidRfpDraft({ ...map.toRfp(current), ...body });
     if (!validRfpBudget({ ...current, ...body })) throw new HttpError(400, "The maximum budget must be at least the minimum.");
+    if (!validHotelRfp({ ...current, ...body })) throw new HttpError(400, "Room blocks require a room count and check-out after check-in.");
     const patch = patchFrom<Record<string, unknown>>(body, {
       title: (b) => str(b, "title"),
       targetType: readRfpTargetType,
       vendorCategory: (b) => str(b, "vendorCategory", "Other"),
       description: (b) => optStr(b, "description"),
-      eventType: (b) => optStr(b, "eventType"),
+      eventType: readRfpEventType,
       eventDate: (b) => parseOptionalDate(b.eventDate, "eventDate"),
       startTime: (b) => optLocalTime(b, "startTime"),
       endTime: (b) => optLocalTime(b, "endTime"),
       headcount: (b) => optInt(b, "headcount"),
+      roomBlockRequired: (b) => optBool(b, "roomBlockRequired") ?? false,
+      roomsRequired: (b) => optInt(b, "roomsRequired"),
+      checkInDate: (b) => parseOptionalDate(b.checkInDate, "checkInDate"),
+      checkOutDate: (b) => parseOptionalDate(b.checkOutDate, "checkOutDate"),
+      spaceRequirements: rfpSpaces,
+      foodBeverageSpendCents: (b) => optInt(b, "foodBeverageSpendCents"),
+      ancillarySpendCents: (b) => optInt(b, "ancillarySpendCents"),
+      ancillarySpendNotes: (b) => optStr(b, "ancillarySpendNotes"),
       city: (b) => optStr(b, "city"),
       location: (b) => optStr(b, "location"),
       budgetMinCents: (b) => optInt(b, "budgetMinCents"),
