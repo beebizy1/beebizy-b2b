@@ -64,9 +64,13 @@ import type {
   PublicAssignmentPayload,
   PublicRegistrationDraft,
   PublicVolunteerSignupDraft,
+  PublicRfpPayload,
+  PublicVendorConversation,
+  Rfp,
+  RfpWithResponses,
 } from "../data/entities.ts";
 
-import { REGISTRATION_STATUSES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { REGISTRATION_STATUSES, RFP_RESPONSE_STATUSES, RFP_STATUSES, RFP_TARGET_TYPES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
@@ -74,10 +78,13 @@ import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
+import { validRfpBudget } from "../data/rfp.ts";
 import {
   notifyFeedbackSubmission,
+  notifyRfpInvitation,
   notifyTaskAssignment,
   notifyTeamUpdate,
+  notifyVendorMessage,
   notifyVolunteerAssignment,
 } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
@@ -165,6 +172,13 @@ const positiveInt = (body: Body, key: string, fallback = 1): number => {
 };
 const optBool = (body: Body, key: string): boolean | undefined =>
   body[key] === undefined ? undefined : Boolean(body[key]);
+const optLocalTime = (body: Body, key: string): string | null => {
+  const value = optStr(body, key);
+  if (value !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    throw new HttpError(400, `${key} must use HH:mm.`);
+  }
+  return value;
+};
 
 /** Only assigns keys the client actually sent, so a patch never blanks a field. */
 function patchFrom<T extends object>(body: Body, spec: Record<string, (body: Body) => unknown>): T {
@@ -1337,6 +1351,9 @@ export const vendors = {
     if ("rating" in body) {
       patch.ratingTenths = typeof body.rating === "number" ? Math.round(body.rating * 10) : null;
     }
+    if ("contactEmail" in body) {
+      patch.portalToken = sql`case when ${s.vendors.contactEmail} is distinct from ${patch.contactEmail ?? null} then null else ${s.vendors.portalToken} end`;
+    }
     const updated = await db
       .update(s.vendors)
       .set({ ...patch, updatedAt: new Date() })
@@ -1360,20 +1377,46 @@ export const vendorMessages = {
       .orderBy(asc(s.vendorMessages.createdAt));
     return rows.map(map.toVendorMessage);
   },
-  /** Inserts the message; delivery is the caller's job (see `api/index.ts`). */
   async create(ctx: RequestContext, vendorId: string, body: Body) {
+    const [vendor] = await db.select().from(s.vendors).where(and(
+      eq(s.vendors.id, vendorId),
+      eq(s.vendors.workspaceId, ctx.workspaceId),
+    )).limit(1);
+    if (!vendor) throw new HttpError(404, "That vendor no longer exists.");
+    if (!vendor.contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(vendor.contactEmail)) throw new HttpError(409, "Add a valid contact email before messaging this vendor.");
+
     const id = newId("vm");
+    const senderName = str(body, "senderName", "Beebizy");
+    const subject = optStr(body, "subject");
+    const content = str(body, "content");
+    if (content.length > 10_000 || senderName.length > 120 || (subject?.length ?? 0) > 200) throw new HttpError(400, "This message is too long.");
+    const eventId = optStr(body, "eventId");
+    if (eventId) await requireOwnedEvent(ctx, eventId);
+    const [portal] = await db.update(s.vendors).set({
+      portalToken: sql`coalesce(${s.vendors.portalToken}, ${crypto.randomUUID()})`,
+    }).where(and(eq(s.vendors.id, vendorId), eq(s.vendors.workspaceId, ctx.workspaceId)))
+      .returning({ token: s.vendors.portalToken });
     await db.insert(s.vendorMessages).values({
       id,
       workspaceId: ctx.workspaceId,
       vendorId,
-      eventId: optStr(body, "eventId"),
+      eventId,
       direction: "outbound",
-      senderName: str(body, "senderName", "You"),
-      subject: optStr(body, "subject"),
-      body: str(body, "content"),
+      senderName,
+      subject,
+      body: content,
       isRead: true,
     });
+
+    const outcome = await notifyVendorMessage({
+      to: vendor.contactEmail,
+      vendorName: vendor.name,
+      senderName,
+      subject,
+      message: content,
+      url: `${appOrigin()}/vendor-conversation/${portal!.token}`,
+    });
+    await vendorMessages.markDelivered(id, outcome.status === "sent" ? null : outcome.reason);
     const [row] = await db.select().from(s.vendorMessages).where(eq(s.vendorMessages.id, id)).limit(1);
     return map.toVendorMessage(row!);
   },
@@ -1390,6 +1433,283 @@ export const vendorMessages = {
       .where(eq(s.vendorMessages.id, id));
   },
 };
+
+export async function publicVendorConversation(token: string): Promise<PublicVendorConversation | null> {
+  const [vendor] = await db.select().from(s.vendors).where(eq(s.vendors.portalToken, token)).limit(1);
+  if (!vendor) return null;
+  const rows = await db.select({
+    id: s.vendorMessages.id, direction: s.vendorMessages.direction, senderName: s.vendorMessages.senderName,
+    subject: s.vendorMessages.subject, content: s.vendorMessages.body, createdAt: s.vendorMessages.createdAt,
+  }).from(s.vendorMessages).where(and(eq(s.vendorMessages.vendorId, vendor.id), eq(s.vendorMessages.workspaceId, vendor.workspaceId)))
+    .orderBy(desc(s.vendorMessages.createdAt)).limit(500);
+  return { vendorName: vendor.name, messages: rows.reverse().map((row) => ({ ...row, createdAt: row.createdAt.toISOString() })) };
+}
+
+export async function publicVendorReply(token: string, body: Body): Promise<void> {
+  const [vendor] = await db.select().from(s.vendors).where(eq(s.vendors.portalToken, token)).limit(1);
+  if (!vendor) throw new HttpError(404, "This conversation link is no longer active.");
+  const content = str(body, "content").trim();
+  if (content.length > 10_000) throw new HttpError(400, "Keep your message under 10,000 characters.");
+  await db.insert(s.vendorMessages).values({
+    id: newId("vm"), workspaceId: vendor.workspaceId, vendorId: vendor.id,
+    direction: "inbound", senderName: vendor.name, body: content, isRead: false,
+  });
+}
+
+/* ---------------------------------------------------------- requests for proposal */
+
+function readRfpStatus(body: Body): Rfp["status"] {
+  const value = str(body, "status", "draft");
+  if (!(RFP_STATUSES as readonly string[]).includes(value)) throw new HttpError(400, "Choose a valid RFP status.");
+  return value as Rfp["status"];
+}
+
+function readRfpTargetType(body: Body): Rfp["targetType"] {
+  const value = str(body, "targetType", "vendor");
+  if (!(RFP_TARGET_TYPES as readonly string[]).includes(value)) throw new HttpError(400, "Choose venue or vendor.");
+  return value as Rfp["targetType"];
+}
+
+async function requireRfp(ctx: RequestContext, eventId: string, rfpId: string) {
+  const [row] = await db.select().from(s.rfps).where(and(
+    eq(s.rfps.id, rfpId),
+    eq(s.rfps.eventId, eventId),
+    eq(s.rfps.workspaceId, ctx.workspaceId),
+  )).limit(1);
+  if (!row) throw new HttpError(404, "That RFP no longer exists.");
+  return row;
+}
+
+export const rfps = {
+  async list(ctx: RequestContext, eventId: string): Promise<RfpWithResponses[]> {
+    await requireOwnedEvent(ctx, eventId);
+    const rows = await db.select().from(s.rfps).where(and(
+      eq(s.rfps.workspaceId, ctx.workspaceId),
+      eq(s.rfps.eventId, eventId),
+    )).orderBy(desc(s.rfps.createdAt));
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => row.id);
+    const [responses, invitations] = await Promise.all([
+      db.select().from(s.rfpResponses).where(and(
+        eq(s.rfpResponses.workspaceId, ctx.workspaceId),
+        inArray(s.rfpResponses.rfpId, ids),
+      )).orderBy(asc(s.rfpResponses.createdAt)),
+      db.select({ invitation: s.rfpInvitations, vendor: s.vendors })
+        .from(s.rfpInvitations)
+        .innerJoin(s.vendors, eq(s.rfpInvitations.vendorId, s.vendors.id))
+        .where(and(
+          eq(s.rfpInvitations.workspaceId, ctx.workspaceId),
+          inArray(s.rfpInvitations.rfpId, ids),
+        ))
+        .orderBy(asc(s.rfpInvitations.sentAt)),
+    ]);
+    return rows.map((row) => ({
+      ...map.toRfp(row),
+      responses: responses.filter((response) => response.rfpId === row.id).map(map.toRfpResponse),
+      invitations: invitations
+        .filter(({ invitation }) => invitation.rfpId === row.id)
+        .map(({ invitation, vendor }) => map.toRfpInvitation(invitation, vendor)),
+    }));
+  },
+
+  async create(ctx: RequestContext, eventId: string, body: Body): Promise<Rfp> {
+    await requireOwnedEvent(ctx, eventId);
+    if (!validRfpBudget(body)) throw new HttpError(400, "The maximum budget must be at least the minimum.");
+    const id = newId("rfp");
+    await db.insert(s.rfps).values({
+      id,
+      workspaceId: ctx.workspaceId,
+      eventId,
+      title: str(body, "title"),
+      targetType: readRfpTargetType(body),
+      vendorCategory: str(body, "vendorCategory", "Other"),
+      description: optStr(body, "description"),
+      eventType: optStr(body, "eventType"),
+      eventDate: parseOptionalDate(body.eventDate, "eventDate"),
+      startTime: optLocalTime(body, "startTime"),
+      endTime: optLocalTime(body, "endTime"),
+      headcount: optInt(body, "headcount"),
+      city: optStr(body, "city"),
+      location: optStr(body, "location"),
+      budgetMinCents: optInt(body, "budgetMinCents"),
+      budgetMaxCents: optInt(body, "budgetMaxCents"),
+      deadline: parseOptionalDate(body.deadline, "deadline"),
+      requirements: optStr(body, "requirements"),
+      status: readRfpStatus(body),
+    });
+    const [row] = await db.select().from(s.rfps).where(eq(s.rfps.id, id)).limit(1);
+    return map.toRfp(row!);
+  },
+
+  async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Rfp> {
+    const current = await requireRfp(ctx, eventId, id);
+    if (!validRfpBudget({ ...current, ...body })) throw new HttpError(400, "The maximum budget must be at least the minimum.");
+    const patch = patchFrom<Record<string, unknown>>(body, {
+      title: (b) => str(b, "title"),
+      targetType: readRfpTargetType,
+      vendorCategory: (b) => str(b, "vendorCategory", "Other"),
+      description: (b) => optStr(b, "description"),
+      eventType: (b) => optStr(b, "eventType"),
+      eventDate: (b) => parseOptionalDate(b.eventDate, "eventDate"),
+      startTime: (b) => optLocalTime(b, "startTime"),
+      endTime: (b) => optLocalTime(b, "endTime"),
+      headcount: (b) => optInt(b, "headcount"),
+      city: (b) => optStr(b, "city"),
+      location: (b) => optStr(b, "location"),
+      budgetMinCents: (b) => optInt(b, "budgetMinCents"),
+      budgetMaxCents: (b) => optInt(b, "budgetMaxCents"),
+      deadline: (b) => parseOptionalDate(b.deadline, "deadline"),
+      requirements: (b) => optStr(b, "requirements"),
+      status: readRfpStatus,
+    });
+    const [row] = await db.update(s.rfps).set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(s.rfps.id, id), eq(s.rfps.workspaceId, ctx.workspaceId)))
+      .returning();
+    return map.toRfp(row!);
+  },
+
+  async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
+    await requireRfp(ctx, eventId, id);
+    await db.delete(s.rfps).where(and(eq(s.rfps.id, id), eq(s.rfps.workspaceId, ctx.workspaceId)));
+  },
+
+  async addResponse(ctx: RequestContext, eventId: string, rfpId: string, body: Body) {
+    await requireRfp(ctx, eventId, rfpId);
+    const id = newId("rfpres");
+    await db.insert(s.rfpResponses).values({
+      id,
+      workspaceId: ctx.workspaceId,
+      rfpId,
+      vendorName: str(body, "vendorName"),
+      contactName: optStr(body, "contactName"),
+      contactEmail: optStr(body, "contactEmail"),
+      contactPhone: optStr(body, "contactPhone"),
+      quotedAmountCents: optInt(body, "quotedAmountCents"),
+      notes: optStr(body, "notes"),
+      status: str(body, "status", "received"),
+    });
+    const [row] = await db.select().from(s.rfpResponses).where(eq(s.rfpResponses.id, id)).limit(1);
+    return map.toRfpResponse(row!);
+  },
+
+  async setResponseStatus(ctx: RequestContext, eventId: string, rfpId: string, responseId: string, status: string) {
+    await requireRfp(ctx, eventId, rfpId);
+    if (!(RFP_RESPONSE_STATUSES as readonly string[]).includes(status)) throw new HttpError(400, "Choose a valid response status.");
+    const [row] = await db.update(s.rfpResponses).set({ status, updatedAt: new Date() }).where(and(
+      eq(s.rfpResponses.id, responseId),
+      eq(s.rfpResponses.rfpId, rfpId),
+      eq(s.rfpResponses.workspaceId, ctx.workspaceId),
+    )).returning();
+    if (!row) throw new HttpError(404, "That proposal no longer exists.");
+    return map.toRfpResponse(row);
+  },
+
+  async removeResponse(ctx: RequestContext, eventId: string, rfpId: string, responseId: string): Promise<void> {
+    await requireRfp(ctx, eventId, rfpId);
+    await db.delete(s.rfpResponses).where(and(
+      eq(s.rfpResponses.id, responseId),
+      eq(s.rfpResponses.rfpId, rfpId),
+      eq(s.rfpResponses.workspaceId, ctx.workspaceId),
+    ));
+  },
+
+  async inviteVendor(ctx: RequestContext, eventId: string, rfpId: string, vendorId: string) {
+    const rfp = await requireRfp(ctx, eventId, rfpId);
+    if (rfp.status === "closed") throw new HttpError(409, "Reopen this RFP before inviting vendors.");
+    const [vendor, event] = await Promise.all([
+      db.select().from(s.vendors).where(and(eq(s.vendors.id, vendorId), eq(s.vendors.workspaceId, ctx.workspaceId))).limit(1).then((rows) => rows[0]),
+      events.get(ctx, eventId),
+    ]);
+    if (!vendor) throw new HttpError(404, "That vendor no longer exists.");
+    if (!vendor.contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(vendor.contactEmail)) throw new HttpError(409, "Add a valid contact email before sending this RFP.");
+    if (!event) throw new HttpError(404, "That event no longer exists.");
+
+    await db.insert(s.rfpInvitations).values({
+      id: newId("rfpinv"), workspaceId: ctx.workspaceId, rfpId, vendorId,
+      recipientEmail: vendor.contactEmail, publicToken: crypto.randomUUID(),
+    }).onConflictDoUpdate({
+      target: [s.rfpInvitations.rfpId, s.rfpInvitations.vendorId],
+      set: {
+        publicToken: sql`case when ${s.rfpInvitations.recipientEmail} is distinct from ${vendor.contactEmail} then ${crypto.randomUUID()} else ${s.rfpInvitations.publicToken} end`,
+        recipientEmail: vendor.contactEmail,
+      },
+    });
+    const [existing] = await db.select().from(s.rfpInvitations).where(and(
+      eq(s.rfpInvitations.rfpId, rfpId),
+      eq(s.rfpInvitations.vendorId, vendorId),
+    )).limit(1);
+    const invitationId = existing!.id;
+    const publicToken = existing!.publicToken;
+
+    const outcome = await notifyRfpInvitation({
+      // Each explicit send is a new attempt; any provider retry of this attempt reuses its key.
+      invitationId: `${invitationId}-${crypto.randomUUID()}`,
+      to: vendor.contactEmail,
+      vendorName: vendor.name,
+      eventTitle: event.title,
+      rfpTitle: rfp.title,
+      deadline: rfp.deadline?.toISOString() ?? null,
+      url: `${appOrigin()}/rfp/${publicToken}`,
+    });
+    const deliveryError = outcome.status === "sent" ? null : outcome.reason;
+    const [invitation] = await db.update(s.rfpInvitations).set({
+      recipientEmail: vendor.contactEmail,
+      deliveredAt: deliveryError ? null : new Date(),
+      deliveryError,
+    }).where(eq(s.rfpInvitations.id, invitationId)).returning();
+    if (rfp.status === "draft" && !deliveryError) await db.update(s.rfps).set({ status: "sent", updatedAt: new Date() }).where(eq(s.rfps.id, rfpId));
+    return map.toRfpInvitation(invitation!, vendor);
+  },
+};
+
+export async function publicRfp(token: string): Promise<PublicRfpPayload | null> {
+  const [row] = await db.select({ invitation: s.rfpInvitations, rfp: s.rfps, event: s.events, vendor: s.vendors })
+    .from(s.rfpInvitations)
+    .innerJoin(s.rfps, eq(s.rfpInvitations.rfpId, s.rfps.id))
+    .innerJoin(s.events, eq(s.rfps.eventId, s.events.id))
+    .innerJoin(s.vendors, eq(s.rfpInvitations.vendorId, s.vendors.id))
+    .where(eq(s.rfpInvitations.publicToken, token)).limit(1);
+  if (!row || row.invitation.recipientEmail !== row.vendor.contactEmail || row.rfp.status === "closed" || row.event.status === "cancelled" || row.event.status === "completed") return null;
+  const [response] = await db.select().from(s.rfpResponses).where(eq(s.rfpResponses.invitationId, row.invitation.id)).limit(1);
+  return {
+    rfp: map.toRfp(row.rfp),
+    eventTitle: row.event.title,
+    vendorName: row.vendor.name,
+    response: response ? map.toRfpResponse(response) : null,
+  };
+}
+
+export async function publicRfpResponse(token: string, body: Body) {
+  const payload = await publicRfp(token);
+  if (!payload) throw new HttpError(404, "This proposal link is no longer active.");
+  const [invitation] = await db.select().from(s.rfpInvitations).where(eq(s.rfpInvitations.publicToken, token)).limit(1);
+  if (!invitation) throw new HttpError(404, "This proposal link is no longer active.");
+  const email = optStr(body, "contactEmail")?.trim().toLowerCase() ?? invitation.recipientEmail;
+  const values = {
+    vendorName: payload.vendorName,
+    contactName: optStr(body, "contactName"),
+    contactEmail: email,
+    contactPhone: optStr(body, "contactPhone"),
+    quotedAmountCents: optInt(body, "quotedAmountCents"),
+    notes: optStr(body, "notes"),
+    status: "received",
+    updatedAt: new Date(),
+  } as const;
+  const [existing] = await db.select().from(s.rfpResponses).where(eq(s.rfpResponses.invitationId, invitation.id)).limit(1);
+  if (existing) {
+    return map.toRfpResponse(existing);
+  }
+  const id = newId("rfpres");
+  await db.insert(s.rfpResponses).values({
+    id,
+    workspaceId: invitation.workspaceId,
+    rfpId: invitation.rfpId,
+    invitationId: invitation.id,
+    ...values,
+  }).onConflictDoNothing({ target: s.rfpResponses.invitationId });
+  const [created] = await db.select().from(s.rfpResponses).where(eq(s.rfpResponses.invitationId, invitation.id)).limit(1);
+  return map.toRfpResponse(created!);
+}
 
 /* -------------------------------------------------- event-scoped resources */
 

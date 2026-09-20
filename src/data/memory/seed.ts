@@ -33,6 +33,7 @@ import type {
   RunOfShowItem,
   Sponsorship,
   Rfp,
+  RfpInvitation,
   RfpResponse,
   Deposit,
   TeamHoursEntry,
@@ -70,7 +71,8 @@ export interface MemoryDb {
   raffleTickets: RaffleTicket[];
   sponsorships: Sponsorship[];
   rfps: Rfp[];
-  rfpResponses: RfpResponse[];
+  rfpResponses: (RfpResponse & { invitationId?: string })[];
+  rfpInvitations: RfpInvitation[];
   deposits: Deposit[];
   teamHours: TeamHoursEntry[];
   templates: (Template & TemplateContents)[];
@@ -1604,8 +1606,15 @@ export function buildSeed(): MemoryDb {
       id: "rfp-gala-catering",
       eventId: "evt-gala",
       title: "Plated dinner service for 300",
+      targetType: "vendor",
       vendorCategory: "Catering",
       description: "Three-course plated dinner with a drinks reception beforehand. Full dietary tracking required.",
+      eventType: "Gala",
+      eventDate: at(18),
+      startTime: "17:00",
+      endTime: "23:00",
+      city: "San Francisco",
+      location: "Mission Gardens",
       budgetMinCents: usd(24000),
       budgetMaxCents: usd(32000),
       headcount: 300,
@@ -1618,8 +1627,15 @@ export function buildSeed(): MemoryDb {
       id: "rfp-gala-av",
       eventId: "evt-gala",
       title: "Stage, lighting and sound",
+      targetType: "vendor",
       vendorCategory: "AV & Tech",
       description: "Main stage with LED backdrop, wireless handhelds for the auction, uplighting on the room.",
+      eventType: "Gala",
+      eventDate: at(18),
+      startTime: "17:00",
+      endTime: "23:00",
+      city: "San Francisco",
+      location: "Mission Gardens",
       budgetMinCents: usd(9000),
       budgetMaxCents: usd(14000),
       headcount: 300,
@@ -1632,8 +1648,15 @@ export function buildSeed(): MemoryDb {
       id: "rfp-kickoff-print",
       eventId: "evt-skickoff",
       title: "Badges, signage and printed programme",
+      targetType: "vendor",
       vendorCategory: "Print",
       description: "Delegate badges, wayfinding signage and a saddle-stitched programme.",
+      eventType: "Summit",
+      eventDate: at(40),
+      startTime: "08:00",
+      endTime: "17:00",
+      city: "San Francisco",
+      location: "Moscone Center",
       budgetMinCents: usd(3000),
       budgetMaxCents: usd(5500),
       headcount: 450,
@@ -1644,6 +1667,7 @@ export function buildSeed(): MemoryDb {
     },
   ];
 
+  const rfpInvitations: RfpInvitation[] = [];
   const rfpResponses: RfpResponse[] = [
     {
       id: "rfpres-gala-catering-1",
@@ -1824,6 +1848,7 @@ export function buildSeed(): MemoryDb {
     raffleTickets,
     sponsorships,
     rfps,
+    rfpInvitations,
     rfpResponses,
     deposits,
     teamHours,

@@ -35,15 +35,13 @@ export default function SantaClaraDashboard() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-text">Santa Clara pilot workspace</p>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              Santa Clara University
-            </h1>
+            <h1 className="sr-only">Santa Clara University event workspace</h1>
+            <div className="mt-3 w-full max-w-sm rounded-xl border border-[#b30738]/15 bg-white px-5 py-4 sm:px-6 sm:py-5">
+              <SantaClaraLogo />
+            </div>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               One focused place to prepare the program, coordinate people, and run registration on event day.
             </p>
-          </div>
-          <div className="w-full max-w-sm shrink-0 rounded-xl border border-[#b30738]/15 bg-white px-5 py-4 sm:px-6 sm:py-5">
-            <SantaClaraLogo />
           </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-2 lg:justify-end">

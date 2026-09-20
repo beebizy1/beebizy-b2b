@@ -18,6 +18,10 @@ vi.mock("./repos", () => {
     publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
     publicRegistration: vi.fn(),
     publicVolunteerSignup: vi.fn(),
+    publicRfp: vi.fn(),
+    publicRfpResponse: vi.fn(),
+    publicVendorConversation: vi.fn(),
+    publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
@@ -39,6 +43,10 @@ vi.mock("./repos", () => {
     analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
     feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn(), notify: vi.fn() },
     teamUpdates: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({ id: "update-1" }) },
+    rfps: {
+      list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), addResponse: vi.fn(),
+      setResponseStatus: vi.fn(), removeResponse: vi.fn(), inviteVendor: vi.fn(),
+    },
   };
 });
 vi.mock("./billing", () => ({
@@ -49,7 +57,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicRegistration, publicVolunteerSignup } = await import("./repos");
+const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -59,6 +67,45 @@ function leadRequest(method: string, body?: unknown): Request {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+
+describe("private vendor links", () => {
+  it("opens a token-scoped RFP without a login", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicRfp).mockResolvedValue({ vendorName: "Venue" } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/rfps/private-token"));
+    expect(response.status).toBe(200);
+    expect(publicRfp).toHaveBeenCalledWith("private-token");
+    expect(authorize).not.toHaveBeenCalled();
+    vi.mocked(publicRfp).mockResolvedValue(null);
+    expect((await handleRequest(new Request("http://localhost/api/public/rfps/expired"))).status).toBe(404);
+  });
+
+  it("validates proposals and strips client-supplied approval or vendor identity", async () => {
+    vi.mocked(publicRfpResponse).mockClear();
+    const request = (body: unknown) => new Request("http://localhost/api/public/rfps/private-token/responses", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await handleRequest(request({ contactEmail: "bad" }))).status).toBe(400);
+    expect(publicRfpResponse).not.toHaveBeenCalled();
+    const draft = { contactName: "Ada", contactEmail: "ada@example.com", quotedAmountCents: 10000, notes: "Includes setup" };
+    vi.mocked(publicRfpResponse).mockResolvedValue({ id: "response" } as never);
+    expect((await handleRequest(request({ ...draft, status: "accepted", vendorName: "Spoofed" }))).status).toBe(201);
+    expect(publicRfpResponse).toHaveBeenCalledWith("private-token", draft);
+  });
+
+  it("reads and replies through a private conversation without opening authenticated routes", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicVendorConversation).mockResolvedValue({ vendorName: "Venue", messages: [] });
+    vi.mocked(publicVendorReply).mockResolvedValue(undefined);
+    const url = "http://localhost/api/public/vendor-conversations/private-token";
+    expect((await handleRequest(new Request(url))).status).toBe(200);
+    expect((await handleRequest(new Request(url, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Confirmed" }),
+    }))).status).toBe(201);
+    expect(publicVendorReply).toHaveBeenCalledWith("private-token", { content: "Confirmed" });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+});
 
 describe("public lead endpoint", () => {
   it("rejects unsupported methods and invalid submissions", async () => {

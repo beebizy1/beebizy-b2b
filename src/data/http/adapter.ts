@@ -38,11 +38,14 @@ import type {
   PortfolioSummary,
   ProductFeedback,
   PublicEventPayload,
+  PublicRfpPayload,
+  PublicVendorConversation,
   RaffleItem,
   RaffleTicket,
   Registration,
   RegistrationWithGuest,
   Rfp,
+  RfpInvitation,
   RfpResponse,
   RfpWithResponses,
   RunOfShowItem,
@@ -285,6 +288,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       markThreadRead: async (vendorId) => {
         await client.post(`/vendors/${vendorId}/read`);
       },
+      getPublic: (token) => publicRequest<PublicVendorConversation | null>(`/public/vendor-conversations/${token}`),
+      replyPublic: async (token, content) => {
+        await publicRequest(`/public/vendor-conversations/${token}`, { method: "POST", body: JSON.stringify({ content }) });
+      },
     },
 
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
@@ -317,6 +324,13 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       removeResponse: async (eventId, rfpId, responseId) => {
         await client.del(`/events/${eventId}/rfps/${rfpId}/responses/${responseId}`);
       },
+      inviteVendor: (eventId, rfpId, vendorId) =>
+        client.post<RfpInvitation>(`/events/${eventId}/rfps/${rfpId}/invitations`, { vendorId }),
+      getPublic: (token) => publicRequest<PublicRfpPayload | null>(`/public/rfps/${token}`),
+      respondPublic: (token, draft) => publicRequest<RfpResponse>(`/public/rfps/${token}/responses`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
     },
 
     deposits: eventScoped<Deposit, never, never>(client, "deposits") as DataAdapter["deposits"],
@@ -330,9 +344,6 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       ...(eventScoped<TicketType, never, never>(client, "ticket-types") as DataAdapter["tickets"]),
       listAll: () => client.get<TicketTypeWithEvent[]>("/tickets"),
       purchase: async () => {
-        // Paid checkout goes through Stripe on the server, not from the browser. Until that
-        // route exists there is nothing honest for this to do, and silently registering a
-        // free seat for a paid ticket would be worse than failing.
         throw new DataError("unavailable", "Ticket checkout isn't connected yet.");
       },
     },

@@ -879,6 +879,18 @@ const vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch> = {
 };
 
 const vendorMessages: VendorMessagesRepository = {
+  async getPublic(token) {
+    const vendor = store().vendors.find((row) => row.id === token);
+    return vendor ? { vendorName: vendor.name, messages: await vendorMessages.list(token) } : null;
+  },
+  async replyPublic(token, content) {
+    const vendor = required(store().vendors.find((row) => row.id === token), "That conversation is not available.");
+    store().vendorMessages.push({
+      id: newId("vm"), vendorId: vendor.id, eventId: null, direction: "inbound",
+      senderName: vendor.name, subject: null, content, isRead: false, createdAt: nowIso(),
+    });
+    syncVendorThread(vendor.id);
+  },
   async list(vendorId) {
     await wait();
     return copy(
@@ -1361,8 +1373,15 @@ const rfpsBase = eventScoped<Rfp, RfpDraft, RfpPatch>(
     id: "",
     eventId,
     title: draft.title,
+    targetType: draft.targetType ?? "vendor",
     vendorCategory: draft.vendorCategory,
     description: draft.description ?? null,
+    eventType: draft.eventType ?? null,
+    eventDate: draft.eventDate ?? null,
+    startTime: draft.startTime ?? null,
+    endTime: draft.endTime ?? null,
+    city: draft.city ?? null,
+    location: draft.location ?? null,
     budgetMinCents: draft.budgetMinCents ?? null,
     budgetMaxCents: draft.budgetMaxCents ?? null,
     headcount: draft.headcount ?? null,
@@ -1398,12 +1417,16 @@ const rfps: RfpsRepository = {
           responses: responses
             .filter((response) => response.rfpId === rfp.id)
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+          invitations: store().rfpInvitations
+            .filter((invitation) => invitation.rfpId === rfp.id)
+            .sort((a, b) => a.sentAt.localeCompare(b.sentAt)),
         })),
     );
   },
 
   async remove(eventId, id) {
     await rfpsBase.remove(eventId, id);
+    store().rfpInvitations = store().rfpInvitations.filter((invitation) => invitation.rfpId !== id);
     // Responses are owned by the RFP, so they go with it.
     const responses = store().rfpResponses;
     for (let i = responses.length - 1; i >= 0; i -= 1) {
@@ -1448,6 +1471,57 @@ const rfps: RfpsRepository = {
     const index = responses.findIndex((row) => row.id === responseId && row.rfpId === rfpId);
     if (index === -1) throw new DataError("not-found", `Response ${responseId} no longer exists.`);
     responses.splice(index, 1);
+  },
+
+  async inviteVendor(eventId, rfpId, vendorId) {
+    await wait();
+    if (requireRfp(eventId, rfpId).status === "closed") throw new DataError("conflict", "Reopen this RFP before inviting vendors.");
+    const vendor = required(store().vendors.find((row) => row.id === vendorId), `Vendor ${vendorId} no longer exists.`);
+    if (!vendor.contactEmail) throw new DataError("conflict", "Add a contact email before sending this RFP.");
+    const existing = store().rfpInvitations.find((row) => row.rfpId === rfpId && row.vendorId === vendorId);
+    if (existing) return copy(existing);
+    const invitation = {
+      id: newId("rfpinv"),
+      rfpId,
+      vendorId,
+      vendorName: vendor.name,
+      recipientEmail: vendor.contactEmail,
+      publicToken: crypto.randomUUID(),
+      sentAt: nowIso(),
+      deliveredAt: null,
+      deliveryError: "Demo mode does not send emails.",
+    };
+    store().rfpInvitations.push(invitation);
+    return copy(invitation);
+  },
+
+  async getPublic(token) {
+    await wait();
+    const invitation = store().rfpInvitations.find((row) => row.publicToken === token);
+    if (!invitation) return null;
+    const rfp = store().rfps.find((row) => row.id === invitation.rfpId);
+    if (!rfp || rfp.status === "closed") return null;
+    const event = store().events.find((row) => row.id === rfp.eventId);
+    if (!event || event.status === "cancelled" || event.status === "completed") return null;
+    return {
+      rfp: copy(rfp),
+      eventTitle: event?.title ?? "Event",
+      vendorName: invitation.vendorName,
+      response: copy(store().rfpResponses.find((row) => row.invitationId === invitation.id) ?? null),
+    };
+  },
+
+  async respondPublic(token, draft) {
+    const payload = await rfps.getPublic(token);
+    if (!payload) throw new DataError("not-found", "This proposal link is no longer active.");
+    if (payload.response) return payload.response;
+    const response = await rfps.addResponse(payload.rfp.eventId, payload.rfp.id, {
+      ...draft,
+      vendorName: payload.vendorName,
+      status: "received",
+    });
+    store().rfpResponses.find((row) => row.id === response.id)!.invitationId = store().rfpInvitations.find((row) => row.publicToken === token)!.id;
+    return response;
   },
 };
 

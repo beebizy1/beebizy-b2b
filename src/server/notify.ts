@@ -187,3 +187,63 @@ export async function notifyTeamUpdate(input: {
   if (outcome.status !== "sent") console.warn("TEAM_UPDATE_EMAIL_NOT_SENT", outcome.status, outcome.reason);
   return outcome;
 }
+
+export async function notifyVendorMessage(input: {
+  to: string;
+  vendorName: string;
+  senderName: string;
+  subject?: string | null;
+  message: string;
+  url: string;
+}): Promise<EmailOutcome> {
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    subject: input.subject?.trim() || `Message from ${input.senderName} via Beebizy`,
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      `${input.senderName} sent you a message through Beebizy:`,
+      "",
+      input.message,
+      "",
+      `Read and reply in your private conversation: ${input.url}`,
+      "No Beebizy account is required. Keep this link private.",
+    ].join("\n"),
+  });
+  if (outcome.status !== "sent") console.warn("VENDOR_MESSAGE_EMAIL_NOT_SENT", outcome.status, outcome.reason);
+  return outcome;
+}
+
+export async function notifyRfpInvitation(input: {
+  invitationId: string;
+  to: string;
+  vendorName: string;
+  eventTitle: string;
+  rfpTitle: string;
+  deadline: string | null;
+  url: string;
+}): Promise<EmailOutcome> {
+  const deadline = input.deadline
+    ? new Date(input.deadline).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })
+    : null;
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `rfp-invitation-${input.invitationId}`,
+    subject: `Proposal request: ${input.eventTitle}`,
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      `You are invited to submit a proposal for ${input.eventTitle}.`,
+      `Request: ${input.rfpTitle}`,
+      deadline ? `Reply by: ${deadline}` : null,
+      "",
+      `Review the full brief and submit your proposal: ${input.url}`,
+      "",
+      "You do not need a Beebizy account to use this private link.",
+    ].filter((line): line is string => line !== null).join("\n"),
+  });
+  if (outcome.status !== "sent") console.warn("RFP_INVITATION_EMAIL_NOT_SENT", outcome.status, outcome.reason);
+  return outcome;
+}

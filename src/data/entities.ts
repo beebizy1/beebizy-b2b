@@ -349,6 +349,8 @@ export interface VendorMessage {
   subject: string | null;
   content: string;
   isRead: boolean;
+  deliveredAt?: IsoDateTime | null;
+  deliveryError?: string | null;
   createdAt: IsoDateTime;
 }
 
@@ -357,6 +359,11 @@ export interface VendorMessageDraft {
   senderName: string;
   subject?: string | null;
   eventId?: string | null;
+}
+
+export interface PublicVendorConversation {
+  vendorName: string;
+  messages: Pick<VendorMessage, "id" | "direction" | "senderName" | "subject" | "content" | "createdAt">[];
 }
 
 /* ----------------------------------------------------------- event workspace */
@@ -930,6 +937,9 @@ export type RfpStatus = (typeof RFP_STATUSES)[number];
 export const RFP_RESPONSE_STATUSES = ["pending", "received", "accepted", "declined"] as const;
 export type RfpResponseStatus = (typeof RFP_RESPONSE_STATUSES)[number];
 
+export const RFP_TARGET_TYPES = ["venue", "vendor"] as const;
+export type RfpTargetType = (typeof RFP_TARGET_TYPES)[number];
+
 /**
  * A request for proposal put out to one vendor category.
  *
@@ -941,8 +951,15 @@ export interface Rfp {
   id: string;
   eventId: string;
   title: string;
+  targetType: RfpTargetType;
   vendorCategory: string;
   description: string | null;
+  eventType: string | null;
+  eventDate: IsoDateTime | null;
+  startTime: string | null;
+  endTime: string | null;
+  city: string | null;
+  location: string | null;
   budgetMinCents: Cents | null;
   budgetMaxCents: Cents | null;
   headcount: number | null;
@@ -956,8 +973,15 @@ export interface Rfp {
 
 export interface RfpDraft {
   title: string;
+  targetType?: RfpTargetType;
   vendorCategory: string;
   description?: string | null;
+  eventType?: string | null;
+  eventDate?: IsoDateTime | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  city?: string | null;
+  location?: string | null;
   budgetMinCents?: Cents | null;
   budgetMaxCents?: Cents | null;
   headcount?: number | null;
@@ -992,9 +1016,30 @@ export interface RfpResponseDraft {
   status?: RfpResponseStatus;
 }
 
+export interface RfpInvitation {
+  id: string;
+  rfpId: string;
+  vendorId: string;
+  vendorName: string;
+  recipientEmail: string;
+  publicToken: string;
+  sentAt: IsoDateTime;
+  deliveredAt: IsoDateTime | null;
+  deliveryError: string | null;
+}
+
 /** An RFP with its replies, which is the only shape the RFP tab ever renders. */
 export interface RfpWithResponses extends Rfp {
   responses: RfpResponse[];
+  invitations: RfpInvitation[];
+}
+
+/** Public-safe proposal brief. Workspace and internal vendor data never leave the API. */
+export interface PublicRfpPayload {
+  rfp: Rfp;
+  eventTitle: string;
+  vendorName: string;
+  response: RfpResponse | null;
 }
 
 /* ------------------------------------------------------------------- deposits */

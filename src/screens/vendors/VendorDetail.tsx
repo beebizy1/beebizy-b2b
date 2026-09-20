@@ -124,6 +124,7 @@ export default function VendorDetail({ id }: { id: string }) {
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
                       <p className="text-[11px] text-muted-foreground">
                         {outbound ? "You" : vendor.name} · {formatDate(message.createdAt, "dayMonthTime")}
+                        {outbound ? message.deliveredAt ? " · emailed" : message.deliveryError ? " · email failed" : " · saved" : ""}
                       </p>
                     </div>
                   </div>
@@ -141,7 +142,13 @@ export default function VendorDetail({ id }: { id: string }) {
               send.mutate(
                 { vendorId: vendor.id, draft: { content: trimmed, senderName: user?.name ?? "You" } },
                 {
-                  onSuccess: () => setDraft(""),
+                  onSuccess: (message) => {
+                    setDraft("");
+                    toast({
+                      title: message.deliveredAt ? "Message emailed" : "Message saved",
+                      description: message.deliveryError ? "Email delivery failed. Check the vendor address and try again." : `Sent to ${vendor.contactEmail}.`,
+                    });
+                  },
                   onError: (mutationError) => toast({ title: "Couldn't send", description: mutationError.message }),
                 },
               );
@@ -161,7 +168,7 @@ export default function VendorDetail({ id }: { id: string }) {
               rows={2}
               className="flex-1 resize-none"
             />
-            <Button type="submit" disabled={!draft.trim() || send.isPending}>
+            <Button type="submit" disabled={!draft.trim() || !vendor.contactEmail || send.isPending}>
               <Send className="size-4" />
               <span className="sr-only">Send</span>
             </Button>

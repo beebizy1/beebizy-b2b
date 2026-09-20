@@ -336,6 +336,7 @@ export const vendors = pgTable(
     category: text("category").notNull().default("Other"),
     description: text("description"),
     contactEmail: text("contact_email"),
+    portalToken: text("portal_token").unique(),
     contactPhone: text("contact_phone"),
     website: text("website"),
     logoUrl: text("logo_url"),
@@ -397,6 +398,91 @@ export const eventVendors = pgTable(
     index("event_vendors_event_idx").on(table.eventId),
     uniqueIndex("event_vendors_event_vendor_idx").on(table.eventId, table.vendorId),
   ],
+);
+
+/* ---------------------------------------------------------- requests for proposal */
+
+export const rfps = pgTable(
+  "rfps",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    targetType: text("target_type").notNull().default("vendor"),
+    vendorCategory: text("vendor_category").notNull().default("Other"),
+    description: text("description"),
+    eventType: text("event_type"),
+    eventDate: timestamp("event_date", { withTimezone: true }),
+    startTime: varchar("start_time", { length: 5 }),
+    endTime: varchar("end_time", { length: 5 }),
+    headcount: integer("headcount"),
+    city: text("city"),
+    location: text("location"),
+    budgetMinCents: bigint("budget_min_cents", { mode: "number" }),
+    budgetMaxCents: bigint("budget_max_cents", { mode: "number" }),
+    deadline: timestamp("deadline", { withTimezone: true }),
+    requirements: text("requirements"),
+    status: text("status").notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index("rfps_event_idx").on(table.eventId, table.createdAt)],
+);
+
+export const rfpInvitations = pgTable(
+  "rfp_invitations",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    rfpId: text("rfp_id")
+      .notNull()
+      .references(() => rfps.id, { onDelete: "cascade" }),
+    vendorId: text("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    recipientEmail: text("recipient_email").notNull(),
+    publicToken: text("public_token").notNull().unique(),
+    sentAt: createdAt(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deliveryError: text("delivery_error"),
+  },
+  (table) => [
+    index("rfp_invitations_rfp_idx").on(table.rfpId, table.sentAt),
+    uniqueIndex("rfp_invitations_rfp_vendor_idx").on(table.rfpId, table.vendorId),
+  ],
+);
+
+export const rfpResponses = pgTable(
+  "rfp_responses",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    rfpId: text("rfp_id")
+      .notNull()
+      .references(() => rfps.id, { onDelete: "cascade" }),
+    invitationId: text("invitation_id")
+      .unique()
+      .references(() => rfpInvitations.id, { onDelete: "set null" }),
+    vendorName: text("vendor_name").notNull(),
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    quotedAmountCents: bigint("quoted_amount_cents", { mode: "number" }),
+    notes: text("notes"),
+    status: text("status").notNull().default("pending"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index("rfp_responses_rfp_idx").on(table.rfpId, table.createdAt)],
 );
 
 /* ----------------------------------------------------------- event workspace */

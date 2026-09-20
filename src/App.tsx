@@ -66,6 +66,8 @@ import Settings from "@/screens/Settings";
 import FeedbackInbox from "@/screens/FeedbackInbox";
 import { PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
 import PublicAssignment from "@/screens/public/PublicAssignment";
+import PublicRfp from "@/screens/public/PublicRfp";
+import PublicVendorConversation from "@/screens/public/PublicVendorConversation";
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
@@ -185,6 +187,8 @@ function Routes() {
       <Route path="/e/:token/volunteer">{(params) => <PublicVolunteerSignupPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>
       <Route path="/assignment/:token">{(params) => <PublicAssignment token={params.token} />}</Route>
+      <Route path="/rfp/:token">{(params) => <PublicRfp token={params.token} />}</Route>
+      <Route path="/vendor-conversation/:token">{(params) => <PublicVendorConversation token={params.token} />}</Route>
 
       {/*
         Legacy links from the previous route layout, plus the two this rebuild moved when

@@ -99,6 +99,7 @@ export const qk = {
   eventList: (filter?: EventFilter) => ["events", "list", filter ?? {}] as const,
   event: (id: string) => ["events", "detail", id] as const,
   eventByToken: (token: string) => ["events", "byToken", token] as const,
+  publicRfp: (token: string) => ["rfps", "public", token] as const,
 
   locations: ["locations"] as const,
   location: (id: string) => ["locations", "detail", id] as const,
@@ -432,7 +433,7 @@ export function useDeleteRegistration() {
 /* -------------------------------------------------------------------- vendors */
 
 export function useVendors() {
-  return useAdapterQuery(qk.vendors, (a) => a.vendors.list());
+  return useAdapterQuery(qk.vendors, (a) => a.vendors.list(), { refetchInterval: 15_000 });
 }
 
 export function useVendor(id: string) {
@@ -455,7 +456,18 @@ export function useDeleteVendor() {
 }
 
 export function useVendorThread(vendorId: string) {
-  return useAdapterQuery(qk.vendorThread(vendorId), (a) => a.vendorMessages.list(vendorId), { enabled: !!vendorId });
+  return useAdapterQuery(qk.vendorThread(vendorId), (a) => a.vendorMessages.list(vendorId), { enabled: !!vendorId, refetchInterval: 15_000 });
+}
+
+export function usePublicVendorConversation(token: string) {
+  return useAdapterQuery(["public-vendor-conversation", token], (a) => a.vendorMessages.getPublic(token), { enabled: !!token, refetchInterval: 15_000 });
+}
+
+export function useReplyToVendorConversation() {
+  return useAdapterMutation(
+    (a, vars: { token: string; content: string }) => a.vendorMessages.replyPublic(vars.token, vars.content),
+    (vars) => [["public-vendor-conversation", vars.token]],
+  );
 }
 
 export function useSendVendorMessage() {
@@ -908,7 +920,7 @@ export function useRemoveSponsorship() {
 /* ---------------------------------------------------------------------- rfps */
 
 export function useRfps(eventId: string) {
-  return useAdapterQuery(qk.rfps(eventId), (a) => a.rfps.list(eventId), { enabled: !!eventId });
+  return useAdapterQuery(qk.rfps(eventId), (a) => a.rfps.list(eventId), { enabled: !!eventId, refetchInterval: 15_000 });
 }
 
 export function useAddRfp() {
@@ -953,6 +965,25 @@ export function useRemoveRfpResponse() {
     (a, vars: { eventId: string; rfpId: string; responseId: string }) =>
       a.rfps.removeResponse(vars.eventId, vars.rfpId, vars.responseId),
     (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function useInviteVendorToRfp() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; rfpId: string; vendorId: string }) =>
+      a.rfps.inviteVendor(vars.eventId, vars.rfpId, vars.vendorId),
+    (vars) => [qk.rfps(vars.eventId)],
+  );
+}
+
+export function usePublicRfp(token: string) {
+  return useAdapterQuery(qk.publicRfp(token), (a) => a.rfps.getPublic(token), { enabled: !!token });
+}
+
+export function useSubmitPublicRfp() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: RfpResponseDraft }) => a.rfps.respondPublic(vars.token, vars.draft),
+    (vars) => [qk.publicRfp(vars.token)],
   );
 }
 

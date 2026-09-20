@@ -33,6 +33,9 @@ import type {
   RaffleItem,
   RaffleTicket,
   Registration,
+  Rfp,
+  RfpInvitation,
+  RfpResponse,
   RunOfShowItem,
   Sponsorship,
   Template,
@@ -174,7 +177,68 @@ export function toVendorMessage(row: InferSelectModel<typeof s.vendorMessages>):
     subject: row.subject,
     content: row.body,
     isRead: row.isRead,
+    deliveredAt: iso(row.deliveredAt),
+    deliveryError: row.deliveryError,
     createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toRfp(row: InferSelectModel<typeof s.rfps>): Rfp {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    title: row.title,
+    targetType: row.targetType === "venue" ? "venue" : "vendor",
+    vendorCategory: row.vendorCategory,
+    description: row.description,
+    eventType: row.eventType,
+    eventDate: iso(row.eventDate),
+    startTime: row.startTime,
+    endTime: row.endTime,
+    headcount: row.headcount,
+    city: row.city,
+    location: row.location,
+    budgetMinCents: row.budgetMinCents,
+    budgetMaxCents: row.budgetMaxCents,
+    deadline: iso(row.deadline),
+    requirements: row.requirements,
+    status: row.status === "sent" || row.status === "closed" ? row.status : "draft",
+    createdAt: isoRequired(row.createdAt),
+    updatedAt: iso(row.updatedAt) ?? undefined,
+  };
+}
+
+export function toRfpResponse(row: InferSelectModel<typeof s.rfpResponses>): RfpResponse {
+  return {
+    id: row.id,
+    rfpId: row.rfpId,
+    vendorName: row.vendorName,
+    contactName: row.contactName,
+    contactEmail: row.contactEmail,
+    contactPhone: row.contactPhone,
+    quotedAmountCents: row.quotedAmountCents,
+    notes: row.notes,
+    status: ["received", "accepted", "declined"].includes(row.status)
+      ? row.status as RfpResponse["status"]
+      : "pending",
+    createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toRfpInvitation(
+  row: InferSelectModel<typeof s.rfpInvitations>,
+  vendor: InferSelectModel<typeof s.vendors>,
+): RfpInvitation {
+  return {
+    id: row.id,
+    rfpId: row.rfpId,
+    vendorId: row.vendorId,
+    vendorName: vendor.name,
+    recipientEmail: row.recipientEmail,
+    publicToken: row.publicToken,
+    sentAt: isoRequired(row.sentAt),
+    deliveredAt: iso(row.deliveredAt),
+    deliveryError: row.deliveryError,
   };
 }
 

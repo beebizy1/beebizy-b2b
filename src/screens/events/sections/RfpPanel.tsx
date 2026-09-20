@@ -7,7 +7,7 @@
  */
 
 import { useState } from "react";
-import { FileText, Plus, Send, Trash2 } from "lucide-react";
+import { Check, Copy, FileText, Mail, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,19 +16,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { cn } from "@/lib/utils";
+import { formatInZone } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
 import { centsFromInput, formatMoney } from "@/data/money";
 import {
   useAddRfp,
   useAddRfpResponse,
+  useInviteVendorToRfp,
   useRemoveRfp,
   useRemoveRfpResponse,
   useRfps,
   useSetRfpResponseStatus,
   useUpdateRfp,
+  useVendors,
 } from "@/data/hooks";
 import {
+  EVENT_CATEGORIES,
   RFP_RESPONSE_STATUSES,
+  RFP_TARGET_TYPES,
   VENDOR_CATEGORIES,
   type Event,
   type RfpResponseStatus,
@@ -176,8 +181,63 @@ function AddResponse({ eventId, rfpId }: { eventId: string; rfpId: string }) {
   );
 }
 
+function InviteVendor({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
+  const { data: vendors } = useVendors();
+  const invite = useInviteVendorToRfp();
+  const [vendorId, setVendorId] = useState("");
+  const available = (vendors ?? []).filter((vendor) => vendor.contactEmail);
+
+  return (
+    <div className="space-y-3 border-b border-hairline px-5 py-4">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-56 flex-1 space-y-1.5">
+          <Label htmlFor={`rfp-vendor-${rfp.id}`}>Send to a venue or vendor</Label>
+          <Select value={vendorId} onValueChange={setVendorId}>
+            <SelectTrigger id={`rfp-vendor-${rfp.id}`}><SelectValue placeholder="Choose from the vendor directory…" /></SelectTrigger>
+            <SelectContent>
+              {available.map((vendor) => <SelectItem key={vendor.id} value={vendor.id}>{vendor.name} · {vendor.category}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button type="button" disabled={!vendorId || invite.isPending} onClick={() => invite.mutate(
+          { eventId, rfpId: rfp.id, vendorId },
+          {
+            onSuccess: (invitation) => {
+              setVendorId("");
+              toast(invitation.deliveredAt
+                ? { title: "Proposal email submitted", description: "The vendor can review the brief and respond without a Beebizy account. Inbox delivery is not guaranteed." }
+                : { title: "Link saved, but email was not sent", description: "Copy the proposal link below or try sending again.", variant: "destructive" });
+            },
+            onError: (error) => toast({ title: "Couldn't send the RFP", description: error.message }),
+          },
+        )}><Mail className="mr-1.5 size-3.5" />Send RFP</Button>
+      </div>
+      {available.length === 0 ? <p className="text-xs text-muted-foreground">Add a vendor with a contact email in the vendor directory first.</p> : null}
+      {rfp.invitations.length > 0 ? (
+        <ul className="space-y-2">
+          {rfp.invitations.map((invitation) => {
+            const url = `${window.location.origin}/rfp/${invitation.publicToken}`;
+            return (
+              <li key={invitation.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-xs">
+                <span className="font-semibold text-foreground">{invitation.vendorName}</span>
+                <span className="text-muted-foreground">{invitation.recipientEmail}</span>
+                <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground">
+                  {invitation.deliveredAt ? <><Check className="size-3 text-success-text" />Emailed</> : invitation.deliveryError ? "Email failed" : "Queued"}
+                </span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(url).then(() => toast({ title: "Proposal link copied" })).catch(() => toast({ title: "Couldn't copy the link", variant: "destructive" }))}>
+                  <Copy className="mr-1 size-3" />Copy link
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
-  const { date: formatDate } = usePreferences();
+  const formatDate = (value: string, style: "dayMonthYear") => formatInZone(value, "UTC", style);
   const update = useUpdateRfp();
   const remove = useRemoveRfp();
   const range = budgetRange(rfp);
@@ -187,7 +247,9 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
       <PanelHeader
         title={rfp.title}
         description={[
+          rfp.targetType === "venue" ? "Venue" : "Vendor",
           rfp.vendorCategory,
+          rfp.eventType,
           range,
           rfp.headcount ? `${rfp.headcount} guests` : null,
           rfp.deadline ? `replies by ${formatDate(rfp.deadline, "dayMonthYear")}` : null,
@@ -197,24 +259,23 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
         actions={
           <>
             <Pill tone={RFP_TONE[rfp.status]}>{rfp.status}</Pill>
-            {rfp.status === "draft" ? (
+            {(
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() =>
                   update.mutate(
-                    { eventId, id: rfp.id, patch: { status: "sent" } },
+                    { eventId, id: rfp.id, patch: { status: rfp.status === "closed" ? "draft" : "closed" } },
                     {
-                      onSuccess: () => toast({ title: "RFP marked as sent" }),
+                      onSuccess: () => toast({ title: rfp.status === "closed" ? "RFP reopened" : "RFP closed" }),
                       onError: (error) => toast({ title: "Couldn't update RFP", description: error.message }),
                     },
                   )
                 }
               >
-                <Send className="mr-1.5 size-3.5" aria-hidden="true" />
-                Mark sent
+                {rfp.status === "closed" ? "Reopen RFP" : "Close RFP"}
               </Button>
-            ) : null}
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -242,6 +303,15 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
         </div>
       ) : null}
 
+      <div className="grid gap-3 border-b border-hairline px-5 py-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div><p className="text-xs font-semibold text-muted-foreground">Date</p><p>{rfp.eventDate ? formatDate(rfp.eventDate, "dayMonthYear") : "Not set"}</p></div>
+        <div><p className="text-xs font-semibold text-muted-foreground">Time</p><p>{rfp.startTime ? `${rfp.startTime}${rfp.endTime ? ` - ${rfp.endTime}` : ""}` : "Not set"}</p></div>
+        <div><p className="text-xs font-semibold text-muted-foreground">City</p><p>{rfp.city ?? "Not set"}</p></div>
+        <div><p className="text-xs font-semibold text-muted-foreground">Location</p><p>{rfp.location ?? "Not set"}</p></div>
+      </div>
+
+      <InviteVendor eventId={eventId} rfp={rfp} />
+
       {rfp.responses.length === 0 ? (
         <p className="px-5 py-4 text-sm text-muted-foreground">No replies yet.</p>
       ) : (
@@ -259,8 +329,19 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
 
 function NewRfp({ event }: { event: Event }) {
   const add = useAddRfp();
+  const { timeZone } = usePreferences();
   const [title, setTitle] = useState("");
+  const [targetType, setTargetType] = useState<(typeof RFP_TARGET_TYPES)[number]>("vendor");
   const [category, setCategory] = useState<string>("Catering");
+  const [description, setDescription] = useState("");
+  const [eventType, setEventType] = useState(event.category);
+  const [eventDate, setEventDate] = useState(new Date(event.date).toLocaleDateString("en-CA", { timeZone }));
+  const [startTime, setStartTime] = useState(new Date(event.date).toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }));
+  const [endTime, setEndTime] = useState(event.endDate ? new Date(event.endDate).toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+  const [city, setCity] = useState(event.locationRecord?.city ?? "");
+  const [location, setLocation] = useState(event.locationRecord?.name ?? event.location ?? "");
+  const [headcount, setHeadcount] = useState(event.capacity?.toString() ?? "");
+  const [deadline, setDeadline] = useState("");
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
   const [requirements, setRequirements] = useState("");
@@ -279,16 +360,26 @@ function NewRfp({ event }: { event: Event }) {
               eventId: event.id,
               draft: {
                 title: trimmed,
+                targetType,
                 vendorCategory: category,
+                description: description.trim() || null,
+                eventType,
+                eventDate: eventDate ? `${eventDate}T12:00:00.000Z` : null,
+                startTime: startTime || null,
+                endTime: endTime || null,
+                city: city.trim() || null,
+                location: location.trim() || null,
                 budgetMinCents: centsFromInput(budgetMin),
                 budgetMaxCents: centsFromInput(budgetMax),
-                headcount: event.capacity,
+                headcount: headcount ? Number.parseInt(headcount, 10) : null,
+                deadline: deadline ? `${deadline}T23:59:00.000Z` : null,
                 requirements: requirements.trim() || null,
               },
             },
             {
               onSuccess: () => {
                 setTitle("");
+                setDescription("");
                 setBudgetMin("");
                 setBudgetMax("");
                 setRequirements("");
@@ -310,7 +401,14 @@ function NewRfp({ event }: { event: Event }) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="rfp-category">Vendor category</Label>
+            <Label htmlFor="rfp-target">Requesting proposals from</Label>
+            <Select value={targetType} onValueChange={(value) => setTargetType(value as (typeof RFP_TARGET_TYPES)[number])}>
+              <SelectTrigger id="rfp-target"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="venue">Venues</SelectItem><SelectItem value="vendor">Vendors</SelectItem></SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-category">Category</Label>
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger id="rfp-category">
                 <SelectValue />
@@ -323,6 +421,41 @@ function NewRfp({ event }: { event: Event }) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-event-type">Event type</Label>
+            <Select value={eventType} onValueChange={setEventType}>
+              <SelectTrigger id="rfp-event-type"><SelectValue /></SelectTrigger>
+              <SelectContent>{EVENT_CATEGORIES.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-event-date">Event date</Label>
+            <Input id="rfp-event-date" type="date" value={eventDate} onChange={(inputEvent) => setEventDate(inputEvent.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-start-time">Start time</Label>
+            <Input id="rfp-start-time" type="time" value={startTime} onChange={(inputEvent) => setStartTime(inputEvent.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-end-time">End time</Label>
+            <Input id="rfp-end-time" type="time" value={endTime} onChange={(inputEvent) => setEndTime(inputEvent.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-city">City</Label>
+            <Input id="rfp-city" value={city} onChange={(inputEvent) => setCity(inputEvent.target.value)} placeholder="Santa Clara" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-location">Location or venue area</Label>
+            <Input id="rfp-location" value={location} onChange={(inputEvent) => setLocation(inputEvent.target.value)} placeholder="Mission Gardens or downtown" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-deadline">Proposal deadline</Label>
+            <Input id="rfp-deadline" type="date" value={deadline} onChange={(inputEvent) => setDeadline(inputEvent.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rfp-headcount">Headcount</Label>
+            <Input id="rfp-headcount" type="number" min={1} value={headcount} onChange={(inputEvent) => setHeadcount(inputEvent.target.value)} placeholder="300" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="rfp-budget-min">Budget from</Label>
@@ -344,6 +477,11 @@ function NewRfp({ event }: { event: Event }) {
               inputMode="decimal"
             />
           </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="rfp-description">Description</Label>
+          <Textarea id="rfp-description" value={description} onChange={(inputEvent) => setDescription(inputEvent.target.value)} placeholder="Describe the event, the guest experience and the scope you need proposed." rows={4} />
         </div>
 
         <div className="space-y-1.5">

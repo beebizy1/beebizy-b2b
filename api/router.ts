@@ -24,6 +24,7 @@ import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
 import { effectivePlan, planHasCapability, type PlanCapability } from "../src/data/plans.ts";
 import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
 import { z, ZodError } from "zod";
+import { rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
 
 export const config = { runtime: "nodejs", api: { bodyParser: false } };
 
@@ -241,6 +242,27 @@ async function handlePublic(segments: string[], method: string, request: Request
     return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
   }
 
+  if (segments[0] === "public" && segments[1] === "rfps" && segments[2]) {
+    if (method === "GET" && !segments[3]) {
+      const payload = await repos.publicRfp(segments[2]);
+      return payload ? json(payload) : json({ error: "This proposal link is no longer active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "responses") {
+      return json(await repos.publicRfpResponse(segments[2], publicProposalSchema.parse(await readBody(request))), 201);
+    }
+  }
+
+  if (segments[0] === "public" && segments[1] === "vendor-conversations" && segments[2] && segments.length === 3) {
+    if (method === "GET") {
+      const conversation = await repos.publicVendorConversation(segments[2]);
+      return conversation ? json(conversation) : json({ error: "This conversation link is no longer active." }, 404);
+    }
+    if (method === "POST") {
+      await repos.publicVendorReply(segments[2], await readBody(request));
+      return json({ ok: true }, 201);
+    }
+  }
+
   return null;
 }
 
@@ -369,6 +391,33 @@ async function handleAuthed(
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]
       if (a && b) {
+        if (b === "rfps") {
+          requireCapability(ctx, "vendorManagement");
+          const action = segments[4];
+          const nestedId = segments[5];
+          if (!c && method === "GET") return json(await repos.rfps.list(ctx, a));
+          if (!c && method === "POST") return json(await repos.rfps.create(ctx, a, rfpDraftSchema.parse(body)), 201);
+          if (c && !action && method === "PATCH") return json(await repos.rfps.update(ctx, a, c, rfpDraftSchema.partial().parse(body)));
+          if (c && !action && method === "DELETE") {
+            await repos.rfps.remove(ctx, a, c);
+            return json({ ok: true });
+          }
+          if (c && action === "responses" && !nestedId && method === "POST") {
+            return json(await repos.rfps.addResponse(ctx, a, c, rfpResponseSchema.parse(body)), 201);
+          }
+          if (c && action === "responses" && nestedId && method === "PATCH") {
+            return json(await repos.rfps.setResponseStatus(ctx, a, c, nestedId, String(body.status ?? "")));
+          }
+          if (c && action === "responses" && nestedId && method === "DELETE") {
+            await repos.rfps.removeResponse(ctx, a, c, nestedId);
+            return json({ ok: true });
+          }
+          if (c && action === "invitations" && method === "POST") {
+            return json(await repos.rfps.inviteVendor(ctx, a, c, String(body.vendorId ?? "")), 201);
+          }
+          return notFound();
+        }
+
         const child = eventChildren[b];
         if (child) {
           if (b === "vendors") requireCapability(ctx, "vendorManagement");
@@ -496,9 +545,6 @@ async function handleAuthed(
       }
       if (a && b === "messages" && method === "GET") return json(await repos.vendorMessages.list(ctx, a));
       if (a && b === "messages" && method === "POST") {
-        // Stored, not yet delivered: Resend's integration is also gated on a browser terms
-        // step. `vendor_messages.delivered_at` and `delivery_error` exist so the thread can
-        // show what actually left the building, and the UI must not claim it was sent.
         return json(await repos.vendorMessages.create(ctx, a, body), 201);
       }
       if (a && b === "read" && method === "POST") {
@@ -644,6 +690,7 @@ export async function handleRequest(request: Request): Promise<Response> {
     // An HttpError is a message someone wrote for a person to read, so it is returned as
     // written. Anything else is a bug, and its message is written for us, not for them.
     if (error instanceof HttpError) return json({ error: error.message }, error.status);
+    if (error instanceof ZodError) return json({ error: error.issues.slice(0, 3).map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ") }, 400);
 
     /*
      * Never return the raw error. A failed database write reports itself as the entire

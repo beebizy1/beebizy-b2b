@@ -41,7 +41,10 @@ function NewMessageDialog({ vendors }: { vendors: Vendor[] }) {
     send.mutate(
       { vendorId, draft: { content, senderName: user?.name ?? "You" } },
       {
-        onSuccess: () => {
+        onSuccess: (message) => {
+          toast(message.deliveredAt
+            ? { title: "Message submitted for email", description: "The email includes a private reply link." }
+            : { title: "Message saved, email not sent", description: "Check the delivery status in the conversation.", variant: "destructive" });
           setOpen(false);
           setDraft("");
           setVendorId("");
@@ -65,7 +68,7 @@ function NewMessageDialog({ vendors }: { vendors: Vendor[] }) {
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Message a vendor</DialogTitle>
-          <DialogDescription>This starts a thread you can keep going from the vendor's page.</DialogDescription>
+          <DialogDescription>The vendor receives an email with a private link to reply here. Add their contact email in the directory first.</DialogDescription>
         </DialogHeader>
 
         <form
@@ -82,7 +85,7 @@ function NewMessageDialog({ vendors }: { vendors: Vendor[] }) {
                 <SelectValue placeholder="Choose a vendor…" />
               </SelectTrigger>
               <SelectContent>
-                {vendors.map((vendor) => (
+                {vendors.filter((vendor) => vendor.contactEmail).map((vendor) => (
                   <SelectItem key={vendor.id} value={vendor.id}>
                     {vendor.name} · {vendor.category}
                   </SelectItem>

@@ -71,7 +71,10 @@ import type {
   RaffleTicket,
   Rfp,
   RfpDraft,
+  RfpInvitation,
   RfpPatch,
+  PublicRfpPayload,
+  PublicVendorConversation,
   RfpResponse,
   RfpResponseDraft,
   RfpResponseStatus,
@@ -182,6 +185,8 @@ export interface VendorMessagesRepository {
   list(vendorId: string): Promise<VendorMessage[]>;
   send(vendorId: string, draft: VendorMessageDraft): Promise<VendorMessage>;
   markThreadRead(vendorId: string): Promise<void>;
+  getPublic(token: string): Promise<PublicVendorConversation | null>;
+  replyPublic(token: string, content: string): Promise<void>;
 }
 
 export interface RaffleRepository extends EventScopedRepository<RaffleItem, RaffleItemDraft, RaffleItemPatch> {
@@ -209,6 +214,9 @@ export interface RfpsRepository extends EventScopedRepository<Rfp, RfpDraft, Rfp
   addResponse(eventId: string, rfpId: string, draft: RfpResponseDraft): Promise<RfpResponse>;
   setResponseStatus(eventId: string, rfpId: string, responseId: string, status: RfpResponseStatus): Promise<RfpResponse>;
   removeResponse(eventId: string, rfpId: string, responseId: string): Promise<void>;
+  inviteVendor(eventId: string, rfpId: string, vendorId: string): Promise<RfpInvitation>;
+  getPublic(token: string): Promise<PublicRfpPayload | null>;
+  respondPublic(token: string, draft: RfpResponseDraft): Promise<RfpResponse>;
 }
 
 export interface TemplatesRepository {
