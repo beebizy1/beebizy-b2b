@@ -1,0 +1,1 @@
+ALTER TABLE "check_in_stations" ADD COLUMN "lead_volunteer_id" text;

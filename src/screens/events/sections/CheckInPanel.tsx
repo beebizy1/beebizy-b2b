@@ -47,12 +47,14 @@ import {
   useRemoveCheckInStation,
   useSetRegistrationCheckIn,
   useUpdateCheckInStation,
+  useVolunteers,
 } from "@/data/hooks";
 import {
   type CheckInStation,
   type CheckInStationDraft,
   type Event,
   type RegistrationWithGuest,
+  type VolunteerShift,
 } from "@/data/entities";
 
 const CHECK_IN_STARTER = [
@@ -69,15 +71,17 @@ function StationEditor({
   submitLabel,
   onSubmit,
   onCancel,
+  volunteers,
 }: {
   initial?: CheckInStation;
+  volunteers: VolunteerShift[];
   submitLabel: string;
   onSubmit: (draft: CheckInStationDraft) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [lane, setLane] = useState(initial?.lane ?? "");
-  const [lead, setLead] = useState(initial?.lead ?? "");
+  const [leadVolunteerId, setLeadVolunteerId] = useState(initial?.leadVolunteerId ?? (initial?.lead ? "legacy" : "unassigned"));
   const [deviceCount, setDeviceCount] = useState(String(initial?.deviceCount ?? 1));
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [saving, setSaving] = useState(false);
@@ -90,10 +94,14 @@ function StationEditor({
         event.preventDefault();
         if (!valid) return;
         setSaving(true);
+        const selectedVolunteer = volunteers.find((volunteer) => volunteer.id === leadVolunteerId);
+        const legacyLead = leadVolunteerId === "legacy" ? initial?.lead ?? null : null;
         void onSubmit({
           name: name.trim(),
           lane: lane.trim(),
-          lead: lead.trim() || null,
+          ...(legacyLead
+            ? { lead: legacyLead }
+            : { leadVolunteerId: selectedVolunteer?.id ?? null, lead: selectedVolunteer?.name ?? null }),
           deviceCount: Math.max(0, Math.trunc(Number(deviceCount))),
           notes: notes.trim() || null,
         }).finally(() => setSaving(false));
@@ -108,8 +116,17 @@ function StationEditor({
         <Input value={lane} onChange={(event) => setLane(event.target.value)} placeholder="Last names A-M, VIPs…" maxLength={120} required />
       </label>
       <label className="space-y-1 text-xs font-medium text-muted-foreground">
-        Station lead
-        <Input value={lead} onChange={(event) => setLead(event.target.value)} placeholder="Optional" maxLength={120} />
+        Assigned volunteer
+        <Select value={leadVolunteerId} onValueChange={setLeadVolunteerId}>
+          <SelectTrigger><SelectValue placeholder="Choose a volunteer" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="unassigned">No volunteer assigned</SelectItem>
+            {initial?.lead && !initial.leadVolunteerId ? <SelectItem value="legacy">{initial.lead} · Previously entered</SelectItem> : null}
+            {volunteers.filter((volunteer) => volunteer.status !== "cancelled").map((volunteer) => (
+              <SelectItem key={volunteer.id} value={volunteer.id}>{volunteer.name} · {volunteer.role}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
       <label className="space-y-1 text-xs font-medium text-muted-foreground">
         Devices
@@ -175,6 +192,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const { data, isLoading, isError, error, refetch } = useEventRegistrations(event.id);
   const { data: checklist } = useChecklist(event.id);
   const { data: stations, isLoading: stationsLoading } = useCheckInStations(event.id);
+  const { data: volunteers } = useVolunteers(event.id);
   const update = useSetRegistrationCheckIn();
   const addChecklist = useAddChecklistItem();
   const addStation = useAddCheckInStation();
@@ -326,6 +344,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           <StationEditor
             key={editingStation?.id ?? "new-station"}
             initial={editingStation ?? undefined}
+            volunteers={volunteers ?? []}
             submitLabel={editingStation ? "Save station" : "Add station"}
             onCancel={() => { setShowStationForm(false); setEditingStation(null); }}
             onSubmit={async (draft) => {
@@ -362,6 +381,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           <ul className="grid gap-3 border-b border-hairline p-4 md:grid-cols-2 xl:grid-cols-3">
             {stationRows.map((planned) => {
               const stationArrivals = rows.filter((row) => row.checkedInAt && row.checkInStation === planned.name).length;
+              const linkedVolunteer = volunteers?.find((volunteer) => volunteer.id === planned.leadVolunteerId);
               return (
                 <li key={planned.id} className="rounded-lg border border-hairline p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -372,7 +392,7 @@ export function CheckInPanel({ event }: { event: Event }) {
                     <Pill tone={stationArrivals ? "success" : "neutral"}>{stationArrivals} arrived</Pill>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <span>Lead: {planned.lead ?? "Unassigned"}</span>
+                    <span>Lead: {linkedVolunteer?.name ?? (planned.leadVolunteerId ? "Volunteer no longer assigned" : planned.lead ?? "Unassigned")}</span>
                     <span className="inline-flex items-center gap-1">
                       <Laptop className="size-3.5" />{planned.deviceCount} device{planned.deviceCount === 1 ? "" : "s"}
                     </span>

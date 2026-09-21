@@ -211,6 +211,7 @@ describe("public assignment endpoint", () => {
       title: "Welcome desk",
       description: "Check in guests at the east entrance.",
       dueDate: null,
+      dayNumber: 1,
       startTime: "08:00",
       endTime: "12:00",
     });

@@ -551,6 +551,7 @@ export const checkInStations = pgTable(
     ...eventChild,
     name: text("name").notNull(),
     lane: text("lane").notNull(),
+    leadVolunteerId: text("lead_volunteer_id"),
     lead: text("lead"),
     deviceCount: integer("device_count").notNull().default(1),
     notes: text("notes"),
@@ -562,6 +563,7 @@ export const volunteerNeeds = pgTable(
   "volunteer_needs",
   {
     ...eventChild,
+    dayNumber: integer("day_number").notNull().default(1),
     role: text("role").notNull(),
     startTime: varchar("start_time", { length: 5 }).notNull(),
     endTime: varchar("end_time", { length: 5 }).notNull(),
@@ -570,7 +572,7 @@ export const volunteerNeeds = pgTable(
     signupOpen: boolean("signup_open").notNull().default(true),
   },
   (table) => [
-    index("volunteer_needs_event_idx").on(table.eventId, table.startTime),
+    index("volunteer_needs_event_idx").on(table.eventId, table.dayNumber, table.startTime),
     check("volunteer_needs_required_count_check", sql`${table.requiredCount} between 1 and 500`),
   ],
 );
@@ -580,6 +582,7 @@ export const volunteerShifts = pgTable(
   {
     ...eventChild,
     needId: text("need_id").references(() => volunteerNeeds.id, { onDelete: "set null" }),
+    dayNumber: integer("day_number").notNull().default(1),
     name: text("name").notNull(),
     email: text("email"),
     phone: text("phone"),
@@ -590,7 +593,7 @@ export const volunteerShifts = pgTable(
     notes: text("notes"),
   },
   (table) => [
-    index("volunteer_shifts_event_idx").on(table.eventId, table.startTime),
+    index("volunteer_shifts_event_idx").on(table.eventId, table.dayNumber, table.startTime),
     index("volunteer_shifts_need_idx").on(table.needId),
   ],
 );

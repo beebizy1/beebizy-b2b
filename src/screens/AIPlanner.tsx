@@ -203,7 +203,7 @@ export default function AIPlanner() {
           title="Import an existing event plan"
           description="Bring in the team's Excel, CSV, or Google Sheet and review every recognized record before creating the event."
         />
-        <SpreadsheetImporter onBack={() => navigate("/app")} includeMoodBoard={false} />
+        <SpreadsheetImporter onBack={() => navigate("/app")} includeMoodBoard={false} includeVolunteers />
       </div>
     );
   }

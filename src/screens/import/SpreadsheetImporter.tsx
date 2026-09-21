@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Link2, Loader2, Store, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, HeartHandshake, Link2, Loader2, Store, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import {
   useCreateRegistration,
   useCreateVendor,
   useAddEventVendor,
+  useAddVolunteer,
   useLoadGoogleSheet,
 } from "@/data/hooks";
 import {
@@ -79,9 +80,11 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
 export default function SpreadsheetImporter({
   onBack,
   includeMoodBoard = true,
+  includeVolunteers = false,
 }: {
   onBack: () => void;
   includeMoodBoard?: boolean;
+  includeVolunteers?: boolean;
 }) {
   const [, navigate] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -99,12 +102,13 @@ export default function SpreadsheetImporter({
   const addMood = useAddMoodBoardImage();
   const createGuest = useCreateGuest();
   const createRegistration = useCreateRegistration();
+  const addVolunteer = useAddVolunteer();
 
   const readFile = async (file: File) => {
     setIsReading(true);
     try {
       const tables = await readSpreadsheetFile(file);
-      setPlan(buildEventImportPlan(tables, file.name));
+      setPlan(buildEventImportPlan(tables, file.name, { includeVolunteers }));
     } catch (error) {
       toast({ title: "The spreadsheet could not be read", description: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -116,7 +120,7 @@ export default function SpreadsheetImporter({
     try {
       const source = await loadGoogleSheet.mutateAsync(googleUrl);
       const table = parseCsvTable(source.csv, source.name);
-      setPlan(buildEventImportPlan([table], source.name));
+      setPlan(buildEventImportPlan([table], source.name, { includeVolunteers }));
     } catch (error) {
       toast({ title: "The Google Sheet could not be read", description: error instanceof Error ? error.message : String(error) });
     }
@@ -144,6 +148,9 @@ export default function SpreadsheetImporter({
             organization: draft.organization,
           });
         }),
+        ...(includeVolunteers
+          ? plan.volunteers.map((draft) => addVolunteer.mutateAsync({ eventId: created.id, draft }))
+          : []),
         // A service on the sheet becomes a vendor in the directory and a booking on this
         // event, so the fee lands on the budget rather than only in the address book.
         ...plan.vendors.map(async (imported) => {
@@ -250,7 +257,8 @@ export default function SpreadsheetImporter({
     plan.budget.length +
     (includeMoodBoard ? plan.moodBoard.length : 0) +
     plan.guests.length +
-    plan.vendors.length;
+    plan.vendors.length +
+    (includeVolunteers ? plan.volunteers.length : 0);
   return (
     <div className="space-y-5">
       <Panel>
@@ -441,6 +449,23 @@ export default function SpreadsheetImporter({
             </li>
           ))}
         </ImportedList>
+
+        {includeVolunteers ? (
+          <ImportedList title="Volunteer shifts" count={plan.volunteers.length}>
+            {plan.volunteers.map((volunteer, index) => (
+              <li key={`${volunteer.name}-${volunteer.startTime}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                <HeartHandshake className="size-4 shrink-0 text-primary-text" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-foreground">{volunteer.name}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {[volunteer.role, (volunteer.dayNumber ?? 1) > 1 ? `Day ${volunteer.dayNumber}` : null, `${volunteer.startTime}–${volunteer.endTime}`, volunteer.email, volunteer.phone, volunteer.notes].filter(Boolean).join(" · ")}
+                  </span>
+                </span>
+                <RemoveButton label={`${volunteer.name}'s shift`} onClick={() => setPlan({ ...plan, volunteers: plan.volunteers.filter((_, itemIndex) => itemIndex !== index) })} />
+              </li>
+            ))}
+          </ImportedList>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap justify-between gap-3 rounded-xl border border-hairline bg-surface p-4">

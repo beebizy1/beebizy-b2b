@@ -304,6 +304,7 @@ export function toCheckInStation(row: InferSelectModel<typeof s.checkInStations>
     eventId: row.eventId,
     name: row.name,
     lane: row.lane,
+    leadVolunteerId: row.leadVolunteerId,
     lead: row.lead,
     deviceCount: row.deviceCount,
     notes: row.notes,
@@ -316,6 +317,7 @@ export function toVolunteerNeed(row: InferSelectModel<typeof s.volunteerNeeds>):
   return {
     id: row.id,
     eventId: row.eventId,
+    dayNumber: row.dayNumber,
     role: row.role,
     startTime: row.startTime,
     endTime: row.endTime,
@@ -332,6 +334,7 @@ export function toVolunteerShift(row: InferSelectModel<typeof s.volunteerShifts>
     id: row.id,
     eventId: row.eventId,
     needId: row.needId,
+    dayNumber: row.dayNumber,
     name: row.name,
     email: row.email,
     phone: row.phone,

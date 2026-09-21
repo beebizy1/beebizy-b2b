@@ -151,6 +151,7 @@ export async function notifyVolunteerAssignment(input: {
   volunteerName: string;
   role: string;
   eventTitle: string;
+  dayNumber: number;
   startTime: string;
   endTime: string;
   url: string;
@@ -163,7 +164,7 @@ export async function notifyVolunteerAssignment(input: {
       "",
       `You've been assigned to ${input.eventTitle}.`,
       `Role: ${input.role}`,
-      `Shift: ${input.startTime}–${input.endTime}`,
+      `Shift: Day ${input.dayNumber}, ${input.startTime}–${input.endTime}`,
       "",
       `View your private assignment here: ${input.url}`,
     ].join("\n"),

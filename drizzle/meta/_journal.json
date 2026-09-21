@@ -225,6 +225,20 @@
       "when": 1789931290879,
       "tag": "0031_odd_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789950985199,
+      "tag": "0032_dark_fabian_cortez",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789968034365,
+      "tag": "0033_fearless_hellcat",
+      "breakpoints": true
     }
   ]
 }

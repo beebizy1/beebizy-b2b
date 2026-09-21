@@ -5,6 +5,8 @@ import type {
   GuestDraft,
   RunOfShowItemDraft,
   VendorDraft,
+  VolunteerShiftDraft,
+  VolunteerStatus,
 } from "./entities";
 
 export type SpreadsheetValue = string | number | boolean | Date | null;
@@ -30,7 +32,13 @@ export interface EventImportPlan {
   guests: ImportedGuest[];
   /** Suppliers from a Services or Vendors sheet, with the fee agreed for this event. */
   vendors: ImportedVendor[];
+  /** Santa Clara pilot staffing roster, enabled only in that focused import flow. */
+  volunteers: VolunteerShiftDraft[];
   warnings: string[];
+}
+
+export interface EventImportOptions {
+  includeVolunteers?: boolean;
 }
 
 export interface ImportedGuest extends GuestDraft {
@@ -108,6 +116,13 @@ const aliases = {
   vendorPhone: ["phone", "telephone", "phone number", "contact number", "mobile"],
   vendorFee: ["fee", "agreed fee", "cost", "price", "amount", "quote", "total"],
   vendorNotes: ["notes", "scope", "providing", "details", "description", "what they're providing"],
+  volunteerName: ["volunteer", "volunteer name", "name", "full name"],
+  volunteerRole: ["role", "assignment", "position", "job", "station", "entrance"],
+  volunteerDate: ["shift date", "volunteer date", "date"],
+  volunteerStart: ["start", "start time", "shift start", "starts"],
+  volunteerEnd: ["end", "end time", "shift end", "ends"],
+  volunteerStatus: ["status", "confirmation status"],
+  volunteerPhone: ["phone", "telephone", "mobile", "phone number"],
 } as const;
 
 /**
@@ -174,6 +189,7 @@ const ROLE_SIGNATURES = {
   ],
   budget: ["budget item", "line item", "estimated", "estimate", "actual", "spent"],
   guests: ["guest name", "guest names", "guests", "attendee name", "attendees", "rsvp", "guest email"],
+  volunteers: ["volunteer", "volunteer name", "shift start", "shift end", "assignment", "position", "role"],
   moodBoard: ["image url", "reference", "image"],
 } as const;
 
@@ -186,6 +202,7 @@ const ALL_NAME_PATTERNS: RegExp[] = [
   /budget/, /expenses?/, /financials?/,
   /mood/, /inspiration/, /references?/,
   /guests?/, /attendees?/, /invitees?/,
+  /volunteers?/, /staffing/, /shifts?/,
   /services?/, /vendors?/, /suppliers?/, /providers?/,
 ];
 
@@ -244,6 +261,28 @@ function integer(value: SpreadsheetValue): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function volunteerDayNumber(dayValue: SpreadsheetValue, dateValue: SpreadsheetValue, eventStart: string): number | null {
+  const dayText = String(dayValue ?? "").trim();
+  if (dayText) {
+    const match = dayText.match(/^(?:day\s*)?(\d{1,3})$/i);
+    const explicit = typeof dayValue === "number" && Number.isInteger(dayValue) ? dayValue : match ? Number(match[1]) : null;
+    return explicit !== null && explicit >= 1 && explicit <= 365 ? explicit : null;
+  }
+  const dateText = String(dateValue ?? "").trim();
+  if (!dateText) return 1;
+  const shiftDateText = dateText;
+  const dateOnly = shiftDateText.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const shiftDate = dateValue instanceof Date ? dateValue : new Date(shiftDateText);
+  const startDate = new Date(eventStart);
+  if (Number.isNaN(shiftDate.getTime()) || Number.isNaN(startDate.getTime())) return null;
+  const shiftDay = dateOnly
+    ? Date.UTC(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : Date.UTC(shiftDate.getFullYear(), shiftDate.getMonth(), shiftDate.getDate());
+  const firstDay = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const result = Math.round((shiftDay - firstDay) / 86_400_000) + 1;
+  return result >= 1 && result <= 365 ? result : null;
+}
+
 function moneyCents(value: SpreadsheetValue): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? Math.round(value * 100) : null;
   const text = String(value ?? "").replace(/[$,\s]/g, "");
@@ -281,7 +320,11 @@ function sourceTitle(sourceName: string): string {
   return sourceName.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ").trim() || "Imported event";
 }
 
-export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: string): EventImportPlan {
+export function buildEventImportPlan(
+  tables: SpreadsheetTable[],
+  sourceName: string,
+  options: EventImportOptions = {},
+): EventImportPlan {
   const warnings: string[] = [];
   const eventTable = tableNamed(tables, [/^event(s| details| overview)?$/, /^overview$/], ["date"]);
   const eventRow = eventTable?.rows[0] ?? {};
@@ -377,6 +420,46 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
     }];
   });
 
+  /* --------------------------------------------------------------- volunteers */
+
+  const volunteerTable = options.includeVolunteers
+    ? tableFor(tables, "volunteers", [/volunteers?/, /staffing/, /shifts?/])
+    : null;
+  const volunteers = (volunteerTable?.rows ?? []).flatMap((row, index): VolunteerShiftDraft[] => {
+    const name = stringFrom(row, volunteerTable!, aliases.volunteerName);
+    const role = stringFrom(row, volunteerTable!, aliases.volunteerRole);
+    const startTime = clockTime(valueFrom(row, volunteerTable!, aliases.volunteerStart));
+    const endTime = clockTime(valueFrom(row, volunteerTable!, aliases.volunteerEnd));
+    const dayNumber = volunteerDayNumber(
+      valueFrom(row, volunteerTable!, aliases.dayNumber),
+      valueFrom(row, volunteerTable!, aliases.volunteerDate),
+      event.date,
+    );
+    if (!name || !role || !startTime || !endTime || startTime === endTime || dayNumber === null) return [];
+    const normalizedStatus = normalize(stringFrom(row, volunteerTable!, aliases.volunteerStatus)).replace(/\s+/g, "_");
+    const status: VolunteerStatus = ["scheduled", "confirmed", "checked_in", "completed", "cancelled"].includes(normalizedStatus)
+      ? normalizedStatus as VolunteerStatus
+      : "scheduled";
+    return [{
+      name,
+      email: stringFrom(row, volunteerTable!, aliases.email) || null,
+      phone: stringFrom(row, volunteerTable!, aliases.volunteerPhone) || null,
+      role,
+      dayNumber,
+      startTime,
+      endTime,
+      status,
+      notes: stringFrom(row, volunteerTable!, aliases.description) || null,
+      sortOrder: index,
+    }];
+  });
+  const skippedVolunteerRows = (volunteerTable?.rows.length ?? 0) - volunteers.length;
+  if (skippedVolunteerRows > 0) {
+    warnings.push(
+      `${skippedVolunteerRows} volunteer ${skippedVolunteerRows === 1 ? "row was" : "rows were"} skipped because a name, role, valid event day or date, start time, or end time was missing.`,
+    );
+  }
+
   /* ------------------------------------------------------------------ vendors */
 
   const vendorTable = tableFor(tables, "vendors", [/services?/, /vendors?/, /suppliers?/, /providers?/]);
@@ -403,7 +486,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
    * only found later, by someone who assumed the data was there.
    */
   const consumed = new Set(
-    [eventTable, checklistTable, runTable, budgetTable, moodTable, guestTable, vendorTable]
+    [eventTable, checklistTable, runTable, budgetTable, moodTable, guestTable, volunteerTable, vendorTable]
       .filter(Boolean)
       .map((table) => table!.name),
   );
@@ -444,7 +527,7 @@ export function buildEventImportPlan(tables: SpreadsheetTable[], sourceName: str
 
   const checklist = [...checklistFromSheet, ...vendorTasks];
 
-  return { sourceName, event, checklist, runOfShow, budget, moodBoard, guests, vendors, warnings };
+  return { sourceName, event, checklist, runOfShow, budget, moodBoard, guests, vendors, volunteers, warnings };
 }
 
 /** RFC 4180-style CSV parser used for uploads and Google Sheets CSV exports. */

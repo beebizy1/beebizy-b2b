@@ -256,6 +256,61 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
     expect(plan.budget.map((b) => b.name)).toEqual(["Venue hire"]);
   });
 
+  it("imports a Santa Clara volunteer schedule when that pilot feature is enabled", () => {
+    const plan = buildEventImportPlan(
+      [parseCsvTable("Volunteer Name,Role,Day,Start Time,End Time,Email\nMaya Chen,East entrance,2,8:00 AM,12:00 PM,maya@example.com", "Google Sheet")],
+      "Google Sheet",
+      { includeVolunteers: true },
+    );
+    expect(plan.volunteers).toEqual([
+      expect.objectContaining({
+        name: "Maya Chen",
+        role: "East entrance",
+        dayNumber: 2,
+        startTime: "08:00",
+        endTime: "12:00",
+        email: "maya@example.com",
+      }),
+    ]);
+  });
+
+  it("maps a volunteer shift date to the event day during a full workbook import", () => {
+    const plan = buildEventImportPlan([
+      parseCsvTable("Event Name,Date,End Date\nDemo Day,2026-10-07,2026-10-09", "Event"),
+      parseCsvTable("Volunteer Name,Role,Shift Date,Start Time,End Time\nMaya Chen,East entrance,2026-10-08,08:00,12:00", "Volunteers"),
+    ], "demo-day.xlsx", { includeVolunteers: true });
+
+    expect(plan.volunteers[0]).toMatchObject({ name: "Maya Chen", dayNumber: 2 });
+  });
+
+  it("skips malformed volunteer days during a full workbook import", () => {
+    const plan = buildEventImportPlan([
+      parseCsvTable("Volunteer Name,Role,Day,Start Time,End Time\nMaya Chen,East entrance,2.5,08:00,12:00\nLuis Rivera,Usher,-2,09:00,13:00", "Volunteers"),
+    ], "demo-day.xlsx", { includeVolunteers: true });
+
+    expect(plan.volunteers).toEqual([]);
+    expect(plan.warnings.join(" ")).toContain("2 volunteer rows were skipped");
+  });
+
+  it("does not consume volunteer tabs in the standard importer", () => {
+    const plan = buildEventImportPlan(
+      [parseCsvTable("Volunteer Name,Role,Start Time,End Time\nMaya Chen,East entrance,08:00,12:00", "Volunteers")],
+      "volunteers.xlsx",
+    );
+    expect(plan.volunteers).toEqual([]);
+    expect(plan.warnings.join(" ")).toContain("Volunteers");
+  });
+
+  it("warns when a Santa Clara volunteer row cannot become a shift", () => {
+    const plan = buildEventImportPlan(
+      [parseCsvTable("Volunteer Name,Role,Start Time,End Time\nMaya Chen,East entrance,,12:00", "Volunteers")],
+      "volunteers.xlsx",
+      { includeVolunteers: true },
+    );
+    expect(plan.volunteers).toEqual([]);
+    expect(plan.warnings.join(" ")).toContain("1 volunteer row was skipped");
+  });
+
   it("still warns when the columns mean nothing", () => {
     const plan = asGoogleSheet("Song,Artist\nSomething,Someone");
     expect(plan.warnings.join(" ")).toContain("not recognised");

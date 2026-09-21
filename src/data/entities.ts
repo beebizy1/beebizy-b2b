@@ -244,6 +244,8 @@ export interface CheckInStation {
   name: string;
   /** Which guests this station should handle, such as A-M, VIPs or walk-ins. */
   lane: string;
+  /** Linked roster entry for this entrance lead. */
+  leadVolunteerId: string | null;
   lead: string | null;
   deviceCount: number;
   notes: string | null;
@@ -254,6 +256,7 @@ export interface CheckInStation {
 export interface CheckInStationDraft {
   name: string;
   lane: string;
+  leadVolunteerId?: string | null;
   lead?: string | null;
   deviceCount?: number;
   notes?: string | null;
@@ -442,6 +445,8 @@ export interface VolunteerShift {
   eventId: string;
   /** Staffing requirement this assignment fills. Null for an ad-hoc shift. */
   needId: string | null;
+  /** One-based day within a multi-day event. */
+  dayNumber: number;
   name: string;
   email: string | null;
   phone: string | null;
@@ -458,6 +463,7 @@ export interface VolunteerShift {
 
 export interface VolunteerShiftDraft {
   needId?: string | null;
+  dayNumber?: number;
   name: string;
   email?: string | null;
   phone?: string | null;
@@ -475,6 +481,8 @@ export type VolunteerShiftPatch = Partial<VolunteerShiftDraft>;
 export interface VolunteerNeed {
   id: string;
   eventId: string;
+  /** One-based day within a multi-day event. */
+  dayNumber: number;
   role: string;
   startTime: string;
   endTime: string;
@@ -486,6 +494,7 @@ export interface VolunteerNeed {
 }
 
 export interface VolunteerNeedDraft {
+  dayNumber?: number;
   role: string;
   startTime: string;
   endTime: string;
@@ -768,6 +777,8 @@ export interface PublicAssignmentPayload {
   title: string;
   description: string | null;
   dueDate: IsoDateTime | null;
+  /** One-based event day for volunteer shifts. Null for checklist assignments. */
+  dayNumber: number | null;
   startTime: string | null;
   endTime: string | null;
 }

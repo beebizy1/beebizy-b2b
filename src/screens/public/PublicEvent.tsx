@@ -252,11 +252,12 @@ export function PublicVolunteerSignupPage({ token }: { token: string }) {
   const [phone, setPhone] = useState("");
   const [done, setDone] = useState(false);
   const schedule = shared?.volunteerNeeds ?? [];
+  const multiDay = schedule.some((need) => need.dayNumber > 1);
   const openings = schedule.filter((need) => need.signupOpen && need.openCount > 0);
   const selected = openings.find((need) => need.id === needId);
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !normalizeRegistrationPage(shared.event.registrationPage).showVolunteerSignup) return <EventNotFound />;
-  if (done && selected) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">Your shift is confirmed</h1><p className="mt-1 text-sm text-muted-foreground">{selected.role}, {selected.startTime}–{selected.endTime}. The organizer can now see you in the staffing plan.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
+  if (done && selected) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">Your shift is confirmed</h1><p className="mt-1 text-sm text-muted-foreground">{selected.role}, {multiDay ? `Day ${selected.dayNumber}, ` : ""}{selected.startTime}–{selected.endTime}. The organizer can now see you in the staffing plan.</p><Button asChild variant="outline" size="sm" className="mt-4"><Link href={`/e/${token}`}>Back to the event</Link></Button></Panel></PublicFrame>;
   return (
     <PublicFrame event={shared.event}>
       <div className="space-y-6">
@@ -279,7 +280,7 @@ export function PublicVolunteerSignupPage({ token }: { token: string }) {
                       <input type="radio" name="need" value={need.id} checked={needId === need.id} onChange={() => setNeedId(need.id)} className="mt-1" disabled={!canJoin} />
                       <span className="flex-1">
                         <span className="block text-sm font-semibold">{need.role}</span>
-                        <span className="block text-xs text-muted-foreground">{need.startTime}–{need.endTime} · {canJoin ? `${need.openCount} ${need.openCount === 1 ? "position" : "positions"} open` : need.isFull ? "Fully staffed" : "Signup closed"}{need.notes ? ` · ${need.notes}` : ""}</span>
+                        <span className="block text-xs text-muted-foreground">{multiDay ? `Day ${need.dayNumber} · ` : ""}{need.startTime}–{need.endTime} · {canJoin ? `${need.openCount} ${need.openCount === 1 ? "position" : "positions"} open` : need.isFull ? "Fully staffed" : "Signup closed"}{need.notes ? ` · ${need.notes}` : ""}</span>
                       </span>
                     </label>
                   </li>

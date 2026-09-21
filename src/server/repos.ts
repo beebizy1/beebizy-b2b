@@ -56,6 +56,7 @@ import type {
   Vendor,
   HistoryResource,
   ChecklistItem,
+  CheckInStation,
   InviteResult,
   VolunteerShift,
   WalkInRegistrationDraft,
@@ -753,7 +754,7 @@ export async function publicVolunteerNeeds(eventId: string) {
   const [needs, shifts] = await Promise.all([
     db.select().from(s.volunteerNeeds)
       .where(eq(s.volunteerNeeds.eventId, eventId))
-      .orderBy(asc(s.volunteerNeeds.startTime), asc(s.volunteerNeeds.sortOrder)),
+      .orderBy(asc(s.volunteerNeeds.dayNumber), asc(s.volunteerNeeds.startTime), asc(s.volunteerNeeds.sortOrder)),
     db.select().from(s.volunteerShifts).where(eq(s.volunteerShifts.eventId, eventId)),
   ]);
   return volunteerCoverage(needs.map(map.toVolunteerNeed), shifts.map(map.toVolunteerShift));
@@ -861,6 +862,7 @@ export async function publicVolunteerSignup(token: string, body: Body): Promise<
       workspaceId: event.workspaceId,
       eventId: event.id,
       needId: need.id,
+      dayNumber: need.dayNumber,
       name: draft.name,
       email: draft.email,
       phone: draft.phone,
@@ -895,6 +897,7 @@ export async function publicVolunteerSignup(token: string, body: Body): Promise<
       volunteerName: shift.name,
       role: shift.role,
       eventTitle: event.title,
+      dayNumber: shift.dayNumber,
       startTime: shift.startTime,
       endTime: shift.endTime,
       url,
@@ -944,6 +947,7 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
       title: item.title,
       description: item.description,
       dueDate: item.dueDate?.toISOString() ?? null,
+      dayNumber: null,
       startTime: null,
       endTime: null,
     };
@@ -963,6 +967,7 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     title: shift.role,
     description: shift.notes,
     dueDate: null,
+    dayNumber: shift.dayNumber,
     startTime: shift.startTime,
     endTime: shift.endTime,
   };
@@ -2036,6 +2041,7 @@ export const checkInStations = eventScoped({
     ...scope(ctx, eventId),
     name: labelFrom(body, "name", 80) ?? str(body, "name"),
     lane: labelFrom(body, "lane", 120) ?? str(body, "lane"),
+    leadVolunteerId: optStr(body, "leadVolunteerId"),
     lead: labelFrom(body, "lead", 120),
     deviceCount: Math.max(0, optInt(body, "deviceCount") ?? 1),
     notes: labelFrom(body, "notes", 500),
@@ -2044,10 +2050,28 @@ export const checkInStations = eventScoped({
   patch: {
     name: (b) => labelFrom(b, "name", 80) ?? str(b, "name"),
     lane: (b) => labelFrom(b, "lane", 120) ?? str(b, "lane"),
+    leadVolunteerId: (b) => optStr(b, "leadVolunteerId"),
     lead: (b) => labelFrom(b, "lead", 120),
     deviceCount: (b) => Math.max(0, optInt(b, "deviceCount") ?? 0),
     notes: (b) => labelFrom(b, "notes", 500),
     sortOrder: (b) => optInt(b, "sortOrder") ?? 0,
+  },
+  beforeWrite: async (ctx, eventId, body, current) => {
+    const station = current as CheckInStation | null;
+    const volunteerId = "leadVolunteerId" in body ? optStr(body, "leadVolunteerId") : station?.leadVolunteerId;
+    if (!volunteerId) {
+      if ("leadVolunteerId" in body) body.lead = null;
+      return;
+    }
+    const [volunteer] = await db.select({ id: s.volunteerShifts.id, name: s.volunteerShifts.name }).from(s.volunteerShifts).where(and(
+      eq(s.volunteerShifts.id, volunteerId),
+      eq(s.volunteerShifts.eventId, eventId),
+      eq(s.volunteerShifts.workspaceId, ctx.workspaceId),
+      sql`${s.volunteerShifts.status} <> 'cancelled'`,
+    )).limit(1);
+    if (!volunteer) throw new HttpError(400, "That volunteer is not available for this event.");
+    body.leadVolunteerId = volunteer.id;
+    body.lead = volunteer.name;
   },
 });
 
@@ -2091,6 +2115,16 @@ const volunteerStatus = (body: Body): VolunteerShift["status"] => {
   return value as VolunteerShift["status"];
 };
 
+const volunteerDayNumber = (body: Body): number => {
+  const value = body.dayNumber;
+  if (value === null || value === undefined || value === "") return 1;
+  const text = String(value).trim();
+  if (!/^\d{1,3}$/.test(text)) throw new HttpError(400, "dayNumber must be a whole number from 1 to 365.");
+  const parsed = Number(text);
+  if (parsed < 1 || parsed > 365) throw new HttpError(400, "dayNumber must be a whole number from 1 to 365.");
+  return parsed;
+};
+
 export const volunteerNeeds = eventScoped({
   table: s.volunteerNeeds as never,
   mapper: map.toVolunteerNeed as never,
@@ -2098,6 +2132,7 @@ export const volunteerNeeds = eventScoped({
   order: "sortOrder",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
+    dayNumber: volunteerDayNumber(body),
     role: labelFrom(body, "role", 120) ?? str(body, "role"),
     startTime: localTime(body, "startTime"),
     endTime: localTime(body, "endTime"),
@@ -2107,6 +2142,7 @@ export const volunteerNeeds = eventScoped({
     sortOrder,
   }),
   patch: {
+    dayNumber: (b) => volunteerDayNumber(b),
     role: (b) => labelFrom(b, "role", 120) ?? str(b, "role"),
     startTime: (b) => localTime(b, "startTime"),
     endTime: (b) => localTime(b, "endTime"),
@@ -2125,6 +2161,7 @@ export const volunteers = eventScoped({
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
     needId: optStr(body, "needId"),
+    dayNumber: volunteerDayNumber(body),
     name: labelFrom(body, "name", 120) ?? str(body, "name"),
     email: optionalEmail(body, "email"),
     phone: labelFrom(body, "phone", 60),
@@ -2137,6 +2174,7 @@ export const volunteers = eventScoped({
   }),
   patch: {
     needId: (b) => optStr(b, "needId"),
+    dayNumber: (b) => volunteerDayNumber(b),
     name: (b) => labelFrom(b, "name", 120) ?? str(b, "name"),
     email: (b) => optionalEmail(b, "email"),
     phone: (b) => labelFrom(b, "phone", 60),
@@ -2158,6 +2196,7 @@ export const volunteers = eventScoped({
     )).limit(1);
     if (!need) throw new HttpError(400, "That staffing requirement is not available for this event.");
     body.needId = need.id;
+    body.dayNumber = need.dayNumber;
     body.role = need.role;
     body.startTime = need.startTime;
     body.endTime = need.endTime;
@@ -2175,6 +2214,7 @@ export const volunteers = eventScoped({
         volunteerName: shift.name,
         role: shift.role,
         eventTitle: event.title,
+        dayNumber: shift.dayNumber,
         startTime: shift.startTime,
         endTime: shift.endTime,
         url,

@@ -974,6 +974,7 @@ const checkInStations = eventScoped<CheckInStation, CheckInStationDraft, CheckIn
     eventId,
     name: draft.name.trim(),
     lane: draft.lane.trim(),
+    leadVolunteerId: draft.leadVolunteerId ?? null,
     lead: draft.lead?.trim() || null,
     deviceCount: Math.max(0, Math.trunc(draft.deviceCount ?? 1)),
     notes: draft.notes?.trim() || null,
@@ -1009,6 +1010,7 @@ const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShi
     id: "",
     eventId,
     needId: draft.needId ?? null,
+    dayNumber: Math.max(1, Math.trunc(draft.dayNumber ?? 1)),
     name: draft.name.trim(),
     email: draft.email?.trim() || null,
     phone: draft.phone?.trim() || null,
@@ -1021,7 +1023,7 @@ const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShi
     createdAt: nowIso(),
   }),
   "volunteer",
-  (a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name),
+  (a, b) => a.dayNumber - b.dayNumber || a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name),
 );
 
 const volunteerNeedsCrud = eventScoped<VolunteerNeed, VolunteerNeedDraft, VolunteerNeedPatch>(
@@ -1030,6 +1032,7 @@ const volunteerNeedsCrud = eventScoped<VolunteerNeed, VolunteerNeedDraft, Volunt
   (eventId, draft, sortOrder) => ({
     id: "",
     eventId,
+    dayNumber: Math.max(1, Math.trunc(draft.dayNumber ?? 1)),
     role: draft.role.trim(),
     startTime: draft.startTime,
     endTime: draft.endTime,
@@ -1040,7 +1043,7 @@ const volunteerNeedsCrud = eventScoped<VolunteerNeed, VolunteerNeedDraft, Volunt
     createdAt: nowIso(),
   }),
   "volunteer",
-  (a, b) => a.startTime.localeCompare(b.startTime) || a.role.localeCompare(b.role),
+  (a, b) => a.dayNumber - b.dayNumber || a.startTime.localeCompare(b.startTime) || a.role.localeCompare(b.role),
 );
 
 const volunteerNeeds: VolunteerNeedsRepository = {
@@ -1068,11 +1071,12 @@ const volunteerNeeds: VolunteerNeedsRepository = {
     if (!coverage || coverage.isFull) throw new DataError("conflict", "That volunteer shift is already full.");
     if (state.volunteers.some((shift) =>
       shift.eventId === event.id && shift.email?.toLowerCase() === email && shift.role === need.role &&
-      shift.startTime === need.startTime && shift.endTime === need.endTime && shift.status !== "cancelled")) {
+      shift.dayNumber === need.dayNumber && shift.startTime === need.startTime && shift.endTime === need.endTime && shift.status !== "cancelled")) {
       throw new DataError("conflict", "This email is already signed up for that shift.");
     }
     return volunteers.create(event.id, {
       needId: need.id,
+      dayNumber: need.dayNumber,
       name,
       email,
       phone: draft.phone?.trim() || null,

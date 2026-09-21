@@ -43,7 +43,7 @@ export default function PublicAssignment({ token }: { token: string }) {
           <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Event</p><p className="mt-1 font-semibold text-foreground">{assignment.eventTitle}</p></div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-4" />{date}</span>
-            {assignment.startTime && assignment.endTime ? <span className="inline-flex items-center gap-1.5"><Clock3 className="size-4" />{assignment.startTime} - {assignment.endTime}</span> : null}
+            {assignment.startTime && assignment.endTime ? <span className="inline-flex items-center gap-1.5"><Clock3 className="size-4" />{assignment.dayNumber ? `Day ${assignment.dayNumber}, ` : ""}{assignment.startTime} - {assignment.endTime}</span> : null}
             {assignment.location ? <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" />{assignment.location}</span> : null}
           </div>
           {assignment.dueDate ? <p className="rounded-lg bg-warning-tint p-3 text-sm text-warning-text">Due {new Date(assignment.dueDate).toLocaleDateString("en-US", { dateStyle: "medium" })}</p> : null}

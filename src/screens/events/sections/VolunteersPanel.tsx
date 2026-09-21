@@ -36,6 +36,9 @@ import {
   type VolunteerNeed,
 } from "@/data/entities";
 import { volunteerCoverage } from "@/data/santaClara";
+import VolunteerCsvImportDialog from "./VolunteerCsvImportDialog";
+import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
+import { usePreferences } from "@/app/preferences";
 
 const STATUS_LABEL: Record<VolunteerStatus, string> = {
   scheduled: "Scheduled",
@@ -59,15 +62,18 @@ function VolunteerEditor({
   onSubmit,
   onCancel,
   needs,
+  days,
 }: {
   initial?: VolunteerShift;
   needs: VolunteerNeed[];
+  days: EventDayOption[];
   submitLabel: string;
   onSubmit: (draft: VolunteerShiftDraft) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [needId, setNeedId] = useState(initial?.needId ?? "__adhoc__");
+  const [dayNumber, setDayNumber] = useState(initial?.dayNumber ?? 1);
   const [role, setRole] = useState(initial?.role ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
@@ -88,6 +94,7 @@ function VolunteerEditor({
         setSaving(true);
         void onSubmit({
           needId: needId === "__adhoc__" ? null : needId,
+          dayNumber,
           name: name.trim(),
           role: role.trim(),
           email: email.trim() || null,
@@ -108,9 +115,18 @@ function VolunteerEditor({
         <Select value={needId} onValueChange={(value) => {
           setNeedId(value);
           const need = needs.find((candidate) => candidate.id === value);
-          if (need) { setRole(need.role); setStartTime(need.startTime); setEndTime(need.endTime); setNotes(need.notes ?? ""); }
+          if (need) { setDayNumber(need.dayNumber); setRole(need.role); setStartTime(need.startTime); setEndTime(need.endTime); setNotes(need.notes ?? ""); }
         }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__adhoc__">Ad-hoc shift</SelectItem>{needs.map((need) => <SelectItem key={need.id} value={need.id}>{need.role} · {need.startTime}–{need.endTime}</SelectItem>)}</SelectContent></Select>
       </label>
+      {days.length > 1 ? (
+        <label className="space-y-1 text-xs font-medium text-muted-foreground">
+          Event day
+          <Select value={String(dayNumber)} onValueChange={(value) => setDayNumber(Number(value))} disabled={isLinkedRequirement}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{days.map((day) => <SelectItem key={day.dayNumber} value={String(day.dayNumber)}>{formatEventDayLabel(day)}</SelectItem>)}</SelectContent>
+          </Select>
+        </label>
+      ) : null}
       <label className="space-y-1 text-xs font-medium text-muted-foreground">
         Role
         <Input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Welcome desk, usher…" required maxLength={120} disabled={isLinkedRequirement} />
@@ -168,8 +184,9 @@ function shiftLength(start: string, end: string): string {
   return `${hours ? `${hours}h` : ""}${hours && remainder ? " " : ""}${remainder ? `${remainder}m` : ""}` || "0m";
 }
 
-function NeedEditor({ onSubmit, onCancel }: { onSubmit: (draft: VolunteerNeedDraft) => Promise<void>; onCancel: () => void }) {
+function NeedEditor({ onSubmit, onCancel, days }: { onSubmit: (draft: VolunteerNeedDraft) => Promise<void>; onCancel: () => void; days: EventDayOption[] }) {
   const [role, setRole] = useState("");
+  const [dayNumber, setDayNumber] = useState(1);
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("12:00");
   const [requiredCount, setRequiredCount] = useState(2);
@@ -181,10 +198,11 @@ function NeedEditor({ onSubmit, onCancel }: { onSubmit: (draft: VolunteerNeedDra
       formEvent.preventDefault();
       if (!valid) return;
       setSaving(true);
-      void onSubmit({ role: role.trim(), startTime, endTime, requiredCount, notes: notes.trim() || null, signupOpen: true })
+      void onSubmit({ dayNumber, role: role.trim(), startTime, endTime, requiredCount, notes: notes.trim() || null, signupOpen: true })
         .finally(() => setSaving(false));
     }}>
       <label className="space-y-1 text-xs font-medium text-muted-foreground">Role needed<Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Welcome desk" required maxLength={120} /></label>
+      {days.length > 1 ? <label className="space-y-1 text-xs font-medium text-muted-foreground">Event day<Select value={String(dayNumber)} onValueChange={(value) => setDayNumber(Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{days.map((day) => <SelectItem key={day.dayNumber} value={String(day.dayNumber)}>{formatEventDayLabel(day)}</SelectItem>)}</SelectContent></Select></label> : null}
       <label className="space-y-1 text-xs font-medium text-muted-foreground">Starts<Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required /></label>
       <label className="space-y-1 text-xs font-medium text-muted-foreground">Ends<Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required /></label>
       <label className="space-y-1 text-xs font-medium text-muted-foreground">People needed<Input type="number" min={1} max={500} value={requiredCount} onChange={(e) => setRequiredCount(Number(e.target.value))} required /></label>
@@ -194,7 +212,8 @@ function NeedEditor({ onSubmit, onCancel }: { onSubmit: (draft: VolunteerNeedDra
   );
 }
 
-export default function VolunteersPanel({ event }: { event: Event }) {
+export default function VolunteersPanel({ event, allowSpreadsheetImport = false }: { event: Event; allowSpreadsheetImport?: boolean }) {
+  const { timeZone } = usePreferences();
   const { data, isLoading, isError, error, refetch } = useVolunteers(event.id);
   const { data: needRows, isLoading: needsLoading } = useVolunteerNeeds(event.id);
   const add = useAddVolunteer();
@@ -208,8 +227,12 @@ export default function VolunteersPanel({ event }: { event: Event }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VolunteerShift | null>(null);
   const [search, setSearch] = useState("");
+  const days = useMemo(
+    () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(data ?? []).map((row) => row.dayNumber), ...(needRows ?? []).map((row) => row.dayNumber))),
+    [data, event.date, event.endDate, needRows, timeZone],
+  );
   const rows = useMemo(
-    () => (data ?? []).slice().sort((a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name)),
+    () => (data ?? []).slice().sort((a, b) => a.dayNumber - b.dayNumber || a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name)),
     [data],
   );
   const needle = search.trim().toLowerCase();
@@ -249,7 +272,7 @@ export default function VolunteersPanel({ event }: { event: Event }) {
           description="Set the people needed for each time slot, see gaps, and share one self-signup link."
           actions={<><Button variant="outline" size="sm" onClick={() => void copySignupLink()} disabled={share.isPending}><Copy className="mr-1.5 size-3.5" />Copy signup link</Button><Button size="sm" onClick={() => setShowAddNeed(true)}><Plus className="mr-1.5 size-3.5" />Add role requirement</Button></>}
         />
-        {showAddNeed ? <div className="border-b border-hairline p-4"><NeedEditor onCancel={() => setShowAddNeed(false)} onSubmit={async (draft) => {
+        {showAddNeed ? <div className="border-b border-hairline p-4"><NeedEditor days={days} onCancel={() => setShowAddNeed(false)} onSubmit={async (draft) => {
           try {
             await addNeed.mutateAsync({ eventId: event.id, draft });
             setShowAddNeed(false);
@@ -262,7 +285,7 @@ export default function VolunteersPanel({ event }: { event: Event }) {
           <ul className="divide-y divide-hairline">
             {needs.map((need) => <li key={need.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
               <span className={`grid size-9 place-items-center rounded-lg ${need.isFull ? "bg-success-tint text-success-text" : "bg-warning-tint text-warning-text"}`}>{need.isFull ? <CheckCircle2 className="size-4" /> : <Users className="size-4" />}</span>
-              <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-foreground">{need.role}</p><p className="text-xs text-muted-foreground">{need.startTime}–{need.endTime} · {need.notes ?? "No notes"}</p></div>
+              <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-foreground">{need.role}</p><p className="text-xs text-muted-foreground">{days.length > 1 ? `Day ${need.dayNumber} · ` : ""}{need.startTime}–{need.endTime} · {need.notes ?? "No notes"}</p></div>
               <Pill tone={need.isFull ? "success" : "neutral"}>{need.filledCount}/{need.requiredCount} staffed{need.openCount ? ` · ${need.openCount} open` : " · Full"}</Pill>
               <Button variant="outline" size="sm" onClick={() => updateNeed.mutate({ eventId: event.id, id: need.id, patch: { signupOpen: !need.signupOpen } }, { onError: (caught) => toast({ title: "Couldn't update signup", description: caught.message }) })}>{need.signupOpen ? "Close signup" : "Open signup"}</Button>
             </li>)}
@@ -275,15 +298,19 @@ export default function VolunteersPanel({ event }: { event: Event }) {
           title="Volunteer shifts"
           description={`Keep responsibilities, contact details, time slots and event-day handoffs together. ${Math.round((totalMinutes / 60) * 10) / 10} total shift hours.`}
           actions={
-            <Button size="sm" onClick={() => { setShowAdd(true); setEditingId(null); }}>
-              <Plus className="mr-1.5 size-3.5" />Add volunteer
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {allowSpreadsheetImport ? <VolunteerCsvImportDialog event={event} existingShifts={data ?? []} /> : null}
+              <Button size="sm" onClick={() => { setShowAdd(true); setEditingId(null); }}>
+                <Plus className="mr-1.5 size-3.5" />Add volunteer
+              </Button>
+            </div>
           }
         />
         <div className="border-b border-hairline p-4">
           {showAdd ? (
             <VolunteerEditor
               needs={needRows ?? []}
+              days={days}
               submitLabel="Add shift"
               onCancel={() => setShowAdd(false)}
               onSubmit={async (draft) => {
@@ -323,6 +350,7 @@ export default function VolunteersPanel({ event }: { event: Event }) {
                 {editingId === volunteer.id ? (
                   <VolunteerEditor
                     needs={needRows ?? []}
+                    days={days}
                     initial={volunteer}
                     submitLabel="Save changes"
                     onCancel={() => setEditingId(null)}
@@ -346,7 +374,7 @@ export default function VolunteersPanel({ event }: { event: Event }) {
                       <p className="mt-1 text-sm font-medium text-foreground">{volunteer.role}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
-                          <Clock3 className="size-3.5" />{volunteer.startTime}–{volunteer.endTime} · {shiftLength(volunteer.startTime, volunteer.endTime)}
+                          <Clock3 className="size-3.5" />{days.length > 1 ? `Day ${volunteer.dayNumber} · ` : ""}{volunteer.startTime}–{volunteer.endTime} · {shiftLength(volunteer.startTime, volunteer.endTime)}
                         </span>
                         {volunteer.email ? <span>{volunteer.email}</span> : null}
                         {volunteer.email ? <span className="inline-flex items-center gap-1 text-info-text"><Mail className="size-3.5" />Email notification enabled</span> : null}

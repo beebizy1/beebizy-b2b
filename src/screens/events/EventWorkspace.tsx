@@ -479,7 +479,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       {active === "check-in" ? <CheckInPanel event={event} /> : null}
       {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
       {active === "checklist" ? <ChecklistWorkspace key={event.id} event={event} /> : null}
-      {active === "volunteers" ? <VolunteersPanel event={event} /> : null}
+      {active === "volunteers" ? <VolunteersPanel event={event} allowSpreadsheetImport={experience === "santa-clara"} /> : null}
       {active === "contingency" ? <ContingencyWorkspace key={event.id} event={event} /> : null}
       {active === "vendors" ? (
         <div className="space-y-6">

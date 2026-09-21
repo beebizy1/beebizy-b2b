@@ -371,6 +371,7 @@ describe("registrations", () => {
 describe("volunteers", () => {
   it("creates, updates and removes event-scoped shifts", async () => {
     const created = await memoryAdapter.volunteers.create("evt-cab", {
+      dayNumber: 2,
       name: "Cassandra Gomez",
       role: "Welcome desk",
       email: "cassandra@example.com",
@@ -379,6 +380,7 @@ describe("volunteers", () => {
       notes: "Arrive at the east entrance.",
     });
     expect(created.status).toBe("scheduled");
+    expect(created.dayNumber).toBe(2);
     expect((await memoryAdapter.volunteers.list("evt-cab")).some((row) => row.id === created.id)).toBe(true);
     expect((await memoryAdapter.volunteers.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
 
@@ -434,14 +436,21 @@ describe("live team updates", () => {
 
 describe("check-in stations", () => {
   it("stores an event's entrance lanes and equipment plan", async () => {
+    const volunteer = await memoryAdapter.volunteers.create("evt-cab", {
+      name: "Jordan Lee",
+      role: "Welcome desk",
+      startTime: "08:00",
+      endTime: "12:00",
+    });
     const created = await memoryAdapter.checkInStations.create("evt-cab", {
       name: "East entrance",
       lane: "Last names A-M",
+      leadVolunteerId: volunteer.id,
       lead: "Jordan Lee",
       deviceCount: 3,
       notes: "Keep accessibility lane clear.",
     });
-    expect(created).toMatchObject({ name: "East entrance", lane: "Last names A-M", deviceCount: 3 });
+    expect(created).toMatchObject({ name: "East entrance", lane: "Last names A-M", leadVolunteerId: volunteer.id, deviceCount: 3 });
     expect((await memoryAdapter.checkInStations.list("evt-gala")).some((row) => row.id === created.id)).toBe(false);
 
     const updated = await memoryAdapter.checkInStations.update("evt-cab", created.id, { deviceCount: 4 });
