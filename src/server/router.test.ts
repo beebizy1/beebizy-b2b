@@ -23,6 +23,7 @@ vi.mock("./repos", () => {
     publicVendorConversation: vi.fn(),
     publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
+    completePublicChecklistAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
     runOfShow: child,
@@ -57,7 +58,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicChecklistAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -212,6 +213,8 @@ describe("public assignment endpoint", () => {
       description: "Check in guests at the east entrance.",
       dueDate: null,
       dayNumber: 1,
+      completed: null,
+      checklistPath: null,
       startTime: "08:00",
       endTime: "12:00",
     });
@@ -227,6 +230,29 @@ describe("public assignment endpoint", () => {
   it("returns 404 when an assignment link is inactive", async () => {
     vi.mocked(publicAssignment).mockResolvedValue(null);
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token"));
+    expect(response.status).toBe(404);
+  });
+
+  it("lets a checklist assignee complete only the item addressed by their private link", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(completePublicChecklistAssignment).mockResolvedValue({
+      kind: "checklist", title: "Book Venue", completed: true,
+    } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/assignment-token/complete", {
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ title: "Book Venue", completed: true });
+    expect(completePublicChecklistAssignment).toHaveBeenCalledWith("assignment-token");
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("does not complete an item through an inactive or volunteer assignment link", async () => {
+    vi.mocked(completePublicChecklistAssignment).mockResolvedValue(null);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token/complete", {
+      method: "POST",
+    }));
     expect(response.status).toBe(404);
   });
 });

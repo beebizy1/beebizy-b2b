@@ -947,6 +947,8 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
       title: item.title,
       description: item.description,
       dueDate: item.dueDate?.toISOString() ?? null,
+      completed: item.completed,
+      checklistPath: `/app/events/${encodeURIComponent(link.eventId)}/checklist?task=${encodeURIComponent(item.id)}`,
       dayNumber: null,
       startTime: null,
       endTime: null,
@@ -967,10 +969,33 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     title: shift.role,
     description: shift.notes,
     dueDate: null,
+    completed: null,
+    checklistPath: null,
     dayNumber: shift.dayNumber,
     startTime: shift.startTime,
     endTime: shift.endTime,
   };
+}
+
+/** A private checklist link can complete its current assignment, but cannot edit any other task. */
+export async function completePublicChecklistAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+  const [link] = await db.select().from(s.eventHistory)
+    .where(and(eq(s.eventHistory.resource, "assignment-link"), eq(s.eventHistory.resourceId, token)))
+    .limit(1);
+  const assignmentId = link?.after?.assignmentId;
+  const email = link?.after?.email;
+  if (link?.after?.kind !== "checklist" || typeof assignmentId !== "string" || typeof email !== "string") return null;
+
+  await db.update(s.checklistItems)
+    .set({ completed: true, updatedAt: new Date() })
+    .where(and(
+      eq(s.checklistItems.id, assignmentId),
+      eq(s.checklistItems.eventId, link.eventId),
+      eq(s.checklistItems.workspaceId, link.workspaceId),
+      eq(s.checklistItems.assignedEmail, email),
+      eq(s.checklistItems.completed, false),
+    ));
+  return publicAssignment(token);
 }
 
 /* ------------------------------------------------------------- locations */
@@ -1947,7 +1972,7 @@ async function createAssignmentAccess(
   eventId: string,
   assignment: { kind: "checklist" | "volunteer"; id: string; email: string },
 ): Promise<string> {
-  const token = newId("assignment");
+  const token = `assignment_${crypto.randomUUID().replaceAll("-", "")}`;
   await db.insert(s.eventHistory).values({
     id: newId("hist"),
     workspaceId: ctx.workspaceId,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyFeedbackSubmission, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
+import { notifyFeedbackSubmission, notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -13,6 +13,21 @@ function configureDelivery() {
 }
 
 describe("assignment and live-update email", () => {
+  it("tells a checklist assignee the private link can complete their task", async () => {
+    const fetch = configureDelivery();
+    await notifyTaskAssignment({
+      to: "assignee@example.com",
+      assigneeName: "Ada",
+      taskTitle: "Book Venue",
+      eventTitle: "Demo Day",
+      dueDate: null,
+      url: "https://beebizy.test/assignment/private-token",
+    });
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.text).toContain("Open this task and mark it complete when you're done:");
+    expect(body.text).toContain("https://beebizy.test/assignment/private-token");
+  });
+
   it("sends a volunteer the role, shift and Beebizy link", async () => {
     const fetch = configureDelivery();
     expect(await notifyVolunteerAssignment({

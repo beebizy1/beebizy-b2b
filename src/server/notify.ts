@@ -136,7 +136,7 @@ export async function notifyTaskAssignment(input: {
       `  ${input.taskTitle}`,
       due ? `  Due ${due}` : "  No due date set",
       "",
-      `Open it here: ${input.url}`,
+      `Open this task and mark it complete when you're done: ${input.url}`,
     ].join("\n"),
   });
 

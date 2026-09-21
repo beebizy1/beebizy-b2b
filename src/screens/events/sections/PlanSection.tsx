@@ -6,7 +6,7 @@
  * the readiness score above updates with it.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -101,7 +101,7 @@ function dateInputValue(value: string | null): string {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-function ChecklistRow({ eventId, item, members, vendors }: { eventId: string; item: ChecklistItem; members: WorkspaceMember[] | undefined; vendors: Vendor[] | undefined }) {
+function ChecklistRow({ eventId, item, members, vendors, focused }: { eventId: string; item: ChecklistItem; members: WorkspaceMember[] | undefined; vendors: Vendor[] | undefined; focused: boolean }) {
   const update = useUpdateChecklistItem();
   const remove = useRemoveChecklistItem();
   const overdue = isOverdue(item);
@@ -120,7 +120,7 @@ function ChecklistRow({ eventId, item, members, vendors }: { eventId: string; it
 
   if (editing) {
     return (
-      <li className="bg-surface-sunken px-5 py-4">
+      <li id={`checklist-task-${item.id}`} tabIndex={-1} className={cn("scroll-mt-24 bg-surface-sunken px-5 py-4", focused && "ring-2 ring-primary")}>
         <form
           className="grid gap-2 md:grid-cols-2 xl:grid-cols-4"
           onSubmit={(formEvent) => {
@@ -171,7 +171,7 @@ function ChecklistRow({ eventId, item, members, vendors }: { eventId: string; it
   }
 
   return (
-    <li className="group flex items-start gap-3 px-5 py-2.5">
+    <li id={`checklist-task-${item.id}`} tabIndex={-1} className={cn("group flex scroll-mt-24 items-start gap-3 px-5 py-2.5", focused && "bg-primary-muted/60 ring-2 ring-inset ring-primary")}>
       <Checkbox
         checked={item.completed}
         aria-label={`Mark “${item.title}” ${item.completed ? "incomplete" : "complete"}`}
@@ -241,6 +241,20 @@ export function ChecklistPanel({ event }: { event: Event }) {
   // deleted the task — the row vanished and only the progress bar moved, so the tick
   // you just earned was never visible.
   const [showCompleted, setShowCompleted] = useState(true);
+  const [focusedTaskId] = useState(() => new URLSearchParams(window.location.search).get("task"));
+  const hasFocusedTask = useRef(false);
+
+  useEffect(() => {
+    if (hasFocusedTask.current || !focusedTaskId || !items?.some((item) => item.id === focusedTaskId)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const row = document.getElementById(`checklist-task-${focusedTaskId}`);
+      if (!row) return;
+      hasFocusedTask.current = true;
+      row?.scrollIntoView({ block: "center" });
+      row?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedTaskId, items]);
 
   const done = (items ?? []).filter((item) => item.completed).length;
   const total = items?.length ?? 0;
@@ -420,7 +434,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
               </GroupLabel>
               <ul className="divide-y divide-hairline">
                 {group.rows.map((item) => (
-                  <ChecklistRow key={item.id} eventId={event.id} item={item} members={members} vendors={vendors} />
+                  <ChecklistRow key={item.id} eventId={event.id} item={item} members={members} vendors={vendors} focused={focusedTaskId === item.id} />
                 ))}
               </ul>
             </section>

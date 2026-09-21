@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, CheckCircle2, Clock3, MapPin } from "lucide-react";
 import { EmptyState, LoadingRows, Panel, Pill } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
 import type { PublicAssignmentPayload } from "@/data/entities";
 import { PublicFrame } from "./PublicEvent";
 
 export default function PublicAssignment({ token }: { token: string }) {
   const [assignment, setAssignment] = useState<PublicAssignmentPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -24,6 +27,25 @@ export default function PublicAssignment({ token }: { token: string }) {
       controller.abort();
     };
   }, [token]);
+
+  const completeTask = async () => {
+    if (assignment?.kind !== "checklist" || assignment.completed || saving) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/complete`, { method: "POST" });
+      if (response.status === 404) {
+        setAssignment(null);
+        return;
+      }
+      if (!response.ok) throw new Error("The task could not be saved. Please try again.");
+      setAssignment(await response.json() as PublicAssignmentPayload);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "The task could not be saved. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!assignment) {
@@ -48,6 +70,19 @@ export default function PublicAssignment({ token }: { token: string }) {
           </div>
           {assignment.dueDate ? <p className="rounded-lg bg-warning-tint p-3 text-sm text-warning-text">Due {new Date(assignment.dueDate).toLocaleDateString("en-US", { dateStyle: "medium" })}</p> : null}
           {assignment.description ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{assignment.description}</p> : null}
+          {assignment.kind === "checklist" ? (
+            <div className="space-y-3 rounded-xl border border-hairline bg-surface-sunken/50 p-4">
+              {assignment.completed ? (
+                <p role="status" className="flex items-center gap-2 text-sm font-semibold text-success-text"><CheckCircle2 className="size-4" />Completed and saved to the event checklist</p>
+              ) : (
+                <Button type="button" disabled={saving} onClick={() => void completeTask()}>
+                  <CheckCircle2 className="mr-2 size-4" />{saving ? "Saving…" : "Mark task complete"}
+                </Button>
+              )}
+              {actionError ? <p role="alert" className="text-sm text-danger-text">{actionError}</p> : null}
+              {assignment.checklistPath ? <p className="text-sm text-muted-foreground"><a className="font-medium text-info-text underline underline-offset-2" href={assignment.checklistPath}>Open this item in the full checklist</a> (team login required)</p> : null}
+            </div>
+          ) : null}
           <p className="border-t border-hairline pt-4 text-xs text-muted-foreground">This private link only shows this assignment. Contact the event organizer if anything needs to change.</p>
         </div>
       </Panel>

@@ -777,6 +777,10 @@ export interface PublicAssignmentPayload {
   title: string;
   description: string | null;
   dueDate: IsoDateTime | null;
+  /** Current checklist state. Null for volunteer assignments. */
+  completed: boolean | null;
+  /** Authenticated deep link to this item in the event checklist. */
+  checklistPath: string | null;
   /** One-based event day for volunteer shifts. Null for checklist assignments. */
   dayNumber: number | null;
   startTime: string | null;

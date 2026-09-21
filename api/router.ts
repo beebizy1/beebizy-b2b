@@ -237,9 +237,16 @@ async function handlePublic(segments: string[], method: string, request: Request
     return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
   }
 
-  if (segments[0] === "public" && segments[1] === "assignments" && segments[2] && method === "GET") {
-    const assignment = await repos.publicAssignment(segments[2]);
-    return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
+  if (segments[0] === "public" && segments[1] === "assignments" && segments[2]) {
+    if (method === "GET" && !segments[3]) {
+      const assignment = await repos.publicAssignment(segments[2]);
+      return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "complete" && segments.length === 4) {
+      const assignment = await repos.completePublicChecklistAssignment(segments[2]);
+      return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
+    }
+    return json({ error: "Method not allowed" }, 405);
   }
 
   if (segments[0] === "public" && segments[1] === "rfps" && segments[2]) {
