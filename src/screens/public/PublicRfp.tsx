@@ -8,6 +8,8 @@ import { EmptyState, LoadingRows, Panel, PanelHeader } from "@/components/primit
 import { usePublicRfp, useSubmitPublicRfp } from "@/data/hooks";
 import { centsFromInput, formatMoney } from "@/data/money";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { rfpSpaceColor } from "@/screens/rfpVisuals";
 import { PublicFrame } from "./PublicEvent";
 
 function eventDate(value: string | null): string | null {
@@ -63,7 +65,7 @@ export default function PublicRfp({ token }: { token: string }) {
               {rfp.deadline ? <div><dt className="text-xs font-semibold text-muted-foreground">Proposal due</dt><dd>{eventDate(rfp.deadline)}</dd></div> : null}
             </dl>
             {rfp.roomBlockRequired ? (
-              <div className="rounded-xl border border-hairline bg-surface-sunken p-4">
+              <div className="rounded-xl border border-info/35 border-l-4 bg-info-tint/35 p-4">
                 <p className="flex items-center gap-2 font-semibold text-foreground"><BedDouble className="size-4 text-primary-text" />Hotel room block</p>
                 <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div><dt className="text-xs font-semibold text-muted-foreground">Rooms required</dt><dd>{rfp.roomsRequired}</dd></div>
@@ -81,7 +83,7 @@ export default function PublicRfp({ token }: { token: string }) {
                 <p className="mb-2 font-semibold text-foreground">Function spaces required</p>
                 <ul className="grid gap-2 sm:grid-cols-2">
                   {rfp.spaceRequirements.map((space) => (
-                    <li key={space.id} className="rounded-xl border border-hairline p-3">
+                    <li key={space.id} className={cn("rounded-xl border p-3", rfpSpaceColor(space.purpose))}>
                       <p className="font-semibold text-foreground">{space.purpose}</p>
                       <p className="mt-1 text-muted-foreground">{[eventDate(space.date), space.startTime ? `${space.startTime}${space.endTime ? ` - ${space.endTime}` : ""}` : null, space.capacity ? `${space.capacity} people` : null].filter(Boolean).join(" · ")}</p>
                       {space.notes ? <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{space.notes}</p> : null}

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { cn } from "@/lib/utils";
+import { rfpSpaceColor } from "@/screens/rfpVisuals";
 import { formatInZone } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
 import { centsFromInput, formatMoney } from "@/data/money";
@@ -73,18 +74,18 @@ function ensureHotelSpaces(current: SpaceDraft[], firstDay: string, attendeeCoun
   return [...current, ...hotelSpaces(firstDay, attendeeCount).filter((space) => !existing.has(space.purpose.toLowerCase()))];
 }
 
-const RFP_TONE: Record<RfpStatus, "neutral" | "info" | "success"> = {
-  draft: "neutral",
+const RFP_TONE: Record<RfpStatus, "warning" | "info" | "success"> = {
+  draft: "warning",
   sent: "info",
   closed: "success",
 };
 
 /** A quote's status is the whole point of the row, so the control shows it in colour. */
 const RESPONSE_TONE: Record<RfpResponseStatus, string> = {
-  pending: "text-muted-foreground",
-  received: "text-info-text",
-  accepted: "text-success-text font-semibold",
-  declined: "text-danger-text",
+  pending: "bg-warning-tint text-warning-text",
+  received: "bg-info-tint text-info-text",
+  accepted: "bg-success-tint text-success-text font-semibold",
+  declined: "bg-danger-tint text-danger-text",
 };
 
 function budgetRange(rfp: RfpWithResponses): string | null {
@@ -253,9 +254,9 @@ function InviteVendor({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses
               <li key={invitation.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-xs">
                 <span className="font-semibold text-foreground">{invitation.vendorName}</span>
                 <span className="text-muted-foreground">{invitation.recipientEmail}</span>
-                <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground">
-                  {invitation.deliveredAt ? <><Check className="size-3 text-success-text" />Emailed</> : invitation.deliveryError ? "Email failed" : "Queued"}
-                </span>
+                <Pill className="ml-auto" tone={invitation.deliveredAt ? "success" : invitation.deliveryError ? "danger" : "warning"}>
+                  {invitation.deliveredAt ? <><Check className="size-3" />Emailed</> : invitation.deliveryError ? "Email failed" : "Queued"}
+                </Pill>
                 <Button type="button" variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(url).then(() => toast({ title: "Proposal link copied" })).catch(() => toast({ title: "Couldn't copy the link", variant: "destructive" }))}>
                   <Copy className="mr-1 size-3" />Copy link
                 </Button>
@@ -399,7 +400,7 @@ function EditRfpForm({ eventId, rfp, onDone }: { eventId: string; rfp: RfpWithRe
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between"><p className="text-sm font-semibold">Function spaces</p><Button type="button" size="sm" variant="outline" onClick={() => setDraft((current) => ({ ...current, spaces: [...current.spaces, { id: crypto.randomUUID(), purpose: "", date: current.eventDate, startTime: null, endTime: null, capacity: current.headcount, notes: null }] }))}><Plus className="mr-1 size-3" />Add</Button></div>
-          {draft.spaces.map((space, index) => <div key={space.id} className="grid gap-2 rounded-lg border border-hairline bg-background p-3 sm:grid-cols-6">
+          {draft.spaces.map((space, index) => <div key={space.id} className={cn("grid gap-2 rounded-lg border p-3 sm:grid-cols-6", rfpSpaceColor(space.purpose))}>
             <Input aria-label={`Space ${index + 1} purpose`} value={space.purpose} onChange={(e) => setSpace(space.id, { purpose: e.target.value })} required />
             <Input aria-label={`Space ${index + 1} date`} type="date" value={space.date} onChange={(e) => setSpace(space.id, { date: e.target.value })} required />
             <Input aria-label={`Space ${index + 1} start`} type="time" value={space.startTime ?? ""} onChange={(e) => setSpace(space.id, { startTime: e.target.value || null })} required />
@@ -496,7 +497,7 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
       </div>
 
       {rfp.roomBlockRequired ? (
-        <div className="space-y-4 border-b border-hairline bg-surface-sunken/45 px-5 py-4">
+        <div className="space-y-4 border-b border-info/35 border-l-4 bg-info-tint/35 px-5 py-4">
           <div className="flex items-center gap-2">
             <BedDouble className="size-4 text-primary-text" aria-hidden="true" />
             <p className="text-sm font-semibold text-foreground">Hotel room block</p>
@@ -517,7 +518,7 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
           <p className="mb-3 text-sm font-semibold text-foreground">Required function spaces</p>
           <ul className="grid gap-2 sm:grid-cols-2">
             {rfp.spaceRequirements.map((space) => (
-              <li key={space.id} className="rounded-lg border border-hairline p-3 text-sm">
+              <li key={space.id} className={cn("rounded-lg border p-3 text-sm", rfpSpaceColor(space.purpose))}>
                 <p className="font-semibold text-foreground">{space.purpose}</p>
                 <p className="mt-1 text-muted-foreground">
                   {[space.date ? formatDate(space.date, "dayMonthYear") : null, space.startTime ? `${space.startTime}${space.endTime ? ` - ${space.endTime}` : ""}` : null, space.capacity ? `${space.capacity} people` : null].filter(Boolean).join(" · ")}
@@ -806,7 +807,7 @@ function NewRfp({ event }: { event: Event }) {
           {spaces.length === 0 ? <p className="rounded-lg bg-surface-sunken p-3 text-sm text-muted-foreground">No function spaces added yet.</p> : (
             <div className="space-y-3">
               {spaces.map((space, index) => (
-                <div key={space.id} className="grid gap-3 rounded-lg bg-surface-sunken p-3 sm:grid-cols-2 lg:grid-cols-6">
+                <div key={space.id} className={cn("grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-6", rfpSpaceColor(space.purpose))}>
                   <div className="space-y-1 lg:col-span-2"><Label htmlFor={`rfp-space-purpose-${space.id}`}>Space {index + 1}</Label><Input id={`rfp-space-purpose-${space.id}`} value={space.purpose} onChange={(e) => updateSpace(space.id, { purpose: e.target.value })} placeholder="Registration, breakfast, meeting…" required={roomBlockRequired} /></div>
                   <div className="space-y-1"><Label htmlFor={`rfp-space-date-${space.id}`}>Date</Label><Input id={`rfp-space-date-${space.id}`} type="date" value={space.date} onChange={(e) => updateSpace(space.id, { date: e.target.value })} required={roomBlockRequired} /></div>
                   <div className="space-y-1"><Label htmlFor={`rfp-space-start-${space.id}`}>Start</Label><Input id={`rfp-space-start-${space.id}`} type="time" value={space.startTime ?? ""} onChange={(e) => updateSpace(space.id, { startTime: e.target.value || null })} required={roomBlockRequired} /></div>
