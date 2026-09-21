@@ -166,10 +166,36 @@ export async function notifyVolunteerAssignment(input: {
       `Role: ${input.role}`,
       `Shift: Day ${input.dayNumber}, ${input.startTime}–${input.endTime}`,
       "",
-      `View your private assignment here: ${input.url}`,
+      `Open this shift and mark it complete when you're done: ${input.url}`,
     ].join("\n"),
   });
   if (outcome.status !== "sent") console.warn("VOLUNTEER_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
+  return outcome;
+}
+
+export async function notifyRunOfShowAssignment(input: {
+  to: string;
+  assigneeName: string;
+  cueTitle: string;
+  eventTitle: string;
+  dayNumber: number;
+  startTime: string;
+  url: string;
+}): Promise<EmailOutcome> {
+  const outcome = await sendEmail({
+    to: input.to,
+    subject: `${input.cueTitle} - ${input.eventTitle}`,
+    text: [
+      `Hi ${input.assigneeName || "team member"},`,
+      "",
+      `You've been assigned a Run of Show item on ${input.eventTitle}.`,
+      `Cue: ${input.cueTitle}`,
+      `Time: Day ${input.dayNumber}, ${input.startTime}`,
+      "",
+      `Open this cue and mark it complete when you're done: ${input.url}`,
+    ].join("\n"),
+  });
+  if (outcome.status !== "sent") console.warn("RUN_OF_SHOW_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
   return outcome;
 }
 

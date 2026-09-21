@@ -293,6 +293,8 @@ export function toRunOfShowItem(row: InferSelectModel<typeof s.runOfShowItems>):
     title: row.title,
     description: row.description,
     responsible: row.responsible,
+    assignedEmail: row.assignedEmail,
+    completed: row.completed,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
   };

@@ -23,7 +23,7 @@ vi.mock("./repos", () => {
     publicVendorConversation: vi.fn(),
     publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
-    completePublicChecklistAssignment: vi.fn(),
+    completePublicAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
     runOfShow: child,
@@ -58,7 +58,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicChecklistAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -213,8 +213,8 @@ describe("public assignment endpoint", () => {
       description: "Check in guests at the east entrance.",
       dueDate: null,
       dayNumber: 1,
-      completed: null,
-      checklistPath: null,
+      completed: false,
+      appPath: "/app/events/event-1/volunteers?shift=vol-1",
       startTime: "08:00",
       endTime: "12:00",
     });
@@ -235,7 +235,7 @@ describe("public assignment endpoint", () => {
 
   it("lets a checklist assignee complete only the item addressed by their private link", async () => {
     vi.mocked(authorize).mockClear();
-    vi.mocked(completePublicChecklistAssignment).mockResolvedValue({
+    vi.mocked(completePublicAssignment).mockResolvedValue({
       kind: "checklist", title: "Book Venue", completed: true,
     } as never);
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/assignment-token/complete", {
@@ -244,16 +244,42 @@ describe("public assignment endpoint", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ title: "Book Venue", completed: true });
-    expect(completePublicChecklistAssignment).toHaveBeenCalledWith("assignment-token");
+    expect(completePublicAssignment).toHaveBeenCalledWith("assignment-token");
     expect(authorize).not.toHaveBeenCalled();
   });
 
   it("does not complete an item through an inactive or volunteer assignment link", async () => {
-    vi.mocked(completePublicChecklistAssignment).mockResolvedValue(null);
+    vi.mocked(completePublicAssignment).mockResolvedValue(null);
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token/complete", {
       method: "POST",
     }));
     expect(response.status).toBe(404);
+  });
+
+  it("uses the same private completion endpoint for a volunteer shift", async () => {
+    vi.mocked(completePublicAssignment).mockResolvedValue({
+      kind: "volunteer", title: "Welcome desk", completed: true,
+    } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/complete", {
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind: "volunteer", completed: true });
+    expect(completePublicAssignment).toHaveBeenCalledWith("volunteer-token");
+  });
+
+  it("uses the same private completion endpoint for a run-of-show cue", async () => {
+    vi.mocked(completePublicAssignment).mockResolvedValue({
+      kind: "run-of-show", title: "Doors open", completed: true,
+    } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/cue-token/complete", {
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind: "run-of-show", completed: true });
+    expect(completePublicAssignment).toHaveBeenCalledWith("cue-token");
   });
 });
 

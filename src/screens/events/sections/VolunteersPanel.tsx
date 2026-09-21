@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Clock3, Copy, HeartHandshake, Mail, Pencil, Plus, Search, Trash2, UserCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ import { volunteerCoverage } from "@/data/santaClara";
 import VolunteerCsvImportDialog from "./VolunteerCsvImportDialog";
 import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
 import { usePreferences } from "@/app/preferences";
+import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<VolunteerStatus, string> = {
   scheduled: "Scheduled",
@@ -227,6 +228,8 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VolunteerShift | null>(null);
   const [search, setSearch] = useState("");
+  const [focusedShiftId] = useState(() => new URLSearchParams(window.location.search).get("shift"));
+  const hasFocusedShift = useRef(false);
   const days = useMemo(
     () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(data ?? []).map((row) => row.dayNumber), ...(needRows ?? []).map((row) => row.dayNumber))),
     [data, event.date, event.endDate, needRows, timeZone],
@@ -245,6 +248,18 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
   const totalMinutes = active.reduce((sum, row) => sum + shiftMinutes(row.startTime, row.endTime), 0);
   const needs = useMemo(() => volunteerCoverage(needRows ?? [], rows), [needRows, rows]);
   const totalOpen = needs.reduce((sum, need) => sum + need.openCount, 0);
+
+  useEffect(() => {
+    if (hasFocusedShift.current || !focusedShiftId || !data?.some((shift) => shift.id === focusedShiftId)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const row = document.getElementById(`volunteer-shift-${focusedShiftId}`);
+      if (!row) return;
+      hasFocusedShift.current = true;
+      row.scrollIntoView({ block: "center" });
+      row.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [data, focusedShiftId]);
 
   const copySignupLink = async () => {
     try {
@@ -346,7 +361,12 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
         {visible.length > 0 ? (
           <ul className="divide-y divide-hairline">
             {visible.map((volunteer) => (
-              <li key={volunteer.id} className="px-4 py-4 sm:px-5">
+              <li
+                key={volunteer.id}
+                id={`volunteer-shift-${volunteer.id}`}
+                tabIndex={-1}
+                className={cn("scroll-mt-24 px-4 py-4 sm:px-5", focusedShiftId === volunteer.id && "bg-primary-muted/60 ring-2 ring-inset ring-primary")}
+              >
                 {editingId === volunteer.id ? (
                   <VolunteerEditor
                     needs={needRows ?? []}

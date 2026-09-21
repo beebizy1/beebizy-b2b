@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyFeedbackSubmission, notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
+import { notifyFeedbackSubmission, notifyRunOfShowAssignment, notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -43,7 +43,25 @@ describe("assignment and live-update email", () => {
     const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
     expect(body).toMatchObject({ to: ["volunteer@example.com"], subject: "Your Welcome desk shift - Demo Day" });
     expect(body.text).toContain("Shift: Day 2, 08:00–12:00");
+    expect(body.text).toContain("mark it complete");
     expect(body.text).toContain("https://beebizy.test/app/events/one/volunteers");
+  });
+
+  it("sends a Run of Show assignee the cue and completion link", async () => {
+    const fetch = configureDelivery();
+    await notifyRunOfShowAssignment({
+      to: "volunteer@example.com",
+      assigneeName: "Ada",
+      cueTitle: "Doors open",
+      eventTitle: "Demo Day",
+      dayNumber: 1,
+      startTime: "08:30",
+      url: "https://beebizy.test/assignment/cue-token",
+    });
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.text).toContain("Cue: Doors open");
+    expect(body.text).toContain("Time: Day 1, 08:30");
+    expect(body.text).toContain("mark it complete");
   });
 
   it("sends urgent event context to the team", async () => {

@@ -420,6 +420,9 @@ export interface RunOfShowItem {
   title: string;
   description: string | null;
   responsible: string | null;
+  /** Where to send the cue assignment and private completion link. */
+  assignedEmail: string | null;
+  completed: boolean;
   sortOrder: number;
   createdAt: IsoDateTime;
 }
@@ -431,10 +434,15 @@ export interface RunOfShowItemDraft {
   title: string;
   description?: string | null;
   responsible?: string | null;
+  assignedEmail?: string | null;
+  completed?: boolean;
   sortOrder?: number;
 }
 
 export type RunOfShowItemPatch = Partial<RunOfShowItemDraft>;
+
+/** Run-of-show fields that are safe to publish on an unauthenticated event page. */
+export type PublicRunOfShowItem = Omit<RunOfShowItem, "assignedEmail" | "completed">;
 
 export const VOLUNTEER_STATUSES = ["scheduled", "confirmed", "checked_in", "completed", "cancelled"] as const;
 export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
@@ -768,7 +776,7 @@ export interface TeamUpdateDraft {
 }
 
 export interface PublicAssignmentPayload {
-  kind: "checklist" | "volunteer";
+  kind: "checklist" | "run-of-show" | "volunteer";
   eventTitle: string;
   eventDate: IsoDateTime;
   eventEndDate: IsoDateTime | null;
@@ -777,11 +785,11 @@ export interface PublicAssignmentPayload {
   title: string;
   description: string | null;
   dueDate: IsoDateTime | null;
-  /** Current checklist state. Null for volunteer assignments. */
-  completed: boolean | null;
-  /** Authenticated deep link to this item in the event checklist. */
-  checklistPath: string | null;
-  /** One-based event day for volunteer shifts. Null for checklist assignments. */
+  /** Current state of the assigned task, cue or shift. */
+  completed: boolean;
+  /** Authenticated deep link to the exact item in its event workspace section. */
+  appPath: string;
+  /** One-based event day for schedule cues and volunteer shifts. Null for checklist assignments. */
   dayNumber: number | null;
   startTime: string | null;
   endTime: string | null;
@@ -1235,7 +1243,7 @@ export type TemplateDetail = Template & TemplateContents;
  */
 export interface PublicEventPayload {
   event: Event;
-  agenda: RunOfShowItem[];
+  agenda: PublicRunOfShowItem[];
   tickets: TicketType[];
   volunteerNeeds: VolunteerNeedWithCoverage[];
   timeZone: string;

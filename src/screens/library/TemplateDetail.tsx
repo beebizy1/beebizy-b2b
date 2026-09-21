@@ -314,6 +314,8 @@ export default function TemplateDetail({ id }: { id: string }) {
                     title: trimmed,
                     description: null,
                     responsible: null,
+                    assignedEmail: null,
+                    completed: false,
                     sortOrder: working.runOfShowItems.length + 1,
                     createdAt: nowIso(),
                   },

@@ -239,6 +239,13 @@
       "when": 1789968034365,
       "tag": "0033_fearless_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790032551726,
+      "tag": "0034_wild_nicolaos",
+      "breakpoints": true
     }
   ]
 }

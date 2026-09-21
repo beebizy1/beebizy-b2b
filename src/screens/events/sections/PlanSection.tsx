@@ -41,9 +41,10 @@ import {
   useUpdateChecklistItem,
   useMembers,
   useUpdateRunOfShowItem,
+  useVolunteers,
   useVendors,
 } from "@/data/hooks";
-import type { ChecklistItem, Event, RunOfShowItem, Vendor, WorkspaceMember } from "@/data/entities";
+import type { ChecklistItem, Event, RunOfShowItem, Vendor, VolunteerShift, WorkspaceMember } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
 
 /**
@@ -66,6 +67,39 @@ const ASSIGNEE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function assignmentEmail(members: WorkspaceMember[] | undefined, typed: string): string | null {
   const value = typed.trim().toLowerCase();
   return matchMember(members, typed)?.email ?? (ASSIGNEE_EMAIL.test(value) ? value : null);
+}
+
+function runOfShowAssignee(
+  members: WorkspaceMember[] | undefined,
+  volunteers: VolunteerShift[] | undefined,
+  typed: string,
+): { responsible: string | null; assignedEmail: string | null } {
+  const value = typed.trim();
+  const email = value.toLowerCase();
+  if (!ASSIGNEE_EMAIL.test(email)) return { responsible: value || null, assignedEmail: null };
+
+  const member = (members ?? []).find((candidate) => candidate.email?.toLowerCase() === email);
+  const volunteer = (volunteers ?? []).find((candidate) => candidate.email?.toLowerCase() === email);
+  return {
+    responsible: member?.name?.trim() || volunteer?.name.trim() || value,
+    assignedEmail: email,
+  };
+}
+
+function runOfShowAssigneeOptions(
+  members: WorkspaceMember[] | undefined,
+  volunteers: VolunteerShift[] | undefined,
+): { email: string; label: string }[] {
+  const options = new Map<string, string>();
+  for (const member of members ?? []) {
+    const email = member.email?.trim().toLowerCase();
+    if (email) options.set(email, member.name?.trim() || email);
+  }
+  for (const volunteer of volunteers ?? []) {
+    const email = volunteer.email?.trim().toLowerCase();
+    if (email && !options.has(email)) options.set(email, volunteer.name.trim() || email);
+  }
+  return [...options].map(([email, label]) => ({ email, label }));
 }
 
 const CHECKLIST_AREAS = [
@@ -449,20 +483,27 @@ function RunOfShowRow({
   eventId,
   cue,
   days,
+  members,
+  volunteers,
+  focused,
 }: {
   eventId: string;
   cue: RunOfShowItem;
   days: EventDayOption[];
+  members: WorkspaceMember[] | undefined;
+  volunteers: VolunteerShift[] | undefined;
+  focused: boolean;
 }) {
   const update = useUpdateRunOfShowItem();
   const remove = useRemoveRunOfShowItem();
   const [editing, setEditing] = useState(false);
+  const assigneeOptions = runOfShowAssigneeOptions(members, volunteers);
   const currentDraft = () => ({
     dayNumber: cue.dayNumber,
     startTime: cue.startTime,
     title: cue.title,
     duration: cue.duration === null ? "" : String(cue.duration),
-    responsible: cue.responsible ?? "",
+    assignee: cue.assignedEmail ?? cue.responsible ?? "",
     description: cue.description ?? "",
   });
   const [draft, setDraft] = useState(currentDraft);
@@ -479,7 +520,7 @@ function RunOfShowRow({
 
   if (editing) {
     return (
-      <li className="bg-surface-sunken px-5 py-4">
+      <li id={`run-of-show-cue-${cue.id}`} tabIndex={-1} className={cn("scroll-mt-24 bg-surface-sunken px-5 py-4", focused && "ring-2 ring-primary")}>
         <form
           className="flex flex-wrap gap-2"
           onSubmit={(formEvent) => {
@@ -487,6 +528,7 @@ function RunOfShowRow({
             const title = draft.title.trim();
             if (!title) return;
             const parsedDuration = draft.duration.trim() === "" ? null : Number.parseInt(draft.duration, 10);
+            const assignee = runOfShowAssignee(members, volunteers, draft.assignee);
             update.mutate(
               {
                 eventId,
@@ -496,7 +538,8 @@ function RunOfShowRow({
                   startTime: draft.startTime,
                   title,
                   duration: Number.isFinite(parsedDuration) ? parsedDuration : null,
-                  responsible: draft.responsible.trim() || null,
+                  responsible: assignee.responsible,
+                  assignedEmail: assignee.assignedEmail,
                   description: draft.description.trim() || null,
                 },
               },
@@ -547,12 +590,16 @@ function RunOfShowRow({
             className="w-[90px]"
           />
           <Input
-            value={draft.responsible}
-            onChange={(event) => setDraft((current) => ({ ...current, responsible: event.target.value }))}
-            aria-label="Cue owner"
-            placeholder="Owner or team"
+            value={draft.assignee}
+            onChange={(event) => setDraft((current) => ({ ...current, assignee: event.target.value }))}
+            aria-label="Cue owner name or email"
+            placeholder="Choose an email or type an owner"
+            list={`run-of-show-assignees-${cue.id}`}
             className="min-w-[12rem] flex-1"
           />
+          <datalist id={`run-of-show-assignees-${cue.id}`}>
+            {assigneeOptions.map((option) => <option key={option.email} value={option.email} label={option.label} />)}
+          </datalist>
           <Input
             value={draft.description}
             onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
@@ -576,14 +623,24 @@ function RunOfShowRow({
   }
 
   return (
-    <li className="group flex items-start gap-4 px-5 py-3">
+    <li id={`run-of-show-cue-${cue.id}`} tabIndex={-1} className={cn("group flex scroll-mt-24 items-start gap-3 px-5 py-3", focused && "bg-primary-muted/60 ring-2 ring-inset ring-primary")}>
+      <Checkbox
+        checked={cue.completed}
+        aria-label={`Mark “${cue.title}” ${cue.completed ? "incomplete" : "complete"}`}
+        className="mt-0.5"
+        onCheckedChange={(checked) => update.mutate(
+          { eventId, id: cue.id, patch: { completed: checked === true } },
+          { onError: (error) => toast({ title: "Couldn't update cue", description: error.message }) },
+        )}
+      />
       <span data-numeric className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
         {formatClockTime(cue.startTime)}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>
+        <span className={cn("block truncate text-sm", cue.completed ? "text-muted-foreground line-through" : "font-medium text-foreground")}>{cue.title}</span>
         {cue.description ? <span className="mt-0.5 block text-xs text-muted-foreground">{cue.description}</span> : null}
         {cue.responsible ? <span className="mt-1 block text-xs font-medium text-primary-text">Owner: {cue.responsible}</span> : null}
+        {cue.assignedEmail ? <Pill tone="info" className="mt-1"><Mail className="mr-1 size-3" />Email notification enabled</Pill> : null}
       </span>
       {cue.duration ? <span data-numeric className="shrink-0 pt-0.5 text-xs text-muted-foreground">{cue.duration}m</span> : null}
       <button
@@ -614,27 +671,48 @@ function RunOfShowRow({
 export function RunOfShowPanel({ event }: { event: Event }) {
   const { timeZone, timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
+  const { data: members } = useMembers();
+  const { data: volunteers } = useVolunteers(event.id);
   const add = useAddRunOfShowItem();
   const days = useMemo(
     () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(cues ?? []).map((cue) => cue.dayNumber))),
     [cues, event.date, event.endDate, timeZone],
   );
-  const [selectedDay, setSelectedDay] = useState(1);
+  const [focusedCueId] = useState(() => new URLSearchParams(window.location.search).get("cue"));
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const requested = Number(new URLSearchParams(window.location.search).get("day"));
+    return Number.isInteger(requested) && requested > 0 ? requested : 1;
+  });
+  const hasFocusedCue = useRef(false);
   const [startTime, setStartTime] = useState("09:00");
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
-  const [responsible, setResponsible] = useState("");
+  const [assignee, setAssignee] = useState("");
   const [description, setDescription] = useState("");
   const dayCues = (cues ?? []).filter((cue) => cue.dayNumber === selectedDay);
+  const assigneeOptions = useMemo(() => runOfShowAssigneeOptions(members, volunteers), [members, volunteers]);
 
   useEffect(() => {
     if (!days.some((day) => day.dayNumber === selectedDay)) setSelectedDay(1);
   }, [days, selectedDay]);
 
+  useEffect(() => {
+    if (hasFocusedCue.current || !focusedCueId || !cues?.some((cue) => cue.id === focusedCueId && cue.dayNumber === selectedDay)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const row = document.getElementById(`run-of-show-cue-${focusedCueId}`);
+      if (!row) return;
+      hasFocusedCue.current = true;
+      row.scrollIntoView({ block: "center" });
+      row.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [cues, focusedCueId, selectedDay]);
+
   const submit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
     const parsedDuration = duration.trim() === "" ? undefined : Number.parseInt(duration, 10);
+    const resolvedAssignee = runOfShowAssignee(members, volunteers, assignee);
     add.mutate(
       {
         eventId: event.id,
@@ -643,7 +721,9 @@ export function RunOfShowPanel({ event }: { event: Event }) {
           startTime,
           title: trimmed,
           duration: Number.isFinite(parsedDuration) ? parsedDuration : undefined,
-          responsible: responsible.trim() || undefined,
+          responsible: resolvedAssignee.responsible,
+          assignedEmail: resolvedAssignee.assignedEmail,
+          completed: false,
           description: description.trim() || undefined,
         },
       },
@@ -651,7 +731,7 @@ export function RunOfShowPanel({ event }: { event: Event }) {
         onSuccess: () => {
           setTitle("");
           setDuration("");
-          setResponsible("");
+          setAssignee("");
           setDescription("");
         },
         onError: (error) => toast({ title: "Couldn't add cue", description: error.message }),
@@ -742,12 +822,16 @@ export function RunOfShowPanel({ event }: { event: Event }) {
           Add
         </Button>
         <Input
-          value={responsible}
-          onChange={(inputEvent) => setResponsible(inputEvent.target.value)}
-          placeholder="Owner or team"
-          aria-label="Cue owner"
+          value={assignee}
+          onChange={(inputEvent) => setAssignee(inputEvent.target.value)}
+          placeholder="Choose an email or type an owner"
+          aria-label="Cue owner name or email"
+          list="new-run-of-show-assignees"
           className="min-w-[10rem] flex-1"
         />
+        <datalist id="new-run-of-show-assignees">
+          {assigneeOptions.map((option) => <option key={option.email} value={option.email} label={option.label} />)}
+        </datalist>
         <Input
           value={description}
           onChange={(inputEvent) => setDescription(inputEvent.target.value)}
@@ -769,7 +853,7 @@ export function RunOfShowPanel({ event }: { event: Event }) {
         />
       ) : (
         <ol className="divide-y divide-hairline">
-          {dayCues.map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} days={days} />)}
+          {dayCues.map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} days={days} members={members} volunteers={volunteers} focused={focusedCueId === cue.id} />)}
         </ol>
       )}
     </Panel>

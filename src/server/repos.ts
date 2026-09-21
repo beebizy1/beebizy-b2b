@@ -57,6 +57,7 @@ import type {
   HistoryResource,
   ChecklistItem,
   CheckInStation,
+  RunOfShowItem,
   InviteResult,
   VolunteerShift,
   WalkInRegistrationDraft,
@@ -83,6 +84,7 @@ import { rfpDraftSchema, rfpSpaceRequirementSchema, validHotelRfp, validRfpBudge
 import {
   notifyFeedbackSubmission,
   notifyRfpInvitation,
+  notifyRunOfShowAssignment,
   notifyTaskAssignment,
   notifyTeamUpdate,
   notifyVendorMessage,
@@ -680,7 +682,7 @@ export const events = {
     // Progress is not part of a template: completion and actuals are stripped.
     const contents: TemplateContents = {
       checklistItems: checklist.map((row) => ({ ...map.toChecklistItem(row), completed: false, dueDate: null, eventId: undefined as never })),
-      runOfShowItems: runOfShow.map((row) => ({ ...map.toRunOfShowItem(row), eventId: undefined as never })),
+      runOfShowItems: runOfShow.map((row) => ({ ...map.toRunOfShowItem(row), assignedEmail: null, completed: false, eventId: undefined as never })),
       budgetItems: budget.map((row) => ({ ...map.toBudgetItem(row), actualCents: null, eventId: undefined as never })),
     };
 
@@ -733,11 +735,22 @@ export async function eventByShareToken(
  */
 export async function publicAgenda(eventId: string) {
   const rows = await db
-    .select()
+    .select({
+      id: s.runOfShowItems.id,
+      eventId: s.runOfShowItems.eventId,
+      dayNumber: s.runOfShowItems.dayNumber,
+      startTime: s.runOfShowItems.startTime,
+      duration: s.runOfShowItems.durationMinutes,
+      title: s.runOfShowItems.title,
+      description: s.runOfShowItems.description,
+      responsible: s.runOfShowItems.responsible,
+      sortOrder: s.runOfShowItems.sortOrder,
+      createdAt: s.runOfShowItems.createdAt,
+    })
     .from(s.runOfShowItems)
     .where(eq(s.runOfShowItems.eventId, eventId))
     .orderBy(...runOfShowOrderColumns());
-  return rows.map(map.toRunOfShowItem);
+  return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
 }
 
 export async function publicTickets(eventId: string) {
@@ -917,7 +930,7 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
   const kind = link.after.kind;
   const assignmentId = link.after.assignmentId;
   const email = link.after.email;
-  if ((kind !== "checklist" && kind !== "volunteer") || typeof assignmentId !== "string" || typeof email !== "string") return null;
+  if ((kind !== "checklist" && kind !== "run-of-show" && kind !== "volunteer") || typeof assignmentId !== "string" || typeof email !== "string") return null;
 
   const [eventRow] = await db.select({ event: s.events, location: s.locations }).from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
@@ -948,9 +961,32 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
       description: item.description,
       dueDate: item.dueDate?.toISOString() ?? null,
       completed: item.completed,
-      checklistPath: `/app/events/${encodeURIComponent(link.eventId)}/checklist?task=${encodeURIComponent(item.id)}`,
+      appPath: `/app/events/${encodeURIComponent(link.eventId)}/checklist?task=${encodeURIComponent(item.id)}`,
       dayNumber: null,
       startTime: null,
+      endTime: null,
+    };
+  }
+
+  if (kind === "run-of-show") {
+    const [cue] = await db.select().from(s.runOfShowItems).where(and(
+      eq(s.runOfShowItems.id, assignmentId),
+      eq(s.runOfShowItems.eventId, link.eventId),
+      eq(s.runOfShowItems.workspaceId, link.workspaceId),
+      eq(s.runOfShowItems.assignedEmail, email),
+    )).limit(1);
+    if (!cue) return null;
+    return {
+      kind,
+      ...eventFields,
+      assignee: cue.responsible ?? email,
+      title: cue.title,
+      description: cue.description,
+      dueDate: null,
+      completed: cue.completed,
+      appPath: `/app/events/${encodeURIComponent(link.eventId)}/run-of-show?day=${cue.dayNumber}&cue=${encodeURIComponent(cue.id)}`,
+      dayNumber: cue.dayNumber,
+      startTime: cue.startTime,
       endTime: null,
     };
   }
@@ -961,7 +997,7 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     eq(s.volunteerShifts.workspaceId, link.workspaceId),
     eq(s.volunteerShifts.email, email),
   )).limit(1);
-  if (!shift) return null;
+  if (!shift || shift.status === "cancelled") return null;
   return {
     kind,
     ...eventFields,
@@ -969,32 +1005,57 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     title: shift.role,
     description: shift.notes,
     dueDate: null,
-    completed: null,
-    checklistPath: null,
+    completed: shift.status === "completed",
+    appPath: `/app/events/${encodeURIComponent(link.eventId)}/volunteers?shift=${encodeURIComponent(shift.id)}`,
     dayNumber: shift.dayNumber,
     startTime: shift.startTime,
     endTime: shift.endTime,
   };
 }
 
-/** A private checklist link can complete its current assignment, but cannot edit any other task. */
-export async function completePublicChecklistAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+/** A private assignment link can complete only the task, cue or shift it was issued for. */
+export async function completePublicAssignment(token: string): Promise<PublicAssignmentPayload | null> {
   const [link] = await db.select().from(s.eventHistory)
     .where(and(eq(s.eventHistory.resource, "assignment-link"), eq(s.eventHistory.resourceId, token)))
     .limit(1);
   const assignmentId = link?.after?.assignmentId;
   const email = link?.after?.email;
-  if (link?.after?.kind !== "checklist" || typeof assignmentId !== "string" || typeof email !== "string") return null;
+  const kind = link?.after?.kind;
+  if (!link || typeof assignmentId !== "string" || typeof email !== "string") return null;
 
-  await db.update(s.checklistItems)
-    .set({ completed: true, updatedAt: new Date() })
-    .where(and(
-      eq(s.checklistItems.id, assignmentId),
-      eq(s.checklistItems.eventId, link.eventId),
-      eq(s.checklistItems.workspaceId, link.workspaceId),
-      eq(s.checklistItems.assignedEmail, email),
-      eq(s.checklistItems.completed, false),
-    ));
+  if (kind === "checklist") {
+    await db.update(s.checklistItems)
+      .set({ completed: true, updatedAt: new Date() })
+      .where(and(
+        eq(s.checklistItems.id, assignmentId),
+        eq(s.checklistItems.eventId, link.eventId),
+        eq(s.checklistItems.workspaceId, link.workspaceId),
+        eq(s.checklistItems.assignedEmail, email),
+        eq(s.checklistItems.completed, false),
+      ));
+  } else if (kind === "run-of-show") {
+    await db.update(s.runOfShowItems)
+      .set({ completed: true, updatedAt: new Date() })
+      .where(and(
+        eq(s.runOfShowItems.id, assignmentId),
+        eq(s.runOfShowItems.eventId, link.eventId),
+        eq(s.runOfShowItems.workspaceId, link.workspaceId),
+        eq(s.runOfShowItems.assignedEmail, email),
+        eq(s.runOfShowItems.completed, false),
+      ));
+  } else if (kind === "volunteer") {
+    await db.update(s.volunteerShifts)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(and(
+        eq(s.volunteerShifts.id, assignmentId),
+        eq(s.volunteerShifts.eventId, link.eventId),
+        eq(s.volunteerShifts.workspaceId, link.workspaceId),
+        eq(s.volunteerShifts.email, email),
+        sql`${s.volunteerShifts.status} <> 'cancelled'`,
+      ));
+  } else {
+    return null;
+  }
   return publicAssignment(token);
 }
 
@@ -1970,7 +2031,7 @@ const optionalEmail = (body: Body, key: string): string | null => {
 async function createAssignmentAccess(
   ctx: RequestContext,
   eventId: string,
-  assignment: { kind: "checklist" | "volunteer"; id: string; email: string },
+  assignment: { kind: "checklist" | "run-of-show" | "volunteer"; id: string; email: string },
 ): Promise<string> {
   const token = `assignment_${crypto.randomUUID().replaceAll("-", "")}`;
   await db.insert(s.eventHistory).values({
@@ -2114,6 +2175,8 @@ export const runOfShow = eventScoped({
     title: str(body, "title"),
     description: optStr(body, "description"),
     responsible: optStr(body, "responsible"),
+    assignedEmail: optionalEmail(body, "assignedEmail"),
+    completed: Boolean(body.completed),
     sortOrder,
   }),
   patch: {
@@ -2123,6 +2186,29 @@ export const runOfShow = eventScoped({
     title: (b) => str(b, "title"),
     description: (b) => optStr(b, "description"),
     responsible: (b) => optStr(b, "responsible"),
+    assignedEmail: (b) => optionalEmail(b, "assignedEmail"),
+    completed: (b) => Boolean(b.completed),
+  },
+  afterWrite: async (ctx, eventId, after, before) => {
+    const cue = after as RunOfShowItem;
+    const previous = before as RunOfShowItem | null;
+    if (!cue.assignedEmail || cue.assignedEmail === previous?.assignedEmail) return;
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    try {
+      const url = await createAssignmentAccess(ctx, eventId, { kind: "run-of-show", id: cue.id, email: cue.assignedEmail });
+      await notifyRunOfShowAssignment({
+        to: cue.assignedEmail,
+        assigneeName: cue.responsible ?? cue.assignedEmail,
+        cueTitle: cue.title,
+        eventTitle: event.title,
+        dayNumber: cue.dayNumber,
+        startTime: cue.startTime,
+        url,
+      });
+    } catch (error) {
+      console.warn("RUN_OF_SHOW_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
+    }
   },
 });
 

@@ -28,8 +28,8 @@ export default function PublicAssignment({ token }: { token: string }) {
     };
   }, [token]);
 
-  const completeTask = async () => {
-    if (assignment?.kind !== "checklist" || assignment.completed || saving) return;
+  const completeAssignment = async () => {
+    if (!assignment || assignment.completed || saving) return;
     setSaving(true);
     setActionError(null);
     try {
@@ -38,10 +38,10 @@ export default function PublicAssignment({ token }: { token: string }) {
         setAssignment(null);
         return;
       }
-      if (!response.ok) throw new Error("The task could not be saved. Please try again.");
+      if (!response.ok) throw new Error("The assignment could not be saved. Please try again.");
       setAssignment(await response.json() as PublicAssignmentPayload);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "The task could not be saved. Please try again.");
+      setActionError(error instanceof Error ? error.message : "The assignment could not be saved. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -53,11 +53,15 @@ export default function PublicAssignment({ token }: { token: string }) {
   }
 
   const date = new Date(assignment.eventDate).toLocaleDateString("en-US", { dateStyle: "full" });
+  const kindLabel = assignment.kind === "checklist" ? "Checklist assignment" : assignment.kind === "run-of-show" ? "Run of Show assignment" : "Volunteer shift";
+  const completionLabel = assignment.kind === "checklist" ? "event checklist" : assignment.kind === "run-of-show" ? "Run of Show" : "volunteer schedule";
+  const buttonLabel = assignment.kind === "checklist" ? "Mark task complete" : assignment.kind === "run-of-show" ? "Mark cue complete" : "Mark shift complete";
+  const appLinkLabel = assignment.kind === "checklist" ? "Open this item in the full checklist" : assignment.kind === "run-of-show" ? "Open this cue in the full Run of Show" : "Open this shift in the volunteer schedule";
   return (
     <PublicFrame>
       <Panel className="overflow-hidden">
         <div className="border-b border-hairline bg-primary-muted/40 p-6">
-          <Pill tone="brand">{assignment.kind === "volunteer" ? "Volunteer shift" : "Checklist assignment"}</Pill>
+          <Pill tone="brand">{kindLabel}</Pill>
           <h1 className="mt-3 text-2xl font-bold text-foreground">{assignment.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">Assigned to {assignment.assignee}</p>
         </div>
@@ -65,24 +69,22 @@ export default function PublicAssignment({ token }: { token: string }) {
           <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Event</p><p className="mt-1 font-semibold text-foreground">{assignment.eventTitle}</p></div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-4" />{date}</span>
-            {assignment.startTime && assignment.endTime ? <span className="inline-flex items-center gap-1.5"><Clock3 className="size-4" />{assignment.dayNumber ? `Day ${assignment.dayNumber}, ` : ""}{assignment.startTime} - {assignment.endTime}</span> : null}
+            {assignment.startTime ? <span className="inline-flex items-center gap-1.5"><Clock3 className="size-4" />{assignment.dayNumber ? `Day ${assignment.dayNumber}, ` : ""}{assignment.startTime}{assignment.endTime ? ` - ${assignment.endTime}` : ""}</span> : null}
             {assignment.location ? <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" />{assignment.location}</span> : null}
           </div>
           {assignment.dueDate ? <p className="rounded-lg bg-warning-tint p-3 text-sm text-warning-text">Due {new Date(assignment.dueDate).toLocaleDateString("en-US", { dateStyle: "medium" })}</p> : null}
           {assignment.description ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{assignment.description}</p> : null}
-          {assignment.kind === "checklist" ? (
-            <div className="space-y-3 rounded-xl border border-hairline bg-surface-sunken/50 p-4">
-              {assignment.completed ? (
-                <p role="status" className="flex items-center gap-2 text-sm font-semibold text-success-text"><CheckCircle2 className="size-4" />Completed and saved to the event checklist</p>
-              ) : (
-                <Button type="button" disabled={saving} onClick={() => void completeTask()}>
-                  <CheckCircle2 className="mr-2 size-4" />{saving ? "Saving…" : "Mark task complete"}
-                </Button>
-              )}
-              {actionError ? <p role="alert" className="text-sm text-danger-text">{actionError}</p> : null}
-              {assignment.checklistPath ? <p className="text-sm text-muted-foreground"><a className="font-medium text-info-text underline underline-offset-2" href={assignment.checklistPath}>Open this item in the full checklist</a> (team login required)</p> : null}
-            </div>
-          ) : null}
+          <div className="space-y-3 rounded-xl border border-hairline bg-surface-sunken/50 p-4">
+            {assignment.completed ? (
+              <p role="status" className="flex items-center gap-2 text-sm font-semibold text-success-text"><CheckCircle2 className="size-4" />Completed and saved to the {completionLabel}</p>
+            ) : (
+              <Button type="button" disabled={saving} onClick={() => void completeAssignment()}>
+                <CheckCircle2 className="mr-2 size-4" />{saving ? "Saving…" : buttonLabel}
+              </Button>
+            )}
+            {actionError ? <p role="alert" className="text-sm text-danger-text">{actionError}</p> : null}
+            <p className="text-sm text-muted-foreground"><a className="font-medium text-info-text underline underline-offset-2" href={assignment.appPath}>{appLinkLabel}</a> (team login required)</p>
+          </div>
           <p className="border-t border-hairline pt-4 text-xs text-muted-foreground">This private link only shows this assignment. Contact the event organizer if anything needs to change.</p>
         </div>
       </Panel>

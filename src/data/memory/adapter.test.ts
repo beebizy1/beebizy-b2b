@@ -81,11 +81,19 @@ describe("events", () => {
     const first = await memoryAdapter.events.share("evt-cab");
     const second = await memoryAdapter.events.share("evt-cab");
     expect(first.shareToken).toBe(second.shareToken);
+    await memoryAdapter.runOfShow.create("evt-cab", {
+      startTime: "08:30",
+      title: "Private owner details stay private",
+      responsible: "Event volunteer",
+      assignedEmail: "volunteer@example.com",
+      completed: true,
+    });
     // The guest payload carries the agenda and tickets because a guest has no session to
     // fetch them with, and the workspace's zone because their own is the wrong answer.
     const shared = (await memoryAdapter.events.getByShareToken(first.shareToken))!;
     expect(shared.event.id).toBe("evt-cab");
     expect(shared.agenda.every((cue) => cue.eventId === "evt-cab")).toBe(true);
+    expect(shared.agenda.every((cue) => !("assignedEmail" in cue) && !("completed" in cue))).toBe(true);
     expect(shared.tickets.every((ticket) => ticket.eventId === "evt-cab" && ticket.isActive)).toBe(true);
     expect(shared.timeZone).toBe(DEFAULT_USER_SETTINGS.timeZone);
   });

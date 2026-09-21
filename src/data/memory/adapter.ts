@@ -453,7 +453,8 @@ const events: EventsRepository = {
       event,
       agenda: store()
         .runOfShow.filter((item) => item.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showAgenda)
-        .sort(compareRunOfShowItems),
+        .sort(compareRunOfShowItems)
+        .map(({ assignedEmail: _assignedEmail, completed: _completed, ...publicCue }) => publicCue),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
       volunteerNeeds: volunteerCoverage(
         store().volunteerNeeds.filter((need) => need.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showVolunteerSignup),
@@ -510,7 +511,7 @@ const events: EventsRepository = {
     };
     const contents: TemplateContents = {
       checklistItems: state.checklist.filter((c) => c.eventId === eventId).map((c) => ({ ...strip(c), completed: false, dueDate: null })),
-      runOfShowItems: state.runOfShow.filter((r) => r.eventId === eventId).map(strip),
+      runOfShowItems: state.runOfShow.filter((r) => r.eventId === eventId).map((r) => ({ ...strip(r), assignedEmail: null, completed: false })),
       budgetItems: state.budget.filter((b) => b.eventId === eventId).map((b) => ({ ...strip(b), actualCents: null })),
     };
     const template: Template & TemplateContents = {
@@ -996,6 +997,8 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
     title: draft.title,
     description: draft.description ?? null,
     responsible: draft.responsible ?? null,
+    assignedEmail: draft.assignedEmail ?? null,
+    completed: draft.completed ?? false,
     sortOrder: draft.sortOrder ?? sortOrder,
     createdAt: nowIso(),
   }),

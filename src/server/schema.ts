@@ -541,6 +541,8 @@ export const runOfShowItems = pgTable(
     title: text("title").notNull(),
     description: text("description"),
     responsible: text("responsible"),
+    assignedEmail: text("assigned_email"),
+    completed: boolean("completed").notNull().default(false),
   },
   (table) => [index("run_of_show_event_idx").on(table.eventId, table.dayNumber, table.startTime)],
 );
