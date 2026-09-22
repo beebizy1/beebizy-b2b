@@ -80,10 +80,10 @@ function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; 
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors",
+        "group flex min-h-10 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-[background-color,color,transform]",
         active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+          ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground shadow-xs"
+          : "text-sidebar-foreground/70 hover:translate-x-0.5 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
       )}
     >
       <item.icon
@@ -110,7 +110,7 @@ function SidebarContent({
 
   return (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="mb-4 flex flex-col gap-3 p-4">
+      <div className="mb-2 flex flex-col gap-3 p-4 pb-2">
         <BrandLogoLink to="/app" size="sm" />
         <div className="border-t border-sidebar-border pt-3">
           <WorkspaceMark label={experience === "santa-clara" ? "Santa Clara University" : user?.name ?? "Beebizy Studio"} />
@@ -148,13 +148,13 @@ function SidebarContent({
         </div>
       </div>
 
-      <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3">
+      <nav aria-label="Main" className="workspace-scrollbar flex-1 space-y-1 overflow-y-auto px-3 pb-4">
         {visibleNavItems(canReviewFeedback, plan, experience).map((item) => (
           <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} onNavigate={onNavigate} />
         ))}
       </nav>
 
-      <div className="space-y-2 border-t border-sidebar-border p-4">
+      <div className="space-y-2 border-t border-sidebar-border bg-surface-sunken/40 p-4">
         {/* Points at sales while self-serve billing is paused; there is no price list to
             send anyone to. */}
         {experience === "standard" ? (
@@ -344,9 +344,9 @@ function AppShellFrame({
       <main id="main" className="flex min-h-dvh min-w-0 flex-1 flex-col pt-16 md:ml-64 md:pt-0">
         <DemoBanner />
         {mode === "live" ? <BetaBanner access={identity?.access} onFeedback={() => setFeedbackOpen(true)} /> : null}
-        {/* Screens return bare content; the canvas inset lives here, uncapped, so the
-            page fills the width left of the rail the way the reference design does. */}
-        <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</div>
+        <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="content-enter mx-auto w-full max-w-[1720px]">{children}</div>
+        </div>
       </main>
 
       <CommandPalette

@@ -32,6 +32,7 @@ export default function LocationsIndex() {
     <div className="space-y-6">
       <PageHeader
         title="Locations"
+        description="Keep venue details, contacts, and event history together so your team does not have to search old files."
         actions={
           <Button asChild>
             <Link href="/app/locations/new">

@@ -96,12 +96,19 @@ export default function LocationForm({ id }: { id?: string }) {
         Back to Locations
       </Link>
 
-      <PageHeader title={isEdit ? "Edit Location" : "Add Location"} />
+      <PageHeader
+        title={isEdit ? "Edit location" : "Add location"}
+        description={
+          isEdit
+            ? "Keep the venue address and contact details current for everyone planning this event."
+            : "Save a venue once, then reuse it across events, budgets, floor plans, and reports."
+        }
+      />
 
       <Panel>
-        <PanelHeader title="Location details" />
+        <PanelHeader title="Location details" description="Required fields are marked by the guidance below each field." />
         <form
-          className="space-y-5 p-5"
+          className="space-y-6 p-5 sm:p-6"
           onSubmit={(formEvent) => {
             formEvent.preventDefault();
             setTouched(true);
@@ -211,7 +218,7 @@ export default function LocationForm({ id }: { id?: string }) {
             </Button>
             <Button type="submit" disabled={pending}>
               <Save className="mr-1.5 size-4" aria-hidden="true" />
-              {isEdit ? "Save changes" : "Create Location"}
+              {isEdit ? "Save changes" : "Create location"}
             </Button>
           </div>
         </form>

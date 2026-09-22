@@ -41,12 +41,15 @@ export default function RegistrationForm() {
         Back to Registrations
       </Link>
 
-      <PageHeader title="New Registration" />
+      <PageHeader
+        title="New registration"
+        description="Connect an attendee to an event and choose the registration status they should start with."
+      />
 
       <Panel>
-        <PanelHeader title="Registration details" />
+        <PanelHeader title="Registration details" description="Choose an existing event and attendee from this workspace." />
         <form
-          className="space-y-5 p-5"
+          className="space-y-6 p-5 sm:p-6"
           onSubmit={(formEvent) => {
             formEvent.preventDefault();
             setTouched(true);
@@ -135,7 +138,7 @@ export default function RegistrationForm() {
             </Button>
             <Button type="submit" disabled={createRegistration.isPending}>
               <Save className="mr-1.5 size-4" aria-hidden="true" />
-              Create Registration
+              Create registration
             </Button>
           </div>
         </form>

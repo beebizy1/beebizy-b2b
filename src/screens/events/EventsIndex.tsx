@@ -60,6 +60,7 @@ export default function EventsIndex() {
     <div className="space-y-6">
       <PageHeader
         title="Events"
+        description="Find every event, narrow the list by venue, or open an event to manage its plan and team."
         actions={
           <>
             <div className="relative w-[220px]">

@@ -12,7 +12,8 @@
 
 import { useMemo } from "react";
 import { Link } from "wouter";
-import { Activity, Calendar, MapPin, Ticket, Users } from "lucide-react";
+import { Activity, Calendar, MapPin, Plus, Ticket, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorNotice, PageHeader, Panel, PanelHeader, StatTile } from "@/components/primitives";
 import { usePreferences } from "@/app/preferences";
@@ -119,7 +120,18 @@ function PortfolioDashboard() {
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Dashboard" />
+      <PageHeader
+        title="Dashboard"
+        description="A quick view of what is coming up, where guests are registering, and the events your team is managing."
+        actions={
+          <Button asChild>
+            <Link href="/app/events/new">
+              <Plus className="size-4" aria-hidden="true" />
+              Create event
+            </Link>
+          </Button>
+        }
+      />
 
       {isError ? <ErrorNotice error={error} title="Couldn't load events" onRetry={() => void refetch()} /> : null}
 

@@ -32,15 +32,25 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between", className)}>
-      <div className="min-w-0 space-y-1.5">
+    <header
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-card-border bg-card px-5 py-5 shadow-xs sm:px-6 sm:py-6",
+        className,
+      )}
+    >
+      <span className="absolute inset-y-0 left-0 w-1 bg-primary" aria-hidden="true" />
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0 space-y-2">
         {/* An eyebrow is the exception, not the pattern: the planning workspace uses one,
             the table screens lead with the title alone. Amber, not grey micro-caps. */}
-        {eyebrow ? <p className="text-base font-medium text-primary-text">{eyebrow}</p> : null}
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
-        {description ? <p className="max-w-2xl leading-relaxed text-muted-foreground">{description}</p> : null}
+        {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
+        <h1 className="text-2xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl">{title}</h1>
+        {description ? <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">{description}</p> : null}
       </div>
-      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">{actions}</div>
+      ) : null}
+      </div>
     </header>
   );
 }
@@ -50,7 +60,10 @@ export function PageHeader({
 export function Panel({ className, children, ...rest }: ComponentProps<"section">) {
   return (
     <section
-      className={cn("rounded-xl border border-card-border bg-card text-card-foreground shadow-xs", className)}
+      className={cn(
+        "rounded-2xl border border-card-border bg-card text-card-foreground shadow-sm",
+        className,
+      )}
       {...rest}
     >
       {children}
@@ -70,10 +83,10 @@ export function PanelHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-wrap items-start justify-between gap-3 border-b border-hairline px-5 py-4", className)}>
-      <div className="min-w-0 space-y-1">
-        <h2 className="text-sm font-semibold tracking-tight text-foreground">{title}</h2>
-        {description ? <p className="text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+    <div className={cn("flex flex-wrap items-start justify-between gap-4 border-b border-hairline px-5 py-4 sm:px-6", className)}>
+      <div className="min-w-0 space-y-1.5">
+        <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
+        {description ? <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </div>
@@ -121,23 +134,28 @@ export function StatTile({
   href?: string;
 }) {
   const tile = (
-    <Panel className={cn("h-full p-4", href && "transition-colors hover:border-primary/50 hover:bg-accent/40")}>
+    <Panel
+      className={cn(
+        "h-full min-h-32 p-5",
+        href && "group transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-xs font-semibold leading-5 text-muted-foreground">{label}</p>
         {Icon ? (
-          <span className={cn("grid size-7 place-items-center rounded-md", TONE_ICON_BG[tone])}>
-            <Icon className="size-4" aria-hidden="true" />
+          <span className={cn("grid size-9 place-items-center rounded-lg", TONE_ICON_BG[tone])}>
+            <Icon className="size-4.5" aria-hidden="true" />
           </span>
         ) : null}
       </div>
       {loading ? (
         <Skeleton className="mt-2 h-8 w-24" />
       ) : (
-        <p data-numeric className={cn("mt-1.5 text-2xl font-bold tracking-tight", TONE_TEXT[tone])}>
+        <p data-numeric className={cn("mt-3 text-3xl font-bold leading-none tracking-tight", TONE_TEXT[tone])}>
           {value}
         </p>
       )}
-      {sublabel ? <p className="mt-1 text-xs text-muted-foreground">{sublabel}</p> : null}
+      {sublabel ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{sublabel}</p> : null}
     </Panel>
   );
 
@@ -146,7 +164,7 @@ export function StatTile({
   return (
     <Link
       href={href}
-      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
       {tile}
     </Link>
@@ -336,15 +354,15 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col items-center justify-center gap-3 px-6 py-12 text-center", className)}>
+    <div className={cn("flex min-h-56 flex-col items-center justify-center gap-4 px-6 py-12 text-center", className)}>
       {Icon ? (
-        <span className="grid size-11 place-items-center rounded-xl bg-surface-sunken text-muted-foreground">
-          <Icon className="size-5" aria-hidden="true" />
+        <span className="grid size-12 place-items-center rounded-2xl border border-hairline bg-surface-sunken text-muted-foreground shadow-xs">
+          <Icon className="size-5.5" aria-hidden="true" />
         </span>
       ) : null}
-      <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        {description ? <p className="mx-auto max-w-md text-sm text-muted-foreground">{description}</p> : null}
+      <div className="space-y-1.5">
+        <p className="text-base font-semibold text-foreground">{title}</p>
+        {description ? <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
       {action}
     </div>
@@ -402,8 +420,8 @@ export function LoadingRows({ rows = 3, className }: { rows?: number; className?
 /** Definition row used in detail panels. */
 export function KeyValue({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
+    <div className="flex items-baseline justify-between gap-4 border-b border-hairline py-3 last:border-b-0">
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-right text-sm font-medium text-foreground">{children}</dd>
     </div>
   );

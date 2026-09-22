@@ -117,11 +117,14 @@ function SectionTabs({
   // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
   // a late tab like Deposits shows a bar that does not contain the tab you are on.
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [active]);
 
   return (
-    <nav aria-label="Event sections" className="-mb-px flex gap-1 overflow-x-auto">
+    <nav
+      aria-label="Event sections"
+      className="workspace-scrollbar flex snap-x gap-1 overflow-x-auto py-2"
+    >
       {visibleEventTabs(plan, experience).map((tab) => {
         const isActive = tab.id === active;
         return (
@@ -131,13 +134,15 @@ function SectionTabs({
             href={eventTabHref(eventId, tab.id)}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+              "flex snap-start items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition-[background-color,border-color,box-shadow,color]",
               isActive
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:border-hairline hover:text-foreground",
+                ? "border-primary/50 bg-primary-muted font-semibold text-foreground shadow-xs"
+                : "border-transparent font-medium text-muted-foreground hover:border-card-border hover:bg-card hover:text-foreground",
             )}
           >
-            {tab.icon ? <tab.icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+            {tab.icon ? (
+              <tab.icon className={cn("size-3.5 shrink-0", isActive && "text-primary-text")} aria-hidden="true" />
+            ) : null}
             {tab.label}
           </Link>
         );
@@ -187,42 +192,49 @@ function WorkspaceHeader({
   const saveAsTemplate = useSaveEventAsTemplate();
 
   return (
-    <div className="space-y-5">
+    <section className="overflow-hidden rounded-2xl border border-card-border bg-card shadow-sm">
+      <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
       <Link
         href="/app/events"
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1.5 rounded-md text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
         All events
       </Link>
 
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="display-md text-foreground">{event.title}</h1>
             <EventStatusBadge status={event.status} />
           </div>
 
-          <dl className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <CalendarClock className="size-4" aria-hidden="true" />
-              <dt className="sr-only">When</dt>
-              <dd>
+          <dl className="grid max-w-4xl gap-2 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
+            <div className="flex min-w-0 items-start gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5">
+              <CalendarClock className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
+              <div className="min-w-0">
+              <dt className="text-[11px] font-semibold text-muted-foreground">When</dt>
+              <dd className="mt-0.5 text-foreground">
                 {formatRange(event, prefs)} <span className="text-muted-foreground/70">· {prefs.when(event.date)}</span>
               </dd>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <MapPin className="size-4" aria-hidden="true" />
-              <dt className="sr-only">Where</dt>
-              <dd className="truncate">{event.locationRecord?.name ?? event.location ?? "No venue"}</dd>
+            <div className="flex min-w-0 items-start gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
+              <div className="min-w-0">
+              <dt className="text-[11px] font-semibold text-muted-foreground">Where</dt>
+              <dd className="mt-0.5 truncate text-foreground">{event.locationRecord?.name ?? event.location ?? "No venue"}</dd>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Users className="size-4" aria-hidden="true" />
-              <dt className="sr-only">Registrations</dt>
-              <dd data-numeric>
+            <div className="flex min-w-0 items-start gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5">
+              <Users className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
+              <div className="min-w-0">
+              <dt className="text-[11px] font-semibold text-muted-foreground">Registrations</dt>
+              <dd data-numeric className="mt-0.5 text-foreground">
                 {event.registrationCount}
                 {event.capacity ? ` of ${event.capacity}` : ""} registered
               </dd>
+              </div>
             </div>
           </dl>
 
@@ -231,7 +243,7 @@ function WorkspaceHeader({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-start gap-4">
+        <div className="flex w-full shrink-0 items-start justify-between gap-4 2xl:w-auto 2xl:justify-start">
           {health ? (
             <div className="hidden text-center sm:block">
               <ReadinessRing value={health.readiness} size={64} label={`${event.title} readiness`} />
@@ -323,11 +335,12 @@ function WorkspaceHeader({
       </div>
 
       {health && experience === "standard" ? <RiskStrip health={health} eventId={event.id} /> : null}
+      </div>
 
-      <div className="border-b border-hairline">
+      <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
         <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} />
       </div>
-    </div>
+    </section>
   );
 }
 

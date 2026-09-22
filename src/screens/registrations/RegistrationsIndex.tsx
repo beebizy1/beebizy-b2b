@@ -27,11 +27,12 @@ export default function RegistrationsIndex() {
     <div className="space-y-6">
       <PageHeader
         title="Registrations"
+        description="See who registered for every event, confirm their status, and open the right event when details change."
         actions={
           <Button asChild>
             <Link href="/app/registrations/new">
               <Plus className="size-4" aria-hidden="true" />
-              New Registration
+              New registration
             </Link>
           </Button>
         }
