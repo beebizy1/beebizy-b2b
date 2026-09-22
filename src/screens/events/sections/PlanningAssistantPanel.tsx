@@ -33,7 +33,7 @@ import {
   useUpdateBudgetItem,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
-import { eventDayCount } from "@/data/eventDays";
+import { checklistDueDateBeforeEvent, eventDayCount } from "@/data/eventDays";
 import { usePreferences } from "@/app/preferences";
 import {
   moodConceptDataUrl,
@@ -105,12 +105,6 @@ function readStoredPlanningDraft(event: Event): StoredPlanningDraft | null {
   }
 }
 
-function dueDateFor(eventDate: string, daysBefore: number): string | null {
-  const due = new Date(eventDate);
-  if (Number.isNaN(due.getTime())) return null;
-  due.setDate(due.getDate() - daysBefore);
-  return due.toISOString();
-}
 /**
  * Move one suggestion up or down by a single position.
  *
@@ -368,7 +362,7 @@ export default function PlanningAssistantPanel({ event }: { event: Event }) {
       for (const { dueDaysBefore, ...draft } of pending) {
         await addChecklist.mutateAsync({
           eventId: event.id,
-          draft: { ...draft, dueDate: dueDateFor(event.date, dueDaysBefore) },
+          draft: { ...draft, dueDate: checklistDueDateBeforeEvent(event.date, timeZone, dueDaysBefore) },
         });
       }
       markApplied("checklist");

@@ -113,6 +113,8 @@ export async function notifyFeedbackSubmission(input: {
  * says "you have been assigned a task" makes the reader open the app to learn anything,
  * which is a notification that costs more attention than it saves.
  */
+const ASSIGNMENT_CALENDAR_HELP = "The assignment page also lets you add it to Google Calendar.";
+
 export async function notifyTaskAssignment(input: {
   to: string;
   assigneeName: string | null;
@@ -137,6 +139,7 @@ export async function notifyTaskAssignment(input: {
       due ? `  Due ${due}` : "  No due date set",
       "",
       `Open this task and mark it complete when you're done: ${input.url}`,
+      ASSIGNMENT_CALENDAR_HELP,
     ].join("\n"),
   });
 
@@ -167,6 +170,7 @@ export async function notifyVolunteerAssignment(input: {
       `Shift: Day ${input.dayNumber}, ${input.startTime}–${input.endTime}`,
       "",
       `Open this shift and mark it complete when you're done: ${input.url}`,
+      ASSIGNMENT_CALENDAR_HELP,
     ].join("\n"),
   });
   if (outcome.status !== "sent") console.warn("VOLUNTEER_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
@@ -193,6 +197,7 @@ export async function notifyRunOfShowAssignment(input: {
       `Time: Day ${input.dayNumber}, ${input.startTime}`,
       "",
       `Open this cue and mark it complete when you're done: ${input.url}`,
+      ASSIGNMENT_CALENDAR_HELP,
     ].join("\n"),
   });
   if (outcome.status !== "sent") console.warn("RUN_OF_SHOW_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);

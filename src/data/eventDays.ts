@@ -58,6 +58,16 @@ export function formatEventDayLabel(option: EventDayOption, locale?: string): st
   return `Day ${option.dayNumber} · ${label}`;
 }
 
+/** Date-only checklist deadline derived from the event's venue-local calendar day. */
+export function checklistDueDateBeforeEvent(startsAt: string, timeZone: string, daysBefore: number): string | null {
+  const civilDate = eventDayOptions(startsAt, null, timeZone)[0]?.civilDate;
+  if (!civilDate) return null;
+  const due = new Date(`${civilDate}T12:00:00.000Z`);
+  if (!Number.isFinite(due.getTime())) return null;
+  due.setUTCDate(due.getUTCDate() - Math.max(0, Math.trunc(daysBefore)));
+  return due.toISOString();
+}
+
 /** Stable ordering shared by every in-memory run-of-show surface. */
 export function compareRunOfShowItems(left: RunOfShowPosition, right: RunOfShowPosition): number {
   return (

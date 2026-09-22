@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareRunOfShowItems, eventDayCount, eventDayOptions, formatEventDayLabel } from "./eventDays";
+import { checklistDueDateBeforeEvent, compareRunOfShowItems, eventDayCount, eventDayOptions, formatEventDayLabel } from "./eventDays";
 
 describe("multi-day events", () => {
   it("counts the venue's calendar days inclusively", () => {
@@ -39,6 +39,14 @@ describe("multi-day events", () => {
     expect(formatEventDayLabel({ dayNumber: 2, civilDate: "2026-10-11" }, "en-US")).toBe(
       "Day 2 · Sun, Oct 11",
     );
+  });
+
+  it("builds checklist deadlines from the venue's civil event date", () => {
+    expect(checklistDueDateBeforeEvent(
+      "2026-09-22T03:00:00.000Z",
+      "America/Los_Angeles",
+      7,
+    )).toBe("2026-09-14T12:00:00.000Z");
   });
 
   it("orders schedule cues by day, time, then their saved position", () => {

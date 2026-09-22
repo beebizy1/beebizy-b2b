@@ -208,16 +208,19 @@ describe("public assignment endpoint", () => {
       eventTitle: "Demo Day",
       eventDate: "2026-09-21T16:00:00.000Z",
       eventEndDate: "2026-09-21T20:00:00.000Z",
+      timeZone: "America/Los_Angeles",
       location: "Mission Gardens",
       assignee: "Ada",
       title: "Welcome desk",
       description: "Check in guests at the east entrance.",
       dueDate: null,
+      dueDateCivil: null,
       dayNumber: 1,
       completed: false,
       appPath: "/app/events/event-1/volunteers?shift=vol-1",
       startTime: "08:00",
       endTime: "12:00",
+      endDayOffset: 0,
     });
 
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/assignment-token"));

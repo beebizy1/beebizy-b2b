@@ -25,6 +25,7 @@ describe("assignment and live-update email", () => {
     });
     const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
     expect(body.text).toContain("Open this task and mark it complete when you're done:");
+    expect(body.text).toContain("add it to Google Calendar");
     expect(body.text).toContain("https://beebizy.test/assignment/private-token");
   });
 

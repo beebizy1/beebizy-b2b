@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, MapPin, RotateCcw } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, Clock3, MapPin, RotateCcw } from "lucide-react";
 import { EmptyState, LoadingRows, Panel, Pill } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import type { PublicAssignmentPayload } from "@/data/entities";
+import { googleCalendarUrl } from "@/data/assignmentCalendar";
+import { resolveTimeZone } from "@/lib/datetime";
 import { PublicFrame } from "./PublicEvent";
 
 export default function PublicAssignment({ token }: { token: string }) {
@@ -60,11 +62,12 @@ export default function PublicAssignment({ token }: { token: string }) {
     return <PublicFrame><Panel><EmptyState icon={CheckCircle2} title="This assignment link is no longer active" description="The assignment may have been changed or removed. Ask the event organizer for a fresh link." /></Panel></PublicFrame>;
   }
 
-  const date = new Date(assignment.eventDate).toLocaleDateString("en-US", { dateStyle: "full" });
+  const date = new Date(assignment.eventDate).toLocaleDateString("en-US", { dateStyle: "full", timeZone: resolveTimeZone(assignment.timeZone) });
   const kindLabel = assignment.kind === "checklist" ? "Checklist assignment" : assignment.kind === "run-of-show" ? "Run of Show assignment" : "Volunteer shift";
   const completionLabel = assignment.kind === "checklist" ? "event checklist" : assignment.kind === "run-of-show" ? "Run of Show" : "volunteer schedule";
   const buttonLabel = assignment.kind === "checklist" ? "Mark task complete" : assignment.kind === "run-of-show" ? "Mark cue complete" : "Mark shift complete";
   const appLinkLabel = assignment.kind === "checklist" ? "Open this item in the full checklist" : assignment.kind === "run-of-show" ? "Open this cue in the full Run of Show" : "Open this shift in the volunteer schedule";
+  const calendarUrl = googleCalendarUrl(assignment);
   return (
     <PublicFrame>
       <Panel className="overflow-hidden">
@@ -80,7 +83,7 @@ export default function PublicAssignment({ token }: { token: string }) {
             {assignment.startTime ? <span className="inline-flex items-center gap-1.5"><Clock3 className="size-4" />{assignment.dayNumber ? `Day ${assignment.dayNumber}, ` : ""}{assignment.startTime}{assignment.endTime ? ` - ${assignment.endTime}` : ""}</span> : null}
             {assignment.location ? <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" />{assignment.location}</span> : null}
           </div>
-          {assignment.dueDate ? <p className="rounded-lg bg-warning-tint p-3 text-sm text-warning-text">Due {new Date(assignment.dueDate).toLocaleDateString("en-US", { dateStyle: "medium" })}</p> : null}
+          {assignment.dueDateCivil ? <p className="rounded-lg bg-warning-tint p-3 text-sm text-warning-text">Due {new Date(`${assignment.dueDateCivil}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" })}</p> : null}
           {assignment.description ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{assignment.description}</p> : null}
           <div className="space-y-3 rounded-xl border border-hairline bg-surface-sunken/50 p-4">
             {assignment.completed ? (
@@ -95,6 +98,11 @@ export default function PublicAssignment({ token }: { token: string }) {
                 <CheckCircle2 className="mr-2 size-4" />{saving ? "Saving…" : buttonLabel}
               </Button>
             )}
+            <Button asChild variant="outline">
+              <a href={calendarUrl} target="_blank" rel="noreferrer">
+                <CalendarPlus className="mr-2 size-4" />Add to Google Calendar
+              </a>
+            </Button>
             {actionError ? <p role="alert" className="text-sm text-danger-text">{actionError}</p> : null}
             <p className="text-sm text-muted-foreground"><a className="font-medium text-info-text underline underline-offset-2" href={assignment.appPath}>{appLinkLabel}</a> (team login required)</p>
           </div>

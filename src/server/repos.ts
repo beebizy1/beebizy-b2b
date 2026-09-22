@@ -81,6 +81,7 @@ import { daysBetweenInZone } from "../lib/datetime.ts";
 import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
 import { volunteerCompletionTransition, type AssignmentCompletionAction } from "../data/assignmentCompletion.ts";
+import { timeAfterMinutes } from "../data/assignmentCalendar.ts";
 import { rfpDraftSchema, rfpSpaceRequirementSchema, validHotelRfp, validRfpBudget } from "../data/rfp.ts";
 import {
   notifyFeedbackSubmission,
@@ -933,14 +934,16 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
   const email = link.after.email;
   if ((kind !== "checklist" && kind !== "run-of-show" && kind !== "volunteer") || typeof assignmentId !== "string" || typeof email !== "string") return null;
 
-  const [eventRow] = await db.select({ event: s.events, location: s.locations }).from(s.events)
+  const [eventRow] = await db.select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone }).from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
+    .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId))).limit(1);
   if (!eventRow) return null;
   const eventFields = {
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
     eventEndDate: eventRow.event.endsAt?.toISOString() ?? null,
+    timeZone: eventRow.timeZone,
     location: eventRow.location
       ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
       : eventRow.event.venue,
@@ -961,11 +964,13 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
       title: item.title,
       description: item.description,
       dueDate: item.dueDate?.toISOString() ?? null,
+      dueDateCivil: item.dueDate?.toISOString().slice(0, 10) ?? null,
       completed: item.completed,
       appPath: `/app/events/${encodeURIComponent(link.eventId)}/checklist?task=${encodeURIComponent(item.id)}`,
       dayNumber: null,
       startTime: null,
       endTime: null,
+      endDayOffset: 0,
     };
   }
 
@@ -977,6 +982,9 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
       eq(s.runOfShowItems.assignedEmail, email),
     )).limit(1);
     if (!cue) return null;
+    const cueEnd = cue.durationMinutes !== null && cue.durationMinutes > 0
+      ? timeAfterMinutes(cue.startTime, cue.durationMinutes)
+      : null;
     return {
       kind,
       ...eventFields,
@@ -984,11 +992,13 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
       title: cue.title,
       description: cue.description,
       dueDate: null,
+      dueDateCivil: null,
       completed: cue.completed,
       appPath: `/app/events/${encodeURIComponent(link.eventId)}/run-of-show?day=${cue.dayNumber}&cue=${encodeURIComponent(cue.id)}`,
       dayNumber: cue.dayNumber,
       startTime: cue.startTime,
-      endTime: null,
+      endTime: cueEnd?.time ?? null,
+      endDayOffset: cueEnd?.dayOffset ?? 0,
     };
   }
 
@@ -1006,11 +1016,13 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     title: shift.role,
     description: shift.notes,
     dueDate: null,
+    dueDateCivil: null,
     completed: shift.status === "completed",
     appPath: `/app/events/${encodeURIComponent(link.eventId)}/volunteers?shift=${encodeURIComponent(shift.id)}`,
     dayNumber: shift.dayNumber,
     startTime: shift.startTime,
     endTime: shift.endTime,
+    endDayOffset: shift.endTime <= shift.startTime ? 1 : 0,
   };
 }
 

@@ -131,8 +131,7 @@ function dateInputValue(value: string | null): string {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 10);
 }
 
 function ChecklistRow({ eventId, item, members, vendors, focused }: { eventId: string; item: ChecklistItem; members: WorkspaceMember[] | undefined; vendors: Vendor[] | undefined; focused: boolean }) {
@@ -168,7 +167,7 @@ function ChecklistRow({ eventId, item, members, vendors, focused }: { eventId: s
                 patch: {
                   title,
                   description: draft.description.trim() || null,
-                  dueDate: draft.dueDate ? new Date(`${draft.dueDate}T12:00:00`).toISOString() : null,
+                  dueDate: draft.dueDate ? new Date(`${draft.dueDate}T12:00:00.000Z`).toISOString() : null,
                   assignedTo: draft.assignedTo.trim() || null,
                   assignedEmail: assignmentEmail(members, draft.assignedTo),
                   vendorId: draft.vendorId === "__none__" ? null : draft.vendorId,

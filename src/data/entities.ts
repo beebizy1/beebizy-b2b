@@ -780,11 +780,15 @@ export interface PublicAssignmentPayload {
   eventTitle: string;
   eventDate: IsoDateTime;
   eventEndDate: IsoDateTime | null;
+  /** Venue/workspace zone used by calendar links and event-day times. */
+  timeZone: string;
   location: string | null;
   assignee: string;
   title: string;
   description: string | null;
   dueDate: IsoDateTime | null;
+  /** Civil due date for date-only calendar/UI rendering. */
+  dueDateCivil: string | null;
   /** Current state of the assigned task, cue or shift. */
   completed: boolean;
   /** Authenticated deep link to the exact item in its event workspace section. */
@@ -793,6 +797,8 @@ export interface PublicAssignmentPayload {
   dayNumber: number | null;
   startTime: string | null;
   endTime: string | null;
+  /** Number of civil days between the timed assignment's start and end. */
+  endDayOffset: number;
 }
 
 export type EventHistoryChange = Pick<

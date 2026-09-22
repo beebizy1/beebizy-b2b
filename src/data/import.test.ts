@@ -56,6 +56,10 @@ describe("spreadsheet import", () => {
       expect.objectContaining({ title: "Confirm venue", category: "Venue", assignedTo: "Laila", completed: false }),
       expect.objectContaining({ title: "Send final guest count", category: "Catering", assignedTo: "Maya", completed: true }),
     ]);
+    expect(plan.checklist.map((item) => item.dueDate)).toEqual([
+      "2026-10-01T12:00:00.000Z",
+      "2026-11-07T12:00:00.000Z",
+    ]);
     expect(plan.runOfShow).toEqual([
       expect.objectContaining({ dayNumber: 1, startTime: "17:30", duration: 45, title: "Guest arrival" }),
       expect.objectContaining({ dayNumber: 2, startTime: "18:15", duration: 15, title: "Welcome" }),

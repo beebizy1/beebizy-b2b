@@ -255,6 +255,26 @@ function dateTime(value: SpreadsheetValue, defaultHour: number): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+/** Checklist deadlines are civil dates, so store them at UTC noon without a browser-zone conversion. */
+function checklistDueDate(value: SpreadsheetValue): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.toISOString().slice(0, 10)}T12:00:00.000Z`;
+  }
+  const text = value === null || value === undefined ? "" : String(value).trim();
+  if (!text) return null;
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+  const usDate = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const civilDate = isoDate ?? (usDate
+    ? `${usDate[3]}-${usDate[1]!.padStart(2, "0")}-${usDate[2]!.padStart(2, "0")}`
+    : null);
+  if (civilDate) {
+    const parsed = new Date(`${civilDate}T12:00:00.000Z`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : `${parsed.toISOString().slice(0, 10)}T12:00:00.000Z`;
+}
+
 function integer(value: SpreadsheetValue): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? Math.round(value) : null;
   const parsed = Number.parseInt(String(value ?? "").replace(/[^\d-]/g, ""), 10);
@@ -357,7 +377,7 @@ export function buildEventImportPlan(
       title: itemTitle,
       description: stringFrom(row, checklistTable!, aliases.description) || null,
       category: stringFrom(row, checklistTable!, aliases.category) || "General",
-      dueDate: dateTime(valueFrom(row, checklistTable!, aliases.dueDate), 17),
+      dueDate: checklistDueDate(valueFrom(row, checklistTable!, aliases.dueDate)),
       assignedTo: stringFrom(row, checklistTable!, aliases.owner) || null,
       completed: truthy(valueFrom(row, checklistTable!, aliases.completed)),
       sortOrder: index,
