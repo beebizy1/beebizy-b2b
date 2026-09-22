@@ -1,6 +1,6 @@
-import type { PublicAssignmentPayload } from "./entities";
-import { eventDayOptions } from "./eventDays";
-import { resolveTimeZone } from "../lib/datetime";
+import type { PublicAssignmentPayload } from "./entities.ts";
+import { eventDayOptions } from "./eventDays.ts";
+import { resolveTimeZone } from "../lib/datetime.ts";
 
 const GOOGLE_CALENDAR_URL = "https://calendar.google.com/calendar/render";
 
