@@ -24,6 +24,7 @@ vi.mock("./repos", () => {
     publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
     completePublicAssignment: vi.fn(),
+    reopenPublicAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
     runOfShow: child,
@@ -58,7 +59,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 function leadRequest(method: string, body?: unknown): Request {
@@ -280,6 +281,31 @@ describe("public assignment endpoint", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ kind: "run-of-show", completed: true });
     expect(completePublicAssignment).toHaveBeenCalledWith("cue-token");
+  });
+
+  it.each([
+    ["checklist", "assignment-token", "Book Venue"],
+    ["run-of-show", "cue-token", "Doors open"],
+    ["volunteer", "volunteer-token", "Welcome desk"],
+  ] as const)("lets a %s assignee undo an accidental completion through the same private link", async (kind, token, title) => {
+    vi.mocked(reopenPublicAssignment).mockResolvedValue({
+      kind, title, completed: false,
+    } as never);
+    const response = await handleRequest(new Request(`http://localhost/api/public/assignments/${token}/reopen`, {
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind, title, completed: false });
+    expect(reopenPublicAssignment).toHaveBeenCalledWith(token);
+  });
+
+  it("does not reopen an assignment through an inactive private link", async () => {
+    vi.mocked(reopenPublicAssignment).mockResolvedValue(null);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token/reopen", {
+      method: "POST",
+    }));
+    expect(response.status).toBe(404);
   });
 });
 

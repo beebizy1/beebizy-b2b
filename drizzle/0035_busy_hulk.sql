@@ -1,0 +1,1 @@
+ALTER TABLE "volunteer_shifts" ADD COLUMN "status_before_completion" "volunteer_status";

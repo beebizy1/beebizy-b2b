@@ -592,6 +592,8 @@ export const volunteerShifts = pgTable(
     startTime: varchar("start_time", { length: 5 }).notNull(),
     endTime: varchar("end_time", { length: 5 }).notNull(),
     status: volunteerStatus("status").notNull().default("scheduled"),
+    /** Exact reversible predecessor for completion through a private assignment link. */
+    statusBeforeCompletion: volunteerStatus("status_before_completion"),
     notes: text("notes"),
   },
   (table) => [

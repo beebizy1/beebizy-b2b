@@ -80,6 +80,7 @@ import { describeHistoryChange } from "../data/history.ts";
 import { daysBetweenInZone } from "../lib/datetime.ts";
 import { readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
+import { volunteerCompletionTransition, type AssignmentCompletionAction } from "../data/assignmentCompletion.ts";
 import { rfpDraftSchema, rfpSpaceRequirementSchema, validHotelRfp, validRfpBudget } from "../data/rfp.ts";
 import {
   notifyFeedbackSubmission,
@@ -1013,50 +1014,77 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
   };
 }
 
-/** A private assignment link can complete only the task, cue or shift it was issued for. */
-export async function completePublicAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+/** A private assignment link can change only the task, cue or shift it was issued for. */
+async function setPublicAssignmentCompletion(token: string, action: AssignmentCompletionAction): Promise<PublicAssignmentPayload | null> {
   const [link] = await db.select().from(s.eventHistory)
     .where(and(eq(s.eventHistory.resource, "assignment-link"), eq(s.eventHistory.resourceId, token)))
     .limit(1);
-  const assignmentId = link?.after?.assignmentId;
-  const email = link?.after?.email;
-  const kind = link?.after?.kind;
-  if (!link || typeof assignmentId !== "string" || typeof email !== "string") return null;
+  const linkDetails = link?.after;
+  const assignmentId = linkDetails?.assignmentId;
+  const email = linkDetails?.email;
+  const kind = linkDetails?.kind;
+  if (!link || !linkDetails || typeof assignmentId !== "string" || typeof email !== "string") return null;
+  const completed = action === "complete";
 
   if (kind === "checklist") {
     await db.update(s.checklistItems)
-      .set({ completed: true, updatedAt: new Date() })
+      .set({ completed, updatedAt: new Date() })
       .where(and(
         eq(s.checklistItems.id, assignmentId),
         eq(s.checklistItems.eventId, link.eventId),
         eq(s.checklistItems.workspaceId, link.workspaceId),
         eq(s.checklistItems.assignedEmail, email),
-        eq(s.checklistItems.completed, false),
+        eq(s.checklistItems.completed, !completed),
       ));
   } else if (kind === "run-of-show") {
     await db.update(s.runOfShowItems)
-      .set({ completed: true, updatedAt: new Date() })
+      .set({ completed, updatedAt: new Date() })
       .where(and(
         eq(s.runOfShowItems.id, assignmentId),
         eq(s.runOfShowItems.eventId, link.eventId),
         eq(s.runOfShowItems.workspaceId, link.workspaceId),
         eq(s.runOfShowItems.assignedEmail, email),
-        eq(s.runOfShowItems.completed, false),
+        eq(s.runOfShowItems.completed, !completed),
       ));
   } else if (kind === "volunteer") {
+    const [shift] = await db.select({
+      status: s.volunteerShifts.status,
+      statusBeforeCompletion: s.volunteerShifts.statusBeforeCompletion,
+    }).from(s.volunteerShifts).where(and(
+      eq(s.volunteerShifts.id, assignmentId),
+      eq(s.volunteerShifts.eventId, link.eventId),
+      eq(s.volunteerShifts.workspaceId, link.workspaceId),
+      eq(s.volunteerShifts.email, email),
+    )).limit(1);
+    if (!shift) return null;
+    const transition = volunteerCompletionTransition(action, shift.status, shift.statusBeforeCompletion);
+    if (!transition) return publicAssignment(token);
     await db.update(s.volunteerShifts)
-      .set({ status: "completed", updatedAt: new Date() })
+      .set({
+        status: transition.status,
+        statusBeforeCompletion: transition.previousStatus,
+        updatedAt: new Date(),
+      })
       .where(and(
         eq(s.volunteerShifts.id, assignmentId),
         eq(s.volunteerShifts.eventId, link.eventId),
         eq(s.volunteerShifts.workspaceId, link.workspaceId),
         eq(s.volunteerShifts.email, email),
-        sql`${s.volunteerShifts.status} <> 'cancelled'`,
+        eq(s.volunteerShifts.status, shift.status),
       ));
   } else {
     return null;
   }
   return publicAssignment(token);
+}
+
+export async function completePublicAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+  return setPublicAssignmentCompletion(token, "complete");
+}
+
+/** Reopens an accidentally completed assignment without exposing the surrounding event. */
+export async function reopenPublicAssignment(token: string): Promise<PublicAssignmentPayload | null> {
+  return setPublicAssignmentCompletion(token, "reopen");
 }
 
 /* ------------------------------------------------------------- locations */

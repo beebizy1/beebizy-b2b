@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, MapPin } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, MapPin, RotateCcw } from "lucide-react";
 import { EmptyState, LoadingRows, Panel, Pill } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import type { PublicAssignmentPayload } from "@/data/entities";
@@ -28,18 +28,26 @@ export default function PublicAssignment({ token }: { token: string }) {
     };
   }, [token]);
 
-  const completeAssignment = async () => {
-    if (!assignment || assignment.completed || saving) return;
+  const setAssignmentCompletion = async (completed: boolean) => {
+    if (!assignment || assignment.completed === completed || saving) return;
     setSaving(true);
     setActionError(null);
     try {
-      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/complete`, { method: "POST" });
+      const action = completed ? "complete" : "reopen";
+      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/${action}`, { method: "POST" });
+      const result: unknown = await response.json().catch(() => null);
       if (response.status === 404) {
         setAssignment(null);
         return;
       }
-      if (!response.ok) throw new Error("The assignment could not be saved. Please try again.");
-      setAssignment(await response.json() as PublicAssignmentPayload);
+      if (!response.ok) {
+        const message = result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "The assignment could not be saved. Please try again.";
+        throw new Error(message);
+      }
+      if (!result || typeof result !== "object" || !("kind" in result)) throw new Error("The assignment could not be saved. Please try again.");
+      setAssignment(result as PublicAssignmentPayload);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "The assignment could not be saved. Please try again.");
     } finally {
@@ -76,9 +84,14 @@ export default function PublicAssignment({ token }: { token: string }) {
           {assignment.description ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{assignment.description}</p> : null}
           <div className="space-y-3 rounded-xl border border-hairline bg-surface-sunken/50 p-4">
             {assignment.completed ? (
-              <p role="status" className="flex items-center gap-2 text-sm font-semibold text-success-text"><CheckCircle2 className="size-4" />Completed and saved to the {completionLabel}</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <p role="status" className="flex items-center gap-2 text-sm font-semibold text-success-text"><CheckCircle2 className="size-4" />Completed and saved to the {completionLabel}</p>
+                <Button type="button" variant="outline" size="sm" disabled={saving} onClick={() => void setAssignmentCompletion(false)}>
+                  <RotateCcw className="mr-2 size-4" />{saving ? "Undoing…" : "Undo completion"}
+                </Button>
+              </div>
             ) : (
-              <Button type="button" disabled={saving} onClick={() => void completeAssignment()}>
+              <Button type="button" disabled={saving} onClick={() => void setAssignmentCompletion(true)}>
                 <CheckCircle2 className="mr-2 size-4" />{saving ? "Saving…" : buttonLabel}
               </Button>
             )}
