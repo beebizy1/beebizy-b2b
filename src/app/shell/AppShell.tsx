@@ -18,7 +18,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Link, Redirect, useLocation } from "wouter";
-import { BadgeDollarSign, Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleAlert } from "lucide-react";
+import { BadgeDollarSign, Calendar, Clock3, LockKeyhole, LogOut, Menu, Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { BrandLogo, BrandLogoLink } from "@/components/BrandLogo";
@@ -98,15 +98,25 @@ function NavRow({ item, active, onNavigate }: { item: NavItem; active: boolean; 
 function SidebarContent({
   canReviewFeedback,
   plan,
+  eventScope,
   onNavigate,
 }: {
   canReviewFeedback: boolean;
   plan: PlanId;
+  eventScope: Identity["eventScope"] | undefined;
   onNavigate?: () => void;
 }) {
   const [pathname] = useLocation();
   const { user, signOut } = useSession();
   const { experience, canSwitchExperience, setExperience } = useAccountExperience();
+  const navigation: NavItem[] = eventScope
+    ? [{
+        label: eventScope.title,
+        href: `/app/events/${eventScope.id}`,
+        icon: Calendar,
+        hint: "Open the event you have been invited to collaborate on",
+      }]
+    : visibleNavItems(canReviewFeedback, plan, experience);
 
   return (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
@@ -149,7 +159,7 @@ function SidebarContent({
       </div>
 
       <nav aria-label="Main" className="workspace-scrollbar flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-        {visibleNavItems(canReviewFeedback, plan, experience).map((item) => (
+        {navigation.map((item) => (
           <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} onNavigate={onNavigate} />
         ))}
       </nav>
@@ -157,7 +167,7 @@ function SidebarContent({
       <div className="space-y-2 border-t border-sidebar-border bg-surface-sunken/40 p-4">
         {/* Points at sales while self-serve billing is paused; there is no price list to
             send anyone to. */}
-        {experience === "standard" ? (
+        {experience === "standard" && !eventScope ? (
           <Link
             href={SELF_SERVE_BILLING_ENABLED ? "/pricing" : "/contact-sales"}
             onClick={onNavigate}
@@ -169,14 +179,16 @@ function SidebarContent({
         ) : null}
         {/* Settings used to live in the account menu. Removing the top bar took that
             menu with it, so the only way in is the footer. */}
-        <Link
-          href="/app/settings"
-          onClick={onNavigate}
-          className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Settings className="size-4" aria-hidden="true" />
-          Settings
-        </Link>
+        {!eventScope ? (
+          <Link
+            href="/app/settings"
+            onClick={onNavigate}
+            className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Settings className="size-4" aria-hidden="true" />
+            Settings
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={() => void signOut()}
@@ -319,6 +331,7 @@ function AppShellFrame({
         <SidebarContent
           canReviewFeedback={identity?.canReviewFeedback ?? false}
           plan={plan}
+          eventScope={identity?.eventScope}
         />
       </aside>
 
@@ -334,6 +347,7 @@ function AppShellFrame({
             <SidebarContent
               canReviewFeedback={identity?.canReviewFeedback ?? false}
               plan={plan}
+              eventScope={identity?.eventScope}
               onNavigate={() => setMobileOpen(false)}
             />
           </SheetContent>
@@ -349,13 +363,15 @@ function AppShellFrame({
         </div>
       </main>
 
-      <CommandPalette
-        canReviewFeedback={identity?.canReviewFeedback ?? false}
-        experience={experience}
-        plan={plan}
-        open={open}
-        onOpenChange={setOpen}
-      />
+      {!identity?.eventScope ? (
+        <CommandPalette
+          canReviewFeedback={identity?.canReviewFeedback ?? false}
+          experience={experience}
+          plan={plan}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      ) : null}
       {mode === "live" && identity ? (
         <FeedbackBot userId={identity.userId} open={feedbackOpen} onOpenChange={setFeedbackOpen} />
       ) : null}

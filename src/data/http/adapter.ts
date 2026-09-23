@@ -390,7 +390,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     members: {
       list: () => client.get<WorkspaceMember[]>("/members"),
-      invite: (email, role) => client.post<InviteResult>("/invites", { email, role }),
+      invite: (email, role, eventId) => client.post<InviteResult>("/invites", { email, role, eventId }),
       revokeInvite: async (email) => {
         await client.del(`/invites/${encodeURIComponent(email)}`);
       },

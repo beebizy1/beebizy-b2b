@@ -46,6 +46,8 @@ export interface RequestContext {
   email: string | null;
   workspaceId: string;
   role: Role;
+  /** Null is a normal workspace seat; otherwise this session may access only this event. */
+  eventScopeId?: string | null;
   access?: WorkspaceAccess;
 }
 
@@ -56,6 +58,24 @@ export class HttpError extends Error {
   ) {
     super(message);
     this.name = "HttpError";
+  }
+}
+
+/**
+ * A scoped collaborator gets the same event tools as a normal member, but only for the
+ * event named on their seat. Returning 404 for another id avoids confirming that an
+ * event outside their scope exists.
+ */
+export function requireEventAccess(context: RequestContext, eventId: string): void {
+  if (context.eventScopeId && context.eventScopeId !== eventId) {
+    throw new HttpError(404, "That event no longer exists.");
+  }
+}
+
+/** Workspace-level creation and administration are unavailable to event collaborators. */
+export function requireWorkspaceAccess(context: RequestContext): void {
+  if (context.eventScopeId) {
+    throw new HttpError(403, "This account is limited to its assigned event.");
   }
 }
 
@@ -186,6 +206,7 @@ async function addWorkspaceMember(
   userId: string,
   role: Role,
   seatAlreadyReserved = false,
+  eventScopeId: string | null = null,
 ): Promise<boolean> {
   const entitlementLock = db
     .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${workspaceId}))` })
@@ -196,7 +217,7 @@ async function addWorkspaceMember(
     .insert(workspaceMembers)
     .select(
       db
-        .select(workspaceMemberInsertSelection(userId, role))
+        .select(workspaceMemberInsertSelection(userId, role, eventScopeId))
         .from(workspaces)
         .where(
           and(
@@ -224,7 +245,39 @@ async function resolveWorkspace(
   userId: string,
   clerkOrgId: string | null,
   email: string | null,
-): Promise<{ workspaceId: string; role: Role; access: WorkspaceAccess }> {
+): Promise<{ workspaceId: string; role: Role; eventScopeId: string | null; access: WorkspaceAccess }> {
+  /*
+   * An unclaimed invite is claimed before organization membership or an existing seat.
+   * The invite carries the narrowest deliberate access decision, including an optional
+   * single-event scope. Letting a Clerk organization run first would silently replace
+   * that restriction with a workspace-wide membership.
+   */
+  if (email) {
+    const [invite] = await db
+      .select()
+      .from(workspaceInvites)
+      .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
+      .limit(1);
+    if (invite) {
+      const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
+      if (workspace) {
+        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role, true, invite.eventScopeId))) {
+          throw new HttpError(403, "This workspace's Solo plan does not include another user.");
+        }
+        await db
+          .update(workspaceInvites)
+          .set({ acceptedAt: new Date(), acceptedUserId: userId })
+          .where(eq(workspaceInvites.id, invite.id));
+        return {
+          workspaceId: invite.workspaceId,
+          role: invite.role,
+          eventScopeId: invite.eventScopeId,
+          access: accessForWorkspace(workspace),
+        };
+      }
+    }
+  }
+
   if (clerkOrgId) {
     const [existing] = await db.select().from(workspaces).where(eq(workspaces.clerkOrgId, clerkOrgId)).limit(1);
     if (existing) {
@@ -238,39 +291,14 @@ async function resolveWorkspace(
         if (!(await addWorkspaceMember(existing.id, userId, "member"))) {
           throw new HttpError(403, "This workspace's Solo plan does not include another user.");
         }
-        return { workspaceId: existing.id, role: "member", access: accessForWorkspace(existing) };
+        return { workspaceId: existing.id, role: "member", eventScopeId: null, access: accessForWorkspace(existing) };
       }
-      return { workspaceId: existing.id, role: membership.role, access: accessForWorkspace(existing) };
-    }
-  }
-
-  /*
-   * An unclaimed invite is claimed before anything else.
-   *
-   * It used to be checked only after an existing membership, which meant anyone who had
-   * ever signed in — and so already had a workspace of their own — could never be joined
-   * to the team that invited them. They stayed in their private empty workspace while the
-   * owner watched the invite sit "pending" forever. Being invited is a deliberate act by
-   * someone with authority over that workspace, so it takes precedence.
-   */
-  if (email) {
-    const [invite] = await db
-      .select()
-      .from(workspaceInvites)
-      .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
-      .limit(1);
-    if (invite) {
-      const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
-      if (workspace) {
-        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role, true))) {
-          throw new HttpError(403, "This workspace's Solo plan does not include another user.");
-        }
-        await db
-          .update(workspaceInvites)
-          .set({ acceptedAt: new Date(), acceptedUserId: userId })
-          .where(eq(workspaceInvites.id, invite.id));
-        return { workspaceId: invite.workspaceId, role: invite.role, access: accessForWorkspace(workspace) };
-      }
+      return {
+        workspaceId: existing.id,
+        role: membership.role,
+        eventScopeId: membership.eventScopeId,
+        access: accessForWorkspace(existing),
+      };
     }
   }
 
@@ -286,7 +314,12 @@ async function resolveWorkspace(
   if (membership) {
     const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, membership.workspaceId)).limit(1);
     if (!workspace) throw new HttpError(403, "Your workspace is no longer available.");
-    return { workspaceId: membership.workspaceId, role: membership.role, access: accessForWorkspace(workspace) };
+    return {
+      workspaceId: membership.workspaceId,
+      role: membership.role,
+      eventScopeId: membership.eventScopeId,
+      access: accessForWorkspace(workspace),
+    };
   }
 
   const workspaceId = newId("ws");
@@ -317,7 +350,7 @@ async function resolveWorkspace(
     .returning();
   await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
   if (!workspace) throw new HttpError(500, "The workspace could not be created.");
-  return { workspaceId, role: "owner", access: accessForWorkspace(workspace) };
+  return { workspaceId, role: "owner", eventScopeId: null, access: accessForWorkspace(workspace) };
 }
 
 export async function authorize(request: Request): Promise<RequestContext> {
@@ -327,7 +360,7 @@ export async function authorize(request: Request): Promise<RequestContext> {
 
   const { userId, email } = await requireVerifiedUser(request);
   const orgHeader = request.headers.get("x-clerk-org-id");
-  const { workspaceId, role, access } = await resolveWorkspace(
+  const { workspaceId, role, eventScopeId, access } = await resolveWorkspace(
     userId,
     orgHeader && orgHeader !== "null" ? orgHeader : null,
     email,
@@ -357,7 +390,7 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(402, message);
   }
 
-  return { userId, email, workspaceId, role, access };
+  return { userId, email, workspaceId, role, eventScopeId, access };
 }
 
 /** Writes are closed to `member` on the destructive operations. */

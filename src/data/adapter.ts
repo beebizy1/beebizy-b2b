@@ -309,7 +309,7 @@ export interface SpreadsheetImportsRepository {
 export interface MembersRepository {
   list(): Promise<WorkspaceMember[]>;
   /** Grants a seat to someone who has never signed in, and emails them a sign-in link. */
-  invite(email: string, role: WorkspaceRole): Promise<InviteResult>;
+  invite(email: string, role: WorkspaceRole, eventId?: string | null): Promise<InviteResult>;
   revokeInvite(email: string): Promise<void>;
   setRole(userId: string, role: WorkspaceRole): Promise<WorkspaceMember>;
   remove(userId: string): Promise<void>;
@@ -340,6 +340,8 @@ export interface Identity {
   experience: AccountExperience;
   /** Whether this verified account may preview another customer's presentation. */
   canSwitchExperience: boolean;
+  /** Present only for a collaborator whose seat is restricted to one event. */
+  eventScope: { id: string; title: string } | null;
   access: {
     status: WorkspaceAccessStatus;
     plan: PlanId | null;

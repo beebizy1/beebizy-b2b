@@ -116,11 +116,18 @@ export const workspaceMembers = pgTable(
     /** Clerk user id. */
     userId: text("user_id").notNull(),
     role: workspaceRole("role").notNull().default("member"),
+    /**
+     * Null grants the normal workspace-wide seat. A value limits this seat to one
+     * event. The API validates that the event belongs to this workspace before the
+     * invitation is created, and every event query re-checks the scope.
+     */
+    eventScopeId: text("event_scope_id"),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.userId] }),
     index("workspace_members_user_idx").on(table.userId),
+    index("workspace_members_event_scope_idx").on(table.eventScopeId),
   ],
 );
 
@@ -142,6 +149,8 @@ export const workspaceInvites = pgTable(
     /** Lower-cased on write, because an invite that only matches one casing is a bug. */
     email: text("email").notNull(),
     role: workspaceRole("role").notNull().default("member"),
+    /** Carried into workspace_members when the recipient first signs in. */
+    eventScopeId: text("event_scope_id"),
     invitedBy: text("invited_by").notNull(),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     acceptedUserId: text("accepted_user_id"),
@@ -151,6 +160,7 @@ export const workspaceInvites = pgTable(
     // One live invite per address, so two workspaces cannot both claim the same person.
     uniqueIndex("workspace_invites_email_idx").on(table.email),
     index("workspace_invites_workspace_idx").on(table.workspaceId),
+    index("workspace_invites_event_scope_idx").on(table.eventScopeId),
   ],
 );
 

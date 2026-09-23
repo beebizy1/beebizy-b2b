@@ -99,6 +99,12 @@ const queryClient = new QueryClient({
 function AccountExperienceGate({ children }: { children: React.ReactNode }) {
   const [pathname] = useLocation();
   const { experience } = useAccountExperience();
+  const { data: identity } = useMe();
+  if (identity?.eventScope) {
+    const eventPath = `/app/events/${identity.eventScope.id}`;
+    const allowed = pathname === eventPath || pathname.startsWith(`${eventPath}/`);
+    if (!allowed) return <Redirect to={eventPath} replace />;
+  }
   if (!isAppPathAllowed(pathname, experience)) return <Redirect to="/app" replace />;
   return <>{children}</>;
 }

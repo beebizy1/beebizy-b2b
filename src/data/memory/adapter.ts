@@ -1807,7 +1807,7 @@ const members: MembersRepository = {
       ...invited,
     ];
   },
-  async invite(email, role) {
+  async invite(email, role, eventId) {
     await wait();
     const normalized = email.trim().toLowerCase();
     const member: WorkspaceMember = {
@@ -1818,6 +1818,8 @@ const members: MembersRepository = {
       email: normalized,
       isSelf: false,
       joinedAt: nowIso(),
+      eventScopeId: eventId ?? null,
+      eventScopeTitle: eventId ? store().events.find((event) => event.id === eventId)?.title ?? null : null,
     };
     const existing = invited.findIndex((row) => row.email === normalized);
     if (existing === -1) invited.push(member);
@@ -2076,6 +2078,7 @@ export const memoryAdapter: DataAdapter = {
       canReviewFeedback: false,
       experience: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" ? "santa-clara" : "standard",
       canSwitchExperience: false,
+      eventScope: null,
       access: {
         status: "beta",
         plan: null,

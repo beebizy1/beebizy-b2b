@@ -24,6 +24,7 @@ describe("account experience", () => {
   it("leaves every other email on the full standard product", () => {
     expect(accountExperienceForEmail("poorvi@santaclaraventures.com")).toBe("standard");
     expect(accountExperienceForEmail("cassandra@ccsteaches.org")).toBe("standard");
+    expect(accountExperienceForEmail("Annie@sevareid.com")).toBe("standard");
     expect(accountExperienceForEmail("laila@beebizy.com")).toBe("standard");
     expect(accountExperienceForEmail("person@example.com")).toBe("standard");
     expect(accountExperienceForEmail(null)).toBe("standard");
@@ -36,6 +37,7 @@ describe("account experience", () => {
     expect(canSwitchAccountExperience(" HELLO@BEEBIZY.COM ")).toBe(true);
     expect(canSwitchAccountExperience("mary@beebizy.com")).toBe(false);
     expect(canSwitchAccountExperience("ccismasflorea@scu.edu")).toBe(false);
+    expect(canSwitchAccountExperience("annie@sevareid.com")).toBe(false);
     expect(canSwitchAccountExperience(null)).toBe(false);
   });
 

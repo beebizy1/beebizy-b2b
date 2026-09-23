@@ -299,6 +299,64 @@ function requireCapability(ctx: RequestContext, capability: PlanCapability): voi
   }
 }
 
+/**
+ * Event collaborators use the regular event workspace, but they are not workspace
+ * members in the broad sense. This guard keeps portfolio, billing, templates and other
+ * events out of reach even when someone edits the URL or calls the API directly.
+ */
+export function requireScopedRoute(
+  ctx: RequestContext,
+  segments: string[],
+  method: string,
+  body: Record<string, unknown>,
+  url: URL,
+): void {
+  const eventId = ctx.eventScopeId;
+  if (!eventId) return;
+
+  const [resource, resourceId, subresource] = segments;
+  if (["me", "feedback", "imports"].includes(resource)) return;
+  // Event pages need workspace display preferences, but a collaborator cannot change
+  // workspace-wide currency, time zone or branding.
+  if (resource === "settings" && method === "GET") return;
+  if (resource === "members" && method === "GET") return;
+
+  if (resource === "events") {
+    if (!resourceId && method === "GET") return;
+    if (!resourceId) throw new HttpError(403, "This account is limited to its assigned event.");
+    if (resourceId !== eventId) throw new HttpError(404, "That event no longer exists.");
+    if (method === "DELETE" || subresource === "save-as-template") {
+      throw new HttpError(403, "This account cannot remove or copy the assigned event.");
+    }
+    return;
+  }
+
+  if (resource === "assistant") {
+    if (body.eventId !== eventId) throw new HttpError(404, "That event no longer exists.");
+    return;
+  }
+
+  // These support tabs inside the assigned event. Their repositories apply the event
+  // scope to every row-level read and write where the event id is not present in the URL.
+  if (["guests", "registrations", "floorplans"].includes(resource)) return;
+  if (resource === "locations" && method === "GET") return;
+  if (resource === "vendors") {
+    if (method === "GET") return;
+    // A scoped collaborator may continue an event vendor conversation, but cannot edit
+    // the workspace-wide vendor directory. The repository verifies the vendor belongs
+    // to the assigned event before sending or marking anything read.
+    if (resourceId && ["messages", "read"].includes(subresource ?? "") && method === "POST") return;
+  }
+
+  if (resource === "analytics" && resourceId === "health" && method === "GET") {
+    const requested = (url.searchParams.get("eventIds") ?? eventId).split(",").filter(Boolean);
+    if (requested.some((id) => id !== eventId)) throw new HttpError(404, "That event no longer exists.");
+    return;
+  }
+
+  throw new HttpError(403, "This account is limited to its assigned event.");
+}
+
 async function handleAuthed(
   ctx: RequestContext,
   segments: string[],
@@ -308,9 +366,12 @@ async function handleAuthed(
 ): Promise<Response> {
   const [resource, a, b, c] = segments;
   const body = await readBody(request);
+  requireScopedRoute(ctx, segments, method, body, url);
 
   switch (resource) {
     case "me":
+      {
+        const scopedEvent = ctx.eventScopeId ? await repos.events.get(ctx, ctx.eventScopeId) : null;
       return json({
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
@@ -318,8 +379,12 @@ async function handleAuthed(
         canReviewFeedback: isBeebizyOperator(ctx.email),
         experience: accountExperienceForEmail(ctx.email),
         canSwitchExperience: canSwitchAccountExperience(ctx.email),
+        eventScope: ctx.eventScopeId
+          ? { id: ctx.eventScopeId, title: scopedEvent?.title ?? "Assigned event" }
+          : null,
         access: ctx.access,
       });
+      }
 
     /* ---------------------------------------------------------------- billing */
     case "billing": {
@@ -498,7 +563,15 @@ async function handleAuthed(
     case "invites": {
       requireCapability(ctx, "collaboration");
       if (!a && method === "POST") {
-        return json(await repos.members.invite(ctx, String(body.email ?? ""), String(body.role ?? "member")), 201);
+        return json(
+          await repos.members.invite(
+            ctx,
+            String(body.email ?? ""),
+            String(body.role ?? "member"),
+            typeof body.eventId === "string" ? body.eventId : null,
+          ),
+          201,
+        );
       }
       if (a && method === "DELETE") {
         await repos.members.revokeInvite(ctx, decodeURIComponent(a));

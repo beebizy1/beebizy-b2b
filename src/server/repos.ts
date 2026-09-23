@@ -25,7 +25,9 @@ import {
   lookupUsers,
   newId,
   requireBeebizyOperator,
+  requireEventAccess,
   requireRole,
+  requireWorkspaceAccess,
   revokeInvitationEmail,
   sendInvitationEmail,
   type RequestContext,
@@ -231,6 +233,7 @@ function isConstraintViolation(error: unknown, constraint: string): boolean {
 }
 
 async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
+  requireEventAccess(ctx, eventId);
   const [row] = await db
     .select({ id: s.events.id })
     .from(s.events)
@@ -255,6 +258,7 @@ async function registrationCounts(eventIds: string[]): Promise<Map<string, numbe
 export const events = {
   async list(ctx: RequestContext, filter: { status?: string; category?: string; locationId?: string; search?: string } = {}): Promise<Event[]> {
     const conditions = [eq(s.events.workspaceId, ctx.workspaceId)];
+    if (ctx.eventScopeId) conditions.push(eq(s.events.id, ctx.eventScopeId));
     if (filter.status) conditions.push(eq(s.events.status, filter.status as "draft"));
     if (filter.category) conditions.push(eq(s.events.category, filter.category));
     if (filter.locationId) conditions.push(eq(s.events.locationId, filter.locationId));
@@ -285,6 +289,7 @@ export const events = {
   },
 
   async get(ctx: RequestContext, id: string): Promise<Event | null> {
+    requireEventAccess(ctx, id);
     const [row] = await db
       .select({ event: s.events, location: s.locations })
       .from(s.events)
@@ -297,6 +302,7 @@ export const events = {
   },
 
   async create(ctx: RequestContext, body: Body): Promise<Event> {
+    requireWorkspaceAccess(ctx);
     const id = newId("evt");
     const createdAt = new Date();
     const values = {
@@ -522,6 +528,7 @@ export const events = {
   },
 
   async remove(ctx: RequestContext, id: string): Promise<void> {
+    requireWorkspaceAccess(ctx);
     requireRole(ctx, ["owner", "admin"]);
     const before = await events.get(ctx, id);
     if (!before) throw new HttpError(404, "That event no longer exists.");
@@ -562,6 +569,7 @@ export const events = {
   },
 
   async createFromTemplate(ctx: RequestContext, templateId: string, body: Body): Promise<Event> {
+    requireWorkspaceAccess(ctx);
     const [template] = await db
       .select()
       .from(s.templates)
@@ -668,6 +676,7 @@ export const events = {
   },
 
   async saveAsTemplate(ctx: RequestContext, eventId: string, body: Body) {
+    requireWorkspaceAccess(ctx);
     const event = await events.get(ctx, eventId);
     if (!event) throw new HttpError(404, "That event no longer exists.");
 
@@ -1103,6 +1112,16 @@ export async function reopenPublicAssignment(token: string): Promise<PublicAssig
 
 export const locations = {
   async list(ctx: RequestContext): Promise<Location[]> {
+    const conditions = [eq(s.locations.workspaceId, ctx.workspaceId)];
+    if (ctx.eventScopeId) {
+      const [assignedEvent] = await db
+        .select({ locationId: s.events.locationId })
+        .from(s.events)
+        .where(and(eq(s.events.workspaceId, ctx.workspaceId), eq(s.events.id, ctx.eventScopeId)))
+        .limit(1);
+      if (!assignedEvent?.locationId) return [];
+      conditions.push(eq(s.locations.id, assignedEvent.locationId));
+    }
     // eventCount computed, never stored: a counter column is a thing that drifts.
     const rows = await db
       .select({
@@ -1110,7 +1129,7 @@ export const locations = {
         eventCount: sql<number>`(select count(*) from ${s.events} where ${s.events.locationId} = ${s.locations.id})`,
       })
       .from(s.locations)
-      .where(eq(s.locations.workspaceId, ctx.workspaceId))
+      .where(and(...conditions))
       .orderBy(asc(s.locations.name));
     return rows.map((row) => ({ ...map.toLocation(row.location), eventCount: Number(row.eventCount) }));
   },
@@ -1121,6 +1140,7 @@ export const locations = {
   },
 
   async create(ctx: RequestContext, body: Body): Promise<Location> {
+    requireWorkspaceAccess(ctx);
     const id = newId("loc");
     await db.insert(s.locations).values({
       id,
@@ -1138,6 +1158,7 @@ export const locations = {
   },
 
   async update(ctx: RequestContext, id: string, body: Body): Promise<Location> {
+    requireWorkspaceAccess(ctx);
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       corporationName: (b) => str(b, "corporationName", ""),
@@ -1158,6 +1179,7 @@ export const locations = {
 
   async remove(ctx: RequestContext, id: string): Promise<void> {
     requireRole(ctx, ["owner", "admin"]);
+    requireWorkspaceAccess(ctx);
     const [{ total } = { total: 0 }] = await db
       .select({ total: count() })
       .from(s.events)
@@ -1171,12 +1193,26 @@ export const locations = {
 
 /* -------------------------------------------------------------- guests */
 
+function scopedGuestCondition(ctx: RequestContext) {
+  if (!ctx.eventScopeId) return null;
+  return inArray(
+    s.guests.id,
+    db
+      .select({ guestId: s.registrations.guestId })
+      .from(s.registrations)
+      .where(eq(s.registrations.eventId, ctx.eventScopeId)),
+  );
+}
+
 export const guests = {
   async list(ctx: RequestContext) {
+    const conditions = [eq(s.guests.workspaceId, ctx.workspaceId)];
+    const eventScope = scopedGuestCondition(ctx);
+    if (eventScope) conditions.push(eventScope);
     const rows = await db
       .select()
       .from(s.guests)
-      .where(eq(s.guests.workspaceId, ctx.workspaceId))
+      .where(and(...conditions))
       .orderBy(asc(s.guests.name));
     return rows.map(map.toGuest);
   },
@@ -1207,16 +1243,20 @@ export const guests = {
       contact: (b) => str(b, "contact"),
       notes: (b) => optStr(b, "notes"),
     });
+    const conditions = [eq(s.guests.id, id), eq(s.guests.workspaceId, ctx.workspaceId)];
+    const eventScope = scopedGuestCondition(ctx);
+    if (eventScope) conditions.push(eventScope);
     const updated = await db
       .update(s.guests)
       .set({ ...patch, updatedAt: new Date() })
-      .where(and(eq(s.guests.id, id), eq(s.guests.workspaceId, ctx.workspaceId)))
+      .where(and(...conditions))
       .returning();
     if (updated.length === 0) throw new HttpError(404, "That person no longer exists.");
     return map.toGuest(updated[0]!);
   },
   async remove(ctx: RequestContext, id: string): Promise<void> {
     requireRole(ctx, ["owner", "admin"]);
+    requireWorkspaceAccess(ctx);
     await db.delete(s.guests).where(and(eq(s.guests.id, id), eq(s.guests.workspaceId, ctx.workspaceId)));
   },
 };
@@ -1252,9 +1292,17 @@ function labelFrom(body: Body, key: string, limit = 60): string | null {
 }
 
 export const registrations = {
-  list: (ctx: RequestContext) => joinRegistrations(eq(s.registrations.workspaceId, ctx.workspaceId)),
-  listForEvent: (ctx: RequestContext, eventId: string) =>
-    joinRegistrations(and(eq(s.registrations.workspaceId, ctx.workspaceId), eq(s.registrations.eventId, eventId))),
+  list: (ctx: RequestContext) =>
+    joinRegistrations(
+      and(
+        eq(s.registrations.workspaceId, ctx.workspaceId),
+        ...(ctx.eventScopeId ? [eq(s.registrations.eventId, ctx.eventScopeId)] : []),
+      ),
+    ),
+  async listForEvent(ctx: RequestContext, eventId: string) {
+    await requireOwnedEvent(ctx, eventId);
+    return joinRegistrations(and(eq(s.registrations.workspaceId, ctx.workspaceId), eq(s.registrations.eventId, eventId)));
+  },
 
   async create(ctx: RequestContext, body: Body): Promise<Registration> {
     const eventId = str(body, "eventId");
@@ -1395,10 +1443,12 @@ export const registrations = {
     if ("checkInStation" in body) patch.checkInStation = labelFrom(body, "checkInStation", 80);
     if ("checkInNotes" in body) patch.checkInNotes = labelFrom(body, "checkInNotes", 500);
 
+    const conditions = [eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)];
+    if (ctx.eventScopeId) conditions.push(eq(s.registrations.eventId, ctx.eventScopeId));
     const updated = await db
       .update(s.registrations)
       .set(patch)
-      .where(and(eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)))
+      .where(and(...conditions))
       .returning();
     if (updated.length === 0) throw new HttpError(404, "That registration no longer exists.");
     const [event] = await db.select({ title: s.events.title }).from(s.events).where(eq(s.events.id, updated[0]!.eventId)).limit(1);
@@ -1406,7 +1456,9 @@ export const registrations = {
   },
 
   async remove(ctx: RequestContext, id: string): Promise<void> {
-    await db.delete(s.registrations).where(and(eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)));
+    const conditions = [eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)];
+    if (ctx.eventScopeId) conditions.push(eq(s.registrations.eventId, ctx.eventScopeId));
+    await db.delete(s.registrations).where(and(...conditions));
   },
 };
 
@@ -1441,8 +1493,25 @@ async function vendorThreads(workspaceId: string) {
 
 export const vendors = {
   async list(ctx: RequestContext): Promise<Vendor[]> {
+    const conditions = [eq(s.vendors.workspaceId, ctx.workspaceId)];
+    if (ctx.eventScopeId) {
+      conditions.push(
+        inArray(
+          s.vendors.id,
+          db
+            .select({ vendorId: s.eventVendors.vendorId })
+            .from(s.eventVendors)
+            .where(
+              and(
+                eq(s.eventVendors.workspaceId, ctx.workspaceId),
+                eq(s.eventVendors.eventId, ctx.eventScopeId),
+              ),
+            ),
+        ),
+      );
+    }
     const [rows, threads] = await Promise.all([
-      db.select().from(s.vendors).where(eq(s.vendors.workspaceId, ctx.workspaceId)).orderBy(asc(s.vendors.name)),
+      db.select().from(s.vendors).where(and(...conditions)).orderBy(asc(s.vendors.name)),
       vendorThreads(ctx.workspaceId),
     ]);
     return rows.map((row) => map.toVendor(row, threads.get(row.id)));
@@ -1452,6 +1521,7 @@ export const vendors = {
     return all.find((row) => row.id === id) ?? null;
   },
   async create(ctx: RequestContext, body: Body): Promise<Vendor> {
+    requireWorkspaceAccess(ctx);
     const id = newId("ven");
     const rating = body.rating;
     await db.insert(s.vendors).values({
@@ -1472,6 +1542,7 @@ export const vendors = {
     return (await vendors.get(ctx, id))!;
   },
   async update(ctx: RequestContext, id: string, body: Body): Promise<Vendor> {
+    requireWorkspaceAccess(ctx);
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       category: (b) => str(b, "category", "Other"),
@@ -1500,12 +1571,14 @@ export const vendors = {
   },
   async remove(ctx: RequestContext, id: string): Promise<void> {
     requireRole(ctx, ["owner", "admin"]);
+    requireWorkspaceAccess(ctx);
     await db.delete(s.vendors).where(and(eq(s.vendors.id, id), eq(s.vendors.workspaceId, ctx.workspaceId)));
   },
 };
 
 export const vendorMessages = {
   async list(ctx: RequestContext, vendorId: string) {
+    if (!(await vendors.get(ctx, vendorId))) throw new HttpError(404, "That vendor no longer exists.");
     const rows = await db
       .select()
       .from(s.vendorMessages)
@@ -1514,10 +1587,7 @@ export const vendorMessages = {
     return rows.map(map.toVendorMessage);
   },
   async create(ctx: RequestContext, vendorId: string, body: Body) {
-    const [vendor] = await db.select().from(s.vendors).where(and(
-      eq(s.vendors.id, vendorId),
-      eq(s.vendors.workspaceId, ctx.workspaceId),
-    )).limit(1);
+    const vendor = await vendors.get(ctx, vendorId);
     if (!vendor) throw new HttpError(404, "That vendor no longer exists.");
     if (!vendor.contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(vendor.contactEmail)) throw new HttpError(409, "Add a valid contact email before messaging this vendor.");
 
@@ -1557,6 +1627,7 @@ export const vendorMessages = {
     return map.toVendorMessage(row!);
   },
   async markThreadRead(ctx: RequestContext, vendorId: string): Promise<void> {
+    if (!(await vendors.get(ctx, vendorId))) throw new HttpError(404, "That vendor no longer exists.");
     await db
       .update(s.vendorMessages)
       .set({ isRead: true })
@@ -1926,6 +1997,7 @@ function eventScoped<Entity>(config: {
 
   return {
     async list(ctx: RequestContext, eventId: string): Promise<Entity[]> {
+      await requireOwnedEvent(ctx, eventId);
       const rows = await db
         .select()
         .from(table)
@@ -1973,6 +2045,7 @@ function eventScoped<Entity>(config: {
     },
 
     async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<Entity> {
+      await requireOwnedEvent(ctx, eventId);
       let currentRow: typeof table.$inferSelect | null = null;
       let previous: Entity | null = null;
       if (config.beforeWrite || config.historyResource || config.afterWrite) {
@@ -2025,6 +2098,7 @@ function eventScoped<Entity>(config: {
     },
 
     async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
+      await requireOwnedEvent(ctx, eventId);
       const remove = db
         .delete(table)
         .where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId), eq(table.eventId, eventId)))
@@ -2958,11 +3032,13 @@ async function ownedFloorplan(ctx: RequestContext, id: string) {
     .where(and(eq(s.floorplans.id, id), eq(s.floorplans.workspaceId, ctx.workspaceId)))
     .limit(1);
   if (!row) throw new HttpError(404, "That floorplan no longer exists.");
+  requireEventAccess(ctx, row.eventId);
   return row;
 }
 
 export const floorplan = {
   async list(ctx: RequestContext, eventId: string): Promise<Floorplan[]> {
+    await requireOwnedEvent(ctx, eventId);
     const rows = await db
       .select()
       .from(s.floorplans)
@@ -3052,30 +3128,34 @@ export const members = {
   async list(ctx: RequestContext): Promise<WorkspaceMember[]> {
     const [rows, invites] = await Promise.all([
       db
-        .select()
+        .select({ member: s.workspaceMembers, eventScopeTitle: s.events.title })
         .from(s.workspaceMembers)
+        .leftJoin(s.events, eq(s.workspaceMembers.eventScopeId, s.events.id))
         .where(eq(s.workspaceMembers.workspaceId, ctx.workspaceId))
         .orderBy(asc(s.workspaceMembers.createdAt)),
       db
-        .select()
+        .select({ invite: s.workspaceInvites, eventScopeTitle: s.events.title })
         .from(s.workspaceInvites)
+        .leftJoin(s.events, eq(s.workspaceInvites.eventScopeId, s.events.id))
         .where(and(eq(s.workspaceInvites.workspaceId, ctx.workspaceId), isNull(s.workspaceInvites.acceptedAt)))
         .orderBy(asc(s.workspaceInvites.createdAt)),
     ]);
 
     // One call for the whole page rather than one per member.
-    const directory = await lookupUsers(rows.map((row) => row.userId));
+    const directory = await lookupUsers(rows.map((row) => row.member.userId));
     const active: WorkspaceMember[] = rows.map((row) => ({
-      userId: row.userId,
-      role: row.role,
+      userId: row.member.userId,
+      role: row.member.role,
       status: "active",
-      name: directory.get(row.userId)?.name ?? null,
-      email: directory.get(row.userId)?.email ?? null,
-      isSelf: row.userId === ctx.userId,
-      joinedAt: row.createdAt.toISOString(),
+      name: directory.get(row.member.userId)?.name ?? null,
+      email: directory.get(row.member.userId)?.email ?? null,
+      isSelf: row.member.userId === ctx.userId,
+      joinedAt: row.member.createdAt.toISOString(),
+      eventScopeId: row.member.eventScopeId,
+      eventScopeTitle: row.eventScopeTitle,
     }));
 
-    const pending: WorkspaceMember[] = invites.map((invite) => ({
+    const pending: WorkspaceMember[] = invites.map(({ invite, eventScopeTitle }) => ({
       userId: null,
       role: invite.role,
       status: "invited",
@@ -3083,6 +3163,8 @@ export const members = {
       email: invite.email,
       isSelf: false,
       joinedAt: invite.createdAt.toISOString(),
+      eventScopeId: invite.eventScopeId,
+      eventScopeTitle,
     }));
 
     return [...active, ...pending];
@@ -3095,12 +3177,23 @@ export const members = {
    * with the intended role. Without it a new address is refused outright, and an address
    * that is somehow let through lands in a fresh empty workspace of its own.
    */
-  async invite(ctx: RequestContext, rawEmail: string, role: string): Promise<InviteResult> {
+  async invite(
+    ctx: RequestContext,
+    rawEmail: string,
+    role: string,
+    rawEventScopeId?: string | null,
+  ): Promise<InviteResult> {
     requireRole(ctx, ["owner"]);
+    requireWorkspaceAccess(ctx);
     const email = rawEmail.trim().toLowerCase();
+    const eventScopeId = rawEventScopeId?.trim() || null;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "That is not a valid email address.");
     if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
       throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
+    }
+    if (eventScopeId) {
+      if (role !== "member") throw new HttpError(400, "Event collaborators must use the member role.");
+      await requireOwnedEvent(ctx, eventScopeId);
     }
 
     const [existing] = await db
@@ -3115,7 +3208,7 @@ export const members = {
       // Re-inviting is how the role on an unclaimed seat is corrected.
       const [updated] = await db
         .update(s.workspaceInvites)
-        .set({ role: role as "member" })
+        .set({ role: role as "member", eventScopeId })
         .where(eq(s.workspaceInvites.id, existing.id))
         .returning();
       return {
@@ -3127,6 +3220,8 @@ export const members = {
           email,
           isSelf: false,
           joinedAt: updated!.createdAt.toISOString(),
+          eventScopeId: updated!.eventScopeId,
+          eventScopeTitle: eventScopeId ? (await events.get(ctx, eventScopeId))?.title ?? null : null,
         },
         // Re-inviting corrects a role on a seat already offered; mailing them again to
         // say so would be noise.
@@ -3150,6 +3245,7 @@ export const members = {
             workspaceId: s.workspaces.id,
             email: sql<string>`${email}::text`.as("email"),
             role: sql<"owner" | "admin" | "member">`${role}::workspace_role`.as("role"),
+            eventScopeId: sql<string | null>`${eventScopeId}::text`.as("event_scope_id"),
             invitedBy: sql<string>`${ctx.userId}::text`.as("invited_by"),
           })
           .from(s.workspaces)
@@ -3198,6 +3294,8 @@ export const members = {
         email,
         isSelf: false,
         joinedAt: created!.createdAt.toISOString(),
+        eventScopeId: created!.eventScopeId,
+        eventScopeTitle: eventScopeId ? (await events.get(ctx, eventScopeId))?.title ?? null : null,
       },
       emailSent,
     };
@@ -3243,6 +3341,8 @@ export const members = {
       email: directory.get(userId)?.email ?? null,
       isSelf: userId === ctx.userId,
       joinedAt: updated[0]!.createdAt.toISOString(),
+      eventScopeId: updated[0]!.eventScopeId,
+      eventScopeTitle: updated[0]!.eventScopeId ? (await events.get(ctx, updated[0]!.eventScopeId))?.title ?? null : null,
     };
   },
 

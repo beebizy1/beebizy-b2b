@@ -1175,6 +1175,9 @@ export interface WorkspaceMember {
   isSelf: boolean;
   /** When they joined, or when they were invited if they have not yet. */
   joinedAt: IsoDateTime;
+  /** Null is a workspace-wide seat; otherwise access is limited to this event. */
+  eventScopeId?: string | null;
+  eventScopeTitle?: string | null;
 }
 
 /**

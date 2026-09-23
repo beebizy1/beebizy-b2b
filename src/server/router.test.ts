@@ -38,6 +38,7 @@ vi.mock("./repos", () => {
     eventVendors: child,
     tickets: child,
     raffle: child,
+    events: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     vendors: { list: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]) },
@@ -57,10 +58,92 @@ vi.mock("./billing", () => ({
   handleStripeWebhook: vi.fn(),
 }));
 
-const { config, handleRequest } = await import("../../api/router");
+const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { feedback, events, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
+
+describe("single-event collaborator routing", () => {
+  const context = {
+    userId: "user-annie",
+    email: "annie@sevareid.com",
+    workspaceId: "workspace-ccs",
+    role: "member" as const,
+    eventScopeId: "event-gala",
+  };
+
+  it("allows the complete assigned event workspace", () => {
+    expect(() =>
+      requireScopedRoute(
+        context,
+        ["events", "event-gala", "checklist"],
+        "POST",
+        { title: "Confirm catering" },
+        new URL("http://localhost/api/events/event-gala/checklist"),
+      ),
+    ).not.toThrow();
+  });
+
+  it("hides every other event even when its id is known", () => {
+    expect(() =>
+      requireScopedRoute(
+        context,
+        ["events", "event-santa-clara", "checklist"],
+        "GET",
+        {},
+        new URL("http://localhost/api/events/event-santa-clara/checklist"),
+      ),
+    ).toThrowError(expect.objectContaining({ status: 404 }));
+  });
+
+  it("blocks workspace-wide creation and portfolio data", () => {
+    expect(() =>
+      requireScopedRoute(context, ["events"], "POST", {}, new URL("http://localhost/api/events")),
+    ).toThrowError(expect.objectContaining({ status: 403 }));
+    expect(() =>
+      requireScopedRoute(
+        context,
+        ["analytics", "portfolio"],
+        "GET",
+        {},
+        new URL("http://localhost/api/analytics/portfolio"),
+      ),
+    ).toThrowError(expect.objectContaining({ status: 403 }));
+  });
+
+  it("allows event display data but blocks workspace directory and settings changes", () => {
+    expect(() =>
+      requireScopedRoute(context, ["settings"], "GET", {}, new URL("http://localhost/api/settings")),
+    ).not.toThrow();
+    expect(() =>
+      requireScopedRoute(context, ["settings"], "PATCH", {}, new URL("http://localhost/api/settings")),
+    ).toThrowError(expect.objectContaining({ status: 403 }));
+    expect(() =>
+      requireScopedRoute(context, ["locations"], "POST", {}, new URL("http://localhost/api/locations")),
+    ).toThrowError(expect.objectContaining({ status: 403 }));
+    expect(() =>
+      requireScopedRoute(
+        context,
+        ["vendors", "vendor-other"],
+        "PATCH",
+        {},
+        new URL("http://localhost/api/vendors/vendor-other"),
+      ),
+    ).toThrowError(expect.objectContaining({ status: 403 }));
+  });
+
+  it("allows conversations only through the scoped vendor repository checks", () => {
+    expect(() =>
+      requireScopedRoute(
+        context,
+        ["vendors", "vendor-gala", "messages"],
+        "POST",
+        { content: "The arrival time changed." },
+        new URL("http://localhost/api/vendors/vendor-gala/messages"),
+      ),
+    ).not.toThrow();
+  });
+});
 
 function leadRequest(method: string, body?: unknown): Request {
   return new Request("http://localhost/api/lead", {
@@ -403,6 +486,24 @@ describe("feedback endpoint", () => {
     expect(await mary.json()).toMatchObject({
       experience: "standard",
       canSwitchExperience: false,
+    });
+  });
+
+  it("keeps an event-only collaborator on the standard product and names only their event", async () => {
+    vi.mocked(events.get).mockResolvedValue({ id: "event-gala", title: "Celebrate CCS Gala" } as never);
+    vi.mocked(authorize).mockResolvedValue({
+      ...context,
+      email: "annie@sevareid.com",
+      eventScopeId: "event-gala",
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/me"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      experience: "standard",
+      canSwitchExperience: false,
+      eventScope: { id: "event-gala", title: "Celebrate CCS Gala" },
     });
   });
 
