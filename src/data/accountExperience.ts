@@ -12,6 +12,7 @@ export type AccountExperience = (typeof ACCOUNT_EXPERIENCES)[number];
 /** The only accounts that receive the focused Santa Clara presentation. */
 export const SANTA_CLARA_PILOT_EMAILS = [
   "ccismasflorea@scu.edu",
+  "dchakarevski@scu.edu",
   "poorvishukla27@gmail.com",
 ] as const;
 

@@ -14,8 +14,9 @@ describe("account experience", () => {
     expect(source).not.toMatch(/from\s+["']@\//);
   });
 
-  it("recognizes only the two verified Santa Clara pilot accounts", () => {
+  it("recognizes only the verified Santa Clara pilot accounts", () => {
     expect(accountExperienceForEmail("ccismasflorea@scu.edu")).toBe("santa-clara");
+    expect(accountExperienceForEmail("dchakarevski@scu.edu")).toBe("santa-clara");
     expect(accountExperienceForEmail(" PoorviShukla27@Gmail.com ")).toBe("santa-clara");
     expect(accountExperienceForEmail("teammate@scu.edu")).toBe("standard");
   });
