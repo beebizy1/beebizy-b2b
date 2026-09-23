@@ -76,6 +76,7 @@ import type {
 
 import { REGISTRATION_STATUSES, RFP_EVENT_TYPES, RFP_RESPONSE_STATUSES, RFP_STATUSES, RFP_TARGET_TYPES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
+import { workspaceInviteInsertSelection } from "./workspaceMemberInsert.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
@@ -3240,14 +3241,7 @@ export const members = {
       .insert(s.workspaceInvites)
       .select(
         db
-          .select({
-            id: sql<string>`${inviteId}::text`.as("id"),
-            workspaceId: s.workspaces.id,
-            email: sql<string>`${email}::text`.as("email"),
-            role: sql<"owner" | "admin" | "member">`${role}::workspace_role`.as("role"),
-            eventScopeId: sql<string | null>`${eventScopeId}::text`.as("event_scope_id"),
-            invitedBy: sql<string>`${ctx.userId}::text`.as("invited_by"),
-          })
+          .select(workspaceInviteInsertSelection(inviteId, email, role as "owner" | "admin" | "member", eventScopeId, ctx.userId))
           .from(s.workspaces)
           .where(
             and(
