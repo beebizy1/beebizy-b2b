@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyFeedbackSubmission, notifyRunOfShowAssignment, notifyTaskAssignment, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
+import { notifyAssignmentSummary, notifyFeedbackSubmission, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -13,22 +13,6 @@ function configureDelivery() {
 }
 
 describe("assignment and live-update email", () => {
-  it("tells a checklist assignee the private link can complete their task", async () => {
-    const fetch = configureDelivery();
-    await notifyTaskAssignment({
-      to: "assignee@example.com",
-      assigneeName: "Ada",
-      taskTitle: "Book Venue",
-      eventTitle: "Demo Day",
-      dueDate: null,
-      url: "https://beebizy.test/assignment/private-token",
-    });
-    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
-    expect(body.text).toContain("Open this task and mark it complete when you're done:");
-    expect(body.text).toContain("add it to Google Calendar");
-    expect(body.text).toContain("https://beebizy.test/assignment/private-token");
-  });
-
   it("sends a volunteer the role, shift and Beebizy link", async () => {
     const fetch = configureDelivery();
     expect(await notifyVolunteerAssignment({
@@ -48,23 +32,6 @@ describe("assignment and live-update email", () => {
     expect(body.text).toContain("https://beebizy.test/app/events/one/volunteers");
   });
 
-  it("sends a Run of Show assignee the cue and completion link", async () => {
-    const fetch = configureDelivery();
-    await notifyRunOfShowAssignment({
-      to: "volunteer@example.com",
-      assigneeName: "Ada",
-      cueTitle: "Doors open",
-      eventTitle: "Demo Day",
-      dayNumber: 1,
-      startTime: "08:30",
-      url: "https://beebizy.test/assignment/cue-token",
-    });
-    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
-    expect(body.text).toContain("Cue: Doors open");
-    expect(body.text).toContain("Time: Day 1, 08:30");
-    expect(body.text).toContain("mark it complete");
-  });
-
   it("sends urgent event context to the team", async () => {
     const fetch = configureDelivery();
     await notifyTeamUpdate({
@@ -77,6 +44,24 @@ describe("assignment and live-update email", () => {
     const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
     expect(body.subject).toBe("Live vendor delay update - Demo Day");
     expect(body.text).toContain("The caterer is 20 minutes late.");
+  });
+
+  it("consolidates every open responsibility into one email for the person", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyAssignmentSummary({
+      to: "ada@example.com",
+      assigneeName: "Ada",
+      eventTitle: "Demo Day",
+      items: [
+        { kind: "Checklist", title: "Confirm catering", timing: "Due Oct 5, 2026", url: "https://beebizy.test/assignment/task" },
+        { kind: "Run of show", title: "Open doors", timing: "Day 1 at 08:30", url: "https://beebizy.test/assignment/cue" },
+      ],
+    })).toEqual({ status: "sent" });
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body).toMatchObject({ to: ["ada@example.com"], subject: "Your responsibilities - Demo Day" });
+    expect(body.text).toContain("1. Confirm catering");
+    expect(body.text).toContain("2. Open doors");
+    expect(body.text).toContain("opens the exact assignment");
   });
 });
 

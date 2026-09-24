@@ -25,8 +25,9 @@ import {
   parseCsvTable,
   readSpreadsheetFile,
   type EventImportPlan,
+  type SpreadsheetTable,
 } from "@/data/import";
-import { EVENT_CATEGORIES } from "@/data/entities";
+import { EVENT_CATEGORIES, type Event } from "@/data/entities";
 import { formatMoney } from "@/data/money";
 import { formatClockTime } from "@/lib/datetime";
 import { toast } from "@/hooks/use-toast";
@@ -80,11 +81,15 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
 export default function SpreadsheetImporter({
   onBack,
   includeMoodBoard = true,
-  includeVolunteers = false,
+  includeVolunteers = true,
+  existingEvent,
+  onComplete,
 }: {
   onBack: () => void;
   includeMoodBoard?: boolean;
   includeVolunteers?: boolean;
+  existingEvent?: Event;
+  onComplete?: () => void;
 }) {
   const [, navigate] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -92,6 +97,7 @@ export default function SpreadsheetImporter({
   const [googleUrl, setGoogleUrl] = useState("");
   const [isReading, setIsReading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [partialImport, setPartialImport] = useState(false);
   const loadGoogleSheet = useLoadGoogleSheet();
   const createEvent = useCreateEvent();
   const createVendor = useCreateVendor();
@@ -104,11 +110,33 @@ export default function SpreadsheetImporter({
   const createRegistration = useCreateRegistration();
   const addVolunteer = useAddVolunteer();
 
+  const importPlan = (tables: SpreadsheetTable[], sourceName: string) => {
+    const contextualTables = existingEvent
+      ? [
+          {
+            name: "Event",
+            headers: ["Event Name", "Date", "End Date", "Location", "Capacity", "Category", "Description"],
+            rows: [{
+              "Event Name": existingEvent.title,
+              Date: existingEvent.date,
+              "End Date": existingEvent.endDate,
+              Location: existingEvent.location,
+              Capacity: existingEvent.capacity,
+              Category: existingEvent.category,
+              Description: existingEvent.description,
+            }],
+          } satisfies SpreadsheetTable,
+          ...tables,
+        ]
+      : tables;
+    return buildEventImportPlan(contextualTables, sourceName, { includeVolunteers });
+  };
+
   const readFile = async (file: File) => {
     setIsReading(true);
     try {
       const tables = await readSpreadsheetFile(file);
-      setPlan(buildEventImportPlan(tables, file.name, { includeVolunteers }));
+      setPlan(importPlan(tables, file.name));
     } catch (error) {
       toast({ title: "The spreadsheet could not be read", description: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -120,17 +148,17 @@ export default function SpreadsheetImporter({
     try {
       const source = await loadGoogleSheet.mutateAsync(googleUrl);
       const table = parseCsvTable(source.csv, source.name);
-      setPlan(buildEventImportPlan([table], source.name, { includeVolunteers }));
+      setPlan(importPlan([table], source.name));
     } catch (error) {
       toast({ title: "The Google Sheet could not be read", description: error instanceof Error ? error.message : String(error) });
     }
   };
 
   const createImportedEvent = async () => {
-    if (!plan || !plan.event.title.trim()) return;
+    if (!plan || (!existingEvent && !plan.event.title.trim())) return;
     setIsCreating(true);
     try {
-      const created = await createEvent.mutateAsync(plan.event);
+      const created = existingEvent ?? await createEvent.mutateAsync(plan.event);
       const writes: Promise<unknown>[] = [
         ...plan.budget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
         ...plan.checklist.map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
@@ -164,12 +192,18 @@ export default function SpreadsheetImporter({
       const results = await Promise.allSettled(writes);
       const failed = results.filter((result) => result.status === "rejected").length;
       toast({
-        title: failed ? "Event created with some import issues" : "Spreadsheet imported",
+        title: failed
+          ? `${existingEvent ? "Event updated" : "Event created"} with some import issues`
+          : existingEvent ? "Spreadsheet added to the event" : "Spreadsheet imported",
         description: failed
           ? `${results.length - failed} of ${results.length} supporting records were added. Review the event workspace.`
-          : "The event and its planning records are ready to review.",
+          : existingEvent
+            ? `${results.length} planning record${results.length === 1 ? " was" : "s were"} added to ${existingEvent.title}.`
+            : "The event and its planning records are ready to review.",
       });
-      navigate(`/app/events/${created.id}/run-of-show`);
+      if (existingEvent && failed > 0) setPartialImport(true);
+      else if (existingEvent) onComplete?.();
+      else navigate(`/app/events/${created.id}/run-of-show`);
     } catch (error) {
       toast({ title: "The event could not be created", description: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -263,8 +297,10 @@ export default function SpreadsheetImporter({
     <div className="space-y-5">
       <Panel>
         <PanelHeader
-          title="Review the imported event"
-          description={`${plan.sourceName} produced one draft event and ${supportingCount} supporting records.`}
+          title={existingEvent ? `Review records for ${existingEvent.title}` : "Review the imported event"}
+          description={existingEvent
+            ? `${plan.sourceName} produced ${supportingCount} supporting records. They will be added without replacing existing work.`
+            : `${plan.sourceName} produced one draft event and ${supportingCount} supporting records.`}
           actions={<Pill tone="warning">Nothing saved yet</Pill>}
         />
         {plan.warnings.length > 0 ? (
@@ -276,7 +312,7 @@ export default function SpreadsheetImporter({
             ))}
           </div>
         ) : null}
-        <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
+        {!existingEvent ? <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1.5 md:col-span-2">
             <Label htmlFor="import-title">Event name</Label>
             <Input
@@ -332,7 +368,7 @@ export default function SpreadsheetImporter({
               rows={3}
             />
           </div>
-        </div>
+        </div> : null}
       </Panel>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -470,13 +506,20 @@ export default function SpreadsheetImporter({
 
       <div className="flex flex-wrap justify-between gap-3 rounded-xl border border-hairline bg-surface p-4">
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setPlan(null)}>Choose another file</Button>
+          <Button variant="outline" onClick={() => { setPartialImport(false); setPlan(null); }}>Choose another file</Button>
           <Button variant="ghost" onClick={onBack}>Cancel</Button>
         </div>
-        <Button onClick={() => void createImportedEvent()} disabled={!plan.event.title.trim() || isCreating}>
-          {isCreating ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 size-4" />}
-          Create imported event
-        </Button>
+        <div className="space-y-1 text-right">
+          <Button onClick={() => void createImportedEvent()} disabled={(!existingEvent && !plan.event.title.trim()) || isCreating || partialImport}>
+            {isCreating ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 size-4" />}
+            {existingEvent ? "Add records to this event" : "Create imported event"}
+          </Button>
+          {partialImport ? (
+            <p className="max-w-sm text-xs text-destructive">
+              Some records were already added. Close this import and review the event before importing again to avoid duplicates.
+            </p>
+          ) : null}
+        </div>
       </div>
     </div>
   );

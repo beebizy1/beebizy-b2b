@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   CalendarClock,
   Copy,
+  MailCheck,
   MapPin,
   Pencil,
   Share2,
@@ -56,6 +57,7 @@ import {
   useEventHealth,
   useMe,
   useSaveEventAsTemplate,
+  useSendAssignmentSummaries,
 } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
 import { eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
@@ -78,6 +80,7 @@ import PlanningAssistantPanel from "./sections/PlanningAssistantPanel";
 import { ChecklistPanel, MoodBoardPanel, RunOfShowPanel } from "./sections/PlanSection";
 import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/VendorsSection";
 import EventLiveUpdates from "./EventLiveUpdates";
+import EventSpreadsheetImportDialog from "./EventSpreadsheetImportDialog";
 import {
   AuctionPanel,
   BudgetPanel,
@@ -190,6 +193,32 @@ function WorkspaceHeader({
   const prefs = usePreferences();
   const deleteEvent = useDeleteEvent();
   const saveAsTemplate = useSaveEventAsTemplate();
+  const sendAssignmentSummaries = useSendAssignmentSummaries();
+  const emailResponsibilities = () => {
+    sendAssignmentSummaries.mutate(event.id, {
+      onSuccess: (result) => {
+        const missing = result.missingEmail
+          ? ` ${result.missingEmail} assigned item${result.missingEmail === 1 ? " has" : "s have"} no email address.`
+          : "";
+        const failed = result.failed
+          ? ` ${result.failed} email${result.failed === 1 ? "" : "s"} could not be delivered.`
+          : "";
+        toast({
+          title: result.sent > 0
+            ? "Responsibility summaries sent"
+            : result.failed > 0 ? "Responsibility emails could not be delivered" : "No summaries were sent",
+          description: result.sent > 0
+            ? `${result.assignments} open assignment${result.assignments === 1 ? "" : "s"} consolidated into ${result.sent} email${result.sent === 1 ? "" : "s"}.${failed}${missing}`
+            : result.failed > 0
+              ? `Beebizy prepared ${result.recipients} consolidated email${result.recipients === 1 ? "" : "s"}, but delivery failed. Check the email configuration and try again.${missing}`
+              : result.missingEmail > 0
+                ? `${result.missingEmail} assigned item${result.missingEmail === 1 ? " has" : "s have"} no email address.`
+                : "Assign an open checklist item, run-of-show cue or volunteer shift to an email address first.",
+        });
+      },
+      onError: (error) => toast({ title: "Couldn't send summaries", description: error.message }),
+    });
+  };
 
   return (
     <section className="overflow-hidden rounded-2xl border border-card-border bg-card shadow-sm">
@@ -267,6 +296,20 @@ function WorkspaceHeader({
               </Button>
             ) : null}
 
+            <EventSpreadsheetImportDialog event={event} />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              title="Send one consolidated responsibility email to each assigned person"
+              disabled={sendAssignmentSummaries.isPending}
+              onClick={emailResponsibilities}
+            >
+              <MailCheck className="mr-1.5 size-3.5" />
+              {sendAssignmentSummaries.isPending ? "Sending..." : "Email assignments"}
+            </Button>
+
             {experience === "standard" ? <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" aria-label="More actions">
@@ -275,22 +318,22 @@ function WorkspaceHeader({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem
-                  onSelect={() => {
-                    saveAsTemplate.mutate(
-                      { eventId: event.id, name: `${event.title} template` },
-                      {
-                        onSuccess: () =>
-                          toast({
-                            title: "Saved as template",
-                            description: "Checklist, run of show and budget were copied into your library.",
-                          }),
-                        onError: (error) => toast({ title: "Couldn't save template", description: error.message }),
-                      },
-                    );
-                  }}
-                >
-                  <Copy className="mr-2 size-4" />
-                  Save as template
+                    onSelect={() => {
+                      saveAsTemplate.mutate(
+                        { eventId: event.id, name: `${event.title} template` },
+                        {
+                          onSuccess: () =>
+                            toast({
+                              title: "Saved as template",
+                              description: "Checklist, run of show and budget were copied into your library.",
+                            }),
+                          onError: (error) => toast({ title: "Couldn't save template", description: error.message }),
+                        },
+                      );
+                    }}
+                  >
+                    <Copy className="mr-2 size-4" />
+                    Save as template
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu> : null}
@@ -492,7 +535,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       {active === "check-in" ? <CheckInPanel event={event} /> : null}
       {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
       {active === "checklist" ? <ChecklistWorkspace key={event.id} event={event} /> : null}
-      {active === "volunteers" ? <VolunteersPanel event={event} allowSpreadsheetImport={experience === "santa-clara"} /> : null}
+      {active === "volunteers" ? <VolunteersPanel event={event} allowSpreadsheetImport /> : null}
       {active === "contingency" ? <ContingencyWorkspace key={event.id} event={event} /> : null}
       {active === "vendors" ? (
         <div className="space-y-6">

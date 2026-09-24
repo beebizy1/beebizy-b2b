@@ -24,6 +24,7 @@ import type {
   CustomReportRow,
   Deposit,
   Event,
+  AssignmentSummaryResult,
   EventHealth,
   EventHistoryEntry,
   FeedbackInboxItem,
@@ -230,6 +231,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       },
       createFromTemplate: (templateId, draft) => client.post<Event>(`/templates/${templateId}/events`, draft),
       saveAsTemplate: (eventId, draft) => client.post<Template>(`/events/${eventId}/save-as-template`, draft),
+      sendAssignmentSummaries: (eventId) =>
+        client.post<AssignmentSummaryResult>(`/events/${eventId}/assignment-summaries`),
     },
 
     locations: {

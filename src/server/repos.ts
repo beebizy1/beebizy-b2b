@@ -39,6 +39,7 @@ import type {
   CanvasCard,
   CustomReportRow,
   Event,
+  AssignmentSummaryResult,
   EventHealth,
   EventHistoryChange,
   EventHistoryEntry,
@@ -57,9 +58,7 @@ import type {
   UserSettings,
   Vendor,
   HistoryResource,
-  ChecklistItem,
   CheckInStation,
-  RunOfShowItem,
   InviteResult,
   VolunteerShift,
   WalkInRegistrationDraft,
@@ -87,10 +86,9 @@ import { volunteerCompletionTransition, type AssignmentCompletionAction } from "
 import { timeAfterMinutes } from "../data/assignmentCalendar.ts";
 import { rfpDraftSchema, rfpSpaceRequirementSchema, validHotelRfp, validRfpBudget } from "../data/rfp.ts";
 import {
+  notifyAssignmentSummary,
   notifyFeedbackSubmission,
   notifyRfpInvitation,
-  notifyRunOfShowAssignment,
-  notifyTaskAssignment,
   notifyTeamUpdate,
   notifyVendorMessage,
   notifyVolunteerAssignment,
@@ -99,6 +97,7 @@ import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
+import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -710,6 +709,125 @@ export const events = {
     });
     const [row] = await db.select().from(s.templates).where(eq(s.templates.id, id)).limit(1);
     return map.toTemplate(row!);
+  },
+
+  async sendAssignmentSummaries(ctx: RequestContext, eventId: string): Promise<AssignmentSummaryResult> {
+    const event = await events.get(ctx, eventId);
+    if (!event) throw new HttpError(404, "That event no longer exists.");
+
+    const [taskRows, cueRows, shiftRows] = await Promise.all([
+      db.select({
+        id: s.checklistItems.id,
+        title: s.checklistItems.title,
+        assigneeName: s.checklistItems.assignedTo,
+        email: s.checklistItems.assignedEmail,
+        dueDate: s.checklistItems.dueDate,
+      }).from(s.checklistItems).where(and(
+        eq(s.checklistItems.workspaceId, ctx.workspaceId),
+        eq(s.checklistItems.eventId, eventId),
+        eq(s.checklistItems.completed, false),
+        or(isNotNull(s.checklistItems.assignedTo), isNotNull(s.checklistItems.assignedEmail)),
+      )).orderBy(asc(s.checklistItems.dueDate), asc(s.checklistItems.sortOrder)),
+      db.select({
+        id: s.runOfShowItems.id,
+        title: s.runOfShowItems.title,
+        assigneeName: s.runOfShowItems.responsible,
+        email: s.runOfShowItems.assignedEmail,
+        dayNumber: s.runOfShowItems.dayNumber,
+        startTime: s.runOfShowItems.startTime,
+      }).from(s.runOfShowItems).where(and(
+        eq(s.runOfShowItems.workspaceId, ctx.workspaceId),
+        eq(s.runOfShowItems.eventId, eventId),
+        eq(s.runOfShowItems.completed, false),
+        or(isNotNull(s.runOfShowItems.responsible), isNotNull(s.runOfShowItems.assignedEmail)),
+      )).orderBy(...runOfShowOrderColumns()),
+      db.select({
+        id: s.volunteerShifts.id,
+        title: s.volunteerShifts.role,
+        assigneeName: s.volunteerShifts.name,
+        email: s.volunteerShifts.email,
+        dayNumber: s.volunteerShifts.dayNumber,
+        startTime: s.volunteerShifts.startTime,
+        endTime: s.volunteerShifts.endTime,
+      }).from(s.volunteerShifts).where(and(
+        eq(s.volunteerShifts.workspaceId, ctx.workspaceId),
+        eq(s.volunteerShifts.eventId, eventId),
+        sql`${s.volunteerShifts.status} not in ('completed', 'cancelled')`,
+      )).orderBy(asc(s.volunteerShifts.dayNumber), asc(s.volunteerShifts.startTime), asc(s.volunteerShifts.sortOrder)),
+    ]);
+
+    type SummaryDraft = {
+      kind: "checklist" | "run-of-show" | "volunteer";
+      id: string;
+      email: string | null;
+      assigneeName: string | null;
+      title: string;
+      label: "Checklist" | "Run of show" | "Volunteer shift";
+      timing: string;
+    };
+    const drafts: SummaryDraft[] = [
+      ...taskRows.map((row): SummaryDraft => ({
+        kind: "checklist",
+        id: row.id,
+        email: row.email,
+        assigneeName: row.assigneeName,
+        title: row.title,
+        label: "Checklist",
+        timing: row.dueDate
+          ? `Due ${row.dueDate.toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" })}`
+          : "No due date",
+      })),
+      ...cueRows.map((row): SummaryDraft => ({
+        kind: "run-of-show",
+        id: row.id,
+        email: row.email,
+        assigneeName: row.assigneeName,
+        title: row.title,
+        label: "Run of show",
+        timing: `Day ${row.dayNumber} at ${row.startTime}`,
+      })),
+      ...shiftRows.map((row): SummaryDraft => ({
+        kind: "volunteer",
+        id: row.id,
+        email: row.email,
+        assigneeName: row.assigneeName,
+        title: row.title,
+        label: "Volunteer shift",
+        timing: `Day ${row.dayNumber}, ${row.startTime}-${row.endTime}`,
+      })),
+    ];
+    const counts = assignmentSummaryCounts(drafts);
+    const deliverable = drafts.flatMap((draft) => {
+      const email = assignmentDeliveryEmail(draft.email);
+      return email ? [{ ...draft, email }] : [];
+    });
+    const groups = new Map<string, typeof deliverable>();
+    for (const draft of deliverable) {
+      groups.set(draft.email, [...(groups.get(draft.email) ?? []), draft]);
+    }
+
+    const outcomes = await Promise.all(Array.from(groups.entries()).map(async ([email, items]) => {
+      const linkedItems = await Promise.all(items.map(async (item) => ({
+        kind: item.label,
+        title: item.title,
+        timing: item.timing,
+        url: await createAssignmentAccess(ctx, eventId, { kind: item.kind, id: item.id, email }),
+      })));
+      return notifyAssignmentSummary({
+        to: email,
+        assigneeName: items.find((item) => item.assigneeName)?.assigneeName ?? email,
+        eventTitle: event.title,
+        items: linkedItems,
+      });
+    }));
+    const sent = outcomes.filter((outcome) => outcome.status === "sent").length;
+    return {
+      recipients: groups.size,
+      assignments: deliverable.length,
+      missingEmail: counts.missingEmail,
+      sent,
+      failed: outcomes.length - sent,
+    };
   },
 };
 
@@ -2201,36 +2319,6 @@ export const checklist = eventScoped({
     if (!vendor) throw new HttpError(400, "That vendor is not available in this workspace.");
   },
 
-  /**
-   * Tells a newly assigned person the task is theirs.
-   *
-   * Only when the address actually changed, so editing a due date does not re-notify, and
-   * never for a task assigned to a name that belongs to nobody in the workspace — there
-   * is no address to send to. Failures are logged inside the notifier and swallowed here:
-   * an assignment must not fail because email is unconfigured or the provider is down.
-   */
-  afterWrite: async (ctx, eventId, after, before) => {
-    const item = after as ChecklistItem;
-    const previous = before as ChecklistItem | null;
-    if (!item.assignedEmail || item.assignedEmail === previous?.assignedEmail) return;
-
-    const event = await events.get(ctx, eventId);
-    if (!event) return;
-
-    try {
-      const url = await createAssignmentAccess(ctx, eventId, { kind: "checklist", id: item.id, email: item.assignedEmail });
-      await notifyTaskAssignment({
-        to: item.assignedEmail,
-        assigneeName: item.assignedTo,
-        taskTitle: item.title,
-        eventTitle: event.title,
-        dueDate: item.dueDate,
-        url,
-      });
-    } catch (error) {
-      console.warn("TASK_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
-    }
-  },
 });
 
 export const checkInStations = eventScoped({
@@ -2303,27 +2391,6 @@ export const runOfShow = eventScoped({
     responsible: (b) => optStr(b, "responsible"),
     assignedEmail: (b) => optionalEmail(b, "assignedEmail"),
     completed: (b) => Boolean(b.completed),
-  },
-  afterWrite: async (ctx, eventId, after, before) => {
-    const cue = after as RunOfShowItem;
-    const previous = before as RunOfShowItem | null;
-    if (!cue.assignedEmail || cue.assignedEmail === previous?.assignedEmail) return;
-    const event = await events.get(ctx, eventId);
-    if (!event) return;
-    try {
-      const url = await createAssignmentAccess(ctx, eventId, { kind: "run-of-show", id: cue.id, email: cue.assignedEmail });
-      await notifyRunOfShowAssignment({
-        to: cue.assignedEmail,
-        assigneeName: cue.responsible ?? cue.assignedEmail,
-        cueTitle: cue.title,
-        eventTitle: event.title,
-        dayNumber: cue.dayNumber,
-        startTime: cue.startTime,
-        url,
-      });
-    } catch (error) {
-      console.warn("RUN_OF_SHOW_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
-    }
   },
 });
 
@@ -2426,28 +2493,6 @@ export const volunteers = eventScoped({
     body.role = need.role;
     body.startTime = need.startTime;
     body.endTime = need.endTime;
-  },
-  afterWrite: async (ctx, eventId, after, before) => {
-    const shift = after as VolunteerShift;
-    const previous = before as VolunteerShift | null;
-    if (!shift.email || shift.email === previous?.email) return;
-    const event = await events.get(ctx, eventId);
-    if (!event) return;
-    try {
-      const url = await createAssignmentAccess(ctx, eventId, { kind: "volunteer", id: shift.id, email: shift.email });
-      await notifyVolunteerAssignment({
-        to: shift.email,
-        volunteerName: shift.name,
-        role: shift.role,
-        eventTitle: event.title,
-        dayNumber: shift.dayNumber,
-        startTime: shift.startTime,
-        endTime: shift.endTime,
-        url,
-      });
-    } catch (error) {
-      console.warn("VOLUNTEER_ASSIGNMENT_NOTIFICATION_FAILED", error instanceof Error ? error.message : String(error));
-    }
   },
 });
 

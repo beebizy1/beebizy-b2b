@@ -806,6 +806,20 @@ export type EventHistoryChange = Pick<
   "eventId" | "resource" | "resourceId" | "action" | "before" | "after"
 >;
 
+/** Result of emailing one consolidated open-work summary to each responsible person. */
+export interface AssignmentSummaryResult {
+  /** People who had at least one open assignment with a deliverable email address. */
+  recipients: number;
+  /** Checklist tasks, run-of-show cues and volunteer shifts included across all summaries. */
+  assignments: number;
+  /** Assigned records that named someone but had no email address to notify. */
+  missingEmail: number;
+  /** Provider deliveries that succeeded. */
+  sent: number;
+  /** Provider deliveries that were skipped or failed. */
+  failed: number;
+}
+
 /* -------------------------------------------------------------------- revenue */
 
 export interface TicketType {

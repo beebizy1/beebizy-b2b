@@ -26,11 +26,11 @@ describe("spreadsheet import", () => {
           "Event",
         ),
         parseCsvTable(
-          "Task,Category,Due Date,Owner,Completed\nConfirm venue,Venue,2026-10-01,Laila,no\nSend final guest count,Catering,2026-11-07,Maya,yes",
+          "Task,Category,Due Date,Owner,Owner Email,Completed\nConfirm venue,Venue,2026-10-01,Laila,laila@example.com,no\nSend final guest count,Catering,2026-11-07,Maya,maya@example.com,yes",
           "Checklist",
         ),
         parseCsvTable(
-          "Day,Start Time,Duration,Title,Responsible,Notes\nDay 1,5:30 PM,45,Guest arrival,Guest team,Open both doors\n2,18:15,15,Welcome,Host,",
+          "Day,Start Time,Duration,Title,Responsible,Responsible Email,Notes\nDay 1,5:30 PM,45,Guest arrival,Guest team,guests@example.com,Open both doors\n2,18:15,15,Welcome,Host,host@example.com,",
           "Run of Show",
         ),
         parseCsvTable(
@@ -53,7 +53,7 @@ describe("spreadsheet import", () => {
       status: "draft",
     });
     expect(plan.checklist).toEqual([
-      expect.objectContaining({ title: "Confirm venue", category: "Venue", assignedTo: "Laila", completed: false }),
+      expect.objectContaining({ title: "Confirm venue", category: "Venue", assignedTo: "Laila", assignedEmail: "laila@example.com", completed: false }),
       expect.objectContaining({ title: "Send final guest count", category: "Catering", assignedTo: "Maya", completed: true }),
     ]);
     expect(plan.checklist.map((item) => item.dueDate)).toEqual([
@@ -61,7 +61,7 @@ describe("spreadsheet import", () => {
       "2026-11-07T12:00:00.000Z",
     ]);
     expect(plan.runOfShow).toEqual([
-      expect.objectContaining({ dayNumber: 1, startTime: "17:30", duration: 45, title: "Guest arrival" }),
+      expect.objectContaining({ dayNumber: 1, startTime: "17:30", duration: 45, title: "Guest arrival", assignedEmail: "guests@example.com" }),
       expect.objectContaining({ dayNumber: 2, startTime: "18:15", duration: 15, title: "Welcome" }),
     ]);
     expect(plan.budget).toEqual([
@@ -260,11 +260,10 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
     expect(plan.budget.map((b) => b.name)).toEqual(["Venue hire"]);
   });
 
-  it("imports a Santa Clara volunteer schedule when that pilot feature is enabled", () => {
+  it("imports a volunteer schedule for every workspace by default", () => {
     const plan = buildEventImportPlan(
       [parseCsvTable("Volunteer Name,Role,Day,Start Time,End Time,Email\nMaya Chen,East entrance,2,8:00 AM,12:00 PM,maya@example.com", "Google Sheet")],
       "Google Sheet",
-      { includeVolunteers: true },
     );
     expect(plan.volunteers).toEqual([
       expect.objectContaining({
@@ -296,10 +295,11 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
     expect(plan.warnings.join(" ")).toContain("2 volunteer rows were skipped");
   });
 
-  it("does not consume volunteer tabs in the standard importer", () => {
+  it("can deliberately exclude volunteer tabs for a constrained import flow", () => {
     const plan = buildEventImportPlan(
       [parseCsvTable("Volunteer Name,Role,Start Time,End Time\nMaya Chen,East entrance,08:00,12:00", "Volunteers")],
       "volunteers.xlsx",
+      { includeVolunteers: false },
     );
     expect(plan.volunteers).toEqual([]);
     expect(plan.warnings.join(" ")).toContain("Volunteers");

@@ -106,48 +106,7 @@ export async function notifyFeedbackSubmission(input: {
   return outcome;
 }
 
-/**
- * Tells someone a task is theirs.
- *
- * Deliberately says what it is, when it is due and where to find it - an email that only
- * says "you have been assigned a task" makes the reader open the app to learn anything,
- * which is a notification that costs more attention than it saves.
- */
 const ASSIGNMENT_CALENDAR_HELP = "The assignment page also lets you add it to Google Calendar.";
-
-export async function notifyTaskAssignment(input: {
-  to: string;
-  assigneeName: string | null;
-  taskTitle: string;
-  eventTitle: string;
-  dueDate: string | null;
-  url: string;
-}): Promise<EmailOutcome> {
-  const due = input.dueDate
-    ? new Date(input.dueDate).toLocaleDateString("en-US", { dateStyle: "medium" })
-    : null;
-
-  const outcome = await sendEmail({
-    to: input.to,
-    subject: `${input.taskTitle} - ${input.eventTitle}`,
-    text: [
-      `${input.assigneeName ? `Hi ${input.assigneeName},` : "Hi,"}`,
-      "",
-      `You've been assigned a task on ${input.eventTitle}:`,
-      "",
-      `  ${input.taskTitle}`,
-      due ? `  Due ${due}` : "  No due date set",
-      "",
-      `Open this task and mark it complete when you're done: ${input.url}`,
-      ASSIGNMENT_CALENDAR_HELP,
-    ].join("\n"),
-  });
-
-  if (outcome.status !== "sent") {
-    console.warn("TASK_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
-  }
-  return outcome;
-}
 
 export async function notifyVolunteerAssignment(input: {
   to: string;
@@ -177,30 +136,41 @@ export async function notifyVolunteerAssignment(input: {
   return outcome;
 }
 
-export async function notifyRunOfShowAssignment(input: {
+export interface AssignmentSummaryItem {
+  kind: "Checklist" | "Run of show" | "Volunteer shift";
+  title: string;
+  timing: string;
+  url: string;
+}
+
+/** Sends one event-level responsibility summary instead of making the organizer forward separate task emails. */
+export async function notifyAssignmentSummary(input: {
   to: string;
   assigneeName: string;
-  cueTitle: string;
   eventTitle: string;
-  dayNumber: number;
-  startTime: string;
-  url: string;
+  items: AssignmentSummaryItem[];
 }): Promise<EmailOutcome> {
+  const lines = input.items.flatMap((item, index) => [
+    `${index + 1}. ${item.title}`,
+    `   ${item.kind}${item.timing ? ` - ${item.timing}` : ""}`,
+    `   Open: ${item.url}`,
+  ]);
   const outcome = await sendEmail({
     to: input.to,
-    subject: `${input.cueTitle} - ${input.eventTitle}`,
+    subject: `Your responsibilities - ${input.eventTitle}`,
     text: [
       `Hi ${input.assigneeName || "team member"},`,
       "",
-      `You've been assigned a Run of Show item on ${input.eventTitle}.`,
-      `Cue: ${input.cueTitle}`,
-      `Time: Day ${input.dayNumber}, ${input.startTime}`,
+      `Here is your current open work for ${input.eventTitle}:`,
       "",
-      `Open this cue and mark it complete when you're done: ${input.url}`,
-      ASSIGNMENT_CALENDAR_HELP,
+      ...lines,
+      "",
+      "Each private link opens the exact assignment and lets you mark it complete or add it to Google Calendar.",
     ].join("\n"),
   });
-  if (outcome.status !== "sent") console.warn("RUN_OF_SHOW_ASSIGNMENT_EMAIL_NOT_SENT", outcome.status, outcome.reason);
+  if (outcome.status !== "sent") {
+    console.warn("ASSIGNMENT_SUMMARY_EMAIL_NOT_SENT", outcome.status, outcome.reason);
+  }
   return outcome;
 }
 

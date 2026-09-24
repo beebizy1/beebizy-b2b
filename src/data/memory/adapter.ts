@@ -127,6 +127,7 @@ import { describeHistoryChange } from "../history";
 import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../planner";
 import { nextTurn } from "../assistantChat";
 import { googleSheetCsvUrl } from "../import";
+import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
@@ -529,6 +530,29 @@ const events: EventsRepository = {
     };
     state.templates.push(template);
     return copy(template);
+  },
+
+  async sendAssignmentSummaries(eventId) {
+    await wait();
+    requireEvent(eventId);
+    const state = store();
+    const assignments = [
+      ...state.checklist
+        .filter((item) => item.eventId === eventId && !item.completed && Boolean(item.assignedTo || item.assignedEmail))
+        .map((item) => ({ email: item.assignedEmail })),
+      ...state.runOfShow
+        .filter((item) => item.eventId === eventId && !item.completed && Boolean(item.responsible || item.assignedEmail))
+        .map((item) => ({ email: item.assignedEmail })),
+      ...state.volunteers
+        .filter((item) => item.eventId === eventId && item.status !== "completed" && item.status !== "cancelled")
+        .map((item) => ({ email: item.email })),
+    ];
+    const counts = assignmentSummaryCounts(assignments);
+    return {
+      ...counts,
+      sent: counts.recipients,
+      failed: 0,
+    };
   },
 };
 

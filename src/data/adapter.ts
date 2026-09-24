@@ -37,6 +37,7 @@ import type {
   DepositDraft,
   DepositPatch,
   Event,
+  AssignmentSummaryResult,
   CustomReportRow,
   EventDraft,
   EventFilter,
@@ -155,6 +156,8 @@ export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft
   getByShareToken(token: string): Promise<PublicEventPayload | null>;
   createFromTemplate(templateId: string, draft: EventDraft): Promise<Event>;
   saveAsTemplate(eventId: string, draft: Pick<TemplateDraft, "name" | "description">): Promise<Template>;
+  /** Sends one current open-work summary per responsible email address. */
+  sendAssignmentSummaries(eventId: string): Promise<AssignmentSummaryResult>;
 }
 
 export interface RegistrationsRepository {

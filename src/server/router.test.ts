@@ -38,7 +38,10 @@ vi.mock("./repos", () => {
     eventVendors: child,
     tickets: child,
     raffle: child,
-    events: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    events: {
+      get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
+      sendAssignmentSummaries: vi.fn(),
+    },
     vendors: { list: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]) },
@@ -667,5 +670,20 @@ describe("billing endpoints", () => {
     }));
     expect(list.status).toBe(200);
     expect(create.status).toBe(201);
+  });
+
+  it("sends consolidated responsibility summaries through the event route", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    vi.mocked(events.sendAssignmentSummaries).mockResolvedValue({
+      recipients: 2, assignments: 5, missingEmail: 1, sent: 2, failed: 0,
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/events/evt-1/assignment-summaries", {
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(events.sendAssignmentSummaries).toHaveBeenCalledWith(owner, "evt-1");
+    expect(await response.json()).toMatchObject({ recipients: 2, assignments: 5, sent: 2 });
   });
 });

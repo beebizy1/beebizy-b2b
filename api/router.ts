@@ -464,6 +464,9 @@ async function handleAuthed(
       }
       if (a && b === "share" && method === "POST") return json(await repos.events.share(ctx, a));
       if (a && b === "save-as-template" && method === "POST") return json(await repos.events.saveAsTemplate(ctx, a, body), 201);
+      if (a && b === "assignment-summaries" && method === "POST") {
+        return json(await repos.events.sendAssignmentSummaries(ctx, a));
+      }
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]
       if (a && b) {

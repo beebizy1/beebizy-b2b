@@ -284,7 +284,7 @@ export default function AIPlanner() {
               Turn an Excel file, CSV, or public Google Sheet into a draft event you can review before saving.
             </p>
             <ul className="mt-5 space-y-2 text-sm text-foreground">
-              {["Map event details", "Bring checklists, schedules and budgets", "Preview every record first"].map((item) => (
+              {["Map event details", "Bring checklists, schedules, budgets, registrations, vendors and volunteers", "Preview every record first"].map((item) => (
                 <li key={item} className="flex items-center gap-2">
                   <CheckCircle2 className="size-4 text-success-text" aria-hidden="true" />
                   {item}

@@ -32,7 +32,7 @@ export interface EventImportPlan {
   guests: ImportedGuest[];
   /** Suppliers from a Services or Vendors sheet, with the fee agreed for this event. */
   vendors: ImportedVendor[];
-  /** Santa Clara pilot staffing roster, enabled only in that focused import flow. */
+  /** Volunteer staffing roster imported for every workspace unless a constrained flow opts out. */
   volunteers: VolunteerShiftDraft[];
   warnings: string[];
 }
@@ -98,6 +98,7 @@ const aliases = {
   caption: ["caption", "description", "notes", "direction"],
   guestName: ["guest name", "attendee name", "name"],
   email: ["email", "email address", "contact", "guest email"],
+  assigneeEmail: ["assignee email", "assigned email", "owner email", "responsible email", "lead email", "email", "email address"],
   guestSegment: ["guest type", "registration type", "segment", "group", "category", "lifecycle stage"],
   guestOrganization: ["organization", "organisation", "company", "firm", "school", "fund"],
   // Plurals matter: a column headed SERVICES is at least as common as SERVICE, and
@@ -159,6 +160,11 @@ function stringFrom(row: Record<string, SpreadsheetValue>, table: SpreadsheetTab
   const value = valueFrom(row, table, names);
   if (value instanceof Date) return value.toISOString();
   return value === null || value === undefined ? "" : String(value).trim();
+}
+
+function emailFrom(row: Record<string, SpreadsheetValue>, table: SpreadsheetTable, names: readonly string[]): string | null {
+  const email = stringFrom(row, table, names).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
 function tableNamed(tables: SpreadsheetTable[], patterns: RegExp[], required?: readonly string[]): SpreadsheetTable | null {
@@ -345,6 +351,7 @@ export function buildEventImportPlan(
   sourceName: string,
   options: EventImportOptions = {},
 ): EventImportPlan {
+  const includeVolunteers = options.includeVolunteers ?? true;
   const warnings: string[] = [];
   const eventTable = tableNamed(tables, [/^event(s| details| overview)?$/, /^overview$/], ["date"]);
   const eventRow = eventTable?.rows[0] ?? {};
@@ -379,6 +386,7 @@ export function buildEventImportPlan(
       category: stringFrom(row, checklistTable!, aliases.category) || "General",
       dueDate: checklistDueDate(valueFrom(row, checklistTable!, aliases.dueDate)),
       assignedTo: stringFrom(row, checklistTable!, aliases.owner) || null,
+      assignedEmail: emailFrom(row, checklistTable!, aliases.assigneeEmail),
       completed: truthy(valueFrom(row, checklistTable!, aliases.completed)),
       sortOrder: index,
     }];
@@ -396,6 +404,7 @@ export function buildEventImportPlan(
       title: cueTitle,
       description: stringFrom(row, runTable!, aliases.description) || null,
       responsible: stringFrom(row, runTable!, aliases.responsible) || null,
+      assignedEmail: emailFrom(row, runTable!, aliases.assigneeEmail),
       sortOrder: index,
     }];
   });
@@ -442,7 +451,7 @@ export function buildEventImportPlan(
 
   /* --------------------------------------------------------------- volunteers */
 
-  const volunteerTable = options.includeVolunteers
+  const volunteerTable = includeVolunteers
     ? tableFor(tables, "volunteers", [/volunteers?/, /staffing/, /shifts?/])
     : null;
   const volunteers = (volunteerTable?.rows ?? []).flatMap((row, index): VolunteerShiftDraft[] => {

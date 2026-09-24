@@ -33,6 +33,7 @@ import type {
   CheckInStationDraft,
   CheckInStationPatch,
   Event,
+  AssignmentSummaryResult,
   EventDraft,
   EventFilter,
   EventHealth,
@@ -304,6 +305,13 @@ export function useSaveEventAsTemplate() {
     (a, vars: { eventId: string; name: string; description?: string | null }) =>
       a.events.saveAsTemplate(vars.eventId, { name: vars.name, description: vars.description }),
     () => [qk.templates],
+  );
+}
+
+export function useSendAssignmentSummaries() {
+  return useAdapterMutation(
+    (a, eventId: string): Promise<AssignmentSummaryResult> => a.events.sendAssignmentSummaries(eventId),
+    () => [],
   );
 }
 
