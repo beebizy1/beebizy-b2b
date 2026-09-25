@@ -28,8 +28,10 @@ import { useMe } from "@/data/hooks";
 import { useDataMode, type DataMode } from "@/data/provider";
 import type { Identity } from "@/data/adapter";
 import { useSession } from "@/app/session";
+import { identityErrorRequiresAccessDenied } from "@/app/identityError";
 import { AccountExperienceProvider } from "@/app/AccountExperienceProvider";
 import { useAccountExperience } from "@/app/useAccountExperience";
+import { ErrorNotice } from "@/components/primitives";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { FeedbackBot } from "./FeedbackBot";
 import { isNavActive, visibleNavItems, type NavItem } from "./nav";
@@ -382,7 +384,7 @@ function AppShellFrame({
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { mode } = useDataMode();
-  const { data: identity, isLoading: identityLoading, error: identityError } = useMe();
+  const { data: identity, isLoading: identityLoading, error: identityError, refetch: refetchIdentity } = useMe();
 
   if (mode === "live" && identityLoading) {
     return (
@@ -399,8 +401,23 @@ export function AppShell({ children }: { children: ReactNode }) {
    * The server refused. That is the only authority on whether this account may be here -
    * it is the side that can see both the operator allowlist and any outstanding invite.
    */
-  if (mode === "live" && identityError) {
+  if (mode === "live" && identityErrorRequiresAccessDenied(identityError)) {
     return <Redirect to="/access-denied" replace />;
+  }
+
+  if (mode === "live" && identityError) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-background p-6">
+        <div className="w-full max-w-xl space-y-5">
+          <BrandLogoLink />
+          <ErrorNotice
+            error={identityError}
+            title="Beebizy couldn't load your workspace"
+            onRetry={() => void refetchIdentity()}
+          />
+        </div>
+      </div>
+    );
   }
 
   if (mode === "live" && identity && !["beta", "active"].includes(identity.access.status)) {
