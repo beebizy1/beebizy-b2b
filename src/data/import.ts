@@ -19,10 +19,10 @@ import type {
   VolunteerNeedDraft,
   VolunteerShiftDraft,
   VolunteerStatus,
-} from "./entities";
-import { RFP_EVENT_TYPES } from "./entities";
-import { parseFloorplanDraft } from "./floorplan";
-import { rfpDraftSchema } from "./rfp";
+} from "./entities.ts";
+import { RFP_EVENT_TYPES } from "./entities.ts";
+import { parseFloorplanDraft } from "./floorplan.ts";
+import { rfpDraftSchema } from "./rfp.ts";
 
 export type SpreadsheetValue = string | number | boolean | Date | null;
 
