@@ -773,6 +773,8 @@ export interface TeamUpdate {
 export interface TeamUpdateDraft {
   kind: TeamUpdateKind;
   message: string;
+  /** Bulk history imports can store an update without replaying it as a new email alert. */
+  notifyTeam?: boolean;
 }
 
 export interface PublicAssignmentPayload {

@@ -1,13 +1,28 @@
 import type {
+  AuctionItemDraft,
   BudgetItemDraft,
+  CheckInStationDraft,
   ChecklistItemDraft,
+  DepositDraft,
   EventDraft,
+  FloorplanDraft,
   GuestDraft,
+  MenuItemDraft,
+  RaffleItemDraft,
+  RfpDraft,
   RunOfShowItemDraft,
+  SponsorshipDraft,
+  TeamHoursDraft,
+  TeamUpdateDraft,
+  TicketTypeDraft,
   VendorDraft,
+  VolunteerNeedDraft,
   VolunteerShiftDraft,
   VolunteerStatus,
 } from "./entities";
+import { RFP_EVENT_TYPES } from "./entities";
+import { parseFloorplanDraft } from "./floorplan";
+import { rfpDraftSchema } from "./rfp";
 
 export type SpreadsheetValue = string | number | boolean | Date | null;
 
@@ -34,6 +49,18 @@ export interface EventImportPlan {
   vendors: ImportedVendor[];
   /** Volunteer staffing roster imported for every workspace unless a constrained flow opts out. */
   volunteers: VolunteerShiftDraft[];
+  volunteerNeeds: VolunteerNeedDraft[];
+  checkInStations: CheckInStationDraft[];
+  menu: MenuItemDraft[];
+  tickets: TicketTypeDraft[];
+  auctions: AuctionItemDraft[];
+  raffle: RaffleItemDraft[];
+  sponsorships: SponsorshipDraft[];
+  rfps: RfpDraft[];
+  deposits: DepositDraft[];
+  teamHours: TeamHoursDraft[];
+  teamUpdates: TeamUpdateDraft[];
+  floorplans: FloorplanDraft[];
   warnings: string[];
 }
 
@@ -82,7 +109,7 @@ const aliases = {
   capacity: ["capacity", "headcount", "guest count", "attendees", "attendance"],
   category: ["category", "event type", "type"],
   description: ["description", "event description", "brief", "notes"],
-  task: ["task", "tasks", "checklist item", "checklist items", "action", "actions", "to do", "to dos", "todo", "title"],
+  task: ["task", "tasks", "checklist item", "checklist items", "contingency task", "action", "actions", "to do", "to dos", "todo", "title"],
   dueDate: ["due date", "deadline", "due"],
   owner: ["owner", "assigned to", "assignee", "responsible"],
   completed: ["completed", "done", "status"],
@@ -210,6 +237,19 @@ const ALL_NAME_PATTERNS: RegExp[] = [
   /guests?/, /attendees?/, /invitees?/,
   /volunteers?/, /staffing/, /shifts?/,
   /services?/, /vendors?/, /suppliers?/, /providers?/,
+  /check[ -]?in stations?/, /entrances?/, /lanes?/,
+  /volunteer needs?/, /staffing needs?/,
+  /menus?/, /food/, /beverages?/,
+  /tickets?/, /admission/,
+  /silent auctions?/, /live auctions?/, /auction items?/,
+  /raffles?/, /raffle prizes?/,
+  /sponsors?/, /sponsorships?/,
+  /rfps?/, /requests? for proposals?/,
+  /deposits?/, /payments?/,
+  /team hours?/, /labor hours?/,
+  /live updates?/, /team updates?/, /alerts?/,
+  /floor ?plans?/, /room layouts?/,
+  /contingenc(y|ies)/, /weather plans?/,
 ];
 
 /** True when some role already claims this sheet by name, so headers needn't guess. */
@@ -223,6 +263,15 @@ function nameIsMeaningful(table: SpreadsheetTable): boolean {
  * importing neither and saying so.
  */
 export function classifyByHeaders(table: SpreadsheetTable): TableRole | null {
+  // A deposit ledger commonly starts with a Vendor column. It is not a vendor
+  // directory, and importing it as both would create suppliers and checklist tasks.
+  if (
+    matchingHeader(table, ["deposit amount", "deposit"])
+    && matchingHeader(table, ["vendor", "vendor name", "payee"])
+  ) {
+    return null;
+  }
+
   let best: TableRole | null = null;
   let bestScore = 0;
   let tied = false;
@@ -250,6 +299,19 @@ function tableFor(tables: SpreadsheetTable[], role: TableRole, patterns: RegExp[
   const named = tableNamed(tables, patterns);
   if (named) return named;
   return tables.find((table) => !nameIsMeaningful(table) && classifyByHeaders(table) === role) ?? null;
+}
+
+/** Named workbook tabs are preferred; a one-tab Google Sheet falls back to distinctive headers. */
+function tableForSection(
+  tables: SpreadsheetTable[],
+  patterns: RegExp[],
+  signature: ReadonlyArray<readonly string[]>,
+): SpreadsheetTable | null {
+  const named = tableNamed(tables, patterns);
+  if (named) return named;
+  return tables.find((table) =>
+    !nameIsMeaningful(table) && signature.every((alternatives) => matchingHeader(table, alternatives)),
+  ) ?? null;
 }
 
 function dateTime(value: SpreadsheetValue, defaultHour: number): string | null {
@@ -285,6 +347,19 @@ function integer(value: SpreadsheetValue): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? Math.round(value) : null;
   const parsed = Number.parseInt(String(value ?? "").replace(/[^\d-]/g, ""), 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function decimal(value: SpreadsheetValue): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const cleaned = String(value ?? "").replace(/[^\d.-]/g, "");
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function bounded(value: SpreadsheetValue, minimum: number, maximum: number, fallback: number): number {
+  const parsed = decimal(value);
+  return Math.min(maximum, Math.max(minimum, parsed ?? fallback));
 }
 
 function volunteerDayNumber(dayValue: SpreadsheetValue, dateValue: SpreadsheetValue, eventStart: string): number | null {
@@ -452,7 +527,7 @@ export function buildEventImportPlan(
   /* --------------------------------------------------------------- volunteers */
 
   const volunteerTable = includeVolunteers
-    ? tableFor(tables, "volunteers", [/volunteers?/, /staffing/, /shifts?/])
+    ? tableFor(tables, "volunteers", [/^volunteers?( shifts?| schedule| roster)?$/, /^staffing( schedule| roster| shifts?)?$/, /^shifts?$/])
     : null;
   const volunteers = (volunteerTable?.rows ?? []).flatMap((row, index): VolunteerShiftDraft[] => {
     const name = stringFrom(row, volunteerTable!, aliases.volunteerName);
@@ -509,13 +584,346 @@ export function buildEventImportPlan(
     ];
   });
 
+  /* ------------------------------------------------------ section-specific tabs */
+
+  const stationTable = tableForSection(tables, [/check[ -]?in stations?/, /entrances?/, /check[ -]?in lanes?/], [
+    ["station", "station name", "entrance"], ["lane", "device count", "devices", "ipads", "scanners"],
+  ]);
+  const checkInStations = (stationTable?.rows ?? []).flatMap((row, index): CheckInStationDraft[] => {
+    const name = stringFrom(row, stationTable!, ["station", "station name", "entrance", "name"]);
+    if (!name) return [];
+    return [{
+      name,
+      lane: stringFrom(row, stationTable!, ["lane", "lane name", "area"]) || name,
+      lead: stringFrom(row, stationTable!, ["lead", "owner", "assigned to", "responsible"]) || null,
+      deviceCount: Math.max(1, integer(valueFrom(row, stationTable!, ["devices", "device count", "ipads", "scanners"])) ?? 1),
+      notes: stringFrom(row, stationTable!, aliases.description) || null,
+      sortOrder: index,
+    }];
+  });
+
+  const volunteerNeedTable = tableForSection(tables, [/volunteer needs?/, /staffing needs?/, /open shifts?/], [
+    ["role", "position"], ["required count", "needed", "required"], ["start time", "shift start"], ["end time", "shift end"],
+  ]);
+  const volunteerNeeds = (volunteerNeedTable?.rows ?? []).flatMap((row, index): VolunteerNeedDraft[] => {
+    const role = stringFrom(row, volunteerNeedTable!, aliases.volunteerRole);
+    const startTime = clockTime(valueFrom(row, volunteerNeedTable!, aliases.volunteerStart));
+    const endTime = clockTime(valueFrom(row, volunteerNeedTable!, aliases.volunteerEnd));
+    if (!role || !startTime || !endTime || startTime === endTime) return [];
+    return [{
+      dayNumber: Math.max(1, integer(valueFrom(row, volunteerNeedTable!, aliases.dayNumber)) ?? 1),
+      role,
+      startTime,
+      endTime,
+      requiredCount: Math.max(1, integer(valueFrom(row, volunteerNeedTable!, ["needed", "required", "required count", "people", "count"])) ?? 1),
+      notes: stringFrom(row, volunteerNeedTable!, aliases.description) || null,
+      signupOpen: !["no", "false", "closed", "0"].includes(normalize(stringFrom(row, volunteerNeedTable!, ["signup open", "open"]))),
+      sortOrder: index,
+    }];
+  });
+
+  const menuTable = tableForSection(tables, [/menus?/, /food( and | & )beverage/, /catering menu/], [["menu item", "dish"]]);
+  const menu = (menuTable?.rows ?? []).flatMap((row, index): MenuItemDraft[] => {
+    const name = stringFrom(row, menuTable!, ["menu item", "dish", "item", "name", "title"]);
+    if (!name) return [];
+    const dietary = stringFrom(row, menuTable!, ["dietary tags", "dietary", "allergens", "tags"]);
+    return [{
+      name,
+      description: stringFrom(row, menuTable!, aliases.description) || null,
+      course: stringFrom(row, menuTable!, ["course", "section", "meal"]) || "Other",
+      dietaryTags: dietary ? dietary.split(/[,;|]/).map((tag) => tag.trim()).filter(Boolean) : [],
+      priceCents: moneyCents(valueFrom(row, menuTable!, ["price", "cost", "amount"])),
+      serves: integer(valueFrom(row, menuTable!, ["serves", "servings", "quantity"])),
+      notes: stringFrom(row, menuTable!, ["notes", "special instructions"]) || null,
+      sortOrder: index,
+    }];
+  });
+
+  const ticketTable = tableForSection(tables, [/tickets?/, /ticket types?/, /admission/], [["ticket type", "ticket"], ["quantity", "available", "inventory"]]);
+  const tickets = (ticketTable?.rows ?? []).flatMap((row, index): TicketTypeDraft[] => {
+    const name = stringFrom(row, ticketTable!, ["ticket", "ticket type", "name", "title"]);
+    const priceCents = moneyCents(valueFrom(row, ticketTable!, ["price", "ticket price", "amount"]));
+    const quantityTotal = integer(valueFrom(row, ticketTable!, ["quantity", "available", "inventory", "capacity", "total"]));
+    if (!name || priceCents === null || quantityTotal === null) return [];
+    return [{
+      name,
+      description: stringFrom(row, ticketTable!, aliases.description) || null,
+      priceCents: Math.max(0, priceCents),
+      quantityTotal: Math.max(0, quantityTotal),
+      isActive: !["no", "false", "inactive", "0"].includes(normalize(stringFrom(row, ticketTable!, ["active", "is active", "status"]))),
+      sortOrder: index,
+    }];
+  });
+
+  const silentAuctionTable = tableForSection(tables, [/silent auctions?/, /silent auction items?/], [["auction item"], ["starting bid", "opening bid", "minimum bid"]]);
+  const liveAuctionTable = tableNamed(tables, [/live auctions?/, /live auction items?/]);
+  const generalAuctionTable = tableNamed(tables, [/^auctions?$/, /auction items?/]);
+  const auctionTables = Array.from(new Set([silentAuctionTable, liveAuctionTable, generalAuctionTable].filter(Boolean)));
+  const auctions = auctionTables.flatMap((table): AuctionItemDraft[] => table!.rows.flatMap((row): AuctionItemDraft[] => {
+    const title = stringFrom(row, table!, ["auction item", "item", "name", "title"]);
+    if (!title) return [];
+    const tableName = normalize(table!.name);
+    const typeText = normalize(stringFrom(row, table!, ["auction type", "type"]));
+    return [{
+      title,
+      description: stringFrom(row, table!, aliases.description) || null,
+      imageUrl: stringFrom(row, table!, aliases.imageUrl) || null,
+      startingBidCents: moneyCents(valueFrom(row, table!, ["starting bid", "opening bid", "minimum bid"])),
+      currentBidCents: moneyCents(valueFrom(row, table!, ["current bid", "winning bid"])),
+      fairMarketValueCents: moneyCents(valueFrom(row, table!, ["fair market value", "market value", "value"])),
+      winnerName: stringFrom(row, table!, ["winner", "winner name"]) || null,
+      donorName: stringFrom(row, table!, ["donor", "donor name"]) || null,
+      auctionType: typeText === "live" || tableName.includes("live") ? "live" : "silent",
+      lotNumber: integer(valueFrom(row, table!, ["lot", "lot number", "number"])),
+    }];
+  }));
+
+  const raffleTable = tableForSection(tables, [/raffles?/, /raffle prizes?/, /raffle items?/], [["prize", "raffle item"], ["ticket price"]]);
+  const raffle = (raffleTable?.rows ?? []).flatMap((row): RaffleItemDraft[] => {
+    const name = stringFrom(row, raffleTable!, ["raffle item", "prize", "name", "title"]);
+    if (!name) return [];
+    return [{
+      name,
+      description: stringFrom(row, raffleTable!, aliases.description) || null,
+      imageUrl: stringFrom(row, raffleTable!, aliases.imageUrl) || null,
+      ticketPriceCents: Math.max(0, moneyCents(valueFrom(row, raffleTable!, ["ticket price", "price", "amount"])) ?? 0),
+      totalTickets: Math.max(0, integer(valueFrom(row, raffleTable!, ["total tickets", "tickets", "quantity"])) ?? 0),
+    }];
+  });
+
+  const sponsorshipTable = tableForSection(tables, [/sponsorships?/, /^sponsors?$/], [["sponsor", "sponsor name"], ["tier", "sponsorship amount"]]);
+  const sponsorships = (sponsorshipTable?.rows ?? []).flatMap((row): SponsorshipDraft[] => {
+    const companyName = stringFrom(row, sponsorshipTable!, ["company", "company name", "sponsor", "sponsor name", "name"]);
+    if (!companyName) return [];
+    const tierText = normalize(stringFrom(row, sponsorshipTable!, ["tier", "level"]));
+    return [{
+      companyName,
+      tier: (["gold", "silver", "bronze"].includes(tierText) ? tierText : "custom") as SponsorshipDraft["tier"],
+      amountCents: moneyCents(valueFrom(row, sponsorshipTable!, ["amount", "value", "sponsorship amount"])),
+      logoUrl: stringFrom(row, sponsorshipTable!, ["logo", "logo url", "image url"]) || null,
+      contactEmail: emailFrom(row, sponsorshipTable!, ["contact email", "email", "email address"]),
+      contactName: stringFrom(row, sponsorshipTable!, ["contact name", "contact", "representative"]) || null,
+      notes: stringFrom(row, sponsorshipTable!, aliases.description) || null,
+    }];
+  });
+
+  const rfpTable = tableForSection(tables, [/rfps?/, /requests? for proposals?/], [["rfp title", "room block required", "rooms required"]]);
+  const rfps = (rfpTable?.rows ?? []).flatMap((row): RfpDraft[] => {
+    const title = stringFrom(row, rfpTable!, ["rfp title", "title", "name"]);
+    if (!title) return [];
+    const target = normalize(stringFrom(row, rfpTable!, ["target", "target type", "send to"]));
+    const rawEventType = stringFrom(row, rfpTable!, ["event type", "type"]);
+    const eventType = RFP_EVENT_TYPES.find((candidate) => normalize(candidate) === normalize(rawEventType));
+    const eventDate = dateTime(valueFrom(row, rfpTable!, aliases.date), 9);
+    const startTime = clockTime(valueFrom(row, rfpTable!, aliases.startTime));
+    const endTime = clockTime(valueFrom(row, rfpTable!, ["end time", "ends"]));
+    const rawHeadcount = integer(valueFrom(row, rfpTable!, aliases.capacity));
+    const headcount = rawHeadcount === null || rawHeadcount < 1 ? null : rawHeadcount;
+    const city = stringFrom(row, rfpTable!, ["city"]);
+    const location = stringFrom(row, rfpTable!, aliases.location);
+    const roomsRequested = integer(valueFrom(row, rfpTable!, ["rooms", "rooms required", "room count"]));
+    const roomBlockRequired = truthy(valueFrom(row, rfpTable!, ["room block", "room block required"])) || (roomsRequested ?? 0) > 0;
+    const checkInDate = dateTime(valueFrom(row, rfpTable!, ["check in date", "hotel check in"]), 15);
+    const checkOutDate = dateTime(valueFrom(row, rfpTable!, ["check out date", "hotel check out"]), 11);
+    const budgetMinCents = moneyCents(valueFrom(row, rfpTable!, ["minimum budget", "budget min", "min budget"]));
+    const rawBudgetMax = moneyCents(valueFrom(row, rfpTable!, ["maximum budget", "budget max", "max budget", "budget"]));
+    const budgetMaxCents = rawBudgetMax === null || budgetMinCents === null ? rawBudgetMax : Math.max(rawBudgetMax, budgetMinCents);
+    const foodBeverageSpendCents = moneyCents(valueFrom(row, rfpTable!, ["food beverage spend", "f&b spend", "food and beverage spend"]));
+    const ancillarySpendCents = moneyCents(valueFrom(row, rfpTable!, ["ancillary spend", "other spend"]));
+    const targetType = target.includes("venue") || target.includes("hotel")
+      ? "venue"
+      : target.includes("vendor") ? "vendor" : null;
+    const missing = [
+      !targetType && "target type",
+      !eventType && "event type",
+      !eventDate && "event date",
+      !startTime && "start time",
+      !endTime && "end time",
+      headcount === null && "headcount",
+      !city && "city",
+      !location && "location",
+    ].filter(Boolean) as string[];
+
+    const hotelPurposes = ["registration", "breakfast", "meeting", "lunch"] as const;
+    const spaceRequirements = roomBlockRequired ? hotelPurposes.flatMap((purpose) => {
+      const spaceDate = dateTime(valueFrom(row, rfpTable!, [`${purpose} date`]), 9);
+      const spaceStart = clockTime(valueFrom(row, rfpTable!, [`${purpose} start time`, `${purpose} start`]));
+      const spaceEnd = clockTime(valueFrom(row, rfpTable!, [`${purpose} end time`, `${purpose} end`]));
+      const spaceCapacity = integer(valueFrom(row, rfpTable!, [`${purpose} capacity`, `${purpose} headcount`]));
+      return spaceDate && spaceStart && spaceEnd && spaceCapacity !== null && spaceCapacity > 0 ? [{
+        id: `import-${purpose}`,
+        purpose,
+        date: spaceDate,
+        startTime: spaceStart,
+        endTime: spaceEnd,
+        capacity: spaceCapacity,
+        notes: stringFrom(row, rfpTable!, [`${purpose} notes`]) || null,
+      }] : [];
+    }) : [];
+
+    if (roomBlockRequired) {
+      if (targetType !== "venue") missing.push("venue target type");
+      if (roomsRequested === null || roomsRequested < 1) missing.push("rooms required");
+      if (!checkInDate) missing.push("check-in date");
+      if (!checkOutDate) missing.push("check-out date");
+      if (foodBeverageSpendCents === null) missing.push("food and beverage spend");
+      if (ancillarySpendCents === null) missing.push("ancillary spend");
+      if (spaceRequirements.length !== hotelPurposes.length) {
+        missing.push("registration, breakfast, meeting, and lunch space details");
+      }
+    }
+
+    if (missing.length > 0) {
+      const uniqueMissing = Array.from(new Set(missing));
+      warnings.push(`RFP “${title}” was skipped because ${uniqueMissing.join(", ")} ${uniqueMissing.length === 1 ? "is" : "are"} required.`);
+      return [];
+    }
+
+    const draft: RfpDraft = {
+      title,
+      targetType: targetType!,
+      vendorCategory: stringFrom(row, rfpTable!, ["vendor category", "category", "service"]) || "Other",
+      description: stringFrom(row, rfpTable!, aliases.description) || null,
+      eventType: eventType!,
+      eventDate: eventDate!,
+      startTime: startTime!,
+      endTime: endTime!,
+      city,
+      location,
+      budgetMinCents,
+      budgetMaxCents,
+      headcount: headcount!,
+      roomBlockRequired,
+      roomsRequired: roomBlockRequired ? roomsRequested : null,
+      checkInDate: roomBlockRequired ? checkInDate : null,
+      checkOutDate: roomBlockRequired ? checkOutDate : null,
+      spaceRequirements,
+      foodBeverageSpendCents: roomBlockRequired ? foodBeverageSpendCents : null,
+      ancillarySpendCents: roomBlockRequired ? ancillarySpendCents : null,
+      ancillarySpendNotes: stringFrom(row, rfpTable!, ["ancillary spend notes", "other spend notes"]) || null,
+      deadline: dateTime(valueFrom(row, rfpTable!, ["deadline", "response deadline", "due date"]), 17),
+      requirements: stringFrom(row, rfpTable!, ["requirements", "needs", "details"]) || null,
+    };
+    const parsed = rfpDraftSchema.safeParse(draft);
+    if (parsed.success) return [parsed.data];
+    warnings.push(`RFP “${title}” was skipped because its dates, times, budget, or hotel details were invalid.`);
+    return [];
+  });
+
+  const depositTable = tableForSection(tables, [/deposits?/, /vendor deposits?/, /deposit payments?/], [["deposit amount", "deposit"], ["vendor", "vendor name", "payee"]]);
+  const deposits = (depositTable?.rows ?? []).flatMap((row): DepositDraft[] => {
+    const vendorName = stringFrom(row, depositTable!, ["vendor", "vendor name", "payee", "name"]);
+    const amountCents = moneyCents(valueFrom(row, depositTable!, ["amount", "deposit", "deposit amount"]));
+    if (!vendorName || amountCents === null) return [];
+    const statusText = normalize(stringFrom(row, depositTable!, ["status"]));
+    return [{
+      vendorName,
+      amountCents: Math.max(0, amountCents),
+      dueDate: dateTime(valueFrom(row, depositTable!, ["due date", "due"]), 12),
+      paidDate: dateTime(valueFrom(row, depositTable!, ["paid date", "date paid"]), 12),
+      paidBy: stringFrom(row, depositTable!, ["paid by", "payer"]) || null,
+      paymentMethod: stringFrom(row, depositTable!, ["payment method", "method"]) || null,
+      status: (["paid", "overdue", "refunded"].includes(statusText) ? statusText : "pending") as DepositDraft["status"],
+      notes: stringFrom(row, depositTable!, aliases.description) || null,
+    }];
+  });
+
+  const teamHoursTable = tableForSection(tables, [/team hours?/, /labor hours?/, /staff hours?/], [["staff member", "team member"], ["hours", "total hours"]]);
+  const teamHours = (teamHoursTable?.rows ?? []).flatMap((row): TeamHoursDraft[] => {
+    const staffMember = stringFrom(row, teamHoursTable!, ["staff member", "team member", "person", "name"]);
+    const role = stringFrom(row, teamHoursTable!, ["role", "job", "position"]);
+    const hours = decimal(valueFrom(row, teamHoursTable!, ["hours", "total hours", "time"]));
+    return staffMember && role && hours !== null ? [{ staffMember, role, hours: Math.max(0, hours) }] : [];
+  });
+
+  const updateTable = tableForSection(tables, [/live updates?/, /team updates?/, /alerts?/], [["message", "update", "alert"], ["kind", "type"]]);
+  const teamUpdates = (updateTable?.rows ?? []).flatMap((row): TeamUpdateDraft[] => {
+    const message = stringFrom(row, updateTable!, ["message", "update", "alert", "description", "notes"]);
+    if (!message) return [];
+    const kindText = normalize(stringFrom(row, updateTable!, ["kind", "type", "category"]));
+    return [{
+      kind: kindText.includes("vendor") ? "vendor-delay" : kindText.includes("schedule") ? "schedule" : "general",
+      message,
+      notifyTeam: false,
+    }];
+  });
+
+  const floorplanTable = tableForSection(tables, [/floor ?plans?/, /room layouts?/], [["shape", "object type", "item type"], ["x", "x position"], ["y", "y position"]]);
+  const allFloorplanRows = floorplanTable?.rows ?? [];
+  const floorplanRows = allFloorplanRows.slice(0, 500);
+  if (allFloorplanRows.length > floorplanRows.length) {
+    warnings.push(`Only the first 500 floorplan objects were imported. ${allFloorplanRows.length - floorplanRows.length} extra rows were skipped.`);
+  }
+  const floorplanShapes = new Set(["round-table", "long-table", "stage", "bar", "entrance", "dancefloor", "booth", "av", "tree", "chair", "chair-row"]);
+  const floorplanName = floorplanTable && floorplanRows.length > 0
+    ? stringFrom(floorplanRows[0]!, floorplanTable, ["floorplan", "floorplan name", "room", "room name", "plan name"])
+    : "";
+  let skippedFloorplanRows = 0;
+  const floorplanItems = floorplanRows.flatMap((row, index) => {
+    const label = stringFrom(row, floorplanTable!, ["label", "item", "object", "name"]);
+    const rawShape = normalize(stringFrom(row, floorplanTable!, ["shape", "object type", "item type", "type"])).replace(/\s+/g, "-");
+    if (!label || label.length > 80 || !floorplanShapes.has(rawShape)) {
+      skippedFloorplanRows += 1;
+      return [];
+    }
+    return [{
+      id: `imported-${index + 1}`,
+      shape: rawShape as FloorplanDraft["items"][number]["shape"],
+      label,
+      x: bounded(valueFrom(row, floorplanTable!, ["x", "x position", "left percent"]), 0, 100, 10 + (index % 6) * 14),
+      y: bounded(valueFrom(row, floorplanTable!, ["y", "y position", "top percent"]), 0, 100, 10 + (Math.floor(index / 6) % 6) * 14),
+      seats: Math.min(10_000, Math.max(0, integer(valueFrom(row, floorplanTable!, ["seats", "seat count", "capacity"])) ?? 0)),
+      locked: truthy(valueFrom(row, floorplanTable!, ["locked", "fixed", "existing"])),
+    }];
+  });
+  if (skippedFloorplanRows > 0) {
+    warnings.push(`${skippedFloorplanRows} floorplan ${skippedFloorplanRows === 1 ? "row was" : "rows were"} skipped because its label or shape was invalid.`);
+  }
+  let floorplans: FloorplanDraft[] = [];
+  if (floorplanTable && floorplanRows.length > 0) {
+    try {
+      floorplans = [parseFloorplanDraft({
+        name: floorplanName || floorplanTable.name,
+        items: floorplanItems,
+        room: {
+          shape: "rectangle",
+          widthFeet: Math.min(10_000, Math.max(1, decimal(valueFrom(floorplanRows[0]!, floorplanTable, ["room width", "width feet", "width"])) ?? 60)),
+          lengthFeet: Math.min(10_000, Math.max(1, decimal(valueFrom(floorplanRows[0]!, floorplanTable, ["room length", "length feet", "length"])) ?? 40)),
+          points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+        },
+      })];
+    } catch {
+      warnings.push(`Floorplan “${floorplanName || floorplanTable.name}” was skipped because its name or room details were invalid.`);
+    }
+  }
+
+  const contingencyTable = tableForSection(tables, [/contingenc(y|ies)/, /weather plans?/], [["contingency task"]]);
+  const contingency = (contingencyTable?.rows ?? []).flatMap((row, index): ChecklistItemDraft[] => {
+    const itemTitle = stringFrom(row, contingencyTable!, aliases.task);
+    if (!itemTitle) return [];
+    return [{
+      title: itemTitle,
+      description: stringFrom(row, contingencyTable!, aliases.description) || null,
+      category: "Contingency",
+      dueDate: checklistDueDate(valueFrom(row, contingencyTable!, aliases.dueDate)),
+      assignedTo: stringFrom(row, contingencyTable!, aliases.owner) || null,
+      assignedEmail: emailFrom(row, contingencyTable!, aliases.assigneeEmail),
+      completed: truthy(valueFrom(row, contingencyTable!, aliases.completed)),
+      sortOrder: checklistFromSheet.length + index,
+    }];
+  });
+
   /*
    * Any sheet that produced nothing is named back to the reader. A tab that is silently
    * ignored is worse than one that fails: the import looks like it worked and the gap is
    * only found later, by someone who assumed the data was there.
    */
   const consumed = new Set(
-    [eventTable, checklistTable, runTable, budgetTable, moodTable, guestTable, volunteerTable, vendorTable]
+    [
+      eventTable, checklistTable, runTable, budgetTable, moodTable, guestTable, volunteerTable, vendorTable,
+      stationTable, volunteerNeedTable, menuTable, ticketTable, ...auctionTables, raffleTable,
+      sponsorshipTable, rfpTable, depositTable, teamHoursTable, updateTable, floorplanTable, contingencyTable,
+    ]
       .filter(Boolean)
       .map((table) => table!.name),
   );
@@ -554,9 +962,32 @@ export function buildEventImportPlan(
     ];
   });
 
-  const checklist = [...checklistFromSheet, ...vendorTasks];
+  const checklist = [...checklistFromSheet, ...contingency, ...vendorTasks];
 
-  return { sourceName, event, checklist, runOfShow, budget, moodBoard, guests, vendors, volunteers, warnings };
+  return {
+    sourceName,
+    event,
+    checklist,
+    runOfShow,
+    budget,
+    moodBoard,
+    guests,
+    vendors,
+    volunteers,
+    volunteerNeeds,
+    checkInStations,
+    menu,
+    tickets,
+    auctions,
+    raffle,
+    sponsorships,
+    rfps,
+    deposits,
+    teamHours,
+    teamUpdates,
+    floorplans,
+    warnings,
+  };
 }
 
 /** RFC 4180-style CSV parser used for uploads and Google Sheets CSV exports. */

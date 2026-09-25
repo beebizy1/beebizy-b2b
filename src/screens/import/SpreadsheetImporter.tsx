@@ -9,16 +9,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
 import {
   useAddBudgetItem,
+  useAddAuctionItem,
+  useAddCheckInStation,
   useAddChecklistItem,
+  useAddDeposit,
+  useAddMenuItem,
   useAddMoodBoardImage,
+  useAddRaffleItem,
+  useAddRfp,
   useAddRunOfShowItem,
+  useAddSponsorship,
+  useAddTeamHours,
+  useAddTicketType,
   useCreateEvent,
+  useCreateFloorplan,
   useCreateGuest,
   useCreateRegistration,
   useCreateVendor,
   useAddEventVendor,
   useAddVolunteer,
+  useAddVolunteerNeed,
   useLoadGoogleSheet,
+  usePostTeamUpdate,
 } from "@/data/hooks";
 import {
   buildEventImportPlan,
@@ -42,6 +54,27 @@ function dateInputValue(value: string | null | undefined): string {
 
 function dateFromInput(value: string, hour: number): string {
   return new Date(`${value}T${String(hour).padStart(2, "0")}:00:00`).toISOString();
+}
+
+async function settleWithConcurrency(
+  writes: Array<() => Promise<unknown>>,
+  concurrency = 5,
+): Promise<PromiseSettledResult<unknown>[]> {
+  const results: PromiseSettledResult<unknown>[] = new Array(writes.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, writes.length) }, async () => {
+    while (cursor < writes.length) {
+      const index = cursor;
+      cursor += 1;
+      try {
+        results[index] = { status: "fulfilled", value: await writes[index]!() };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function ImportedList({
@@ -78,6 +111,30 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
+function ImportedSimpleList({
+  title,
+  entries,
+  onRemove,
+}: {
+  title: string;
+  entries: Array<{ label: string; detail?: string | null }>;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <ImportedList title={title} count={entries.length}>
+      {entries.map((entry, index) => (
+        <li key={`${entry.label}-${index}`} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium text-foreground">{entry.label}</span>
+            {entry.detail ? <span className="mt-0.5 block text-xs text-muted-foreground">{entry.detail}</span> : null}
+          </span>
+          <RemoveButton label={entry.label} onClick={() => onRemove(index)} />
+        </li>
+      ))}
+    </ImportedList>
+  );
+}
+
 export default function SpreadsheetImporter({
   onBack,
   includeMoodBoard = true,
@@ -109,6 +166,18 @@ export default function SpreadsheetImporter({
   const createGuest = useCreateGuest();
   const createRegistration = useCreateRegistration();
   const addVolunteer = useAddVolunteer();
+  const addVolunteerNeed = useAddVolunteerNeed();
+  const addCheckInStation = useAddCheckInStation();
+  const addMenuItem = useAddMenuItem();
+  const addTicketType = useAddTicketType();
+  const addAuctionItem = useAddAuctionItem();
+  const addRaffleItem = useAddRaffleItem();
+  const addSponsorship = useAddSponsorship();
+  const addRfp = useAddRfp();
+  const addDeposit = useAddDeposit();
+  const addTeamHours = useAddTeamHours();
+  const postTeamUpdate = usePostTeamUpdate();
+  const createFloorplan = useCreateFloorplan();
 
   const importPlan = (tables: SpreadsheetTable[], sourceName: string) => {
     const contextualTables = existingEvent
@@ -159,14 +228,14 @@ export default function SpreadsheetImporter({
     setIsCreating(true);
     try {
       const created = existingEvent ?? await createEvent.mutateAsync(plan.event);
-      const writes: Promise<unknown>[] = [
-        ...plan.budget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
-        ...plan.checklist.map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
-        ...plan.runOfShow.map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
+      const writes: Array<() => Promise<unknown>> = [
+        ...plan.budget.map((draft) => () => addBudget.mutateAsync({ eventId: created.id, draft })),
+        ...plan.checklist.map((draft) => () => addChecklist.mutateAsync({ eventId: created.id, draft })),
+        ...plan.runOfShow.map((draft) => () => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
         ...(includeMoodBoard
-          ? plan.moodBoard.map((reference) => addMood.mutateAsync({ eventId: created.id, ...reference }))
+          ? plan.moodBoard.map((reference) => () => addMood.mutateAsync({ eventId: created.id, ...reference }))
           : []),
-        ...plan.guests.map(async (draft) => {
+        ...plan.guests.map((draft) => async () => {
           const guest = await createGuest.mutateAsync({ name: draft.name, contact: draft.contact, notes: draft.notes });
           return createRegistration.mutateAsync({
             eventId: created.id,
@@ -177,11 +246,23 @@ export default function SpreadsheetImporter({
           });
         }),
         ...(includeVolunteers
-          ? plan.volunteers.map((draft) => addVolunteer.mutateAsync({ eventId: created.id, draft }))
+          ? plan.volunteers.map((draft) => () => addVolunteer.mutateAsync({ eventId: created.id, draft }))
           : []),
+        ...plan.volunteerNeeds.map((draft) => () => addVolunteerNeed.mutateAsync({ eventId: created.id, draft })),
+        ...plan.checkInStations.map((draft) => () => addCheckInStation.mutateAsync({ eventId: created.id, draft })),
+        ...plan.menu.map((draft) => () => addMenuItem.mutateAsync({ eventId: created.id, draft })),
+        ...plan.tickets.map((draft) => () => addTicketType.mutateAsync({ eventId: created.id, draft })),
+        ...plan.auctions.map((draft) => () => addAuctionItem.mutateAsync({ eventId: created.id, draft })),
+        ...plan.raffle.map((draft) => () => addRaffleItem.mutateAsync({ eventId: created.id, draft })),
+        ...plan.sponsorships.map((draft) => () => addSponsorship.mutateAsync({ eventId: created.id, draft })),
+        ...plan.rfps.map((draft) => () => addRfp.mutateAsync({ eventId: created.id, draft })),
+        ...plan.deposits.map((draft) => () => addDeposit.mutateAsync({ eventId: created.id, draft })),
+        ...plan.teamHours.map((draft) => () => addTeamHours.mutateAsync({ eventId: created.id, draft })),
+        ...plan.teamUpdates.map((draft) => () => postTeamUpdate.mutateAsync({ eventId: created.id, draft })),
+        ...plan.floorplans.map((draft) => () => createFloorplan.mutateAsync({ eventId: created.id, draft })),
         // A service on the sheet becomes a vendor in the directory and a booking on this
         // event, so the fee lands on the budget rather than only in the address book.
-        ...plan.vendors.map(async (imported) => {
+        ...plan.vendors.map((imported) => async () => {
           const vendor = await createVendor.mutateAsync(imported.vendor);
           return addEventVendor.mutateAsync({
             eventId: created.id,
@@ -189,7 +270,7 @@ export default function SpreadsheetImporter({
           });
         }),
       ];
-      const results = await Promise.allSettled(writes);
+      const results = await settleWithConcurrency(writes);
       const failed = results.filter((result) => result.status === "rejected").length;
       toast({
         title: failed
@@ -292,7 +373,19 @@ export default function SpreadsheetImporter({
     (includeMoodBoard ? plan.moodBoard.length : 0) +
     plan.guests.length +
     plan.vendors.length +
-    (includeVolunteers ? plan.volunteers.length : 0);
+    (includeVolunteers ? plan.volunteers.length : 0) +
+    plan.volunteerNeeds.length +
+    plan.checkInStations.length +
+    plan.menu.length +
+    plan.tickets.length +
+    plan.auctions.length +
+    plan.raffle.length +
+    plan.sponsorships.length +
+    plan.rfps.length +
+    plan.deposits.length +
+    plan.teamHours.length +
+    plan.teamUpdates.length +
+    plan.floorplans.length;
   return (
     <div className="space-y-5">
       <Panel>
@@ -502,6 +595,67 @@ export default function SpreadsheetImporter({
             ))}
           </ImportedList>
         ) : null}
+
+        <ImportedSimpleList
+          title="Volunteer needs"
+          entries={plan.volunteerNeeds.map((item) => ({ label: item.role, detail: `Day ${item.dayNumber ?? 1} · ${item.startTime}–${item.endTime} · ${item.requiredCount} needed` }))}
+          onRemove={(index) => setPlan({ ...plan, volunteerNeeds: plan.volunteerNeeds.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Check-in stations"
+          entries={plan.checkInStations.map((item) => ({ label: item.name, detail: [item.lane, item.lead, `${item.deviceCount ?? 1} device${item.deviceCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ") }))}
+          onRemove={(index) => setPlan({ ...plan, checkInStations: plan.checkInStations.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Menu"
+          entries={plan.menu.map((item) => ({ label: item.name, detail: [item.course, item.dietaryTags?.join(", "), item.priceCents == null ? null : formatMoney(item.priceCents)].filter(Boolean).join(" · ") }))}
+          onRemove={(index) => setPlan({ ...plan, menu: plan.menu.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Ticket types"
+          entries={plan.tickets.map((item) => ({ label: item.name, detail: `${formatMoney(item.priceCents)} · ${item.quantityTotal} available` }))}
+          onRemove={(index) => setPlan({ ...plan, tickets: plan.tickets.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Auction items"
+          entries={plan.auctions.map((item) => ({ label: item.title, detail: [item.auctionType === "live" ? "Live auction" : "Silent auction", item.startingBidCents == null ? null : `Starts at ${formatMoney(item.startingBidCents)}`, item.donorName].filter(Boolean).join(" · ") }))}
+          onRemove={(index) => setPlan({ ...plan, auctions: plan.auctions.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Raffle"
+          entries={plan.raffle.map((item) => ({ label: item.name, detail: `${formatMoney(item.ticketPriceCents ?? 0)} per ticket · ${item.totalTickets ?? 0} tickets` }))}
+          onRemove={(index) => setPlan({ ...plan, raffle: plan.raffle.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Sponsorships"
+          entries={plan.sponsorships.map((item) => ({ label: item.companyName, detail: [item.tier, item.amountCents == null ? null : formatMoney(item.amountCents), item.contactEmail].filter(Boolean).join(" · ") }))}
+          onRemove={(index) => setPlan({ ...plan, sponsorships: plan.sponsorships.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="RFPs"
+          entries={plan.rfps.map((item) => ({ label: item.title, detail: [item.targetType, item.vendorCategory, item.city, item.headcount == null ? null : `${item.headcount} people`].filter(Boolean).join(" · ") }))}
+          onRemove={(index) => setPlan({ ...plan, rfps: plan.rfps.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Deposits"
+          entries={plan.deposits.map((item) => ({ label: item.vendorName, detail: [formatMoney(item.amountCents), item.status].filter(Boolean).join(" · ") }))}
+          onRemove={(index) => setPlan({ ...plan, deposits: plan.deposits.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Team hours"
+          entries={plan.teamHours.map((item) => ({ label: item.staffMember, detail: `${item.role} · ${item.hours} hours` }))}
+          onRemove={(index) => setPlan({ ...plan, teamHours: plan.teamHours.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Live team updates"
+          entries={plan.teamUpdates.map((item) => ({ label: item.message, detail: item.kind }))}
+          onRemove={(index) => setPlan({ ...plan, teamUpdates: plan.teamUpdates.filter((_, itemIndex) => itemIndex !== index) })}
+        />
+        <ImportedSimpleList
+          title="Floorplans"
+          entries={plan.floorplans.map((item) => ({ label: item.name, detail: `${item.items.length} object${item.items.length === 1 ? "" : "s"} · ${item.room?.widthFeet ?? 0} × ${item.room?.lengthFeet ?? 0} ft` }))}
+          onRemove={(index) => setPlan({ ...plan, floorplans: plan.floorplans.filter((_, itemIndex) => itemIndex !== index) })}
+        />
       </div>
 
       <div className="flex flex-wrap justify-between gap-3 rounded-xl border border-hairline bg-surface p-4">

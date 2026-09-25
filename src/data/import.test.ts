@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildEventImportPlan, googleSheetCsvUrl, parseCsvTable } from "./import";
+import { parseFloorplanDraft } from "./floorplan";
+import { rfpDraftSchema } from "./rfp";
 
 describe("spreadsheet import", () => {
   it("parses quoted CSV values without losing commas or line breaks", () => {
@@ -76,6 +78,49 @@ describe("spreadsheet import", () => {
       segment: null,
       organization: null,
     }]);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  it("imports the structured records used by every event section", () => {
+    const plan = buildEventImportPlan([
+      parseCsvTable("Event Name,Date\nDemo Day,2026-10-08", "Event"),
+      parseCsvTable("Task,Owner Email\nPrepare rain route,ops@example.com", "Contingency"),
+      parseCsvTable("Station,Lane,Lead,Devices\nMain entrance,A,Sam,3", "Check-in Stations"),
+      parseCsvTable("Role,Start Time,End Time,Required Count\nGreeter,08:00,10:00,4", "Volunteer Needs"),
+      parseCsvTable("Menu Item,Course,Dietary Tags,Price\nHarvest bowl,Lunch,vegan;gluten-free,18", "Menu"),
+      parseCsvTable("Ticket Type,Price,Quantity\nGeneral admission,25,300", "Tickets"),
+      parseCsvTable("Auction Item,Starting Bid,Donor\nWinery tour,500,Acme Winery", "Silent Auction"),
+      parseCsvTable("Prize,Ticket Price,Total Tickets\nWeekend stay,10,500", "Raffle"),
+      parseCsvTable("Sponsor,Tier,Amount,Contact Email\nAcme Ventures,Gold,10000,sponsor@example.com", "Sponsorships"),
+      parseCsvTable([
+        "RFP Title,Target Type,Vendor Category,Event Type,Event Date,Start Time,End Time,Headcount,City,Location,Rooms Required,Check In Date,Check Out Date,Food Beverage Spend,Ancillary Spend,Registration Date,Registration Start Time,Registration End Time,Registration Capacity,Breakfast Date,Breakfast Start Time,Breakfast End Time,Breakfast Capacity,Meeting Date,Meeting Start Time,Meeting End Time,Meeting Capacity,Lunch Date,Lunch Start Time,Lunch End Time,Lunch Capacity",
+        "Conference hotel,Venue,Venue,Conference with room block,2026-10-08,09:00,17:00,200,Santa Clara,Grand Hotel,100,2026-10-07,2026-10-09,25000,5000,2026-10-08,08:00,09:00,200,2026-10-08,08:00,09:00,200,2026-10-08,09:00,12:00,200,2026-10-08,12:00,13:00,200",
+      ].join("\n"), "RFPs"),
+      parseCsvTable("Vendor,Amount,Due Date\nConvention Center,5000,2026-09-01", "Deposits"),
+      parseCsvTable("Staff Member,Role,Hours\nAlex,Producer,12.5", "Team Hours"),
+      parseCsvTable("Type,Message\nSchedule,Doors open at 8 AM", "Live Updates"),
+      parseCsvTable("Floorplan Name,Room Width,Room Length,Item,Shape,X,Y,Seats,Locked\nMain ballroom,100,80,Oak tree,tree,20,25,0,yes\nMain ballroom,100,80,Front row,chair-row,50,70,20,no", "Floorplan"),
+    ], "demo-day.xlsx");
+
+    expect(plan.checklist).toEqual([expect.objectContaining({ title: "Prepare rain route", category: "Contingency", assignedEmail: "ops@example.com" })]);
+    expect(plan.checkInStations).toEqual([expect.objectContaining({ name: "Main entrance", lane: "A", deviceCount: 3 })]);
+    expect(plan.volunteerNeeds).toEqual([expect.objectContaining({ role: "Greeter", requiredCount: 4 })]);
+    expect(plan.menu).toEqual([expect.objectContaining({ name: "Harvest bowl", priceCents: 1800 })]);
+    expect(plan.tickets).toEqual([expect.objectContaining({ name: "General admission", priceCents: 2500, quantityTotal: 300 })]);
+    expect(plan.auctions).toEqual([expect.objectContaining({ title: "Winery tour", auctionType: "silent", startingBidCents: 50_000 })]);
+    expect(plan.raffle).toEqual([expect.objectContaining({ name: "Weekend stay", ticketPriceCents: 1000, totalTickets: 500 })]);
+    expect(plan.sponsorships).toEqual([expect.objectContaining({ companyName: "Acme Ventures", tier: "gold", amountCents: 1_000_000 })]);
+    expect(plan.rfps).toEqual([expect.objectContaining({ title: "Conference hotel", targetType: "venue", headcount: 200, roomsRequired: 100 })]);
+    expect(plan.deposits).toEqual([expect.objectContaining({ vendorName: "Convention Center", amountCents: 500_000 })]);
+    expect(plan.teamHours).toEqual([{ staffMember: "Alex", role: "Producer", hours: 12.5 }]);
+    expect(plan.teamUpdates).toEqual([{ kind: "schedule", message: "Doors open at 8 AM", notifyTeam: false }]);
+    expect(plan.floorplans).toEqual([expect.objectContaining({
+      name: "Main ballroom",
+      items: [expect.objectContaining({ label: "Oak tree", shape: "tree", locked: true }), expect.objectContaining({ label: "Front row", shape: "chair-row", seats: 20 })],
+      room: expect.objectContaining({ widthFeet: 100, lengthFeet: 80 }),
+    })]);
+    expect(() => parseFloorplanDraft(plan.floorplans[0])).not.toThrow();
+    expect(() => rfpDraftSchema.parse(plan.rfps[0])).not.toThrow();
     expect(plan.warnings).toEqual([]);
   });
 
@@ -258,6 +303,59 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
   it("imports a budget", () => {
     const plan = asGoogleSheet("Line Item,Estimated\nVenue hire,38000");
     expect(plan.budget.map((b) => b.name)).toEqual(["Venue hire"]);
+  });
+
+  it("recognises specialized section sheets by headers, not only by tab name", () => {
+    expect(asGoogleSheet("Station,Lane,Devices\nMain,A,2").checkInStations).toHaveLength(1);
+    expect(asGoogleSheet("Role,Start Time,End Time,Required Count\nGreeter,08:00,10:00,3").volunteerNeeds).toHaveLength(1);
+    expect(asGoogleSheet("Menu Item,Course\nHarvest bowl,Lunch").menu).toHaveLength(1);
+    expect(asGoogleSheet("Ticket Type,Price,Quantity\nGeneral,25,200").tickets).toHaveLength(1);
+    expect(asGoogleSheet("Auction Item,Starting Bid\nDinner,500").auctions).toHaveLength(1);
+    expect(asGoogleSheet("Prize,Ticket Price\nTrip,10").raffle).toHaveLength(1);
+    expect(asGoogleSheet("Sponsor,Tier\nAcme,Gold").sponsorships).toHaveLength(1);
+    expect(asGoogleSheet("RFP Title,Target Type,Event Type,Event Date,Start Time,End Time,Headcount,City,Location\nHotel,Venue,Conference,2026-10-08,09:00,17:00,200,Santa Clara,Convention Center").rfps).toHaveLength(1);
+    const depositPlan = asGoogleSheet("Vendor,Deposit Amount\nVenue,5000");
+    expect(depositPlan.deposits).toHaveLength(1);
+    expect(depositPlan.vendors).toHaveLength(0);
+    expect(depositPlan.checklist).toHaveLength(0);
+    expect(asGoogleSheet("Staff Member,Role,Hours\nAlex,Producer,8").teamHours).toHaveLength(1);
+    expect(asGoogleSheet("Type,Message\nSchedule,Doors open").teamUpdates).toHaveLength(1);
+    expect(asGoogleSheet("Item,Shape,X,Y\nOak,tree,20,25").floorplans).toHaveLength(1);
+    expect(asGoogleSheet("Contingency Task,Owner\nPrepare rain route,Sam").checklist).toHaveLength(1);
+  });
+
+  it("does not invent required RFP details when a row is incomplete", () => {
+    const plan = asGoogleSheet("RFP Title,Headcount\nHotel,200");
+    expect(plan.rfps).toHaveLength(0);
+    expect(plan.warnings.join(" ")).toContain("target type");
+    expect(plan.warnings.join(" ")).toContain("event date");
+
+    const zeroHeadcount = asGoogleSheet("RFP Title,Target Type,Event Type,Event Date,Start Time,End Time,Headcount,City,Location\nHotel,Venue,Conference,2026-10-08,09:00,17:00,0,Santa Clara,Convention Center");
+    expect(zeroHeadcount.rfps).toHaveLength(0);
+    expect(zeroHeadcount.warnings.join(" ")).toContain("headcount");
+  });
+
+  it("treats blank decimals as missing instead of zero", () => {
+    const floorplan = asGoogleSheet("Item,Shape,X,Y,Room Width,Room Length\nChair,chair,,,,").floorplans[0]!;
+    expect(floorplan.items[0]).toMatchObject({ x: 10, y: 10 });
+    expect(floorplan.room).toMatchObject({ widthFeet: 60, lengthFeet: 40 });
+    expect(asGoogleSheet("Staff Member,Role,Hours\nAlex,Producer,").teamHours).toHaveLength(0);
+  });
+
+  it("caps floorplan imports at the persisted schema limit", () => {
+    const rows = Array.from({ length: 501 }, (_, index) => `Chair ${index + 1},chair,10,10`);
+    const plan = asGoogleSheet(["Item,Shape,X,Y", ...rows].join("\n"));
+    expect(plan.floorplans[0]!.items).toHaveLength(500);
+    expect(() => parseFloorplanDraft(plan.floorplans[0])).not.toThrow();
+    expect(plan.warnings.join(" ")).toContain("first 500 floorplan objects");
+  });
+
+  it("keeps generated floorplan positions inside the canvas", () => {
+    const rows = Array.from({ length: 50 }, (_, index) => `Chair ${index + 1},chair,,`);
+    const plan = asGoogleSheet(["Item,Shape,X,Y", ...rows].join("\n"));
+    expect(plan.floorplans[0]!.items).toHaveLength(50);
+    expect(plan.floorplans[0]!.items.every((item) => item.x >= 0 && item.x <= 100 && item.y >= 0 && item.y <= 100)).toBe(true);
+    expect(() => parseFloorplanDraft(plan.floorplans[0])).not.toThrow();
   });
 
   it("imports a volunteer schedule for every workspace by default", () => {
