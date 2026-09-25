@@ -155,16 +155,21 @@ export function PublicEventPage({ token }: { token: string }) {
                 </p>
               </div>
               <Button asChild>
-                <Link href={`/e/${token}/tickets`}>
-                  <Ticket className="mr-1.5 size-4" />
-                  Get tickets
-                </Link>
+                {registrationPage.paymentUrl ? (
+                  <a href={registrationPage.paymentUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="mr-1.5 size-4" />Buy tickets
+                  </a>
+                ) : (
+                  <Link href={`/e/${token}/tickets`}>
+                    <Ticket className="mr-1.5 size-4" />Get tickets
+                  </Link>
+                )}
               </Button>
             </div>
           </Panel>
         ) : null}
 
-        {registrationPage.paymentUrl ? (
+        {registrationPage.paymentUrl && onSale.length === 0 ? (
           <Panel className="p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

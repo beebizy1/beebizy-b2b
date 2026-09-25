@@ -220,7 +220,8 @@ export default function ShareSection({ event }: { event: Event }) {
             <PanelHeader title="Invite guests" description="The registration link works without a Beebizy login" actions={<Pill tone="success">Live</Pill>} />
             <div className="divide-y divide-hairline">
               <CopyRow label="Registration site" url={eventUrl} hint="Event details and registration" />
-              {onSale.length > 0 && ticketUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
+              {onSale.length > 0 && ticketUrl && !published.paymentUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
+              {published.paymentUrl ? <CopyRow label="External payment" url={published.paymentUrl} hint="Organizer-owned checkout" /> : null}
             </div>
             <div className="border-t border-hairline p-5">
               <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
