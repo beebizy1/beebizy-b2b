@@ -124,7 +124,7 @@ import type {
 import type { BillingInterval, PlanId } from "./plans";
 import type { WorkspaceAccessStatus } from "./workspaceAccess";
 import type { AccountExperience } from "./accountExperience";
-import type { PlanningBrief, PlanningSuggestions } from "./planner";
+import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 
 /** CRUD over an owner-scoped top-level collection. */
@@ -297,6 +297,8 @@ export interface AnalyticsRepository {
 export interface PlanningAssistantRepository {
   /** Returns a proposal only. Applying any part of it is a separate, explicit write. */
   plan(brief: PlanningBrief): Promise<PlanningSuggestions>;
+  /** Previews a plan for an event that has not been created yet. */
+  preview(brief: PlanningPreviewBrief): Promise<PlanningSuggestions>;
   /**
    * One turn of the planning conversation. The transcript is sent whole rather than held
    * server-side, so a reload or a second tab resumes the same conversation.

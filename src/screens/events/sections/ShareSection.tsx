@@ -117,7 +117,7 @@ export default function ShareSection({ event }: { event: Event }) {
   const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
   const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
-    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}`
+    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}${published.paymentUrl ? `\n\nPayment link: ${published.paymentUrl}` : ""}\n\nPowered by Beebizy`
     : "";
   const inviteHtml = eventUrl
     ? registrationInvitationHtml(published, event.title, event.description, eventUrl)
@@ -184,6 +184,11 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Label htmlFor="registration-hero">Hero image URL</Label>
                 <Input id="registration-hero" type="url" value={draft.heroImageUrl ?? ""} placeholder="https://example.com/event-photo.jpg" onChange={(e) => setDraft((current) => ({ ...current, heroImageUrl: e.target.value || null }))} />
                 <p className="text-xs text-muted-foreground">Use a public HTTPS image link. This image is separate from the internal mood board.</p>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-payment">External payment link (optional)</Label>
+                <Input id="registration-payment" type="url" value={draft.paymentUrl ?? ""} placeholder="https://your-checkout-provider.com/event" onChange={(e) => setDraft((current) => ({ ...current, paymentUrl: e.target.value || null }))} />
+                <p className="text-xs text-muted-foreground">Use the organizer's existing HTTPS checkout. Beebizy links guests there but does not process or deduct the payment.</p>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-types">Guest types</Label>

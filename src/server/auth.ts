@@ -25,7 +25,11 @@ import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
 import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
 import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
-import { accountExperienceForEmail } from "../data/accountExperience.ts";
+import {
+  accountExperienceForEmail,
+  canSwitchAccountExperience,
+  type AccountExperience,
+} from "../data/accountExperience.ts";
 import { workspaceMemberInsertSelection } from "./workspaceMemberInsert.ts";
 
 export type Role = "owner" | "admin" | "member";
@@ -46,6 +50,10 @@ export interface RequestContext {
   email: string | null;
   workspaceId: string;
   role: Role;
+  /** Server-derived customer presentation. Never accepted from the request body. */
+  experience?: AccountExperience;
+  /** Product operators may explicitly preview either customer presentation. */
+  canSwitchExperience?: boolean;
   /** Null is a normal workspace seat; otherwise this session may access only this event. */
   eventScopeId?: string | null;
   access?: WorkspaceAccess;
@@ -390,7 +398,16 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(402, message);
   }
 
-  return { userId, email, workspaceId, role, eventScopeId, access };
+  return {
+    userId,
+    email,
+    workspaceId,
+    role,
+    eventScopeId,
+    access,
+    experience: accountExperienceForEmail(email),
+    canSwitchExperience: canSwitchAccountExperience(email),
+  };
 }
 
 /** Writes are closed to `member` on the destructive operations. */

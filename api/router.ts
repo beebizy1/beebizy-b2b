@@ -12,7 +12,7 @@
 
 import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
 import { accountExperienceForEmail, canSwitchAccountExperience } from "../src/data/accountExperience.ts";
-import { normalizeRegistrationPage } from "../src/data/registrationPage.ts";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../src/data/registrationPage.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
@@ -415,6 +415,50 @@ async function handleAuthed(
           .parse(body);
         return json(await continuePlanningChat(input.messages, ctx.userId));
       }
+      if (a === "preview" && method === "POST") {
+        const input = z.object({
+          title: z.string().trim().min(1).max(160),
+          category: z.string().trim().min(1).max(80),
+          date: z.string().datetime(),
+          endDate: z.string().datetime().nullable().optional(),
+          location: z.string().trim().max(200).nullable().optional(),
+          experience: z.enum(["standard", "santa-clara"]).optional(),
+          headcount: z.number().int().min(PLANNING_LIMITS.minHeadcount).max(PLANNING_LIMITS.maxHeadcount),
+          totalBudgetCents: z.number().int().min(PLANNING_LIMITS.minBudgetCents).max(PLANNING_LIMITS.maxBudgetCents),
+          theme: z.string().trim().max(PLANNING_LIMITS.maxThemeLength),
+        }).parse(body);
+        const event = {
+          id: "preview",
+          ownerId: ctx.workspaceId,
+          experience: ctx.canSwitchExperience ? input.experience ?? ctx.experience ?? "standard" : ctx.experience ?? "standard",
+          title: input.title,
+          description: null,
+          date: input.date,
+          endDate: input.endDate ?? null,
+          location: input.location ?? null,
+          locationId: null,
+          locationRecord: null,
+          capacity: input.headcount,
+          status: "draft" as const,
+          category: input.category,
+          imageUrl: null,
+          registrationCount: 0,
+          shareToken: null,
+          registrationPage: { ...DEFAULT_REGISTRATION_PAGE },
+          createdAt: new Date().toISOString(),
+        };
+        const [memory, settings] = await Promise.all([
+          repos.planningMemory.list(ctx, event),
+          repos.settings.get(ctx),
+        ]);
+        return json(await generatePlanningSuggestions(
+          event,
+          { eventId: event.id, headcount: input.headcount, totalBudgetCents: input.totalBudgetCents, theme: input.theme },
+          ctx.userId,
+          memory,
+          settings.timeZone,
+        ));
+      }
       if (a !== "plan" || method !== "POST") return notFound();
       const brief = z
         .object({
@@ -448,6 +492,7 @@ async function handleAuthed(
     case "events": {
       if (!a && method === "GET") {
         const filter = {
+          experience: url.searchParams.get("experience") ?? undefined,
           status: url.searchParams.get("status") ?? undefined,
           category: url.searchParams.get("category") ?? undefined,
           locationId: url.searchParams.get("locationId") ?? undefined,

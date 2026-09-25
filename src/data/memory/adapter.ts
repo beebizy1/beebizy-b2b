@@ -331,6 +331,7 @@ const events: EventsRepository = {
   async list(filter?: EventFilter) {
     await wait();
     let rows = store().events.slice();
+    if (filter?.experience) rows = rows.filter((e) => (e.experience ?? "standard") === filter.experience);
     if (filter?.status) rows = rows.filter((e) => e.status === filter.status);
     if (filter?.category) rows = rows.filter((e) => e.category === filter.category);
     if (filter?.locationId) rows = rows.filter((e) => e.locationId === filter.locationId);
@@ -356,6 +357,7 @@ const events: EventsRepository = {
     const event: Event = {
       id: newId("evt"),
       ownerId: DEMO_OWNER_ID,
+      experience: draft.experience ?? "standard",
       title: draft.title,
       description: draft.description ?? null,
       date: draft.date,
@@ -2086,6 +2088,38 @@ const analytics: AnalyticsRepository = {
   },
 };
 
+function planningMemoryFor(event: Event): PastEventPlanningRecord[] {
+  const current = store();
+  return current.events
+    .filter((candidate) =>
+      candidate.status === "completed" &&
+      candidate.id !== event.id &&
+      (candidate.experience ?? "standard") === (event.experience ?? "standard"),
+    )
+    .map((candidate) => ({
+      event: candidate,
+      budget: current.budget.filter((line) => line.eventId === candidate.id).map((line) => ({
+        name: line.name, category: line.category, type: line.type, estimatedCents: line.estimatedCents,
+        actualCents: line.actualCents, notes: line.notes, sortOrder: line.sortOrder,
+      })),
+      checklist: current.checklist.filter((item) => item.eventId === candidate.id).map((item) => ({
+        title: item.title, description: item.description, completed: item.completed, assignedTo: item.assignedTo,
+        category: item.category, sortOrder: item.sortOrder,
+        dueDaysBefore: item.dueDate
+          ? Math.max(0, Math.round((new Date(candidate.date).getTime() - new Date(item.dueDate).getTime()) / 86_400_000))
+          : 14,
+      })),
+      runOfShow: current.runOfShow.filter((cue) => cue.eventId === candidate.id).map((cue) => ({
+        dayNumber: cue.dayNumber, startTime: cue.startTime, duration: cue.duration, title: cue.title,
+        description: cue.description, responsible: cue.responsible, sortOrder: cue.sortOrder,
+      })),
+      moodCaptions: current.moodBoard
+        .filter((image) => image.eventId === candidate.id && image.caption)
+        .map((image) => image.caption!),
+      floorplanShapes: current.floorplans.find((plan) => plan.eventId === candidate.id)?.items.map((item) => item.shape) ?? [],
+    }));
+}
+
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
   cacheScope: "demo",
@@ -2126,46 +2160,19 @@ export const memoryAdapter: DataAdapter = {
       await wait();
       const event = requireEvent(brief.eventId);
       const current = store();
-      const memory: PastEventPlanningRecord[] = current.events
-        .filter((candidate) => candidate.status === "completed" && candidate.id !== event.id)
-        .map((candidate) => ({
-          event: candidate,
-          budget: current.budget.filter((line) => line.eventId === candidate.id).map((line) => ({
-            name: line.name,
-            category: line.category,
-            type: line.type,
-            estimatedCents: line.estimatedCents,
-            actualCents: line.actualCents,
-            notes: line.notes,
-            sortOrder: line.sortOrder,
-          })),
-          checklist: current.checklist.filter((item) => item.eventId === candidate.id).map((item) => ({
-            title: item.title,
-            description: item.description,
-            completed: item.completed,
-            assignedTo: item.assignedTo,
-            category: item.category,
-            sortOrder: item.sortOrder,
-            dueDaysBefore: item.dueDate
-              ? Math.max(0, Math.round((new Date(candidate.date).getTime() - new Date(item.dueDate).getTime()) / 86_400_000))
-              : 14,
-          })),
-          runOfShow: current.runOfShow.filter((cue) => cue.eventId === candidate.id).map((cue) => ({
-            dayNumber: cue.dayNumber,
-            startTime: cue.startTime,
-            duration: cue.duration,
-            title: cue.title,
-            description: cue.description,
-            responsible: cue.responsible,
-            sortOrder: cue.sortOrder,
-          })),
-          moodCaptions: current.moodBoard
-            .filter((image) => image.eventId === candidate.id && image.caption)
-            .map((image) => image.caption!),
-          floorplanShapes: current.floorplans
-            .find((plan) => plan.eventId === candidate.id)?.items.map((item) => item.shape) ?? [],
-        }));
-      return buildRuleBasedSuggestions(event, brief, memory, current.settings.timeZone);
+      return buildRuleBasedSuggestions(event, brief, planningMemoryFor(event), current.settings.timeZone);
+    },
+    preview: async (brief) => {
+      await wait();
+      const current = store();
+      const event: Event = {
+        id: "preview", ownerId: DEMO_OWNER_ID, experience: brief.experience ?? "standard",
+        title: brief.title, description: null, date: brief.date, endDate: brief.endDate ?? null,
+        location: brief.location ?? null, locationId: null, locationRecord: null, capacity: brief.headcount,
+        status: "draft", category: brief.category, imageUrl: null, registrationCount: 0, shareToken: null,
+        registrationPage: { ...DEFAULT_REGISTRATION_PAGE }, createdAt: nowIso(),
+      };
+      return buildRuleBasedSuggestions(event, { ...brief, eventId: event.id }, planningMemoryFor(event), current.settings.timeZone);
     },
   },
   imports: {

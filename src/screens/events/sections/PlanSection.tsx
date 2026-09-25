@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Sparkles, Store, Trash2, X } from "lucide-react";
+import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Send, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -43,6 +43,8 @@ import {
   useUpdateRunOfShowItem,
   useVolunteers,
   useVendors,
+  useEventVendors,
+  useSendVendorMessage,
 } from "@/data/hooks";
 import type { ChecklistItem, Event, RunOfShowItem, Vendor, VolunteerShift, WorkspaceMember } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
@@ -875,12 +877,36 @@ const SAMPLE_REFERENCES = [
 
 export function MoodBoardPanel({ event }: { event: Event }) {
   const { data: images, isLoading } = useMoodBoard(event.id);
+  const { data: eventVendors } = useEventVendors(event.id);
   const add = useAddMoodBoardImage();
   const remove = useRemoveMoodBoardImage();
+  const sendToVendor = useSendVendorMessage();
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [theme, setTheme] = useState("Modern garden");
   const [showVariations, setShowVariations] = useState(false);
+  const [selectedVendorId, setSelectedVendorId] = useState("");
+
+  const shareMoodBoard = () => {
+    const vendor = eventVendors?.find((booking) => booking.vendorId === selectedVendorId)?.vendor;
+    if (!vendor || !images?.length) return;
+    const references = images.map((image, index) => `${index + 1}. ${image.caption ?? "Mood board reference"}\n${image.url}`).join("\n\n");
+    sendToVendor.mutate(
+      {
+        vendorId: vendor.id,
+        draft: {
+          eventId: event.id,
+          senderName: "Beebizy event team",
+          subject: `${event.title}: mood board references`,
+          content: `Here are the current mood board references for ${event.title}. Please review them and reply in this thread with any questions or recommendations.\n\n${references}`,
+        },
+      },
+      {
+        onSuccess: () => toast({ title: "Mood board shared", description: `Sent to ${vendor.name} and saved in the vendor messaging hub.` }),
+        onError: (error) => toast({ title: "Couldn't share the mood board", description: error.message }),
+      },
+    );
+  };
 
   const variations = [
     {
@@ -916,6 +942,26 @@ export function MoodBoardPanel({ event }: { event: Event }) {
         <Button type="button" size="sm" onClick={() => setShowVariations(true)} disabled={!theme.trim()}>
           Create theme variations
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2 border-b border-hairline px-5 py-3">
+        <div className="min-w-[14rem] flex-1 space-y-1.5">
+          <label className="text-xs font-semibold text-foreground" htmlFor="mood-board-vendor">Share with an assigned vendor</label>
+          <Select value={selectedVendorId} onValueChange={setSelectedVendorId}>
+            <SelectTrigger id="mood-board-vendor"><SelectValue placeholder="Choose vendor" /></SelectTrigger>
+            <SelectContent>
+              {(eventVendors ?? []).map((booking) => (
+                <SelectItem key={booking.vendorId} value={booking.vendorId} disabled={!booking.vendor?.contactEmail}>
+                  {booking.vendor?.name ?? "Unavailable vendor"}{booking.vendor?.contactEmail ? "" : " - add email first"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button type="button" variant="outline" size="sm" disabled={!selectedVendorId || !images?.length || sendToVendor.isPending} onClick={shareMoodBoard}>
+          <Send className="mr-1.5 size-3.5" />{sendToVendor.isPending ? "Sending..." : "Share mood board"}
+        </Button>
+        <Button asChild type="button" variant="ghost" size="sm"><Link href={`/app/events/${event.id}/vendors`}><Store className="mr-1.5 size-3.5" />Assign vendors</Link></Button>
       </div>
 
       {showVariations ? (

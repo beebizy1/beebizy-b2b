@@ -513,6 +513,10 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     );
   }
 
+  if (!identity?.eventScope && (event.experience ?? "standard") !== experience) {
+    return <Redirect to="/app" replace />;
+  }
+
   // An unknown slug lands on Overview rather than a blank pane.
   if (active === null) {
     return <Redirect to={`/app/events/${id}`} replace />;

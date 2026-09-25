@@ -65,7 +65,7 @@ import type {
   InviteResult,
   WorkspaceMember,
 } from "../entities";
-import type { PlanningBrief, PlanningSuggestions } from "../planner";
+import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
 
 export interface HttpAdapterOptions {
@@ -195,6 +195,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     assistant: {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
+      preview: (brief: PlanningPreviewBrief) => client.post<PlanningSuggestions>("/assistant/preview", brief),
       chat: (input) => client.post<AssistantTurn>("/assistant/chat", input),
     },
 
@@ -205,6 +206,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     events: {
       list: (filter) => {
         const params = new URLSearchParams();
+        if (filter?.experience) params.set("experience", filter.experience);
         if (filter?.status) params.set("status", filter.status);
         if (filter?.category) params.set("category", filter.category);
         if (filter?.locationId) params.set("locationId", filter.locationId);

@@ -1,4 +1,5 @@
 import type { BudgetItemDraft, ChecklistItemDraft, Event, FloorplanShape, RunOfShowItemDraft } from "./entities";
+import type { AccountExperience } from "./accountExperience";
 import { compareRunOfShowItems, eventDayCount } from "./eventDays.ts";
 
 export interface PlanningBrief {
@@ -6,6 +7,16 @@ export interface PlanningBrief {
   headcount: number;
   totalBudgetCents: number;
   theme: string;
+}
+
+/** A planning brief for a not-yet-created event. It returns suggestions without writing. */
+export interface PlanningPreviewBrief extends Omit<PlanningBrief, "eventId"> {
+  title: string;
+  category: string;
+  date: string;
+  endDate?: string | null;
+  location?: string | null;
+  experience?: AccountExperience;
 }
 
 export interface SuggestedBudgetLine extends BudgetItemDraft {

@@ -98,6 +98,7 @@ import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
+import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -234,12 +235,22 @@ function isConstraintViolation(error: unknown, constraint: string): boolean {
 
 async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
   requireEventAccess(ctx, eventId);
+  const conditions = [eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId)];
+  if (!ctx.eventScopeId && !ctx.canSwitchExperience) {
+    conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
+  }
   const [row] = await db
     .select({ id: s.events.id })
     .from(s.events)
-    .where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId)))
+    .where(and(...conditions))
     .limit(1);
   if (!row) throw new HttpError(404, "That event no longer exists.");
+}
+
+function requestedExperience(ctx: RequestContext, value: unknown): AccountExperience {
+  if (!ctx.canSwitchExperience) return ctx.experience ?? "standard";
+  if (typeof value !== "string") return ctx.experience ?? "standard";
+  return parseAccountExperience(value) ?? (ctx.experience ?? "standard");
 }
 
 /* --------------------------------------------------------------- events */
@@ -256,9 +267,14 @@ async function registrationCounts(eventIds: string[]): Promise<Map<string, numbe
 }
 
 export const events = {
-  async list(ctx: RequestContext, filter: { status?: string; category?: string; locationId?: string; search?: string } = {}): Promise<Event[]> {
+  async list(ctx: RequestContext, filter: { experience?: string; status?: string; category?: string; locationId?: string; search?: string } = {}): Promise<Event[]> {
     const conditions = [eq(s.events.workspaceId, ctx.workspaceId)];
     if (ctx.eventScopeId) conditions.push(eq(s.events.id, ctx.eventScopeId));
+    else if (ctx.canSwitchExperience && parseAccountExperience(filter.experience)) {
+      conditions.push(eq(s.events.experience, parseAccountExperience(filter.experience)!));
+    } else if (!ctx.canSwitchExperience) {
+      conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
+    }
     if (filter.status) conditions.push(eq(s.events.status, filter.status as "draft"));
     if (filter.category) conditions.push(eq(s.events.category, filter.category));
     if (filter.locationId) conditions.push(eq(s.events.locationId, filter.locationId));
@@ -290,11 +306,15 @@ export const events = {
 
   async get(ctx: RequestContext, id: string): Promise<Event | null> {
     requireEventAccess(ctx, id);
+    const conditions = [eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)];
+    if (!ctx.eventScopeId && !ctx.canSwitchExperience) {
+      conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
+    }
     const [row] = await db
       .select({ event: s.events, location: s.locations })
       .from(s.events)
       .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
-      .where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)))
+      .where(and(...conditions))
       .limit(1);
     if (!row) return null;
     const counts = await registrationCounts([id]);
@@ -308,6 +328,7 @@ export const events = {
     const values = {
       id,
       workspaceId: ctx.workspaceId,
+      experience: requestedExperience(ctx, body.experience),
       title: str(body, "title"),
       description: optStr(body, "description"),
       startsAt: parseDate(body.date, "date"),
@@ -353,6 +374,7 @@ export const events = {
     const after: Event = {
       id,
       ownerId: ctx.workspaceId,
+      experience: values.experience,
       title: values.title,
       description: values.description,
       date: values.startsAt.toISOString(),
@@ -435,11 +457,15 @@ export const events = {
       registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
       locationId: (b) => optStr(b, "locationId"),
     });
+    if ("experience" in body && ctx.canSwitchExperience && !ctx.eventScopeId) {
+      patch.experience = requestedExperience(ctx, body.experience);
+    }
     if ("date" in body) patch.startsAt = parseDate(body.date, "date");
     if ("endDate" in body) patch.endsAt = parseOptionalDate(body.endDate, "endDate");
     if ("location" in body) patch.venue = optStr(body, "location");
 
     const after: Event = { ...before };
+    if ("experience" in patch) after.experience = patch.experience as AccountExperience;
     if ("title" in body) after.title = patch.title as string;
     if ("description" in body) after.description = patch.description as string | null;
     if ("capacity" in body) after.capacity = patch.capacity as number | null;
@@ -3465,7 +3491,7 @@ export const teamUpdates = {
  */
 export const planningMemory = {
   async list(ctx: RequestContext, target: Event): Promise<PastEventPlanningRecord[]> {
-    const completed = await events.list(ctx, { status: "completed" });
+    const completed = await events.list(ctx, { status: "completed", experience: target.experience });
     const selected = selectSimilarPastEvents(
       target,
       completed.map((event) => ({ event, budget: [], checklist: [], runOfShow: [], moodCaptions: [], floorplanShapes: [] })),

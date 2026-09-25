@@ -84,7 +84,8 @@ import type {
   VolunteerNeedPatch,
   PublicVolunteerSignupDraft,
 } from "./entities";
-import type { PlanningBrief } from "./planner";
+import type { PlanningBrief, PlanningPreviewBrief } from "./planner";
+import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AssistantChatMessage } from "./assistantChat";
 
 /* ---------------------------------------------------------------- query keys */
@@ -221,6 +222,10 @@ export function usePlanningSuggestions() {
   return useAdapterMutation((a, brief: PlanningBrief) => a.assistant.plan(brief), () => []);
 }
 
+export function usePlanningPreview() {
+  return useAdapterMutation((a, brief: PlanningPreviewBrief) => a.assistant.preview(brief), () => []);
+}
+
 export function useLoadGoogleSheet() {
   return useAdapterMutation((a, url: string) => a.imports.loadGoogleSheet(url), () => []);
 }
@@ -260,7 +265,9 @@ export function useAllEventHealth(): UseQueryResult<EventHealth[], Error> {
 /* --------------------------------------------------------------------- events */
 
 export function useEvents(filter?: EventFilter) {
-  return useAdapterQuery(qk.eventList(filter), (a) => a.events.list(filter));
+  const { experience } = useAccountExperience();
+  const scopedFilter = { ...filter, experience: filter?.experience ?? experience };
+  return useAdapterQuery(qk.eventList(scopedFilter), (a) => a.events.list(scopedFilter));
 }
 
 export function useEvent(id: string): UseQueryResult<Event | null, Error> {
@@ -272,7 +279,11 @@ export function useEventByShareToken(token: string) {
 }
 
 export function useCreateEvent() {
-  return useAdapterMutation((a, draft: EventDraft) => a.events.create(draft), () => [...eventDerivedKeys(), qk.locations]);
+  const { experience } = useAccountExperience();
+  return useAdapterMutation(
+    (a, draft: EventDraft) => a.events.create({ ...draft, experience: draft.experience ?? experience }),
+    () => [...eventDerivedKeys(), qk.locations],
+  );
 }
 
 export function useUpdateEvent() {
@@ -294,8 +305,10 @@ export function useShareEvent() {
 }
 
 export function useCreateEventFromTemplate() {
+  const { experience } = useAccountExperience();
   return useAdapterMutation(
-    (a, vars: { templateId: string; draft: EventDraft }) => a.events.createFromTemplate(vars.templateId, vars.draft),
+    (a, vars: { templateId: string; draft: EventDraft }) =>
+      a.events.createFromTemplate(vars.templateId, { ...vars.draft, experience: vars.draft.experience ?? experience }),
     () => [...eventDerivedKeys(), qk.locations],
   );
 }

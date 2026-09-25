@@ -1,0 +1,2 @@
+ALTER TABLE "events" ADD COLUMN "experience" text DEFAULT 'standard' NOT NULL;--> statement-breakpoint
+CREATE INDEX "events_workspace_experience_idx" ON "events" USING btree ("workspace_id","experience");

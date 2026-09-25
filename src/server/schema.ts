@@ -224,6 +224,8 @@ export const events = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Reversible customer presentation boundary. Existing events remain standard. */
+    experience: text("experience").notNull().default("standard"),
     title: text("title").notNull(),
     description: text("description"),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
@@ -244,6 +246,7 @@ export const events = pgTable(
   },
   (table) => [
     index("events_workspace_starts_idx").on(table.workspaceId, table.startsAt),
+    index("events_workspace_experience_idx").on(table.workspaceId, table.experience),
     index("events_workspace_status_idx").on(table.workspaceId, table.status),
     index("events_location_idx").on(table.locationId),
   ],

@@ -81,6 +81,7 @@ export function toEvent(
   return {
     id: row.id,
     ownerId: row.workspaceId,
+    experience: row.experience === "santa-clara" ? "santa-clara" : "standard",
     title: row.title,
     description: row.description,
     date: isoRequired(row.startsAt),

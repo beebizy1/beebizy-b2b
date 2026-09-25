@@ -26,6 +26,7 @@ import {
   useAddRunOfShowItem,
   useCreateEvent,
   useMe,
+  usePlanningPreview,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney } from "@/data/money";
 import {
@@ -34,6 +35,7 @@ import {
   moodConceptDataUrl,
   PLANNING_LIMITS,
   suggestedTotalBudgetCents,
+  type PlanningSuggestions,
 } from "@/data/planner";
 import { toast } from "@/hooks/use-toast";
 import { formatClockTime } from "@/lib/datetime";
@@ -115,6 +117,7 @@ const runOfShowDraft: RunOfShowItemDraft[] = [
 export default function AIPlanner() {
   const [, navigate] = useLocation();
   const createEvent = useCreateEvent();
+  const previewPlan = usePlanningPreview();
   const addBudget = useAddBudgetItem();
   const addChecklist = useAddChecklistItem();
   const addMood = useAddMoodBoardImage();
@@ -130,6 +133,7 @@ export default function AIPlanner() {
   const [city, setCity] = useState("San Francisco");
   const [eventDate, setEventDate] = useState(() => isoDateIn(45));
   const [isSaving, setIsSaving] = useState(false);
+  const [suggestions, setSuggestions] = useState<PlanningSuggestions | null>(null);
 
   const guests = Math.max(1, Number.parseInt(headcount, 10) || 1);
   const parsedBudget = centsFromInput(budgetInput);
@@ -139,6 +143,20 @@ export default function AIPlanner() {
     parsedBudget <= PLANNING_LIMITS.maxBudgetCents;
   const totalBudget = budgetIsValid ? parsedBudget : suggestedTotalBudgetCents(guests);
   const budget = useMemo(() => buildBudgetSuggestions(totalBudget), [totalBudget]);
+  const planBudget = suggestions?.totalBudgetCents === totalBudget ? suggestions.budget : budget;
+  const vendorSuggestions = suggestions?.vendors.map((vendor) => ({
+    label: vendor.searchQuery,
+    category: vendor.category,
+    city: null as string | null,
+    why: vendor.why,
+    marketplaceUrl: vendor.marketplaceUrl,
+  })) ?? marketplaceSuggestions.map((vendor) => ({
+    label: vendor.name,
+    category: vendor.category,
+    city: vendor.city,
+    why: vendor.why,
+    marketplaceUrl: marketplaceSearchUrl(vendor.name),
+  }));
   const direction = themeDirections[theme];
   const canSaveMoodBoard = planHasCapability(effectivePlan(identity?.access), "inspirationBoards");
 
@@ -146,6 +164,26 @@ export default function AIPlanner() {
     if (budgetEdited) return;
     setBudgetInput(centsToInput(suggestedTotalBudgetCents(guests)));
   }, [budgetEdited, guests]);
+
+  const buildPlan = async () => {
+    if (!budgetIsValid || !eventDate) return;
+    try {
+      const plan = await previewPlan.mutateAsync({
+        title: `${eventType} in ${city}`,
+        category: eventType,
+        date: new Date(`${eventDate}T17:30:00`).toISOString(),
+        location: city.trim() || null,
+        experience,
+        headcount: guests,
+        totalBudgetCents: totalBudget,
+        theme,
+      });
+      setSuggestions(plan);
+      setMode("plan");
+    } catch (error) {
+      toast({ title: "Couldn't build the plan", description: error instanceof Error ? error.message : String(error) });
+    }
+  };
 
   const createWorkingEvent = async () => {
     if (!budgetIsValid) return;
@@ -162,20 +200,20 @@ export default function AIPlanner() {
       });
 
       const writes = await Promise.allSettled([
-        ...budget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
-        ...checklistDraft.map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
-        ...runOfShowDraft.map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
+        ...planBudget.map((draft) => addBudget.mutateAsync({ eventId: created.id, draft })),
+        ...(suggestions?.checklist ?? checklistDraft).map((draft) => addChecklist.mutateAsync({ eventId: created.id, draft })),
+        ...(suggestions?.runOfShow ?? runOfShowDraft).map((draft) => addRunOfShow.mutateAsync({ eventId: created.id, draft })),
         ...(canSaveMoodBoard
-          ? direction.variations.map((variation) =>
+          ? (suggestions?.moodConcepts ?? direction.variations.map((variation) => ({
+              name: variation.name,
+              description: variation.note,
+              palette: [variation.colors[0], variation.colors[1], variation.colors[2], "#ffffff"] as [string, string, string, string],
+              keywords: [theme, variation.name, eventType],
+            }))).map((concept) =>
               addMood.mutateAsync({
                 eventId: created.id,
-                url: moodConceptDataUrl({
-                  name: variation.name,
-                  description: variation.note,
-                  palette: [variation.colors[0], variation.colors[1], variation.colors[2], "#ffffff"],
-                  keywords: [theme, variation.name, eventType],
-                }),
-                caption: `${variation.name} · ${variation.note}`,
+                url: moodConceptDataUrl(concept),
+                caption: `${concept.name} · ${concept.description}`,
               }),
             )
           : []),
@@ -311,8 +349,7 @@ export default function AIPlanner() {
             className="grid gap-5 p-5 sm:grid-cols-2 lg:grid-cols-6"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!budgetIsValid) return;
-              setMode("plan");
+              void buildPlan();
             }}
           >
             <div className="space-y-2">
@@ -361,7 +398,10 @@ export default function AIPlanner() {
               <Input id="planner-date" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />
             </div>
             <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-6">
-              <Button type="submit" disabled={!budgetIsValid}><Sparkles className="mr-1.5 size-4" />Build my plan</Button>
+              <Button type="submit" disabled={!budgetIsValid || previewPlan.isPending}>
+                {previewPlan.isPending ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Sparkles className="mr-1.5 size-4" />}
+                {previewPlan.isPending ? "Building plan..." : "Build my plan"}
+              </Button>
               <Button type="button" variant="outline" onClick={() => setMode("choose")}>Back</Button>
             </div>
           </form>
@@ -375,7 +415,8 @@ export default function AIPlanner() {
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Bee AI working plan</p>
                 <h2 className="mt-3 text-3xl font-extrabold tracking-tight">{eventType} for {guests} guests</h2>
-                <p className="mt-2 max-w-2xl text-sm text-brand-muted">{theme} in {city}. {direction.description}</p>
+                <p className="mt-2 max-w-2xl text-sm text-brand-muted">{suggestions?.summary ?? `${theme} in ${city}. ${direction.description}`}</p>
+                {suggestions?.learning ? <p className="mt-2 text-xs text-brand-muted">Informed by {suggestions.learning.eventCount} similar past event{suggestions.learning.eventCount === 1 ? "" : "s"}: {suggestions.learning.eventTitles.join(", ")}.</p> : null}
               </div>
               <Button onClick={() => void createWorkingEvent()} disabled={isSaving || !budgetIsValid}>
                 {isSaving ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Sparkles className="mr-1.5 size-4" />}
@@ -414,7 +455,7 @@ export default function AIPlanner() {
                 </p>
               </div>
               <dl className="divide-y divide-hairline">
-                {budget.map((line) => (
+                {planBudget.map((line) => (
                   <div key={line.name} className="flex items-center justify-between gap-4 px-5 py-2.5 text-sm">
                     <dt className="text-muted-foreground">{line.name}</dt>
                     <dd data-numeric className="font-semibold text-foreground">{formatMoney(line.estimatedCents)}</dd>
@@ -426,7 +467,7 @@ export default function AIPlanner() {
             <Panel>
               <PanelHeader title="Run of show" description="A practical first pass for the event day" actions={<Clock3 className="size-5 text-primary-text" />} />
               <ol className="divide-y divide-hairline">
-                {runOfShowDraft.map((cue) => (
+                {(suggestions?.runOfShow ?? runOfShowDraft).map((cue) => (
                   <li key={cue.startTime} className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2.5">
                     <span data-numeric className="font-mono text-xs font-semibold text-primary-text">
                       {formatClockTime(cue.startTime)}
@@ -442,14 +483,14 @@ export default function AIPlanner() {
           <Panel>
             <PanelHeader title="Mood board directions" description={`Three variations on “${theme}”`} actions={<Palette className="size-5 text-primary-text" />} />
             <div className="grid gap-4 p-5 md:grid-cols-3">
-              {direction.variations.map((variation) => (
+              {(suggestions?.moodConcepts ?? direction.variations.map((variation) => ({ name: variation.name, description: variation.note, palette: variation.colors }))).map((variation) => (
                 <article key={variation.name} className="overflow-hidden rounded-xl border border-hairline bg-card">
                   <div className="grid h-28 grid-cols-3" aria-label={`${variation.name} colour palette`}>
-                    {variation.colors.map((color) => <span key={color} style={{ backgroundColor: color }} />)}
+                    {variation.palette.slice(0, 3).map((color) => <span key={color} style={{ backgroundColor: color }} />)}
                   </div>
                   <div className="p-4">
                     <h3 className="font-semibold text-foreground">{variation.name}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{variation.note}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{variation.description}</p>
                   </div>
                 </article>
               ))}
@@ -458,9 +499,9 @@ export default function AIPlanner() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel>
-              <PanelHeader title="Checklist starter" description={`${checklistDraft.length} recommended actions`} />
+              <PanelHeader title="Checklist starter" description={`${suggestions?.checklist.length ?? checklistDraft.length} recommended actions`} />
               <ul className="divide-y divide-hairline">
-                {checklistDraft.map((item) => (
+                {(suggestions?.checklist ?? checklistDraft).map((item) => (
                   <li key={item.title} className="flex items-center gap-3 px-5 py-3 text-sm">
                     <CheckCircle2 className="size-4 shrink-0 text-success-text" aria-hidden="true" />
                     <span className="flex-1 text-foreground">{item.title}</span>
@@ -473,20 +514,20 @@ export default function AIPlanner() {
             <Panel>
               <PanelHeader title="Marketplace vendor suggestions" description="Curated from the Beebizy marketplace" actions={<Store className="size-5 text-primary-text" />} />
               <ul className="divide-y divide-hairline">
-                {marketplaceSuggestions.map((vendor) => (
-                  <li key={vendor.name} className="px-5 py-3">
+                {vendorSuggestions.map((vendor) => (
+                  <li key={vendor.label} className="px-5 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <a
-                        href={marketplaceSearchUrl(vendor.name)}
+                        href={vendor.marketplaceUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-sm font-semibold text-foreground hover:underline"
                       >
-                        {vendor.name}
+                        {vendor.label}
                         <ExternalLink className="size-3" aria-hidden="true" />
                       </a>
                       <Pill tone="info">{vendor.category}</Pill>
-                      <span className="text-xs text-muted-foreground">{vendor.city}</span>
+                      {vendor.city ? <span className="text-xs text-muted-foreground">{vendor.city}</span> : null}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">{vendor.why}</p>
                   </li>

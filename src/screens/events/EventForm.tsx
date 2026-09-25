@@ -25,6 +25,8 @@ import {
   useUpdateEvent,
 } from "@/data/hooks";
 import { EVENT_CATEGORIES, EVENT_STATUSES, type EventDraft, type EventStatus } from "@/data/entities";
+import { useAccountExperience } from "@/app/useAccountExperience";
+import type { AccountExperience } from "@/data/accountExperience";
 
 const NO_VENUE = "__none__";
 const NO_TEMPLATE = "__blank__";
@@ -52,6 +54,7 @@ function defaultStart(): string {
 }
 
 interface FormState {
+  experience: AccountExperience;
   title: string;
   description: string;
   start: string;
@@ -65,6 +68,7 @@ interface FormState {
 }
 
 const EMPTY: FormState = {
+  experience: "standard",
   title: "",
   description: "",
   start: defaultStart(),
@@ -80,6 +84,7 @@ const EMPTY: FormState = {
 export default function EventForm({ id }: { id?: string }) {
   const isEdit = Boolean(id);
   const [, navigate] = useLocation();
+  const { experience, canSwitchExperience } = useAccountExperience();
   const { data: locations } = useLocations();
   const { data: templates } = useTemplates();
   const { data: existing, isLoading, isError, error } = useEvent(id ?? "");
@@ -88,12 +93,13 @@ export default function EventForm({ id }: { id?: string }) {
   const createFromTemplate = useCreateEventFromTemplate();
   const updateEvent = useUpdateEvent();
 
-  const [form, setForm] = useState<FormState>(EMPTY);
+  const [form, setForm] = useState<FormState>(() => ({ ...EMPTY, experience }));
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (!existing) return;
     setForm({
+      experience: existing.experience ?? "standard",
       title: existing.title,
       description: existing.description ?? "",
       start: toLocalInput(existing.date),
@@ -133,6 +139,7 @@ export default function EventForm({ id }: { id?: string }) {
     if (!startIso) return;
 
     const draft: EventDraft = {
+      experience: form.experience,
       title: form.title.trim(),
       description: form.description.trim() || null,
       date: startIso,
@@ -230,6 +237,20 @@ export default function EventForm({ id }: { id?: string }) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          ) : null}
+
+          {canSwitchExperience ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="event-experience">Workspace view</Label>
+              <Select value={form.experience} onValueChange={(value) => set("experience", value as AccountExperience)}>
+                <SelectTrigger id="event-experience"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">Full Beebizy</SelectItem>
+                  <SelectItem value="santa-clara">Santa Clara</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Controls which customer dashboard can see this event.</p>
             </div>
           ) : null}
 

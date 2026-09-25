@@ -3,8 +3,9 @@ import { PRODUCT_OPERATOR_EMAILS } from "../lib/internalAccess.ts";
 /**
  * Reversible account-specific product profiles.
  *
- * The profile changes presentation only. It never grants access or weakens server-side
- * plan checks. The email reaching this function has already been verified by Clerk.
+ * The profile selects both a focused presentation and the event partition visible to
+ * that account. It never grants access or weakens server-side plan checks. The email
+ * reaching this function has already been verified by Clerk.
  */
 export const ACCOUNT_EXPERIENCES = ["standard", "santa-clara"] as const;
 export type AccountExperience = (typeof ACCOUNT_EXPERIENCES)[number];

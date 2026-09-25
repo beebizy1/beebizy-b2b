@@ -13,6 +13,7 @@
 
 import type { Cents } from "./money.ts";
 import type { RegistrationPageSettings } from "./registrationPage.ts";
+import type { AccountExperience } from "./accountExperience.ts";
 
 /* ------------------------------------------------------------------ primitives */
 
@@ -59,6 +60,8 @@ export const EVENT_CATEGORIES = [
 export type EventCategory = (typeof EVENT_CATEGORIES)[number] | string;
 
 export interface Event extends OwnedRecord {
+  /** Which customer presentation owns this event. Older rows default to standard. */
+  experience?: AccountExperience;
   title: string;
   description: string | null;
   /** Event start. */
@@ -82,6 +85,7 @@ export interface Event extends OwnedRecord {
 }
 
 export interface EventDraft {
+  experience?: AccountExperience;
   title: string;
   description?: string | null;
   date: IsoDateTime;
@@ -98,6 +102,7 @@ export interface EventDraft {
 export type EventPatch = Partial<EventDraft>;
 
 export interface EventFilter {
+  experience?: AccountExperience;
   status?: EventStatus;
   category?: string;
   locationId?: string;

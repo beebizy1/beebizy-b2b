@@ -260,6 +260,13 @@
       "when": 1790127521729,
       "tag": "0036_sweet_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790323264533,
+      "tag": "0037_watery_black_panther",
+      "breakpoints": true
     }
   ]
 }

@@ -106,7 +106,7 @@ function SidebarContent({
   eventScope: Identity["eventScope"] | undefined;
   onNavigate?: () => void;
 }) {
-  const [pathname] = useLocation();
+  const [pathname, navigate] = useLocation();
   const { user, signOut } = useSession();
   const { experience, canSwitchExperience, setExperience } = useAccountExperience();
   const navigation: NavItem[] = eventScope
@@ -140,6 +140,7 @@ function SidebarContent({
                     aria-pressed={experience === value}
                     onClick={() => {
                       setExperience(value);
+                      navigate("/app");
                       onNavigate?.();
                     }}
                     className={cn(
