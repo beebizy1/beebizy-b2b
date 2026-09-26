@@ -226,6 +226,11 @@ export interface PublicRegistrationDraft {
   organization?: string | null;
 }
 
+/** Registration plus the result of the guest confirmation email attempt. */
+export interface PublicRegistrationResult extends Registration {
+  confirmationEmailStatus: "sent" | "skipped" | "failed";
+}
+
 export interface RegistrationCheckInPatch {
   checkedInAt: IsoDateTime | null;
   checkInStation?: string | null;

@@ -19,9 +19,12 @@ import {
   Pencil,
   Share2,
   Trash2,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +36,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +66,9 @@ import {
   useDeleteEvent,
   useEvent,
   useEventHealth,
+  useInviteMember,
   useMe,
+  useMembers,
   useSaveEventAsTemplate,
   useSendAssignmentSummaries,
 } from "@/data/hooks";
@@ -176,18 +189,131 @@ function RiskStrip({ health, eventId }: { health: EventHealth; eventId: string }
   );
 }
 
+function EventAccessDialog({ event }: { event: Event }) {
+  const invite = useInviteMember();
+  const { data: members, isLoading } = useMembers();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const peopleWithAccess = (members ?? []).filter(
+    (member) => !member.eventScopeId || member.eventScopeId === event.id,
+  );
+
+  const submit = () => {
+    const invitedAddress = email.trim().toLowerCase();
+    if (!invitedAddress) return;
+    invite.mutate(
+      { email: invitedAddress, role: "member", eventId: event.id },
+      {
+        onSuccess: (result) => {
+          setEmail("");
+          toast(
+            result.emailSent
+              ? {
+                  title: "Event invitation sent",
+                  description: `${invitedAddress} can open ${event.title} after signing in with this address.`,
+                }
+              : {
+                  title: "Event access added",
+                  description: `${invitedAddress} can sign in with this address. The invitation email was not delivered, so send them the Beebizy login link directly.`,
+                },
+          );
+        },
+        onError: (error) => toast({ title: "Couldn't add event access", description: error.message }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm">
+          <UserPlus className="mr-1.5 size-3.5" />
+          Event access
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Who can open this event?</DialogTitle>
+          <DialogDescription>
+            Assigning a checklist item sends a private task link. Add someone here when they need to sign in and work across this event.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault();
+            submit();
+          }}
+        >
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Label htmlFor="event-access-email">Email address</Label>
+            <Input
+              id="event-access-email"
+              type="email"
+              value={email}
+              onChange={(inputEvent) => setEmail(inputEvent.target.value)}
+              placeholder="colleague@company.com"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={!email.trim() || invite.isPending}>
+            {invite.isPending ? "Adding..." : "Add to event"}
+          </Button>
+        </form>
+
+        <div className="rounded-xl border border-hairline">
+          <div className="border-b border-hairline px-4 py-3">
+            <p className="text-sm font-semibold text-foreground">Current access</p>
+            <p className="text-xs text-muted-foreground">Workspace owners and team members can also open this event.</p>
+          </div>
+          {isLoading ? (
+            <LoadingRows rows={2} className="p-4" />
+          ) : peopleWithAccess.length === 0 ? (
+            <p className="px-4 py-5 text-sm text-muted-foreground">No one else has access yet.</p>
+          ) : (
+            <ul className="max-h-56 divide-y divide-hairline overflow-y-auto">
+              {peopleWithAccess.map((member) => {
+                const label = member.name ?? member.email ?? "Team member";
+                return (
+                  <li key={`${member.userId ?? member.email}-${member.eventScopeId ?? "workspace"}`} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{label}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {member.status === "invited"
+                            ? `Invitation pending - must sign in as ${member.email}`
+                            : member.email ?? "Active team member"}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-surface-sunken px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                        {member.eventScopeId ? "This event" : "All events"}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function WorkspaceHeader({
   event,
   health,
   active,
   plan,
   experience,
+  canManageAccess,
 }: {
   event: Event;
   health: EventHealth | null | undefined;
   active: EventTabId;
   plan: PlanId;
   experience: AccountExperience;
+  canManageAccess: boolean;
 }) {
   const [, navigate] = useLocation();
   const prefs = usePreferences();
@@ -297,6 +423,8 @@ function WorkspaceHeader({
             ) : null}
 
             <EventSpreadsheetImportDialog event={event} />
+
+            {canManageAccess ? <EventAccessDialog event={event} /> : null}
 
             <Button
               type="button"
@@ -532,7 +660,14 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
 
   return (
     <div className="space-y-6">
-      <WorkspaceHeader event={event} health={health} active={active} plan={plan} experience={experience} />
+      <WorkspaceHeader
+        event={event}
+        health={health}
+        active={active}
+        plan={plan}
+        experience={experience}
+        canManageAccess={identity?.role === "owner"}
+      />
       <EventLiveUpdates event={event} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}

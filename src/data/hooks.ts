@@ -1144,7 +1144,8 @@ export function useMembers() {
 
 export function useInviteMember() {
   return useAdapterMutation(
-    (a, vars: { email: string; role: WorkspaceRole }) => a.members.invite(vars.email, vars.role),
+    (a, vars: { email: string; role: WorkspaceRole; eventId?: string | null }) =>
+      a.members.invite(vars.email, vars.role, vars.eventId),
     () => [qk.members],
   );
 }

@@ -746,7 +746,8 @@ const registrations: RegistrationsRepository = {
     };
     state.registrations.push(registration);
     syncRegistrationCount(event.id);
-    return copy(registration);
+    // Demo mode has no email provider, so never claim that a message was delivered.
+    return { ...copy(registration), confirmationEmailStatus: "skipped" as const };
   },
   async createWalkIn(eventId: string, draft: WalkInRegistrationDraft) {
     await wait();

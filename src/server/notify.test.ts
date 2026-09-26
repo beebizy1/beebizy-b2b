@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyAssignmentSummary, notifyFeedbackSubmission, notifyTeamUpdate, notifyVolunteerAssignment } from "./notify";
+import {
+  notifyAssignmentSummary,
+  notifyFeedbackSubmission,
+  notifyRegistrationConfirmation,
+  notifyTeamUpdate,
+  notifyVolunteerAssignment,
+} from "./notify";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -89,5 +95,37 @@ describe("product feedback email", () => {
     });
     expect(body.text).toContain("Exact feedback:\nExact feedback, including punctuation!");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("product-feedback-feedback-123");
+  });
+});
+
+describe("registration confirmation email", () => {
+  it("sends event details and a stable delivery key to the registered guest", async () => {
+    const fetch = configureDelivery();
+
+    expect(await notifyRegistrationConfirmation({
+      registrationId: "reg-123",
+      to: "guest@example.com",
+      guestName: "Ada Lovelace",
+      eventTitle: "Demo Day",
+      segment: "Investor",
+      startsAt: "2026-10-18T21:00:00.000Z",
+      endsAt: "2026-10-19T00:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+      location: "Mission Hall, Santa Clara",
+      eventUrl: "https://beebizy.test/e/demo-day",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      to: ["guest@example.com"],
+      reply_to: "hello@beebizy.com",
+      subject: "Registration confirmed - Demo Day",
+    });
+    expect(body.text).toContain("Hi Ada Lovelace,");
+    expect(body.text).toContain("Guest type: Investor");
+    expect(body.text).toContain("Mission Hall, Santa Clara");
+    expect(body.text).toContain("https://beebizy.test/e/demo-day");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("registration-confirmation-reg-123");
   });
 });

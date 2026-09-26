@@ -342,7 +342,12 @@ describe("registrations", () => {
       segment: "Investor",
       organization: "Analytical Engines",
     });
-    expect(created).toMatchObject({ status: "confirmed", segment: "Investor", organization: "Analytical Engines" });
+    expect(created).toMatchObject({
+      status: "confirmed",
+      segment: "Investor",
+      organization: "Analytical Engines",
+      confirmationEmailStatus: "skipped",
+    });
     const after = await memoryAdapter.registrations.listForEvent("evt-skickoff");
     expect(after).toHaveLength(before + 1);
     expect(after.find((row) => row.id === created.id)?.guest?.name).toBe("Ada Investor");

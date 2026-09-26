@@ -39,6 +39,7 @@ import type {
   PortfolioSummary,
   ProductFeedback,
   PublicEventPayload,
+  PublicRegistrationResult,
   PublicRfpPayload,
   PublicVendorConversation,
   RaffleItem,
@@ -261,7 +262,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: () => client.get<RegistrationWithGuest[]>("/registrations"),
       listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
-      registerPublic: (shareToken, draft) => publicRequest<Registration>(`/public/events/${shareToken}/registrations`, {
+      registerPublic: (shareToken, draft) => publicRequest<PublicRegistrationResult>(`/public/events/${shareToken}/registrations`, {
         method: "POST",
         body: JSON.stringify(draft),
       }),

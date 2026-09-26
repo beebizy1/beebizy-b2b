@@ -65,6 +65,7 @@ import type {
   ProductFeedbackDraft,
   PublicEventPayload,
   PublicRegistrationDraft,
+  PublicRegistrationResult,
   PublicVolunteerSignupDraft,
   RaffleItem,
   RaffleItemDraft,
@@ -165,7 +166,7 @@ export interface RegistrationsRepository {
   listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
   /** Public share-link registration. The token identifies the event and workspace. */
-  registerPublic(shareToken: string, draft: PublicRegistrationDraft): Promise<Registration>;
+  registerPublic(shareToken: string, draft: PublicRegistrationDraft): Promise<PublicRegistrationResult>;
   /** Atomically creates a guest, confirmed registration and arrival record. */
   createWalkIn(eventId: string, draft: WalkInRegistrationDraft): Promise<RegistrationWithGuest>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;

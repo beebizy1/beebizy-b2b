@@ -66,6 +66,7 @@ import type {
   TeamUpdate,
   PublicAssignmentPayload,
   PublicRegistrationDraft,
+  PublicRegistrationResult,
   PublicVolunteerSignupDraft,
   PublicRfpPayload,
   PublicVendorConversation,
@@ -88,6 +89,7 @@ import { rfpDraftSchema, rfpSpaceRequirementSchema, validHotelRfp, validRfpBudge
 import {
   notifyAssignmentSummary,
   notifyFeedbackSubmission,
+  notifyRegistrationConfirmation,
   notifyRfpInvitation,
   notifyTeamUpdate,
   notifyVendorMessage,
@@ -938,7 +940,7 @@ async function sharedEventForWrite(token: string) {
 }
 
 /** Registers a guest from one segment-specific public link. */
-export async function publicRegistration(token: string, body: Body): Promise<Registration> {
+export async function publicRegistration(token: string, body: Body): Promise<PublicRegistrationResult> {
   const event = await sharedEventForWrite(token);
   const draft: PublicRegistrationDraft = {
     name: str(body, "name").trim(),
@@ -988,7 +990,30 @@ export async function publicRegistration(token: string, body: Body): Promise<Reg
     throw error;
   }
   const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
-  return map.toRegistration(row!, event.title);
+  const registration = map.toRegistration(row!, event.title);
+  const shared = await eventByShareToken(token);
+  const publicEvent = shared?.event;
+  const location = publicEvent?.locationRecord
+    ? [
+        publicEvent.locationRecord.name,
+        publicEvent.locationRecord.address,
+        publicEvent.locationRecord.city,
+        publicEvent.locationRecord.state,
+      ].filter(Boolean).join(", ")
+    : publicEvent?.location ?? null;
+  const email = await notifyRegistrationConfirmation({
+    registrationId: registration.id,
+    to: draft.email,
+    guestName: draft.name,
+    eventTitle: event.title,
+    segment: draft.segment,
+    startsAt: event.startsAt.toISOString(),
+    endsAt: event.endsAt?.toISOString() ?? null,
+    timeZone: shared?.timeZone ?? "UTC",
+    location,
+    eventUrl: `${appOrigin()}/e/${encodeURIComponent(token)}`,
+  });
+  return { ...registration, confirmationEmailStatus: email.status };
 }
 
 /** Claims an available volunteer opening without exposing the workspace or its roster. */

@@ -1,4 +1,5 @@
 import type { TeamUpdateKind } from "../data/entities.ts";
+import { formatInZone, timeZoneLabel } from "../lib/datetime.ts";
 
 /**
  * Outbound email.
@@ -102,6 +103,46 @@ export async function notifyFeedbackSubmission(input: {
   });
   if (outcome.status !== "sent") {
     console.warn("PRODUCT_FEEDBACK_EMAIL_NOT_SENT", input.feedbackId, outcome.status, outcome.reason);
+  }
+  return outcome;
+}
+
+/** Confirms a public registration without making registration depend on email delivery. */
+export async function notifyRegistrationConfirmation(input: {
+  registrationId: string;
+  to: string;
+  guestName: string;
+  eventTitle: string;
+  segment: string;
+  startsAt: string;
+  endsAt: string | null;
+  timeZone: string;
+  location: string | null;
+  eventUrl: string;
+}): Promise<EmailOutcome> {
+  const start = formatInZone(input.startsAt, input.timeZone, "full");
+  const end = input.endsAt ? formatInZone(input.endsAt, input.timeZone, "full") : null;
+  const zone = timeZoneLabel(input.timeZone, new Date(input.startsAt));
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `registration-confirmation-${input.registrationId}`,
+    subject: `Registration confirmed - ${emailSubjectPart(input.eventTitle)}`,
+    text: [
+      `Hi ${input.guestName},`,
+      "",
+      `Your registration for ${input.eventTitle} is confirmed.`,
+      `Guest type: ${input.segment}`,
+      `When: ${start}${end ? ` to ${end}` : ""} ${zone}`,
+      input.location ? `Where: ${input.location}` : null,
+      "",
+      `View the event: ${input.eventUrl}`,
+      "",
+      "If you have questions, reply to this email and the Beebizy team will help.",
+    ].filter((line): line is string => line !== null).join("\n"),
+  });
+  if (outcome.status !== "sent") {
+    console.warn("REGISTRATION_CONFIRMATION_EMAIL_NOT_SENT", input.registrationId, outcome.status, outcome.reason);
   }
   return outcome;
 }
