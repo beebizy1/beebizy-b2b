@@ -40,6 +40,7 @@ import type {
   CanvasCard,
   CustomReportRow,
   Event,
+  Deposit,
   AssignmentSummaryResult,
   EventHealth,
   EventHistoryChange,
@@ -77,7 +78,7 @@ import type {
   RfpWithResponses,
 } from "../data/entities.ts";
 
-import { REGISTRATION_STATUSES, RFP_EVENT_TYPES, RFP_RESPONSE_STATUSES, RFP_STATUSES, RFP_TARGET_TYPES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
+import { DEPOSIT_STATUSES, REGISTRATION_STATUSES, RFP_EVENT_TYPES, RFP_RESPONSE_STATUSES, RFP_STATUSES, RFP_TARGET_TYPES, TEAM_UPDATE_KINDS, VOLUNTEER_STATUSES, WORKSPACE_ROLES } from "../data/entities.ts";
 import { effectivePlan, PLAN_NAMES, PLAN_SEAT_LIMITS, SOLO_LIMITS } from "../data/plans.ts";
 import { workspaceInviteInsertSelection } from "./workspaceMemberInsert.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
@@ -2666,6 +2667,49 @@ export const budget = eventScoped({
     type: (b) => str(b, "type"),
     estimatedCents: (b) => optInt(b, "estimatedCents") ?? 0,
     actualCents: (b) => optInt(b, "actualCents"),
+    notes: (b) => optStr(b, "notes"),
+  },
+});
+
+const depositStatus = (body: Body): Deposit["status"] => {
+  const value = str(body, "status", "pending");
+  if (!(DEPOSIT_STATUSES as readonly string[]).includes(value)) {
+    throw new HttpError(400, `status must be one of ${DEPOSIT_STATUSES.join(", ")}.`);
+  }
+  return value as Deposit["status"];
+};
+
+const depositAmount = (body: Body): number => {
+  const value = optInt(body, "amountCents") ?? 0;
+  if (value < 0) throw new HttpError(400, "amountCents cannot be negative.");
+  return value;
+};
+
+export const deposits = eventScoped({
+  table: s.deposits as never,
+  mapper: map.toDeposit as never,
+  idPrefix: "dep",
+  order: "createdAt",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    vendorName: str(body, "vendorName"),
+    amountCents: depositAmount(body),
+    dueDate: parseOptionalDate(body.dueDate, "dueDate"),
+    paidDate: parseOptionalDate(body.paidDate, "paidDate"),
+    paidBy: optStr(body, "paidBy"),
+    paymentMethod: optStr(body, "paymentMethod"),
+    status: depositStatus(body),
+    notes: optStr(body, "notes"),
+    sortOrder,
+  }),
+  patch: {
+    vendorName: (b) => str(b, "vendorName"),
+    amountCents: (b) => depositAmount(b),
+    dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
+    paidDate: (b) => parseOptionalDate(b.paidDate, "paidDate"),
+    paidBy: (b) => optStr(b, "paidBy"),
+    paymentMethod: (b) => optStr(b, "paymentMethod"),
+    status: (b) => depositStatus(b),
     notes: (b) => optStr(b, "notes"),
   },
 });

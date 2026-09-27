@@ -31,6 +31,7 @@ vi.mock("./repos", () => {
     volunteerNeeds: child,
     volunteers: child,
     budget: child,
+    deposits: child,
     menu: child,
     moodBoard: child,
     auction: child,
@@ -63,7 +64,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { feedback, events, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 describe("single-event collaborator routing", () => {
@@ -670,6 +671,28 @@ describe("billing endpoints", () => {
     }));
     expect(list.status).toBe(200);
     expect(create.status).toBe(201);
+  });
+
+  it("persists deposit reads and writes through the event route", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    vi.mocked(deposits.list).mockResolvedValue([]);
+    vi.mocked(deposits.create).mockResolvedValue({ id: "dep-1" } as never);
+
+    const list = await handleRequest(new Request("http://localhost/api/events/evt-1/deposits"));
+    const create = await handleRequest(new Request("http://localhost/api/events/evt-1/deposits", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vendorName: "Venue", amountCents: 50000, status: "pending" }),
+    }));
+
+    expect(list.status).toBe(200);
+    expect(create.status).toBe(201);
+    expect(deposits.list).toHaveBeenCalledWith(owner, "evt-1");
+    expect(deposits.create).toHaveBeenCalledWith(owner, "evt-1", {
+      vendorName: "Venue",
+      amountCents: 50000,
+      status: "pending",
+    });
   });
 
   it("sends consolidated responsibility summaries through the event route", async () => {

@@ -22,6 +22,7 @@ import type {
   ChecklistItem,
   CheckInStation,
   Event,
+  Deposit,
   EventHistoryEntry,
   MoodBoardImage,
   ProductFeedback,
@@ -363,6 +364,23 @@ export function toBudgetItem(row: InferSelectModel<typeof s.budgetItems>): Budge
     notes: row.notes,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
+  };
+}
+
+export function toDeposit(row: InferSelectModel<typeof s.deposits>): Deposit {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    vendorName: row.vendorName,
+    amountCents: row.amountCents,
+    dueDate: iso(row.dueDate),
+    paidDate: iso(row.paidDate),
+    paidBy: row.paidBy,
+    paymentMethod: row.paymentMethod,
+    status: row.status,
+    notes: row.notes,
+    createdAt: isoRequired(row.createdAt),
+    updatedAt: iso(row.updatedAt) ?? undefined,
   };
 }
 

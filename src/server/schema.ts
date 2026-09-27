@@ -35,7 +35,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
-import { DEFAULT_FEEDBACK_CATEGORY, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
+import { DEFAULT_FEEDBACK_CATEGORY, DEPOSIT_STATUSES, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
 import type { RfpSpaceRequirement } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
@@ -58,6 +58,7 @@ export const subscriptionStatus = pgEnum("subscription_status", WORKSPACE_SUBSCR
 export const subscriptionPlan = pgEnum("subscription_plan", ["solo", "team", "enterprise"]);
 export const feedbackCategory = pgEnum("feedback_category", FEEDBACK_CATEGORIES);
 export const volunteerStatus = pgEnum("volunteer_status", VOLUNTEER_STATUSES);
+export const depositStatus = pgEnum("deposit_status", DEPOSIT_STATUSES);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -627,6 +628,25 @@ export const budgetItems = pgTable(
     notes: text("notes"),
   },
   (table) => [index("budget_event_idx").on(table.eventId), index("budget_workspace_type_idx").on(table.workspaceId, table.type)],
+);
+
+export const deposits = pgTable(
+  "deposits",
+  {
+    ...eventChild,
+    vendorName: text("vendor_name").notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    paidDate: timestamp("paid_date", { withTimezone: true }),
+    paidBy: text("paid_by"),
+    paymentMethod: text("payment_method"),
+    status: depositStatus("status").notNull().default("pending"),
+    notes: text("notes"),
+  },
+  (table) => [
+    index("deposits_event_due_idx").on(table.eventId, table.dueDate),
+    check("deposits_amount_nonnegative_check", sql`${table.amountCents} >= 0`),
+  ],
 );
 
 export const menuItems = pgTable(

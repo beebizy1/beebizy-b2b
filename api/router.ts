@@ -794,6 +794,7 @@ const eventChildren: Record<
   "volunteer-needs": repos.volunteerNeeds,
   volunteers: repos.volunteers,
   budget: repos.budget,
+  deposits: repos.deposits,
   menu: repos.menu,
   "mood-board": repos.moodBoard,
   auction: repos.auction,
