@@ -265,6 +265,18 @@ export function visibleEventTabs(
   return EVENT_TABS.filter((tab) => !tab.capability || planHasCapability(plan, tab.capability));
 }
 
+/** Applies a saved user order without hiding newly released or plan-specific tabs. */
+export function orderedEventTabs(tabs: EventTab[], order: readonly EventTabId[]): EventTab[] {
+  const byId = new Map(tabs.map((tab) => [tab.id, tab]));
+  const ordered = order.flatMap((id) => {
+    const tab = byId.get(id);
+    if (!tab) return [];
+    byId.delete(id);
+    return [tab];
+  });
+  return [...ordered, ...tabs.filter((tab) => byId.has(tab.id))];
+}
+
 /**
  * Publishing is an action taken from the header, not a tab someone browses to, so it
  * has a route and a slug but no place in the bar.

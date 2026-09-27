@@ -12,6 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   CalendarClock,
   Copy,
   MailCheck,
@@ -21,6 +23,7 @@ import {
   Trash2,
   UserPlus,
   Users,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,7 +76,7 @@ import {
   useSendAssignmentSummaries,
 } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
-import { eventSectionHref, eventSectionLabel, eventTabHref, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
+import { eventSectionHref, eventSectionLabel, eventTabHref, orderedEventTabs, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
@@ -129,6 +132,31 @@ function SectionTabs({
   experience: AccountExperience;
 }) {
   const activeRef = useRef<HTMLAnchorElement>(null);
+  const storageKey = `beebizy:event-tab-order:${experience}`;
+  const baseTabs = visibleEventTabs(plan, experience);
+  const [order, setOrder] = useState<EventTabId[]>(() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]");
+      return Array.isArray(parsed) ? parsed.filter((id): id is EventTabId => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  const tabs = orderedEventTabs(baseTabs, order);
+
+  const saveOrder = (next: EventTabId[]) => {
+    setOrder(next);
+    window.localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+
+  const move = (id: EventTabId, direction: -1 | 1) => {
+    const ids = tabs.map((tab) => tab.id);
+    const from = ids.indexOf(id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+    saveOrder(ids);
+  };
 
   // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
   // a late tab like Deposits shows a bar that does not contain the tab you are on.
@@ -137,11 +165,12 @@ function SectionTabs({
   }, [active]);
 
   return (
-    <nav
-      aria-label="Event sections"
-      className="workspace-scrollbar flex snap-x gap-1 overflow-x-auto py-2"
-    >
-      {visibleEventTabs(plan, experience).map((tab) => {
+    <div className="flex items-center gap-2">
+      <nav
+        aria-label="Event sections"
+        className="workspace-scrollbar flex min-w-0 flex-1 snap-x gap-1 overflow-x-auto py-2"
+      >
+      {tabs.map((tab) => {
         const isActive = tab.id === active;
         return (
           <Link
@@ -163,7 +192,37 @@ function SectionTabs({
           </Link>
         );
       })}
-    </nav>
+      </nav>
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="shrink-0" aria-label="Arrange event tabs">
+            <SlidersHorizontal className="mr-1.5 size-3.5" />
+            Arrange
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Arrange event tabs</DialogTitle>
+            <DialogDescription>Move the sections into the order your team uses. The order applies to every event in this view.</DialogDescription>
+          </DialogHeader>
+          <ol className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
+            {tabs.map((tab, index) => (
+              <li key={tab.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
+                <span className="w-6 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+                <span className="min-w-0 flex-1 text-sm font-medium">{tab.label}</span>
+                <Button type="button" variant="ghost" size="icon" disabled={index === 0} aria-label={`Move ${tab.label} up`} onClick={() => move(tab.id, -1)}>
+                  <ArrowUp className="size-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" disabled={index === tabs.length - 1} aria-label={`Move ${tab.label} down`} onClick={() => move(tab.id, 1)}>
+                  <ArrowDown className="size-4" />
+                </Button>
+              </li>
+            ))}
+          </ol>
+          <Button type="button" variant="outline" onClick={() => saveOrder([])}>Reset default order</Button>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAppPathAllowed, isNavActive, NAV_ITEMS, visibleEventTabs, visibleNavItems } from "./nav";
+import { isAppPathAllowed, isNavActive, NAV_ITEMS, orderedEventTabs, visibleEventTabs, visibleNavItems } from "./nav";
 
 describe("product navigation", () => {
   it("lists the twelve destinations in the reference order", () => {
@@ -66,5 +66,14 @@ describe("product navigation", () => {
     expect(isAppPathAllowed("/app/vendors", "santa-clara")).toBe(false);
     expect(isAppPathAllowed("/app/vendors/vendor-1", "santa-clara")).toBe(true);
     expect(isAppPathAllowed("/app/fundraising", "santa-clara")).toBe(false);
+  });
+
+  it("applies a saved tab order without losing new, unavailable, or duplicate tabs", () => {
+    const tabs = visibleEventTabs("enterprise");
+    const reordered = orderedEventTabs(tabs, ["vendors", "volunteers", "vendors", "share"]);
+    expect(reordered.slice(0, 2).map((tab) => tab.id)).toEqual(["vendors", "volunteers"]);
+    expect(new Set(reordered.map((tab) => tab.id)).size).toBe(tabs.length);
+    expect(reordered).toHaveLength(tabs.length);
+    expect(reordered.some((tab) => tab.id === "overview")).toBe(true);
   });
 });
