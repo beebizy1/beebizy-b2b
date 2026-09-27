@@ -15,12 +15,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { Panel, PanelHeader, PageHeader } from "@/components/primitives";
-import { useCreateVendor } from "@/data/hooks";
+import { useAddEventVendor, useCreateVendor } from "@/data/hooks";
 import { VENDOR_CATEGORIES } from "@/data/entities";
 
 export default function VendorForm() {
   const [, navigate] = useLocation();
   const createVendor = useCreateVendor();
+  const addEventVendor = useAddEventVendor();
+  const query = new URLSearchParams(window.location.search);
+  const eventId = query.get("eventId")?.trim() || null;
+  const requestedReturnTo = query.get("returnTo")?.trim() || "";
+  const returnTo = requestedReturnTo.startsWith("/app/") ? requestedReturnTo : "/app/vendors";
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("Catering");
   const [description, setDescription] = useState("");
@@ -36,7 +41,7 @@ export default function VendorForm() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <Link
-        href="/app/vendors"
+        href={returnTo}
         className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -56,8 +61,9 @@ export default function VendorForm() {
             formEvent.preventDefault();
             setTouched(true);
             if (nameProblem) return;
-            createVendor.mutate(
-              {
+            void (async () => {
+              try {
+                const vendor = await createVendor.mutateAsync({
                 name: name.trim(),
                 category,
                 description: description.trim() || null,
@@ -66,15 +72,19 @@ export default function VendorForm() {
                 website: website.trim() || null,
                 city: city.trim() || null,
                 state: state.trim() || null,
-              },
-              {
-                onSuccess: (vendor) => {
-                  toast({ title: "Vendor added", description: `${vendor.name} is in your directory.` });
-                  navigate(`/app/vendors/${vendor.id}`);
-                },
-                onError: (error) => toast({ title: "Couldn't add vendor", description: error.message }),
-              },
-            );
+                });
+                if (eventId) await addEventVendor.mutateAsync({ eventId, draft: { vendorId: vendor.id } });
+                toast({
+                  title: eventId ? "Vendor added to the event" : "Vendor added",
+                  description: eventId
+                    ? `${vendor.name} is booked on this event and saved in your directory.`
+                    : `${vendor.name} is in your directory.`,
+                });
+                navigate(eventId ? returnTo : `/app/vendors/${vendor.id}`);
+              } catch (error) {
+                toast({ title: "Couldn't add vendor", description: error instanceof Error ? error.message : String(error) });
+              }
+            })();
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -172,9 +182,9 @@ export default function VendorForm() {
 
           <div className="flex items-center justify-end gap-2 border-t border-hairline pt-4">
             <Button asChild variant="outline" type="button">
-              <Link href="/app/vendors">Cancel</Link>
+              <Link href={returnTo}>Cancel</Link>
             </Button>
-            <Button type="submit" disabled={createVendor.isPending}>
+            <Button type="submit" disabled={createVendor.isPending || addEventVendor.isPending}>
               <Save className="mr-1.5 size-4" />
               Add vendor
             </Button>

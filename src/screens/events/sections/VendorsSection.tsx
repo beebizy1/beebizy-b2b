@@ -211,7 +211,15 @@ export function VendorsPanel({ event }: { event: Event }) {
       >
         <Select value={vendorId} onValueChange={setVendorId} disabled={available.length === 0}>
           <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose a vendor to book">
-            <SelectValue placeholder={available.length === 0 ? "Every vendor is already booked" : "Book a vendor…"} />
+            <SelectValue
+              placeholder={
+                (directory?.length ?? 0) === 0
+                  ? "Add your first vendor to book"
+                  : available.length === 0
+                    ? "Every vendor is already booked"
+                    : "Book a vendor…"
+              }
+            />
           </SelectTrigger>
           <SelectContent>
             {available.map((vendor) => (
@@ -226,7 +234,9 @@ export function VendorsPanel({ event }: { event: Event }) {
           Book
         </Button>
         <Button asChild variant="outline" size="sm">
-          <Link href="/app/vendors/new">New vendor</Link>
+          <Link href={`/app/vendors/new?eventId=${encodeURIComponent(event.id)}&returnTo=${encodeURIComponent(`/app/events/${event.id}/vendors`)}`}>
+            New vendor
+          </Link>
         </Button>
         <VendorCsvImportDialog eventId={event.id} />
       </form>
