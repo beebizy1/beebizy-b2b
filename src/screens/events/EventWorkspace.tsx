@@ -19,6 +19,7 @@ import {
   MailCheck,
   MapPin,
   Pencil,
+  Plus,
   Share2,
   Trash2,
   UserPlus,
@@ -74,12 +75,14 @@ import {
   useMembers,
   useSaveEventAsTemplate,
   useSendAssignmentSummaries,
+  useUpdateEvent,
 } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
 import { eventSectionHref, eventSectionLabel, eventTabHref, orderedEventTabs, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
+import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
@@ -125,11 +128,13 @@ function SectionTabs({
   active,
   plan,
   experience,
+  dayNumber,
 }: {
   eventId: string;
   active: EventTabId;
   plan: PlanId;
   experience: AccountExperience;
+  dayNumber: number;
 }) {
   const activeRef = useRef<HTMLAnchorElement>(null);
   const storageKey = `beebizy:event-tab-order:${experience}`;
@@ -176,7 +181,7 @@ function SectionTabs({
           <Link
             key={tab.id}
             ref={isActive ? activeRef : undefined}
-            href={eventTabHref(eventId, tab.id)}
+            href={`${eventTabHref(eventId, tab.id)}?day=${dayNumber}`}
             aria-current={isActive ? "page" : undefined}
             className={cn(
               "flex snap-start items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition-[background-color,border-color,box-shadow,color]",
@@ -376,9 +381,28 @@ function WorkspaceHeader({
 }) {
   const [, navigate] = useLocation();
   const prefs = usePreferences();
+  const updateEvent = useUpdateEvent();
   const deleteEvent = useDeleteEvent();
   const saveAsTemplate = useSaveEventAsTemplate();
   const sendAssignmentSummaries = useSendAssignmentSummaries();
+  const days = eventDayOptions(event.date, event.endDate, prefs.timeZone);
+  const requestedDay = Number(new URLSearchParams(window.location.search).get("day"));
+  const selectedDay = days.some((day) => day.dayNumber === requestedDay) ? requestedDay : 1;
+  const currentPath = window.location.pathname;
+  const selectDay = (dayNumber: number) => navigate(`${currentPath}?day=${dayNumber}`);
+  const addDay = () => {
+    const nextDay = days.length + 1;
+    updateEvent.mutate(
+      { id: event.id, patch: { endDate: endAfterAddingEventDay(event.date, event.endDate) } },
+      {
+        onSuccess: () => {
+          selectDay(nextDay);
+          toast({ title: `Day ${nextDay} added`, description: "The new date is available throughout this event workspace." });
+        },
+        onError: (error) => toast({ title: "Couldn't add another event day", description: error.message }),
+      },
+    );
+  };
   const emailResponsibilities = () => {
     sendAssignmentSummaries.mutate(event.id, {
       onSuccess: (result) => {
@@ -568,7 +592,27 @@ function WorkspaceHeader({
       </div>
 
       <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
-        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} />
+        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} />
+        <div className="flex items-center gap-2 overflow-x-auto border-t border-hairline py-2" aria-label="Event days">
+          {days.map((day) => (
+            <Button
+              key={day.dayNumber}
+              type="button"
+              size="sm"
+              variant={selectedDay === day.dayNumber ? "secondary" : "ghost"}
+              className="shrink-0"
+              aria-pressed={selectedDay === day.dayNumber}
+              onClick={() => selectDay(day.dayNumber)}
+            >
+              {formatEventDayLabel(day)}
+            </Button>
+          ))}
+          <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={addDay} disabled={updateEvent.isPending}>
+            <Plus className="mr-1.5 size-3.5" />
+            Add day
+          </Button>
+          <span className="shrink-0 text-xs text-muted-foreground">Event-wide sections stay shared. Schedules and shifts follow the selected day.</span>
+        </div>
       </div>
     </section>
   );
@@ -672,6 +716,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const { data: health } = useEventHealth(id);
   const { data: identity } = useMe();
   const { experience } = useAccountExperience();
+  const { timeZone } = usePreferences();
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
 
@@ -717,6 +762,10 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     return <Redirect to={experience === "santa-clara" ? eventTabHref(id, "run-of-show") : "/pricing"} replace />;
   }
 
+  const requestedDay = Number(new URLSearchParams(window.location.search).get("day"));
+  const days = eventDayOptions(event.date, event.endDate, timeZone);
+  const selectedDay = days.some((day) => day.dayNumber === requestedDay) ? requestedDay : 1;
+
   return (
     <div className="space-y-6">
       <WorkspaceHeader
@@ -731,9 +780,9 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}
-      {active === "run-of-show" ? <RunOfShowPanel event={event} /> : null}
+      {active === "run-of-show" ? <RunOfShowPanel event={event} selectedDay={selectedDay} /> : null}
       {active === "checklist" ? <ChecklistWorkspace key={event.id} event={event} /> : null}
-      {active === "volunteers" ? <VolunteersPanel event={event} allowSpreadsheetImport /> : null}
+      {active === "volunteers" ? <VolunteersPanel event={event} allowSpreadsheetImport selectedDay={selectedDay} /> : null}
       {active === "contingency" ? <ContingencyWorkspace key={event.id} event={event} /> : null}
       {active === "vendors" ? (
         <div className="space-y-6">

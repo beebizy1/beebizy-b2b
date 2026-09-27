@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Send, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -671,7 +671,8 @@ function RunOfShowRow({
   );
 }
 
-export function RunOfShowPanel({ event }: { event: Event }) {
+export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event: Event; selectedDay?: number }) {
+  const [location, navigate] = useLocation();
   const { timeZone, timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const { data: members } = useMembers();
@@ -682,10 +683,7 @@ export function RunOfShowPanel({ event }: { event: Event }) {
     [cues, event.date, event.endDate, timeZone],
   );
   const [focusedCueId] = useState(() => new URLSearchParams(window.location.search).get("cue"));
-  const [selectedDay, setSelectedDay] = useState(() => {
-    const requested = Number(new URLSearchParams(window.location.search).get("day"));
-    return Number.isInteger(requested) && requested > 0 ? requested : 1;
-  });
+  const [selectedDay, setSelectedDay] = useState(requestedDay);
   const hasFocusedCue = useRef(false);
   const [startTime, setStartTime] = useState("09:00");
   const [title, setTitle] = useState("");
@@ -698,6 +696,15 @@ export function RunOfShowPanel({ event }: { event: Event }) {
   useEffect(() => {
     if (!days.some((day) => day.dayNumber === selectedDay)) setSelectedDay(1);
   }, [days, selectedDay]);
+
+  useEffect(() => {
+    if (days.some((day) => day.dayNumber === requestedDay)) setSelectedDay(requestedDay);
+  }, [days, requestedDay]);
+
+  const selectDay = (dayNumber: number) => {
+    setSelectedDay(dayNumber);
+    navigate(`${location.split("?")[0]}?day=${dayNumber}`);
+  };
 
   useEffect(() => {
     if (hasFocusedCue.current || !focusedCueId || !cues?.some((cue) => cue.id === focusedCueId && cue.dayNumber === selectedDay)) return;
@@ -762,7 +769,7 @@ export function RunOfShowPanel({ event }: { event: Event }) {
                 key={day.dayNumber}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setSelectedDay(day.dayNumber)}
+                onClick={() => selectDay(day.dayNumber)}
                 className={cn(
                   "min-w-[9.5rem] rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active

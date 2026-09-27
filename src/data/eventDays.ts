@@ -58,6 +58,14 @@ export function formatEventDayLabel(option: EventDayOption, locale?: string): st
   return `Day ${option.dayNumber} · ${label}`;
 }
 
+/** Extends an event by one full day while preserving its stored end time. */
+export function endAfterAddingEventDay(startsAt: string, endsAt: string | null | undefined): string {
+  const currentEnd = new Date(endsAt ?? startsAt);
+  if (!Number.isFinite(currentEnd.getTime())) throw new Error("The event date is invalid.");
+  currentEnd.setUTCDate(currentEnd.getUTCDate() + 1);
+  return currentEnd.toISOString();
+}
+
 /** Date-only checklist deadline derived from the event's venue-local calendar day. */
 export function checklistDueDateBeforeEvent(startsAt: string, timeZone: string, daysBefore: number): string | null {
   const civilDate = eventDayOptions(startsAt, null, timeZone)[0]?.civilDate;

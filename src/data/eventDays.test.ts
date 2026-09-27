@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checklistDueDateBeforeEvent, compareRunOfShowItems, eventDayCount, eventDayOptions, formatEventDayLabel } from "./eventDays";
+import { checklistDueDateBeforeEvent, compareRunOfShowItems, endAfterAddingEventDay, eventDayCount, eventDayOptions, formatEventDayLabel } from "./eventDays";
 
 describe("multi-day events", () => {
   it("counts the venue's calendar days inclusively", () => {
@@ -39,6 +39,11 @@ describe("multi-day events", () => {
     expect(formatEventDayLabel({ dayNumber: 2, civilDate: "2026-10-11" }, "en-US")).toBe(
       "Day 2 · Sun, Oct 11",
     );
+  });
+
+  it("adds one full event day from either the current end or the start", () => {
+    expect(endAfterAddingEventDay("2026-10-10T16:00:00.000Z", null)).toBe("2026-10-11T16:00:00.000Z");
+    expect(endAfterAddingEventDay("2026-10-10T16:00:00.000Z", "2026-10-12T23:00:00.000Z")).toBe("2026-10-13T23:00:00.000Z");
   });
 
   it("builds checklist deadlines from the venue's civil event date", () => {

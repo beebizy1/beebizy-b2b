@@ -287,10 +287,19 @@ export function useCreateEvent() {
 }
 
 export function useUpdateEvent() {
-  return useAdapterMutation(
-    (a, vars: { id: string; patch: EventPatch }) => a.events.update(vars.id, vars.patch),
-    (vars) => [...eventDerivedKeys(vars.id), qk.locations],
-  );
+  const adapter = useData();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; patch: EventPatch }) => adapter.events.update(vars.id, vars.patch),
+    onSuccess: (updated, vars) => {
+      // Publish the returned event immediately so date and workspace changes do not
+      // briefly render against stale data while the background refetch completes.
+      queryClient.setQueryData(qk.event(vars.id), updated);
+      for (const key of [...eventDerivedKeys(vars.id), qk.locations]) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
 }
 
 export function useDeleteEvent() {

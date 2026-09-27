@@ -64,17 +64,19 @@ function VolunteerEditor({
   onCancel,
   needs,
   days,
+  defaultDay,
 }: {
   initial?: VolunteerShift;
   needs: VolunteerNeed[];
   days: EventDayOption[];
+  defaultDay: number;
   submitLabel: string;
   onSubmit: (draft: VolunteerShiftDraft) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [needId, setNeedId] = useState(initial?.needId ?? "__adhoc__");
-  const [dayNumber, setDayNumber] = useState(initial?.dayNumber ?? 1);
+  const [dayNumber, setDayNumber] = useState(initial?.dayNumber ?? defaultDay);
   const [role, setRole] = useState(initial?.role ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
@@ -185,9 +187,9 @@ function shiftLength(start: string, end: string): string {
   return `${hours ? `${hours}h` : ""}${hours && remainder ? " " : ""}${remainder ? `${remainder}m` : ""}` || "0m";
 }
 
-function NeedEditor({ onSubmit, onCancel, days }: { onSubmit: (draft: VolunteerNeedDraft) => Promise<void>; onCancel: () => void; days: EventDayOption[] }) {
+function NeedEditor({ onSubmit, onCancel, days, defaultDay }: { onSubmit: (draft: VolunteerNeedDraft) => Promise<void>; onCancel: () => void; days: EventDayOption[]; defaultDay: number }) {
   const [role, setRole] = useState("");
-  const [dayNumber, setDayNumber] = useState(1);
+  const [dayNumber, setDayNumber] = useState(defaultDay);
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("12:00");
   const [requiredCount, setRequiredCount] = useState(2);
@@ -213,7 +215,7 @@ function NeedEditor({ onSubmit, onCancel, days }: { onSubmit: (draft: VolunteerN
   );
 }
 
-export default function VolunteersPanel({ event, allowSpreadsheetImport = false }: { event: Event; allowSpreadsheetImport?: boolean }) {
+export default function VolunteersPanel({ event, allowSpreadsheetImport = false, selectedDay = 1 }: { event: Event; allowSpreadsheetImport?: boolean; selectedDay?: number }) {
   const { timeZone } = usePreferences();
   const { data, isLoading, isError, error, refetch } = useVolunteers(event.id);
   const { data: needRows, isLoading: needsLoading } = useVolunteerNeeds(event.id);
@@ -238,15 +240,23 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
     () => (data ?? []).slice().sort((a, b) => a.dayNumber - b.dayNumber || a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name)),
     [data],
   );
+  const rowsForDay = useMemo(
+    () => days.length > 1 ? rows.filter((row) => row.dayNumber === selectedDay) : rows,
+    [days.length, rows, selectedDay],
+  );
+  const needRowsForDay = useMemo(
+    () => days.length > 1 ? (needRows ?? []).filter((row) => row.dayNumber === selectedDay) : (needRows ?? []),
+    [days.length, needRows, selectedDay],
+  );
   const needle = search.trim().toLowerCase();
-  const visible = rows.filter((row) =>
+  const visible = rowsForDay.filter((row) =>
     [row.name, row.role, row.email, row.notes].filter(Boolean).some((value) => value!.toLowerCase().includes(needle)),
   );
-  const active = rows.filter((row) => row.status !== "cancelled");
+  const active = rowsForDay.filter((row) => row.status !== "cancelled");
   const confirmed = active.filter((row) => row.status !== "scheduled").length;
   const onSite = active.filter((row) => row.status === "checked_in").length;
   const totalMinutes = active.reduce((sum, row) => sum + shiftMinutes(row.startTime, row.endTime), 0);
-  const needs = useMemo(() => volunteerCoverage(needRows ?? [], rows), [needRows, rows]);
+  const needs = useMemo(() => volunteerCoverage(needRowsForDay, rowsForDay), [needRowsForDay, rowsForDay]);
   const totalOpen = needs.reduce((sum, need) => sum + need.openCount, 0);
 
   useEffect(() => {
@@ -287,7 +297,7 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
           description="Set the people needed for each time slot, see gaps, and share one self-signup link."
           actions={<><Button variant="outline" size="sm" onClick={() => void copySignupLink()} disabled={share.isPending}><Copy className="mr-1.5 size-3.5" />Copy signup link</Button><Button size="sm" onClick={() => setShowAddNeed(true)}><Plus className="mr-1.5 size-3.5" />Add role requirement</Button></>}
         />
-        {showAddNeed ? <div className="border-b border-hairline p-4"><NeedEditor days={days} onCancel={() => setShowAddNeed(false)} onSubmit={async (draft) => {
+        {showAddNeed ? <div className="border-b border-hairline p-4"><NeedEditor days={days} defaultDay={selectedDay} onCancel={() => setShowAddNeed(false)} onSubmit={async (draft) => {
           try {
             await addNeed.mutateAsync({ eventId: event.id, draft });
             setShowAddNeed(false);
@@ -324,8 +334,9 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
         <div className="border-b border-hairline p-4">
           {showAdd ? (
             <VolunteerEditor
-              needs={needRows ?? []}
+              needs={needRowsForDay}
               days={days}
+              defaultDay={selectedDay}
               submitLabel="Add shift"
               onCancel={() => setShowAdd(false)}
               onSubmit={async (draft) => {
@@ -347,15 +358,15 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
         </div>
 
         {isLoading ? <LoadingRows rows={4} /> : null}
-        {!isLoading && rows.length === 0 ? (
+        {!isLoading && rowsForDay.length === 0 ? (
           <EmptyState
             icon={HeartHandshake}
             title="No volunteers scheduled"
-            description="Add the first volunteer with their role, time slot and briefing notes."
+            description={days.length > 1 ? `Add the first volunteer for Day ${selectedDay} with their role, time slot and briefing notes.` : "Add the first volunteer with their role, time slot and briefing notes."}
             action={<Button size="sm" onClick={() => setShowAdd(true)}>Add first volunteer</Button>}
           />
         ) : null}
-        {!isLoading && rows.length > 0 && visible.length === 0 ? (
+        {!isLoading && rowsForDay.length > 0 && visible.length === 0 ? (
           <EmptyState icon={Search} title="No matching volunteers" description="Try another name, role or note." />
         ) : null}
         {visible.length > 0 ? (
@@ -369,8 +380,9 @@ export default function VolunteersPanel({ event, allowSpreadsheetImport = false 
               >
                 {editingId === volunteer.id ? (
                   <VolunteerEditor
-                    needs={needRows ?? []}
+                    needs={needRowsForDay}
                     days={days}
+                    defaultDay={selectedDay}
                     initial={volunteer}
                     submitLabel="Save changes"
                     onCancel={() => setEditingId(null)}
