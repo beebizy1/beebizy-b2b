@@ -109,10 +109,10 @@ const aliases = {
   capacity: ["capacity", "headcount", "guest count", "attendees", "attendance"],
   category: ["category", "event type", "type"],
   description: ["description", "event description", "brief", "notes"],
-  task: ["task", "tasks", "checklist item", "checklist items", "contingency task", "action", "actions", "to do", "to dos", "todo", "title"],
-  dueDate: ["due date", "deadline", "due"],
-  owner: ["owner", "assigned to", "assignee", "responsible"],
-  completed: ["completed", "done", "status"],
+  task: ["task", "tasks", "checklist item", "checklist items", "contingency task", "action", "actions", "action item", "action items", "to do", "to dos", "todo", "title"],
+  dueDate: ["due date", "deadline", "due", "completion date", "target date"],
+  owner: ["owner", "assigned to", "assignee", "responsible", "point person", "person responsible", "task owner"],
+  completed: ["completed", "complete", "done", "status"],
   dayNumber: ["day", "event day", "conference day", "day number"],
   startTime: ["start time", "time", "cue time"],
   duration: ["duration", "duration minutes", "minutes", "mins"],
@@ -212,7 +212,7 @@ function tableNamed(tables: SpreadsheetTable[], patterns: RegExp[], required?: r
  * every kind of sheet and would match all of them.
  */
 const ROLE_SIGNATURES = {
-  checklist: ["task", "tasks", "checklist item", "checklist items", "to do", "to dos", "todo", "todos", "action", "actions"],
+  checklist: ["task", "tasks", "checklist item", "checklist items", "to do", "to dos", "todo", "todos", "action", "actions", "action item", "action items"],
   runOfShow: ["start time", "cue", "cue time", "agenda item", "activity"],
   vendors: [
     "vendor", "vendors", "vendor name",

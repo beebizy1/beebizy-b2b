@@ -57,6 +57,7 @@ import {
   roomClipPath,
   roomPointsForShape,
 } from "@/data/floorplanGeometry";
+import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 
 interface ShapeSpec {
   label: string;
@@ -753,7 +754,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
   if (current === null) {
     return (
       <Panel>
-        <PanelHeader title="Floorplan" description="No rooms yet" />
+        <PanelHeader title="Floorplan" description="No rooms yet" actions={<EventSpreadsheetImportDialog event={event} />} />
         <EmptyState
           icon={LayoutGrid}
           title="No floorplan yet"
@@ -793,6 +794,8 @@ export default function FloorplanPanel({ event }: { event: Event }) {
           <Plus className="mr-1.5 size-3.5" />
           Add a room
         </Button>
+
+        <EventSpreadsheetImportDialog event={event} />
 
         {(
           <Button

@@ -124,6 +124,25 @@ describe("spreadsheet import", () => {
     expect(plan.warnings).toEqual([]);
   });
 
+  it("recognises common organization-specific checklist headers without a template", () => {
+    const plan = buildEventImportPlan([
+      parseCsvTable(
+        "Action Item,Point Person,Completion Date,Complete?,Details\nConfirm stage rental,Christina,2026-10-05,no,Ask venue for final dimensions",
+        "Operations Tracker",
+      ),
+    ], "existing-operations.xlsx");
+
+    expect(plan.checklist).toEqual([
+      expect.objectContaining({
+        title: "Confirm stage rental",
+        assignedTo: "Christina",
+        dueDate: "2026-10-05T12:00:00.000Z",
+        completed: false,
+      }),
+    ]);
+    expect(plan.warnings.join(" ")).not.toContain("not recognised");
+  });
+
   it("accepts only Google Sheets links and keeps the selected tab", () => {
     expect(
       googleSheetCsvUrl("https://docs.google.com/spreadsheets/d/abc_DEF-123/edit#gid=456"),

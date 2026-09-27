@@ -62,6 +62,7 @@ import {
   type Event,
   type SponsorshipTier,
 } from "@/data/entities";
+import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 
 /** Inline money field that only writes on blur, so every keystroke isn't a mutation. */
 function MoneyCell({
@@ -367,24 +368,27 @@ export function BudgetPanel({ event }: { event: Event }) {
         title="Budget"
         description={`${expenses.length} expense lines, ${revenue.length} revenue lines`}
         actions={
-          expenses.length === 0 ? (
-            <Button variant="outline" size="sm" onClick={() => void addSuggestedBudget()} disabled={add.isPending}>
-              <Sparkles className="mr-1.5 size-3.5 text-primary-text" />
-              Suggest {formatMoney(suggestedTotal, { compact: true })} for {headcount} guests
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setTotalDraft(centsToInput(plannedSpend));
-                setAdjustingTotal(true);
-              }}
-            >
-              <Pencil className="mr-1.5 size-3.5" />
-              Adjust total
-            </Button>
-          )
+          <>
+            <EventSpreadsheetImportDialog event={event} />
+            {expenses.length === 0 ? (
+              <Button variant="outline" size="sm" onClick={() => void addSuggestedBudget()} disabled={add.isPending}>
+                <Sparkles className="mr-1.5 size-3.5 text-primary-text" />
+                Suggest {formatMoney(suggestedTotal, { compact: true })} for {headcount} guests
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setTotalDraft(centsToInput(plannedSpend));
+                  setAdjustingTotal(true);
+                }}
+              >
+                <Pencil className="mr-1.5 size-3.5" />
+                Adjust total
+              </Button>
+            )}
+          </>
         }
       />
 
