@@ -184,6 +184,39 @@ export interface AssignmentSummaryItem {
   url: string;
 }
 
+/** Sends the first assignment immediately instead of waiting for an organizer to run a summary. */
+export async function notifyWorkAssignment(input: {
+  assignmentId: string;
+  kind: AssignmentSummaryItem["kind"];
+  to: string;
+  assigneeName: string;
+  eventTitle: string;
+  title: string;
+  timing: string;
+  url: string;
+}): Promise<EmailOutcome> {
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `work-assignment-${input.kind}-${input.assignmentId}-${input.to.toLowerCase()}`,
+    subject: `${input.kind} assignment - ${emailSubjectPart(input.eventTitle)}`,
+    text: [
+      `Hi ${input.assigneeName || "team member"},`,
+      "",
+      `You've been assigned work for ${input.eventTitle}.`,
+      `Task: ${input.title}`,
+      input.timing,
+      "",
+      `Open the assignment and mark it complete when you're done: ${input.url}`,
+      ASSIGNMENT_CALENDAR_HELP,
+    ].filter(Boolean).join("\n"),
+  });
+  if (outcome.status !== "sent") {
+    console.warn("WORK_ASSIGNMENT_EMAIL_NOT_SENT", input.assignmentId, outcome.status, outcome.reason);
+  }
+  return outcome;
+}
+
 /** Sends one event-level responsibility summary instead of making the organizer forward separate task emails. */
 export async function notifyAssignmentSummary(input: {
   to: string;

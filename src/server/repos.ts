@@ -22,6 +22,7 @@ import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import * as s from "./schema.ts";
 import {
   HttpError,
+  lookupUserByEmail,
   lookupUsers,
   newId,
   requireBeebizyOperator,
@@ -59,7 +60,9 @@ import type {
   Vendor,
   HistoryResource,
   CheckInStation,
+  ChecklistItem,
   InviteResult,
+  RunOfShowItem,
   VolunteerShift,
   WalkInRegistrationDraft,
   WorkspaceMember,
@@ -94,6 +97,7 @@ import {
   notifyTeamUpdate,
   notifyVendorMessage,
   notifyVolunteerAssignment,
+  notifyWorkAssignment,
 } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
@@ -2333,6 +2337,98 @@ async function createAssignmentAccess(
   return `${appOrigin()}/assignment/${token}`;
 }
 
+async function notifyChecklistAssignment(
+  ctx: RequestContext,
+  eventId: string,
+  after: ChecklistItem,
+  before: ChecklistItem | null,
+): Promise<void> {
+  if (!after.assignedEmail || after.assignedEmail === before?.assignedEmail) return;
+  try {
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    const url = await createAssignmentAccess(ctx, eventId, {
+      kind: "checklist",
+      id: after.id,
+      email: after.assignedEmail,
+    });
+    await notifyWorkAssignment({
+      assignmentId: after.id,
+      kind: "Checklist",
+      to: after.assignedEmail,
+      assigneeName: after.assignedTo ?? after.assignedEmail,
+      eventTitle: event.title,
+      title: after.title,
+      timing: after.dueDate
+        ? `Due ${new Date(after.dueDate).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" })}`
+        : "No due date",
+      url,
+    });
+  } catch (error) {
+    console.warn("CHECKLIST_ASSIGNMENT_NOTIFICATION_FAILED", after.id, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function notifyRunOfShowAssignment(
+  ctx: RequestContext,
+  eventId: string,
+  after: RunOfShowItem,
+  before: RunOfShowItem | null,
+): Promise<void> {
+  if (!after.assignedEmail || after.assignedEmail === before?.assignedEmail) return;
+  try {
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    const url = await createAssignmentAccess(ctx, eventId, {
+      kind: "run-of-show",
+      id: after.id,
+      email: after.assignedEmail,
+    });
+    await notifyWorkAssignment({
+      assignmentId: after.id,
+      kind: "Run of show",
+      to: after.assignedEmail,
+      assigneeName: after.responsible ?? after.assignedEmail,
+      eventTitle: event.title,
+      title: after.title,
+      timing: `Day ${after.dayNumber} at ${after.startTime}`,
+      url,
+    });
+  } catch (error) {
+    console.warn("RUN_OF_SHOW_ASSIGNMENT_NOTIFICATION_FAILED", after.id, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function notifyInternalVolunteerAssignment(
+  ctx: RequestContext,
+  eventId: string,
+  after: VolunteerShift,
+  before: VolunteerShift | null,
+): Promise<void> {
+  if (!after.email || after.email === before?.email) return;
+  try {
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    const url = await createAssignmentAccess(ctx, eventId, {
+      kind: "volunteer",
+      id: after.id,
+      email: after.email,
+    });
+    await notifyVolunteerAssignment({
+      to: after.email,
+      volunteerName: after.name,
+      role: after.role,
+      eventTitle: event.title,
+      dayNumber: after.dayNumber,
+      startTime: after.startTime,
+      endTime: after.endTime,
+      url,
+    });
+  } catch (error) {
+    console.warn("VOLUNTEER_ASSIGNMENT_NOTIFICATION_FAILED", after.id, error instanceof Error ? error.message : String(error));
+  }
+}
+
 export const checklist = eventScoped({
   table: s.checklistItems as never,
   mapper: map.toChecklistItem as never,
@@ -2369,7 +2465,7 @@ export const checklist = eventScoped({
     )).limit(1);
     if (!vendor) throw new HttpError(400, "That vendor is not available in this workspace.");
   },
-
+  afterWrite: notifyChecklistAssignment,
 });
 
 export const checkInStations = eventScoped({
@@ -2443,6 +2539,7 @@ export const runOfShow = eventScoped({
     assignedEmail: (b) => optionalEmail(b, "assignedEmail"),
     completed: (b) => Boolean(b.completed),
   },
+  afterWrite: notifyRunOfShowAssignment,
 });
 
 const localTime = (body: Body, key: string): string => {
@@ -2545,6 +2642,7 @@ export const volunteers = eventScoped({
     body.startTime = need.startTime;
     body.endTime = need.endTime;
   },
+  afterWrite: notifyInternalVolunteerAssignment,
 });
 
 export const budget = eventScoped({
@@ -3222,6 +3320,53 @@ export const floorplan = {
  * owner cannot demote or remove the last owner, because a workspace nobody can administer
  * is unrecoverable without support.
  */
+async function claimInviteForExistingAccount(
+  ctx: RequestContext,
+  invite: {
+    id: string;
+    workspaceId: string;
+    role: "owner" | "admin" | "member";
+    eventScopeId: string | null;
+    createdAt: Date;
+  },
+  account: { userId: string; name: string | null; email: string },
+): Promise<WorkspaceMember> {
+  const [inserted] = await db
+    .insert(s.workspaceMembers)
+    .values({
+      workspaceId: invite.workspaceId,
+      userId: account.userId,
+      role: invite.role,
+      eventScopeId: invite.eventScopeId,
+    })
+    .onConflictDoNothing()
+    .returning();
+  const [member] = inserted
+    ? [inserted]
+    : await db.select().from(s.workspaceMembers).where(and(
+        eq(s.workspaceMembers.workspaceId, invite.workspaceId),
+        eq(s.workspaceMembers.userId, account.userId),
+      )).limit(1);
+  if (!member) throw new HttpError(500, "The existing account could not be added to this workspace.");
+
+  await db.update(s.workspaceInvites).set({
+    acceptedAt: new Date(),
+    acceptedUserId: account.userId,
+  }).where(eq(s.workspaceInvites.id, invite.id));
+
+  return {
+    userId: account.userId,
+    role: member.role,
+    status: "active",
+    name: account.name,
+    email: account.email,
+    isSelf: account.userId === ctx.userId,
+    joinedAt: member.createdAt.toISOString(),
+    eventScopeId: member.eventScopeId,
+    eventScopeTitle: member.eventScopeId ? (await events.get(ctx, member.eventScopeId))?.title ?? null : null,
+  };
+}
+
 export const members = {
   /** Everyone with a seat: those who have signed in, and those still holding an invite. */
   async list(ctx: RequestContext): Promise<WorkspaceMember[]> {
@@ -3295,6 +3440,30 @@ export const members = {
       await requireOwnedEvent(ctx, eventScopeId);
     }
 
+    const existingAccount = await lookupUserByEmail(email);
+    if (existingAccount) {
+      const [active] = await db.select().from(s.workspaceMembers).where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
+        eq(s.workspaceMembers.userId, existingAccount.userId),
+      )).limit(1);
+      if (active) {
+        return {
+          member: {
+            userId: existingAccount.userId,
+            role: active.role,
+            status: "active",
+            name: existingAccount.name,
+            email,
+            isSelf: existingAccount.userId === ctx.userId,
+            joinedAt: active.createdAt.toISOString(),
+            eventScopeId: active.eventScopeId,
+            eventScopeTitle: active.eventScopeId ? (await events.get(ctx, active.eventScopeId))?.title ?? null : null,
+          },
+          emailSent: false,
+        };
+      }
+    }
+
     const [existing] = await db
       .select()
       .from(s.workspaceInvites)
@@ -3310,6 +3479,12 @@ export const members = {
         .set({ role: role as "member", eventScopeId })
         .where(eq(s.workspaceInvites.id, existing.id))
         .returning();
+      if (existingAccount) {
+        return {
+          member: await claimInviteForExistingAccount(ctx, updated!, existingAccount),
+          emailSent: false,
+        };
+      }
       return {
         member: {
           userId: null,
@@ -3376,6 +3551,13 @@ export const members = {
     }
 
     const emailSent = await sendInvitationEmail(email, invitationAcceptanceUrl(appOrigin()));
+
+    if (existingAccount) {
+      return {
+        member: await claimInviteForExistingAccount(ctx, created!, existingAccount),
+        emailSent,
+      };
+    }
 
     return {
       member: {

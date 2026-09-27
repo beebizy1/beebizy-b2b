@@ -524,7 +524,7 @@ export default function GuestsSection({ event }: { event: Event }) {
                 aria-label="Search guests"
                 className="h-8 w-44"
               />
-              <GuestCsvImportDialog event={event} />
+              <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets" />
             </>
           }
         />

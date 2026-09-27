@@ -438,6 +438,29 @@ export async function lookupUsers(
   return directory;
 }
 
+/** Finds an existing verified Clerk account so an invitation can grant access immediately. */
+export async function lookupUserByEmail(
+  rawEmail: string,
+): Promise<{ userId: string; name: string | null; email: string } | null> {
+  if (!clerk) return null;
+  const email = rawEmail.trim().toLowerCase();
+  try {
+    const { data } = await clerk.users.getUserList({ emailAddress: [email], limit: 10 });
+    for (const user of data) {
+      const primary = user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId);
+      if (primary?.emailAddress.toLowerCase() !== email || primary.verification?.status !== "verified") continue;
+      return {
+        userId: user.id,
+        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+        email,
+      };
+    }
+  } catch (error) {
+    console.warn("MEMBER_EMAIL_LOOKUP_FAILED", email, error instanceof Error ? error.message : String(error));
+  }
+  return null;
+}
+
 /**
  * Emails an invitation, using the identity provider that already sends this workspace's
  * sign-in codes.

@@ -5,6 +5,7 @@ import {
   notifyRegistrationConfirmation,
   notifyTeamUpdate,
   notifyVolunteerAssignment,
+  notifyWorkAssignment,
 } from "./notify";
 
 afterEach(() => {
@@ -68,6 +69,34 @@ describe("assignment and live-update email", () => {
     expect(body.text).toContain("1. Confirm catering");
     expect(body.text).toContain("2. Open doors");
     expect(body.text).toContain("opens the exact assignment");
+  });
+
+  it("immediately emails a newly assigned checklist task with its private completion link", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyWorkAssignment({
+      assignmentId: "cl-123",
+      kind: "Checklist",
+      to: "laila@beebizy.com",
+      assigneeName: "Laila Marshall",
+      eventTitle: "Mrs. Bench Influencer Event",
+      title: "Book Boba Bar",
+      timing: "Due Oct 5, 2026",
+      url: "https://beebizy.test/assignment/task-token",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      to: ["laila@beebizy.com"],
+      reply_to: "hello@beebizy.com",
+      subject: "Checklist assignment - Mrs. Bench Influencer Event",
+    });
+    expect(body.text).toContain("Book Boba Bar");
+    expect(body.text).toContain("mark it complete");
+    expect(body.text).toContain("https://beebizy.test/assignment/task-token");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe(
+      "work-assignment-Checklist-cl-123-laila@beebizy.com",
+    );
   });
 });
 

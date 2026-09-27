@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import ChecklistLibrarySheet from "./ChecklistLibrarySheet";
+import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 import { cn } from "@/lib/utils";
 import { formatClockTime } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
@@ -368,6 +369,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
         description={total > 0 ? `${done} of ${total} done${overdueCount ? ` · ${overdueCount} overdue` : ""}` : "Nothing yet"}
         actions={
           <>
+            <EventSpreadsheetImportDialog event={event} />
             <ChecklistLibrarySheet
               eventId={event.id}
               existingTitles={existingTitles}
