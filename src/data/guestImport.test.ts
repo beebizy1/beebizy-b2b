@@ -4,7 +4,7 @@ import { GUEST_CSV_TEMPLATE, parseGuestCsv } from "./guestImport";
 describe("parseGuestCsv", () => {
   it("reads the template it hands out", () => {
     const { rows, matched } = parseGuestCsv(GUEST_CSV_TEMPLATE);
-    expect(matched).toEqual({ name: "name", contact: "email", notes: "notes", organization: "company", segment: "guest type" });
+    expect(matched).toEqual({ name: "name", contact: "email", notes: "notes", organization: "company", segment: "guest type", partySize: null });
     expect(rows.filter((r) => r.problem === null)).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       line: 2,
@@ -19,7 +19,7 @@ describe("parseGuestCsv", () => {
 
   it("matches headers loosely, whatever the exporter called them", () => {
     const { matched } = parseGuestCsv("Full Name,E-Mail Address,Comments\nA,a@b.co,x\n");
-    expect(matched).toEqual({ name: "Full Name", contact: "E-Mail Address", notes: "Comments", organization: null, segment: null });
+    expect(matched).toEqual({ name: "Full Name", contact: "E-Mail Address", notes: "Comments", organization: null, segment: null, partySize: null });
   });
 
   it("reads common HubSpot first-name, last-name, company and lifecycle columns", () => {
@@ -32,6 +32,7 @@ describe("parseGuestCsv", () => {
       notes: null,
       organization: "Company Name",
       segment: "Lifecycle Stage",
+      partySize: null,
     });
     expect(rows[0]).toMatchObject({
       name: "Ada Lovelace",
@@ -48,7 +49,7 @@ describe("parseGuestCsv", () => {
         "\n",
       ),
     );
-    expect(rows.map((r) => r.problem)).toEqual([null, "No name", "No email", "Email doesn't look valid"]);
+    expect(rows.map((r) => r.problem)).toEqual([null, "No name", null, "Email doesn't look valid"]);
     // Every row survives, so a count in the UI can't quietly shrink.
     expect(rows).toHaveLength(4);
   });
@@ -68,7 +69,7 @@ describe("parseGuestCsv", () => {
 
   it("survives a file with no recognisable columns", () => {
     const { rows, matched } = parseGuestCsv("colour,size\nred,large\n");
-    expect(matched).toEqual({ name: null, contact: null, notes: null, organization: null, segment: null });
+    expect(matched).toEqual({ name: null, contact: null, notes: null, organization: null, segment: null, partySize: null });
     expect(rows[0]!.problem).toBe("Empty row");
   });
 
@@ -76,5 +77,64 @@ describe("parseGuestCsv", () => {
     const { rows } = parseGuestCsv('name,email,notes\n"Doe, Jane",jane@example.com,"Vegan, no nuts"\n');
     expect(rows[0]).toMatchObject({ name: "Doe, Jane", contact: "jane@example.com", notes: "Vegan, no nuts" });
     expect(rows[0]!.problem).toBeNull();
+  });
+
+  it("understands the Mrs Bench sheet without mistaking Contact names for emails", () => {
+    const source = [
+      "Contact,YES/NO,Private Trade Video?,Attendees",
+      "Alex Rivera,,,2",
+      "Jordan Lee,,,0",
+    ].join("\n");
+
+    const { rows, matched } = parseGuestCsv(source);
+
+    expect(matched).toMatchObject({ name: "Contact", contact: null, partySize: "Attendees" });
+    expect(rows[0]).toMatchObject({
+      name: "Alex Rivera",
+      contact: null,
+      partySize: 2,
+      problem: null,
+    });
+    expect(rows[1]).toMatchObject({
+      name: "Jordan Lee",
+      contact: null,
+      partySize: 0,
+      problem: "Attendee count must be between 1 and 10,000",
+    });
+  });
+
+  it("lets an organizer correct unfamiliar columns before importing", () => {
+    const source = "Who is coming?,Best way to reach them,Seats\nAda Lovelace,ada@example.com,3\n";
+    const { rows, matched } = parseGuestCsv(source, {
+      name: "Who is coming?",
+      contact: "Best way to reach them",
+      partySize: "Seats",
+    });
+
+    expect(matched).toMatchObject({
+      name: "Who is coming?",
+      contact: "Best way to reach them",
+      partySize: "Seats",
+    });
+    expect(rows[0]).toMatchObject({
+      name: "Ada Lovelace",
+      contact: "ada@example.com",
+      partySize: 3,
+      problem: null,
+    });
+  });
+
+  it("suggests an unfamiliar name column from person-like values", () => {
+    const source = "Who is coming?,Response\nAda Lovelace,Yes\nGrace Hopper,No\n";
+    const { rows, matched } = parseGuestCsv(source);
+
+    expect(matched.name).toBe("Who is coming?");
+    expect(rows.map((row) => row.name)).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    expect(rows.every((row) => row.problem === null)).toBe(true);
+  });
+
+  it("rejects attendee counts that cannot be stored safely", () => {
+    const { rows } = parseGuestCsv("Name,Attendees\nLarge group,10001\n");
+    expect(rows[0]!.problem).toBe("Attendee count must be between 1 and 10,000");
   });
 });

@@ -8,12 +8,13 @@
  */
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, FileUp, Upload } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, FileUp, RotateCcw, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -25,9 +26,40 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { Pill } from "@/components/primitives";
-import { useCreateGuest, useCreateRegistration, useLoadGoogleSheet } from "@/data/hooks";
-import { GUEST_CSV_TEMPLATE, parseGuestCsv } from "@/data/guestImport";
+import { useImportGuestRegistration, useLoadGoogleSheet } from "@/data/hooks";
+import {
+  GUEST_CSV_TEMPLATE,
+  parseGuestCsv,
+  type GuestImportColumnMapping,
+} from "@/data/guestImport";
 import type { Event } from "@/data/entities";
+
+const IGNORE_COLUMN = "__ignore__";
+
+function ColumnPicker({
+  label,
+  value,
+  headers,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  headers: string[];
+  onChange: (value: string | null) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Select value={value ?? IGNORE_COLUMN} onValueChange={(next) => onChange(next === IGNORE_COLUMN ? null : next)}>
+        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value={IGNORE_COLUMN}>Do not import</SelectItem>
+          {headers.map((header) => <SelectItem key={header} value={header}>{header}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 function downloadTemplate() {
   const blob = new Blob([GUEST_CSV_TEMPLATE], { type: "text/csv" });
@@ -48,16 +80,16 @@ export default function GuestCsvImportDialog({
   triggerLabel?: string;
   registrationStatus?: "pending" | "confirmed";
 }) {
-  const createGuest = useCreateGuest();
-  const createRegistration = useCreateRegistration();
+  const importGuest = useImportGuestRegistration();
   const loadGoogleSheet = useLoadGoogleSheet();
   const fileInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState("");
   const [googleUrl, setGoogleUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mapping, setMapping] = useState<Partial<GuestImportColumnMapping>>({});
 
-  const preview = useMemo(() => (source.trim() ? parseGuestCsv(source) : null), [source]);
+  const preview = useMemo(() => (source.trim() ? parseGuestCsv(source, mapping) : null), [mapping, source]);
   /*
    * Say which columns were recognised, and show the optional ones in the preview.
    *
@@ -68,6 +100,7 @@ export default function GuestCsvImportDialog({
    */
   const showOrganization = preview?.matched.organization != null;
   const showSegment = preview?.matched.segment != null;
+  const showPartySize = preview?.matched.partySize != null;
   const readColumns = preview
     ? [
         preview.matched.name ?? "no name column",
@@ -75,42 +108,59 @@ export default function GuestCsvImportDialog({
         preview.matched.organization,
         preview.matched.segment,
         preview.matched.notes,
+        preview.matched.partySize,
       ]
         .filter(Boolean)
         .join(" · ")
     : "";
   const valid = preview?.rows.filter((row) => row.problem === null) ?? [];
   const invalid = preview?.rows.filter((row) => row.problem !== null) ?? [];
+  const peopleReady = valid.reduce((total, row) => total + row.partySize, 0);
+
+  const replaceSource = (next: string) => {
+    setSource(next);
+    setMapping({});
+  };
+
+  const setColumn = (field: keyof GuestImportColumnMapping, value: string | null) => {
+    setMapping((current) => ({ ...current, [field]: value }));
+  };
 
   const reset = () => {
     setSource("");
     setGoogleUrl("");
     setBusy(false);
+    setMapping({});
   };
 
   const runImport = async () => {
     if (valid.length === 0) return;
+    if (event.capacity !== null && event.registrationCount + peopleReady > event.capacity) {
+      toast({
+        title: "This import exceeds the event capacity",
+        description: `${peopleReady} people are ready to import, but only ${Math.max(0, event.capacity - event.registrationCount)} places remain.`,
+      });
+      return;
+    }
     setBusy(true);
     let imported = 0;
     try {
       for (const row of valid) {
-        const guest = await createGuest.mutateAsync({
+        await importGuest.mutateAsync({
+          eventId: event.id,
           name: row.name,
           contact: row.contact,
           notes: row.notes,
-        });
-        await createRegistration.mutateAsync({
-          eventId: event.id,
-          guestId: guest.id,
           status: registrationStatus,
           segment: row.segment,
           organization: row.organization,
+          quantity: row.partySize,
         });
         imported += 1;
       }
       toast({
-        title: `${imported} ${imported === 1 ? "guest" : "guests"} imported`,
-        description: invalid.length ? `${invalid.length} row(s) were skipped.` : undefined,
+        title: `${imported} ${imported === 1 ? "row" : "rows"} imported`,
+        description: `${peopleReady} ${peopleReady === 1 ? "person" : "people"} added${invalid.length ? `; ${invalid.length} row(s) skipped.` : "."}`,
       });
       setOpen(false);
       reset();
@@ -140,7 +190,7 @@ export default function GuestCsvImportDialog({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[88vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import guests from CSV</DialogTitle>
           <DialogDescription>
@@ -168,7 +218,7 @@ export default function GuestCsvImportDialog({
                 disabled={!googleUrl.trim() || loadGoogleSheet.isPending}
                 onClick={() => {
                   void loadGoogleSheet.mutateAsync(googleUrl).then(
-                    (loaded) => setSource(loaded.csv),
+                    (loaded) => replaceSource(loaded.csv),
                     (error) => toast({
                       title: "The Google Sheet could not be read",
                       description: error instanceof Error ? error.message : undefined,
@@ -190,7 +240,7 @@ export default function GuestCsvImportDialog({
               className="sr-only"
               onChange={async (changeEvent) => {
                 const file = changeEvent.target.files?.[0];
-                if (file) setSource(await file.text());
+                if (file) replaceSource(await file.text());
                 changeEvent.target.value = "";
               }}
             />
@@ -209,7 +259,7 @@ export default function GuestCsvImportDialog({
             <Textarea
               id="csv-source"
               value={source}
-              onChange={(changeEvent) => setSource(changeEvent.target.value)}
+              onChange={(changeEvent) => replaceSource(changeEvent.target.value)}
               rows={5}
               placeholder={GUEST_CSV_TEMPLATE}
               className="font-mono text-xs"
@@ -218,16 +268,47 @@ export default function GuestCsvImportDialog({
 
           {preview ? (
             <>
+              <div className="space-y-3 rounded-lg border border-hairline bg-surface-sunken/40 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Match your columns</p>
+                    <p className="text-xs text-muted-foreground">
+                      Beebizy suggested these matches from the headers and cell values. Change any field before importing.
+                    </p>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setMapping({})} disabled={Object.keys(mapping).length === 0}>
+                    <RotateCcw className="mr-1.5 size-3.5" aria-hidden="true" />
+                    Reset suggestions
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <ColumnPicker label="Full name" value={preview.mapping.name} headers={preview.headers} onChange={(value) => setColumn("name", value)} />
+                  <ColumnPicker label="First name" value={preview.mapping.firstName} headers={preview.headers} onChange={(value) => setColumn("firstName", value)} />
+                  <ColumnPicker label="Last name" value={preview.mapping.lastName} headers={preview.headers} onChange={(value) => setColumn("lastName", value)} />
+                  <ColumnPicker label="Email (optional)" value={preview.mapping.contact} headers={preview.headers} onChange={(value) => setColumn("contact", value)} />
+                  <ColumnPicker label="Attendee count" value={preview.mapping.partySize} headers={preview.headers} onChange={(value) => setColumn("partySize", value)} />
+                  <ColumnPicker label="Guest type" value={preview.mapping.segment} headers={preview.headers} onChange={(value) => setColumn("segment", value)} />
+                  <ColumnPicker label="Organization" value={preview.mapping.organization} headers={preview.headers} onChange={(value) => setColumn("organization", value)} />
+                  <ColumnPicker label="Notes" value={preview.mapping.notes} headers={preview.headers} onChange={(value) => setColumn("notes", value)} />
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Pill tone={valid.length > 0 ? "success" : "neutral"}>{valid.length} ready</Pill>
+                <Pill tone={valid.length > 0 ? "success" : "neutral"}>{valid.length} rows · {peopleReady} people ready</Pill>
                 {invalid.length > 0 ? <Pill tone="warning">{invalid.length} skipped</Pill> : null}
                 <span className="text-muted-foreground">Read {readColumns}</span>
               </div>
 
-              {preview.matched.name === null || preview.matched.contact === null ? (
+              {preview.matched.name === null ? (
                 <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-tint px-3 py-2 text-xs text-warning-text">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                  Couldn't find a name and email column. Use <code>name</code> or <code>first name</code> and <code>last name</code>, plus <code>email</code>, or download the template.
+                  Choose a full-name column, or first-name and last-name columns, before importing.
+                </p>
+              ) : null}
+
+              {preview.matched.name !== null && preview.matched.contact === null ? (
+                <p className="rounded-lg border border-info/30 bg-info-tint px-3 py-2 text-xs text-info-text">
+                  No email column is selected. These guests can still be imported and checked in, but Beebizy cannot email them invitations or confirmations.
                 </p>
               ) : null}
 
@@ -238,6 +319,7 @@ export default function GuestCsvImportDialog({
                       <TableHead className="w-14">Line</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
+                      {showPartySize ? <TableHead>People</TableHead> : null}
                       {showOrganization ? <TableHead>Organization</TableHead> : null}
                       {showSegment ? <TableHead>Group</TableHead> : null}
                       <TableHead>Status</TableHead>
@@ -251,6 +333,7 @@ export default function GuestCsvImportDialog({
                         </TableCell>
                         <TableCell>{row.name || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-muted-foreground">{row.contact || "—"}</TableCell>
+                        {showPartySize ? <TableCell data-numeric>{row.partySize}</TableCell> : null}
                         {showOrganization ? (
                           <TableCell className="text-muted-foreground">{row.organization || "—"}</TableCell>
                         ) : null}
@@ -279,7 +362,7 @@ export default function GuestCsvImportDialog({
           </Button>
           <Button disabled={valid.length === 0 || busy} onClick={() => void runImport()}>
             <Upload className="mr-1.5 size-4" aria-hidden="true" />
-            Import {valid.length > 0 ? valid.length : ""} {valid.length === 1 ? "guest" : "guests"}
+            Import {valid.length > 0 ? `${valid.length} ${valid.length === 1 ? "row" : "rows"}` : "guests"}
           </Button>
         </DialogFooter>
       </DialogContent>

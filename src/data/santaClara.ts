@@ -2,12 +2,12 @@
 export const SANTA_CLARA_REGISTRATION_SEGMENTS = ["Investor", "Company", "General", "Student"] as const;
 
 export function registrationSegmentSummary(
-  rows: Array<{ segment: string | null | undefined }>,
+  rows: Array<{ segment: string | null | undefined; quantity?: number }>,
 ): Array<[string, number]> {
   const counts = new Map<string, number>(SANTA_CLARA_REGISTRATION_SEGMENTS.map((segment) => [segment, 0]));
   for (const row of rows) {
     const segment = row.segment?.trim();
-    if (segment) counts.set(segment, (counts.get(segment) ?? 0) + 1);
+    if (segment) counts.set(segment, (counts.get(segment) ?? 0) + (row.quantity ?? 1));
   }
   const requested = SANTA_CLARA_REGISTRATION_SEGMENTS.map(
     (segment) => [segment, counts.get(segment) ?? 0] as [string, number],

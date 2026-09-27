@@ -656,6 +656,7 @@ async function handleAuthed(
     case "registrations": {
       if (!a && method === "GET") return json(await repos.registrations.list(ctx));
       if (!a && method === "POST") return json(await repos.registrations.create(ctx, body), 201);
+      if (a === "import" && !b && method === "POST") return json(await repos.registrations.importGuest(ctx, body), 201);
       if (a && method === "PATCH") return json(await repos.registrations.update(ctx, a, body));
       if (a && method === "DELETE") {
         await repos.registrations.remove(ctx, a);

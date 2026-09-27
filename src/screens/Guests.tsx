@@ -105,7 +105,7 @@ export default function Guests() {
     const needle = search.trim().toLowerCase();
     if (!needle) return guests ?? [];
     return (guests ?? []).filter((guest) =>
-      [guest.name, guest.contact, guest.notes ?? ""].some((field) => field.toLowerCase().includes(needle)),
+      [guest.name, guest.contact ?? "", guest.notes ?? ""].some((field) => field.toLowerCase().includes(needle)),
     );
   }, [guests, search]);
 
@@ -175,13 +175,17 @@ export default function Guests() {
                       <span className="truncate text-sm font-medium text-foreground">{guest.name}</span>
                       {guest.notes ? <Pill tone="info">{guest.notes}</Pill> : null}
                     </div>
-                    <a
-                      href={`mailto:${guest.contact}`}
-                      className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      <Mail className="size-3" aria-hidden="true" />
-                      {guest.contact}
-                    </a>
+                    {guest.contact ? (
+                      <a
+                        href={`mailto:${guest.contact}`}
+                        className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <Mail className="size-3" aria-hidden="true" />
+                        {guest.contact}
+                      </a>
+                    ) : (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">No email on file</span>
+                    )}
                     {theirRegistrations.length > 0 ? (
                       <ul className="mt-2 flex flex-wrap gap-2">
                         {theirRegistrations.map((registration) => (

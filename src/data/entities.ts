@@ -140,13 +140,14 @@ export type LocationPatch = Partial<LocationDraft>;
 
 export interface Guest extends OwnedRecord {
   name: string;
-  contact: string;
+  /** Email when known. Imported door lists may legitimately contain only a name. */
+  contact: string | null;
   notes: string | null;
 }
 
 export interface GuestDraft {
   name: string;
-  contact: string;
+  contact: string | null;
   notes?: string | null;
 }
 
@@ -197,6 +198,8 @@ export interface Registration extends OwnedRecord {
    * collapsing "Investor · Sequoia" would make neither countable.
    */
   organization: string | null;
+  /** Number of attendees represented by this row, such as a guest plus their party. */
+  quantity: number;
   registeredAt: IsoDateTime;
   /** Null until the guest arrives. Clearing it is the reversible "undo check-in" action. */
   checkedInAt: IsoDateTime | null;
@@ -216,6 +219,16 @@ export interface RegistrationDraft {
   status?: RegistrationStatus;
   segment?: string | null;
   organization?: string | null;
+  quantity?: number;
+}
+
+/** One spreadsheet row imported atomically as both a guest and an event registration. */
+export interface GuestRegistrationImportDraft extends GuestDraft {
+  eventId: string;
+  status?: RegistrationStatus;
+  segment?: string | null;
+  organization?: string | null;
+  quantity?: number;
 }
 
 /** Details a guest submits from one of the event's segment-specific registration links. */

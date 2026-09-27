@@ -192,7 +192,9 @@ function requireEvent(eventId: string): Event {
 function syncRegistrationCount(eventId: string): void {
   const event = store().events.find((e) => e.id === eventId);
   if (!event) return;
-  event.registrationCount = store().registrations.filter((r) => r.eventId === eventId && r.status !== "cancelled").length;
+  event.registrationCount = store().registrations
+    .filter((r) => r.eventId === eventId && r.status !== "cancelled")
+    .reduce((total, registration) => total + registration.quantity, 0);
 }
 
 /** Recomputes the denormalized `eventCount` the locations list reads. */
@@ -684,7 +686,11 @@ const registrations: RegistrationsRepository = {
       (r) => r.eventId === draft.eventId && r.guestId === draft.guestId && r.status !== "cancelled",
     );
     if (duplicate) throw new DataError("conflict", "That guest is already registered for this event.");
-    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+    const quantity = draft.quantity ?? 1;
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10_000) {
+      throw new DataError("invalid", "Attendee count must be between 1 and 10,000.");
+    }
+    if (event.capacity !== null && event.registrationCount + quantity > event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
     }
     const registration: Registration = {
@@ -696,6 +702,7 @@ const registrations: RegistrationsRepository = {
       status: draft.status ?? "pending",
       segment: draft.segment?.trim() || null,
       organization: draft.organization?.trim() || null,
+      quantity,
       registeredAt: nowIso(),
       checkedInAt: null,
       checkInStation: null,
@@ -705,6 +712,23 @@ const registrations: RegistrationsRepository = {
     state.registrations.push(registration);
     syncRegistrationCount(draft.eventId);
     return copy(registration);
+  },
+  async importGuest(draft) {
+    const guest = await guests.create({ name: draft.name, contact: draft.contact, notes: draft.notes });
+    try {
+      const registration = await registrations.create({
+        eventId: draft.eventId,
+        guestId: guest.id,
+        status: draft.status,
+        segment: draft.segment,
+        organization: draft.organization,
+        quantity: draft.quantity,
+      });
+      return { ...registration, guest };
+    } catch (error) {
+      await guests.remove(guest.id);
+      throw error;
+    }
   },
   async registerPublic(shareToken: string, draft: PublicRegistrationDraft) {
     await wait();
@@ -725,7 +749,7 @@ const registrations: RegistrationsRepository = {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
     }
 
-    const guest = state.guests.find((candidate) => candidate.contact.toLowerCase() === email) ?? {
+    const guest = state.guests.find((candidate) => candidate.contact?.toLowerCase() === email) ?? {
       id: newId("att"),
       ownerId: DEMO_OWNER_ID,
       name,
@@ -742,6 +766,7 @@ const registrations: RegistrationsRepository = {
       id: newId("reg"), ownerId: DEMO_OWNER_ID, eventId: event.id, eventTitle: event.title,
       guestId: guest.id, status: "confirmed", segment,
       organization: page.collectOrganization ? draft.organization?.trim() || null : null, registeredAt: now,
+      quantity: 1,
       checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now,
     };
     state.registrations.push(registration);
@@ -757,7 +782,7 @@ const registrations: RegistrationsRepository = {
     const contact = draft.contact.trim();
     if (!name) throw new DataError("invalid", "name is required.");
     if (!contact) throw new DataError("invalid", "contact is required.");
-    if (state.guests.some((candidate) => candidate.contact.toLowerCase() === contact.toLowerCase())) {
+    if (state.guests.some((candidate) => candidate.contact?.toLowerCase() === contact.toLowerCase())) {
       throw new DataError("conflict", "That email is already in the people list. Search for the guest and check them in instead.");
     }
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
@@ -782,6 +807,7 @@ const registrations: RegistrationsRepository = {
       status: "confirmed",
       segment: draft.segment?.trim() || "Walk-in",
       organization: draft.organization?.trim() || null,
+      quantity: 1,
       registeredAt: now,
       checkedInAt: now,
       checkInStation: draft.checkInStation?.trim() || null,
@@ -1276,7 +1302,7 @@ const tickets: TicketsRepository = {
     ticket.updatedAt = nowIso();
 
     // Public checkout creates the guest too, matching the Firestore adapter.
-    let guest = state.guests.find((a) => a.contact.toLowerCase() === buyer.contact.toLowerCase());
+    let guest = state.guests.find((a) => a.contact?.toLowerCase() === buyer.contact.toLowerCase());
     if (!guest) {
       guest = {
         id: newId("att"),
@@ -1297,6 +1323,7 @@ const tickets: TicketsRepository = {
       // Bought a ticket rather than being invited, so no category until an organizer sets one.
       segment: null,
       organization: null,
+      quantity: buyer.quantity,
       status: "confirmed",
       registeredAt: nowIso(),
       checkedInAt: null,

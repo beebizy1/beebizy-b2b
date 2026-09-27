@@ -393,6 +393,7 @@ export function buildSeed(): MemoryDb {
         status,
         segment: demoSegment(index),
         organization: demoOrganization(index),
+        quantity: 1,
         registeredAt: at(dayOffset, 11, regSeq % 60),
         checkedInAt: null,
         checkInStation: null,
@@ -415,7 +416,9 @@ export function buildSeed(): MemoryDb {
   register("evt-roadshow", [4, 8, 12], "cancelled", -40);
 
   for (const event of events) {
-    event.registrationCount = registrations.filter((r) => r.eventId === event.id && r.status !== "cancelled").length;
+    event.registrationCount = registrations
+      .filter((r) => r.eventId === event.id && r.status !== "cancelled")
+      .reduce((total, registration) => total + registration.quantity, 0);
   }
 
   const checkInStations: CheckInStation[] = [

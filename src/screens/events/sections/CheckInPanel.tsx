@@ -218,8 +218,14 @@ export function CheckInPanel({ event }: { event: Event }) {
     [data],
   );
   const confirmedRows = rows.filter((row) => row.status === "confirmed");
-  const arrived = confirmedRows.filter((row) => row.checkedInAt !== null).length;
-  const remaining = confirmedRows.length - arrived;
+  const expected = confirmedRows.reduce((total, row) => total + row.quantity, 0);
+  const arrived = confirmedRows
+    .filter((row) => row.checkedInAt !== null)
+    .reduce((total, row) => total + row.quantity, 0);
+  const pending = rows
+    .filter((row) => row.status === "pending")
+    .reduce((total, row) => total + row.quantity, 0);
+  const remaining = expected - arrived;
   const eventFinished = event.status === "completed" || Boolean(event.endDate && new Date(event.endDate).getTime() < Date.now());
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -291,10 +297,10 @@ export function CheckInPanel({ event }: { event: Event }) {
       {isError ? <ErrorNotice error={error} onRetry={() => void refetch()} /> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Expected" value={confirmedRows.length} icon={UsersRound} sublabel={`${rows.length - confirmedRows.length} awaiting RSVP`} loading={isLoading} />
+        <StatTile label="Expected" value={expected} icon={UsersRound} sublabel={`${pending} awaiting RSVP`} loading={isLoading} />
         <StatTile label="Checked in" value={arrived} icon={UserCheck} tone="success" loading={isLoading} />
         <StatTile label={eventFinished ? "No-shows" : "Still expected"} value={remaining} icon={DoorOpen} tone={remaining > 0 ? "warning" : "success"} loading={isLoading} />
-        <StatTile label="Arrival rate" value={confirmedRows.length ? `${Math.round((arrived / confirmedRows.length) * 100)}%` : "0%"} loading={isLoading} />
+        <StatTile label="Arrival rate" value={expected ? `${Math.round((arrived / expected) * 100)}%` : "0%"} loading={isLoading} />
       </div>
 
       <Panel className="overflow-hidden border-l-4 border-l-primary">
@@ -380,7 +386,9 @@ export function CheckInPanel({ event }: { event: Event }) {
         {stationRows.length > 0 ? (
           <ul className="grid gap-3 border-b border-hairline p-4 md:grid-cols-2 xl:grid-cols-3">
             {stationRows.map((planned) => {
-              const stationArrivals = rows.filter((row) => row.checkedInAt && row.checkInStation === planned.name).length;
+              const stationArrivals = rows
+                .filter((row) => row.checkedInAt && row.checkInStation === planned.name)
+                .reduce((total, row) => total + row.quantity, 0);
               const linkedVolunteer = volunteers?.find((volunteer) => volunteer.id === planned.leadVolunteerId);
               return (
                 <li key={planned.id} className="rounded-lg border border-hairline p-3">
@@ -483,6 +491,7 @@ export function CheckInPanel({ event }: { event: Event }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-foreground">{row.guest?.name ?? "Deleted guest"}</p>
+                      {row.quantity > 1 ? <Pill tone="neutral">{row.quantity} people</Pill> : null}
                       {row.segment ? <Pill>{row.segment}</Pill> : null}
                       {row.checkedInAt ? (
                         <Pill tone="success">Checked in</Pill>
@@ -530,7 +539,7 @@ export function CheckInPanel({ event }: { event: Event }) {
         ) : null}
         {visible.length > displayed.length ? (
           <div className="flex items-center justify-between gap-3 border-t border-hairline px-5 py-3">
-            <p className="text-xs text-muted-foreground">Showing {displayed.length} of {visible.length} guests</p>
+            <p className="text-xs text-muted-foreground">Showing {displayed.length} of {visible.length} registration rows</p>
             <Button type="button" variant="outline" size="sm" onClick={() => setVisibleLimit((current) => current + 50)}>
               Load 50 more
             </Button>

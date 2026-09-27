@@ -176,9 +176,9 @@ const optStr = (body: Body, key: string): string | null => {
 const optInt = (body: Body, key: string): number | null => {
   const value = body[key];
   if (value === null || value === undefined || value === "") return null;
-  const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed)) throw new HttpError(400, `${key} must be a number.`);
-  return Math.trunc(parsed);
+  const parsed = typeof value === "number" ? value : Number(String(value));
+  if (!Number.isSafeInteger(parsed)) throw new HttpError(400, `${key} must be an integer.`);
+  return parsed;
 };
 const positiveInt = (body: Body, key: string, fallback = 1): number => {
   const value = optInt(body, key) ?? fallback;
@@ -266,7 +266,10 @@ function requestedExperience(ctx: RequestContext, value: unknown): AccountExperi
 async function registrationCounts(eventIds: string[]): Promise<Map<string, number>> {
   if (eventIds.length === 0) return new Map();
   const rows = await db
-    .select({ eventId: s.registrations.eventId, total: count() })
+    .select({
+      eventId: s.registrations.eventId,
+      total: sql<number>`coalesce(sum(${s.registrations.quantity}), 0)`,
+    })
     .from(s.registrations)
     .where(and(inArray(s.registrations.eventId, eventIds), sql`${s.registrations.status} <> 'cancelled'`))
     .groupBy(s.registrations.eventId);
@@ -957,7 +960,9 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
   if (!page.collectOrganization) draft.organization = null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
-  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(s.registrations)
+  const [{ total } = { total: 0 }] = await db
+    .select({ total: sql<number>`coalesce(sum(${s.registrations.quantity}), 0)` })
+    .from(s.registrations)
     .where(and(eq(s.registrations.eventId, event.id), sql`${s.registrations.status} <> 'cancelled'`));
   if (event.capacity !== null && Number(total) >= event.capacity) {
     throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
@@ -991,6 +996,9 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   } catch (error) {
     if (isConstraintViolation(error, "registrations_event_guest_idx")) {
       throw new HttpError(409, "This email is already registered for the event.");
+    }
+    if (isConstraintViolation(error, "registrations_event_capacity_check")) {
+      throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
     }
     throw error;
   }
@@ -1393,7 +1401,7 @@ export const guests = {
   },
   async create(ctx: RequestContext, body: Body) {
     const id = newId("att");
-    const contact = str(body, "contact");
+    const contact = optStr(body, "contact")?.trim() || null;
     try {
       await db.insert(s.guests).values({
         id,
@@ -1415,7 +1423,7 @@ export const guests = {
   async update(ctx: RequestContext, id: string, body: Body) {
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
-      contact: (b) => str(b, "contact"),
+      contact: (b) => optStr(b, "contact")?.trim() || null,
       notes: (b) => optStr(b, "notes"),
     });
     const conditions = [eq(s.guests.id, id), eq(s.guests.workspaceId, ctx.workspaceId)];
@@ -1479,6 +1487,64 @@ export const registrations = {
     return joinRegistrations(and(eq(s.registrations.workspaceId, ctx.workspaceId), eq(s.registrations.eventId, eventId)));
   },
 
+  async importGuest(ctx: RequestContext, body: Body): Promise<RegistrationWithGuest> {
+    const eventId = str(body, "eventId");
+    const event = await events.get(ctx, eventId);
+    if (!event) throw new HttpError(404, "That event no longer exists.");
+
+    const name = str(body, "name").trim();
+    if (!name) throw new HttpError(400, "name is required.");
+    const contact = optStr(body, "contact")?.trim().toLowerCase() || null;
+    if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+      throw new HttpError(400, "Enter a valid email address.");
+    }
+    const status = optStr(body, "status") ?? "pending";
+    if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
+      throw new HttpError(400, `status must be one of ${REGISTRATION_STATUSES.join(", ")}.`);
+    }
+    const quantity = positiveInt(body, "quantity");
+    if (quantity > 10_000) throw new HttpError(400, "quantity must be between 1 and 10,000.");
+
+    const guestId = newId("att");
+    const registrationId = newId("reg");
+    const guestInsert = db.insert(s.guests).values({
+      id: guestId,
+      workspaceId: ctx.workspaceId,
+      name,
+      contact,
+      notes: optStr(body, "notes"),
+    }).returning();
+    const registrationInsert = db.insert(s.registrations).values({
+      id: registrationId,
+      workspaceId: ctx.workspaceId,
+      eventId,
+      guestId,
+      status: status as Registration["status"],
+      segment: labelFrom(body, "segment"),
+      organization: labelFrom(body, "organization", 120),
+      quantity,
+    }).returning();
+
+    try {
+      const [guestRows, registrationRows] = await db.batch([guestInsert, registrationInsert]);
+      return {
+        ...map.toRegistration(registrationRows[0]!, event.title),
+        guest: map.toGuest(guestRows[0]!),
+      };
+    } catch (error) {
+      if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
+        throw new HttpError(409, `Someone with the email ${contact} is already in your people list.`);
+      }
+      if (isConstraintViolation(error, "registrations_event_capacity_check")) {
+        throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
+      }
+      if (isConstraintViolation(error, "registrations_quantity_range")) {
+        throw new HttpError(400, "quantity must be between 1 and 10,000.");
+      }
+      throw error;
+    }
+  },
+
   async create(ctx: RequestContext, body: Body): Promise<Registration> {
     const eventId = str(body, "eventId");
     const guestId = str(body, "guestId");
@@ -1496,7 +1562,9 @@ export const registrations = {
       .limit(1);
     if (duplicate) throw new HttpError(409, "That guest is already registered for this event.");
 
-    if (event.capacity !== null && event.registrationCount >= event.capacity) {
+    const quantity = positiveInt(body, "quantity");
+    if (quantity > 10_000) throw new HttpError(400, "quantity must be between 1 and 10,000.");
+    if (event.capacity !== null && event.registrationCount + quantity > event.capacity) {
       throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
     }
 
@@ -1510,10 +1578,14 @@ export const registrations = {
         status: (optStr(body, "status") ?? "pending") as "pending",
         segment: labelFrom(body, "segment"),
         organization: labelFrom(body, "organization", 120),
+        quantity,
       });
     } catch (error) {
       if (isConstraintViolation(error, "registrations_event_guest_idx")) {
         throw new HttpError(409, "That guest is already registered for this event.");
+      }
+      if (isConstraintViolation(error, "registrations_event_capacity_check")) {
+        throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
       }
       throw error;
     }
@@ -1582,6 +1654,9 @@ export const registrations = {
       if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
       }
+      if (isConstraintViolation(error, "registrations_event_capacity_check")) {
+        throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
+      }
       throw error;
     }
   },
@@ -1620,11 +1695,19 @@ export const registrations = {
 
     const conditions = [eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)];
     if (ctx.eventScopeId) conditions.push(eq(s.registrations.eventId, ctx.eventScopeId));
-    const updated = await db
-      .update(s.registrations)
-      .set(patch)
-      .where(and(...conditions))
-      .returning();
+    let updated;
+    try {
+      updated = await db
+        .update(s.registrations)
+        .set(patch)
+        .where(and(...conditions))
+        .returning();
+    } catch (error) {
+      if (isConstraintViolation(error, "registrations_event_capacity_check")) {
+        throw new HttpError(409, "This change would exceed the event capacity.");
+      }
+      throw error;
+    }
     if (updated.length === 0) throw new HttpError(404, "That registration no longer exists.");
     const [event] = await db.select({ title: s.events.title }).from(s.events).where(eq(s.events.id, updated[0]!.eventId)).limit(1);
     return map.toRegistration(updated[0]!, event?.title ?? "");

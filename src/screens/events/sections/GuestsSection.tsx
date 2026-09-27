@@ -307,10 +307,13 @@ export default function GuestsSection({ event }: { event: Event }) {
 
   const counts = useMemo(() => {
     const rows = registrations ?? [];
+    const peopleWithStatus = (status: RegistrationStatus) => rows
+      .filter((row) => row.status === status)
+      .reduce((total, row) => total + row.quantity, 0);
     return {
-      confirmed: rows.filter((r) => r.status === "confirmed").length,
-      pending: rows.filter((r) => r.status === "pending").length,
-      cancelled: rows.filter((r) => r.status === "cancelled").length,
+      confirmed: peopleWithStatus("confirmed"),
+      pending: peopleWithStatus("pending"),
+      cancelled: peopleWithStatus("cancelled"),
     };
   }, [registrations]);
 
@@ -321,7 +324,9 @@ export default function GuestsSection({ event }: { event: Event }) {
   const segments = useMemo(() => {
     const active = (registrations ?? []).filter((row) => row.status !== "cancelled");
     const summary = registrationSegmentSummary(active);
-    const uncategorised = active.filter((row) => !row.segment?.trim()).length;
+    const uncategorised = active
+      .filter((row) => !row.segment?.trim())
+      .reduce((total, row) => total + row.quantity, 0);
     return uncategorised ? [...summary, [UNCATEGORISED, uncategorised] as [string, number]] : summary;
   }, [registrations]);
 
@@ -346,7 +351,7 @@ export default function GuestsSection({ event }: { event: Event }) {
       if (row.status === "cancelled") continue;
       if (segmentFilter !== null && (row.segment ?? UNCATEGORISED) !== segmentFilter) continue;
       const key = row.organization ?? UNCATEGORISED;
-      tally.set(key, (tally.get(key) ?? 0) + 1);
+      tally.set(key, (tally.get(key) ?? 0) + row.quantity);
     }
     return [...tally.entries()].sort(([a, countA], [b, countB]) =>
       a === UNCATEGORISED ? 1 : b === UNCATEGORISED ? -1 : countB - countA || a.localeCompare(b),
@@ -555,13 +560,14 @@ export default function GuestsSection({ event }: { event: Event }) {
                   <p className="truncate text-sm font-medium text-foreground">{row.guest?.name ?? "Unknown guest"}</p>
                   <p className="truncate text-xs text-muted-foreground">
                     {row.guest?.contact ?? "No contact"}
+                    {row.quantity > 1 ? ` · ${row.quantity} people` : ""}
                     {row.guest?.notes ? ` · ${row.guest.notes}` : ""}
                   </p>
                 </div>
 
                 <RegistrationStatusBadge status={row.status} />
 
-                {row.status === "pending" && row.guest?.contact.includes("@") ? (
+                {row.status === "pending" && row.guest?.contact?.includes("@") ? (
                   <Button asChild variant="outline" size="sm">
                     <a
                       href={`mailto:${row.guest.contact}?subject=${encodeURIComponent(`You're invited to ${event.title}`)}&body=${encodeURIComponent(

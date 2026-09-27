@@ -289,7 +289,8 @@ export const guests = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    contact: text("contact").notNull(),
+    /** Null for imported name-only lists. Public registration still requires email. */
+    contact: text("contact"),
     notes: text("notes"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -332,6 +333,7 @@ export const registrations = pgTable(
   (table) => [
     index("registrations_event_idx").on(table.eventId),
     index("registrations_workspace_idx").on(table.workspaceId),
+    check("registrations_quantity_range", sql`${table.quantity} between 1 and 10000`),
     // The duplicate-registration rule the memory adapter enforced in JS, enforced by the
     // database instead so a concurrent request can't slip past it.
     uniqueIndex("registrations_event_guest_idx").on(table.eventId, table.guestId),

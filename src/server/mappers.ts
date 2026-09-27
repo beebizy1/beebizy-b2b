@@ -127,6 +127,7 @@ export function toRegistration(
     status: row.status,
     segment: row.segment,
     organization: row.organization,
+    quantity: row.quantity,
     registeredAt: isoRequired(row.registeredAt),
     checkedInAt: iso(row.checkedInAt),
     checkInStation: row.checkInStation,

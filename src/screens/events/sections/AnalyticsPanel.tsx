@@ -37,15 +37,18 @@ export default function AnalyticsPanel({ event }: { event: Event }) {
   const { data: sponsorships, isLoading: sponsorshipsLoading } = useSponsorships(event.id);
   const { data: budget, isLoading: budgetLoading } = useBudget(event.id);
 
-  const confirmed = (registrations ?? []).filter((r) => r.status === "confirmed").length;
-  const pending = (registrations ?? []).filter((r) => r.status === "pending").length;
-  const cancelled = (registrations ?? []).filter((r) => r.status === "cancelled").length;
+  const peopleWith = (predicate: (row: NonNullable<typeof registrations>[number]) => boolean) =>
+    (registrations ?? []).filter(predicate).reduce((total, row) => total + row.quantity, 0);
+  const confirmed = peopleWith((row) => row.status === "confirmed");
+  const pending = peopleWith((row) => row.status === "pending");
+  const cancelled = peopleWith((row) => row.status === "cancelled");
+  const totalRegistrations = confirmed + pending + cancelled;
   /*
    * Arrival is the only registration fact recorded at the door, and until now it stayed
    * there: `checkedInAt` was read solely by the check-in screen, so the gap between who
    * registered and who actually came never reached anyone reviewing the event.
    */
-  const arrived = (registrations ?? []).filter((r) => r.checkedInAt !== null).length;
+  const arrived = peopleWith((row) => row.status === "confirmed" && row.checkedInAt !== null);
   const noShows = Math.max(0, confirmed - arrived);
 
   const done = (checklist ?? []).filter((item) => item.completed).length;
@@ -110,9 +113,9 @@ export default function AnalyticsPanel({ event }: { event: Event }) {
             <EmptyState icon={Users} title="No registrations yet" />
           ) : (
             <div className="space-y-4 p-5">
-              <Meter value={confirmed} max={registrations?.length ?? 1} tone="success" label="Confirmed" />
-              <Meter value={pending} max={registrations?.length ?? 1} tone="warning" label="Pending" />
-              <Meter value={cancelled} max={registrations?.length ?? 1} tone="danger" label="Cancelled" />
+              <Meter value={confirmed} max={totalRegistrations || 1} tone="success" label="Confirmed" />
+              <Meter value={pending} max={totalRegistrations || 1} tone="warning" label="Pending" />
+              <Meter value={cancelled} max={totalRegistrations || 1} tone="danger" label="Cancelled" />
               {arrived > 0 ? (
                 <>
                   <Meter value={arrived} max={confirmed || 1} tone="success" label="Arrived" />

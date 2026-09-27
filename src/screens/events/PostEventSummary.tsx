@@ -72,9 +72,15 @@ export default function PostEventSummary({ id }: { id: string }) {
     );
   }
 
-  const totalReg = registrations?.length ?? 0;
-  const confirmed = (registrations ?? []).filter((r) => r.status === "confirmed").length;
-  const arrived = (registrations ?? []).filter((r) => r.checkedInAt !== null).length;
+  const totalReg = (registrations ?? [])
+    .filter((row) => row.status !== "cancelled")
+    .reduce((total, row) => total + row.quantity, 0);
+  const confirmed = (registrations ?? [])
+    .filter((row) => row.status === "confirmed")
+    .reduce((total, row) => total + row.quantity, 0);
+  const arrived = (registrations ?? [])
+    .filter((row) => row.status === "confirmed" && row.checkedInAt !== null)
+    .reduce((total, row) => total + row.quantity, 0);
   /*
    * Only a confirmed registration can be a no-show.
    *

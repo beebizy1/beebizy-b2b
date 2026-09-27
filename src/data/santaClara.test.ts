@@ -11,6 +11,13 @@ describe("Santa Clara registration categories", () => {
       ["Sponsor", 1],
     ]);
   });
+
+  it("counts every person in an imported party", () => {
+    expect(registrationSegmentSummary([
+      { segment: "General", quantity: 3 },
+      { segment: "General", quantity: 2 },
+    ])).toContainEqual(["General", 5]);
+  });
 });
 
 describe("volunteer staffing coverage", () => {

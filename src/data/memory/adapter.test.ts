@@ -214,6 +214,41 @@ describe("registrations", () => {
     expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(event.registrationCount);
   });
 
+  it("imports a name-only party and counts every attendee", async () => {
+    const before = (await memoryAdapter.events.get("evt-atlas"))!.registrationCount;
+    const guest = await memoryAdapter.guests.create({ name: "Mrs Bench Guest", contact: null });
+    const registration = await memoryAdapter.registrations.create({
+      eventId: "evt-atlas",
+      guestId: guest.id,
+      status: "confirmed",
+      quantity: 3,
+    });
+
+    expect(guest.contact).toBeNull();
+    expect(registration.quantity).toBe(3);
+    expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(before + 3);
+  });
+
+  it("rejects an imported party larger than the supported limit", async () => {
+    const guest = await memoryAdapter.guests.create({ name: "Large group", contact: null });
+    await expect(memoryAdapter.registrations.create({
+      eventId: "evt-atlas",
+      guestId: guest.id,
+      quantity: 10_001,
+    })).rejects.toThrow("between 1 and 10,000");
+  });
+
+  it("rolls back an imported guest when its registration fails", async () => {
+    const guestCount = (await memoryAdapter.guests.list()).length;
+    await expect(memoryAdapter.registrations.importGuest({
+      eventId: "evt-atlas",
+      name: "Too Large",
+      contact: "too-large@example.com",
+      quantity: 10_001,
+    })).rejects.toThrow("between 1 and 10,000");
+    expect(await memoryAdapter.guests.list()).toHaveLength(guestCount);
+  });
+
   it("carries a segment through creation and lets it be changed or cleared", async () => {
     const guests = await memoryAdapter.guests.list();
     const taken = new Set((await memoryAdapter.registrations.listForEvent("evt-atlas")).map((row) => row.guestId));
@@ -507,7 +542,7 @@ describe("tickets", () => {
 
     await memoryAdapter.tickets.purchase(shareToken, ticket!.id, {
       name: known.name,
-      contact: known.contact.toUpperCase(),
+      contact: known.contact!.toUpperCase(),
       quantity: 1,
     });
     expect((await memoryAdapter.guests.list()).length).toBe(countBefore);

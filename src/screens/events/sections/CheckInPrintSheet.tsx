@@ -56,8 +56,8 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
               <p>{formatDate(event.date, "full")} · {event.locationRecord?.name ?? event.location ?? "Location not set"}</p>
             </div>
             <div className="check-in-print-total">
-              <strong>{rows.length}</strong>
-              <span>registrations</span>
+              <strong>{rows.reduce((total, row) => total + row.quantity, 0)}</strong>
+              <span>people</span>
             </div>
           </header>
           <table>
@@ -65,6 +65,7 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
               <tr>
                 <th>Check</th>
                 <th>Guest</th>
+                <th>People</th>
                 <th>Contact</th>
                 <th>Group</th>
                 <th>RSVP</th>
@@ -77,6 +78,7 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
                 <tr key={row.id}>
                   <td>{row.checkedInAt ? "[x]" : "[ ]"}</td>
                   <td>{row.guest?.name ?? "Deleted guest"}</td>
+                  <td>{row.quantity}</td>
                   <td>{row.guest?.contact || "-"}</td>
                   <td>{[row.segment, row.organization].filter(Boolean).join(" · ") || "-"}</td>
                   <td>{row.status === "confirmed" ? "Confirmed" : "Pending"}</td>

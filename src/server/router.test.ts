@@ -44,6 +44,7 @@ vi.mock("./repos", () => {
       sendAssignmentSummaries: vi.fn(),
     },
     vendors: { list: vi.fn() },
+    registrations: { ...child, importGuest: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]) },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
@@ -64,7 +65,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 describe("single-event collaborator routing", () => {
@@ -445,6 +446,37 @@ describe("public event signup endpoints", () => {
       needId: "need-1", name: "Grace", email: "grace@example.com",
     });
     expect(authorize).not.toHaveBeenCalled();
+  });
+});
+
+describe("guest spreadsheet import endpoint", () => {
+  it("routes one row through the atomic guest-registration operation", async () => {
+    const context = {
+      userId: "user-pilot",
+      workspaceId: "workspace-school",
+      email: "pilot@school.org",
+      role: "member" as const,
+      access: {
+        status: "beta" as const,
+        plan: null,
+        betaStartedAt: "2026-09-01T00:00:00.000Z",
+        betaEndsAt: "2026-12-01T00:00:00.000Z",
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+      },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(registrations.importGuest).mockResolvedValue({ id: "reg-imported" } as never);
+    const draft = { eventId: "event-1", name: "Ada Lovelace", contact: null, quantity: 3 };
+
+    const response = await handleRequest(new Request("http://localhost/api/registrations/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(registrations.importGuest).toHaveBeenCalledWith(context, draft);
   });
 });
 

@@ -18,6 +18,7 @@ import { useData } from "./provider";
 import type { DataAdapter } from "./adapter";
 import type {
   GuestDraft,
+  GuestRegistrationImportDraft,
   GuestPatch,
   AttentionItem,
   AuctionItemDraft,
@@ -402,6 +403,13 @@ export function useCreateRegistration() {
   return useAdapterMutation(
     (a, draft: RegistrationDraft) => a.registrations.create(draft),
     (draft) => [qk.registrations, qk.eventRegistrations(draft.eventId), ...eventDerivedKeys(draft.eventId)],
+  );
+}
+
+export function useImportGuestRegistration() {
+  return useAdapterMutation(
+    (a, draft: GuestRegistrationImportDraft) => a.registrations.importGuest(draft),
+    (draft) => [qk.guests, qk.registrations, qk.eventRegistrations(draft.eventId), ...eventDerivedKeys(draft.eventId)],
   );
 }
 
