@@ -5,7 +5,7 @@
  * everything else can be filled in when it matters.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { ArrowLeft, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,18 +14,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { Panel, PanelHeader, PageHeader } from "@/components/primitives";
-import { useAddEventVendor, useCreateVendor } from "@/data/hooks";
+import { ErrorNotice, LoadingRows, Panel, PanelHeader, PageHeader } from "@/components/primitives";
+import { useAddEventVendor, useCreateVendor, useUpdateVendor, useVendor } from "@/data/hooks";
 import { VENDOR_CATEGORIES } from "@/data/entities";
 
-export default function VendorForm() {
+export default function VendorForm({ id }: { id?: string }) {
   const [, navigate] = useLocation();
   const createVendor = useCreateVendor();
+  const updateVendor = useUpdateVendor();
   const addEventVendor = useAddEventVendor();
+  const { data: existingVendor, isLoading, isError, error, refetch } = useVendor(id ?? "");
   const query = new URLSearchParams(window.location.search);
   const eventId = query.get("eventId")?.trim() || null;
   const requestedReturnTo = query.get("returnTo")?.trim() || "";
-  const returnTo = requestedReturnTo.startsWith("/app/") ? requestedReturnTo : "/app/vendors";
+  const vendorHref = id ? `/app/vendors/${encodeURIComponent(id)}` : "/app/vendors";
+  const returnTo = requestedReturnTo.startsWith("/app/") ? requestedReturnTo : vendorHref;
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("Catering");
   const [description, setDescription] = useState("");
@@ -35,8 +38,34 @@ export default function VendorForm() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [touched, setTouched] = useState(false);
+  const [loadedVendorId, setLoadedVendorId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!existingVendor || loadedVendorId === existingVendor.id) return;
+    setName(existingVendor.name);
+    setCategory(existingVendor.category);
+    setDescription(existingVendor.description ?? "");
+    setContactEmail(existingVendor.contactEmail ?? "");
+    setContactPhone(existingVendor.contactPhone ?? "");
+    setWebsite(existingVendor.website ?? "");
+    setCity(existingVendor.city ?? "");
+    setState(existingVendor.state ?? "");
+    setLoadedVendorId(existingVendor.id);
+  }, [existingVendor, loadedVendorId]);
 
   const nameProblem = !name.trim() ? "Give the vendor a name." : undefined;
+
+  if (id && isLoading) return <LoadingRows rows={6} />;
+  if (id && isError) return <ErrorNotice error={error} title="Couldn't load this vendor" onRetry={() => void refetch()} />;
+  if (id && !existingVendor) {
+    return (
+      <Panel className="p-8 text-center">
+        <h1 className="text-lg font-semibold text-foreground">That vendor doesn't exist</h1>
+        <Button asChild className="mt-4" size="sm"><Link href="/app/vendors">Back to vendors</Link></Button>
+      </Panel>
+    );
+  }
+  if (id && loadedVendorId !== id) return <LoadingRows rows={6} />;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -49,8 +78,8 @@ export default function VendorForm() {
       </Link>
 
       <PageHeader
-        title="Add a vendor"
-        description="They go into your directory, ready to book onto any event."
+        title={id ? "Edit vendor" : "Add a vendor"}
+        description={id ? "Keep the vendor's contact information and service details current." : "They go into your directory, ready to book onto any event."}
       />
 
       <Panel>
@@ -63,26 +92,31 @@ export default function VendorForm() {
             if (nameProblem) return;
             void (async () => {
               try {
-                const vendor = await createVendor.mutateAsync({
-                name: name.trim(),
-                category,
-                description: description.trim() || null,
-                contactEmail: contactEmail.trim() || null,
-                contactPhone: contactPhone.trim() || null,
-                website: website.trim() || null,
-                city: city.trim() || null,
-                state: state.trim() || null,
-                });
-                if (eventId) await addEventVendor.mutateAsync({ eventId, draft: { vendorId: vendor.id } });
+                const details = {
+                  name: name.trim(),
+                  category,
+                  description: description.trim() || null,
+                  contactEmail: contactEmail.trim() || null,
+                  contactPhone: contactPhone.trim() || null,
+                  website: website.trim() || null,
+                  city: city.trim() || null,
+                  state: state.trim() || null,
+                };
+                const vendor = id
+                  ? await updateVendor.mutateAsync({ id, patch: details })
+                  : await createVendor.mutateAsync(details);
+                if (!id && eventId) await addEventVendor.mutateAsync({ eventId, draft: { vendorId: vendor.id } });
                 toast({
-                  title: eventId ? "Vendor added to the event" : "Vendor added",
-                  description: eventId
+                  title: id ? "Vendor updated" : eventId ? "Vendor added to the event" : "Vendor added",
+                  description: id
+                    ? `${vendor.name}'s information is up to date.`
+                    : eventId
                     ? `${vendor.name} is booked on this event and saved in your directory.`
                     : `${vendor.name} is in your directory.`,
                 });
-                navigate(eventId ? returnTo : `/app/vendors/${vendor.id}`);
+                navigate(id ? vendorHref : eventId ? returnTo : `/app/vendors/${vendor.id}`);
               } catch (error) {
-                toast({ title: "Couldn't add vendor", description: error instanceof Error ? error.message : String(error) });
+                toast({ title: id ? "Couldn't update vendor" : "Couldn't add vendor", description: error instanceof Error ? error.message : String(error) });
               }
             })();
           }}
@@ -184,9 +218,9 @@ export default function VendorForm() {
             <Button asChild variant="outline" type="button">
               <Link href={returnTo}>Cancel</Link>
             </Button>
-            <Button type="submit" disabled={createVendor.isPending || addEventVendor.isPending}>
+            <Button type="submit" disabled={createVendor.isPending || updateVendor.isPending || addEventVendor.isPending}>
               <Save className="mr-1.5 size-4" />
-              Add vendor
+              {id ? "Save changes" : "Add vendor"}
             </Button>
           </div>
         </form>

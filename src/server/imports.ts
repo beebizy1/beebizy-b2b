@@ -66,6 +66,6 @@ export async function fetchGoogleSheetCsv(
     throw new Error('Set Google Sheets sharing to "Anyone with the link can view," then try again.');
   }
   const csv = await boundedText(response);
-  if (!csv.trim() || !csv.includes(",")) throw new Error("The selected Google Sheets tab does not contain tabular data.");
+  if (!csv.trim()) throw new Error("The selected Google Sheets tab does not contain any data.");
   return { name: sheetNameFrom(response.headers.get("content-disposition")), csv };
 }

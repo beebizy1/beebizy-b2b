@@ -31,6 +31,19 @@ describe("Google Sheets import", () => {
       fetchGoogleSheetCsv("https://docs.google.com/spreadsheets/d/private/edit", fetcher),
     ).rejects.toThrow("Anyone with the link");
   });
+
+  it("accepts a public one-column sheet so headerless checklists can be imported", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response("Book venue\nConfirm catering\nPrint badges", {
+        status: 200,
+        headers: { "content-type": "text/csv" },
+      }),
+    );
+
+    await expect(
+      fetchGoogleSheetCsv("https://docs.google.com/spreadsheets/d/checklist/edit", fetcher),
+    ).resolves.toMatchObject({ csv: "Book venue\nConfirm catering\nPrint badges" });
+  });
 });
 
 describe("sheetNameFrom", () => {

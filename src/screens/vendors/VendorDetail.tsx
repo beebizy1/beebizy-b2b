@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Globe, Mail, MapPin, Phone, Send, Star } from "lucide-react";
+import { ArrowLeft, Globe, Mail, MapPin, Pencil, Phone, Send, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
@@ -25,6 +25,7 @@ import { useMarkThreadRead, useSendVendorMessage, useVendor, useVendorThread } f
 import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
 import { MessageSquare } from "lucide-react";
+import { vendorEditHref } from "./vendorRoutes";
 
 export default function VendorDetail({ id }: { id: string }) {
   const { data: vendor, isLoading, isError, error, refetch } = useVendor(id);
@@ -85,6 +86,12 @@ export default function VendorDetail({ id }: { id: string }) {
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{vendor.description}</p>
           ) : null}
         </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={vendorEditHref(vendor.id)}>
+            <Pencil className="mr-1.5 size-3.5" aria-hidden="true" />
+            Edit vendor
+          </Link>
+        </Button>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">

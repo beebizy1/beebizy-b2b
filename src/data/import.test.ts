@@ -511,3 +511,16 @@ describe("a wide sheet that mixes event details with a list", () => {
     }
   });
 });
+
+describe("headerless Google Sheets lists", () => {
+  it("keeps every row in a one-column checklist instead of treating the first task as a header", () => {
+    const table = parseCsvTable("Book venue\nConfirm catering\nPrint badges", "Google Sheet");
+    const plan = buildEventImportPlan([table], "Google Sheet");
+
+    expect(plan.checklist.map((item) => item.title)).toEqual([
+      "Book venue",
+      "Confirm catering",
+      "Print badges",
+    ]);
+  });
+});

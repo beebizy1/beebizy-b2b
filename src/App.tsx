@@ -136,6 +136,7 @@ function AppRoutes() {
           <Route path="/app/registrations/new">{() => <RegistrationForm />}</Route>
           <Route path="/app/vendors">{() => <PlanGate capability="vendorManagement"><VendorsIndex /></PlanGate>}</Route>
           <Route path="/app/vendors/new">{() => <PlanGate capability="vendorManagement"><VendorForm /></PlanGate>}</Route>
+          <Route path="/app/vendors/:id/edit">{(params) => <PlanGate capability="vendorManagement"><VendorForm id={params.id} /></PlanGate>}</Route>
           <Route path="/app/vendors/:id">{(params) => <PlanGate capability="vendorManagement"><VendorDetail id={params.id} /></PlanGate>}</Route>
           <Route path="/app/budget">{() => <Budget />}</Route>
           <Route path="/app/history" component={History} />
