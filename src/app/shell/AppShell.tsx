@@ -361,7 +361,7 @@ function AppShellFrame({
       <main id="main" className="flex min-h-dvh min-w-0 flex-1 flex-col pt-16 md:ml-64 md:pt-0">
         <DemoBanner />
         {mode === "live" ? <BetaBanner access={identity?.access} onFeedback={() => setFeedbackOpen(true)} /> : null}
-        <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+        <div className="min-w-0 flex-1 p-4 pb-24 sm:p-6 sm:pb-28 lg:p-8 lg:pb-28">
           <div className="content-enter mx-auto w-full max-w-[1720px]">{children}</div>
         </div>
       </main>
