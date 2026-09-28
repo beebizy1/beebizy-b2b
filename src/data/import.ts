@@ -1028,7 +1028,13 @@ export function parseCsvTable(source: string, name = "Sheet 1"): SpreadsheetTabl
   if (row.some((value) => value.trim() !== "")) matrix.push(row);
 
   const [headerRow = [], ...body] = matrix;
-  const headers = headerRow.map((header, index) => header.trim() || `Column ${index + 1}`);
+  const used = new Map<string, number>();
+  const headers = headerRow.map((header, index) => {
+    const base = header.trim() || `Column ${index + 1}`;
+    const count = used.get(base) ?? 0;
+    used.set(base, count + 1);
+    return count === 0 ? base : `${base} ${count + 1}`;
+  });
   return {
     name,
     headers,

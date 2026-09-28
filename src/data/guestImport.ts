@@ -9,7 +9,7 @@
  * work back onto the person least able to fix it.
  */
 
-import { parseCsvTable, type SpreadsheetValue } from "./import";
+import { parseCsvTable, type SpreadsheetTable, type SpreadsheetValue } from "./import";
 
 export interface ParsedGuestRow {
   /** 1-based, matching what a spreadsheet shows, so an error message is findable. */
@@ -33,6 +33,7 @@ export interface GuestImportPreview {
   matched: {
     name: string | null;
     contact: string | null;
+    attendance: string | null;
     notes: string | null;
     organization: string | null;
     segment: string | null;
@@ -47,6 +48,7 @@ export interface GuestImportColumnMapping {
   firstName: string | null;
   lastName: string | null;
   contact: string | null;
+  attendance: string | null;
   notes: string | null;
   organization: string | null;
   segment: string | null;
@@ -60,6 +62,7 @@ const NAME_KEYS = ["name", "full name", "fullname", "guest", "guest name", "atte
 const FIRST_NAME_KEYS = ["first name", "firstname", "contact first name"];
 const LAST_NAME_KEYS = ["last name", "lastname", "contact last name"];
 const CONTACT_KEYS = ["email", "e-mail", "email address", "e-mail address", "contact email"];
+const ATTENDANCE_KEYS = ["yes/no", "rsvp", "rsvp response", "attending", "attendance", "response"];
 const NOTES_KEYS = ["notes", "note", "comment", "comments", "dietary", "requirements"];
 const ORGANIZATION_KEYS = ["company name", "company", "organization", "organisation", "school"];
 const SEGMENT_KEYS = ["segment", "category", "guest type", "registration type", "lifecycle stage"];
@@ -121,6 +124,7 @@ function suggestedMapping(
 ): GuestImportColumnMapping {
   let name = pickHeader(headers, NAME_KEYS);
   let contact = pickHeader(headers, CONTACT_KEYS);
+  const attendance = pickHeader(headers, ATTENDANCE_KEYS);
   const firstName = name ? null : pickHeader(headers, FIRST_NAME_KEYS);
   const lastName = name ? null : pickHeader(headers, LAST_NAME_KEYS);
   const notes = pickHeader(headers, NOTES_KEYS);
@@ -144,7 +148,7 @@ function suggestedMapping(
   }
 
   if (!name && !firstName && !lastName) {
-    const reserved = new Set([contact, notes, organization, segment, partySize].filter(Boolean));
+    const reserved = new Set([contact, attendance, notes, organization, segment, partySize].filter(Boolean));
     name = headers.find((header) => !reserved.has(header) && looksLikeNameColumn(rows, header)) ?? null;
   }
 
@@ -153,6 +157,7 @@ function suggestedMapping(
     firstName: name ? null : firstName,
     lastName: name ? null : lastName,
     contact,
+    attendance,
     notes,
     organization,
     segment,
@@ -171,22 +176,17 @@ function applyMapping(
   return mapping;
 }
 
-/**
- * Reads CSV into guest rows, flagging each one that can't be imported.
- *
- * Invalid rows are returned rather than dropped: a silent skip is how ten guests become
- * eight without anyone noticing.
- */
-export function parseGuestCsv(
-  source: string,
+/** Reads a normalized spreadsheet table into guest rows. */
+export function parseGuestTable(
+  table: SpreadsheetTable,
   override: Partial<GuestImportColumnMapping> = {},
 ): GuestImportPreview {
-  const table = parseCsvTable(source, "Guests");
   const mapping = applyMapping(suggestedMapping(table.headers, table.rows), override);
   const nameHeader = mapping.name;
   const firstNameHeader = mapping.firstName;
   const lastNameHeader = mapping.lastName;
   const contactHeader = mapping.contact;
+  const attendanceHeader = mapping.attendance;
   const notesHeader = mapping.notes;
   const organizationHeader = mapping.organization;
   const segmentHeader = mapping.segment;
@@ -202,6 +202,7 @@ export function parseGuestCsv(
           .filter(Boolean)
           .join(" ");
     const contact = contactHeader ? text(row[contactHeader]) : "";
+    const attendance = attendanceHeader ? text(row[attendanceHeader]).toLowerCase() : "";
     const notes = notesHeader ? text(row[notesHeader]) : "";
     const organization = organizationHeader ? text(row[organizationHeader]) : "";
     const segment = segmentHeader ? text(row[segmentHeader]) : "";
@@ -211,6 +212,7 @@ export function parseGuestCsv(
     let problem: string | null = null;
     if (!name && !contact) problem = "Empty row";
     else if (!name) problem = "No name";
+    else if (["no", "n", "declined", "not attending", "false"].includes(attendance)) problem = "Not attending";
     else if (contact && !EMAIL_RE.test(contact)) problem = "Email doesn't look valid";
     else if (contact && seen.has(contact.toLowerCase())) problem = "Duplicate email in this file";
     else if (!Number.isSafeInteger(partySize) || partySize < 1 || partySize > MAX_PARTY_SIZE) {
@@ -237,6 +239,7 @@ export function parseGuestCsv(
     matched: {
       name: matchedName,
       contact: contactHeader,
+      attendance: attendanceHeader,
       notes: notesHeader,
       organization: organizationHeader,
       segment: segmentHeader,
@@ -244,6 +247,53 @@ export function parseGuestCsv(
     },
     mapping,
   };
+}
+
+/**
+ * Reads CSV into guest rows, flagging each one that can't be imported.
+ *
+ * Invalid rows are returned rather than dropped: a silent skip is how ten guests become
+ * eight without anyone noticing.
+ */
+export function parseGuestCsv(
+  source: string,
+  override: Partial<GuestImportColumnMapping> = {},
+): GuestImportPreview {
+  return parseGuestTable(parseCsvTable(source, "Guests"), override);
+}
+
+/** Picks a safe initial worksheet while still allowing the organizer to change it. */
+export function suggestGuestSpreadsheetTableIndex(tables: SpreadsheetTable[]): number {
+  if (tables.length === 0) throw new Error("The workbook does not contain any worksheets.");
+
+  const guestSheetName = /\b(rsvps?|guests?|attendees?|invitees?|registrations?|check[ -]?ins?)\b/i;
+  const ranked = tables.map((table, index) => {
+    const preview = parseGuestTable(table);
+    return {
+      index,
+      namedLikeGuestList: guestSheetName.test(table.name) && preview.rows.some((row) => row.problem === null),
+      validRows: preview.rows.filter((row) => row.problem === null).length,
+      hasName: preview.matched.name !== null,
+      rowCount: preview.rows.length,
+    };
+  });
+
+  ranked.sort((left, right) =>
+    Number(right.namedLikeGuestList) - Number(left.namedLikeGuestList)
+    || right.validRows - left.validRows
+    || Number(right.hasName) - Number(left.hasName)
+    || right.rowCount - left.rowCount
+    || left.index - right.index,
+  );
+  return ranked[0]!.index;
+}
+
+/** Selects the worksheet that contains the strongest usable guest list. */
+export function parseGuestSpreadsheetTables(
+  tables: SpreadsheetTable[],
+  override: Partial<GuestImportColumnMapping> = {},
+): GuestImportPreview {
+  return parseGuestTable(tables[suggestGuestSpreadsheetTableIndex(tables)]!, override);
 }
 
 /** The header row we hand out, so an import that uses it always parses. */

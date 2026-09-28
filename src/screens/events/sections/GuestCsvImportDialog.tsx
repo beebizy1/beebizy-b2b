@@ -30,8 +30,11 @@ import { useImportGuestRegistration, useLoadGoogleSheet } from "@/data/hooks";
 import {
   GUEST_CSV_TEMPLATE,
   parseGuestCsv,
+  parseGuestTable,
+  suggestGuestSpreadsheetTableIndex,
   type GuestImportColumnMapping,
 } from "@/data/guestImport";
+import { parseCsvTable, readSpreadsheetFile, type SpreadsheetTable } from "@/data/import";
 import type { Event } from "@/data/entities";
 
 const IGNORE_COLUMN = "__ignore__";
@@ -41,16 +44,18 @@ function ColumnPicker({
   value,
   headers,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: string | null;
   headers: string[];
   onChange: (value: string | null) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="space-y-1">
       <Label>{label}</Label>
-      <Select value={value ?? IGNORE_COLUMN} onValueChange={(next) => onChange(next === IGNORE_COLUMN ? null : next)}>
+      <Select disabled={disabled} value={value ?? IGNORE_COLUMN} onValueChange={(next) => onChange(next === IGNORE_COLUMN ? null : next)}>
         <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value={IGNORE_COLUMN}>Do not import</SelectItem>
@@ -83,13 +88,24 @@ export default function GuestCsvImportDialog({
   const importGuest = useImportGuestRegistration();
   const loadGoogleSheet = useLoadGoogleSheet();
   const fileInput = useRef<HTMLInputElement>(null);
+  const sourceRequest = useRef(0);
+  const importInFlight = useRef(false);
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState("");
+  const [spreadsheetTables, setSpreadsheetTables] = useState<SpreadsheetTable[]>([]);
+  const [selectedSheetIndex, setSelectedSheetIndex] = useState(0);
   const [googleUrl, setGoogleUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [readingSource, setReadingSource] = useState(false);
   const [mapping, setMapping] = useState<Partial<GuestImportColumnMapping>>({});
+  const [importedLines, setImportedLines] = useState<Set<number>>(() => new Set());
 
-  const preview = useMemo(() => (source.trim() ? parseGuestCsv(source, mapping) : null), [mapping, source]);
+  const preview = useMemo(() => {
+    if (source.trim()) return parseGuestCsv(source, mapping);
+    const selectedSheet = spreadsheetTables[selectedSheetIndex];
+    if (selectedSheet) return parseGuestTable(selectedSheet, mapping);
+    return null;
+  }, [mapping, selectedSheetIndex, source, spreadsheetTables]);
   /*
    * Say which columns were recognised, and show the optional ones in the preview.
    *
@@ -105,6 +121,7 @@ export default function GuestCsvImportDialog({
     ? [
         preview.matched.name ?? "no name column",
         preview.matched.contact ?? "no email column",
+        preview.matched.attendance,
         preview.matched.organization,
         preview.matched.segment,
         preview.matched.notes,
@@ -114,12 +131,29 @@ export default function GuestCsvImportDialog({
         .join(" · ")
     : "";
   const valid = preview?.rows.filter((row) => row.problem === null) ?? [];
+  const ready = valid.filter((row) => !importedLines.has(row.line));
   const invalid = preview?.rows.filter((row) => row.problem !== null) ?? [];
-  const peopleReady = valid.reduce((total, row) => total + row.partySize, 0);
+  const peopleReady = ready.reduce((total, row) => total + row.partySize, 0);
+  const hasPartialImport = importedLines.size > 0;
 
   const replaceSource = (next: string) => {
+    const currentHeaders = source.trim() ? parseCsvTable(source).headers : [];
+    const nextHeaders = next.trim() ? parseCsvTable(next).headers : [];
+    sourceRequest.current += 1;
+    setReadingSource(false);
     setSource(next);
+    setSpreadsheetTables([]);
+    setSelectedSheetIndex(0);
+    setImportedLines(new Set());
+    if (currentHeaders.join("\u0000") !== nextHeaders.join("\u0000")) setMapping({});
+  };
+
+  const replaceSpreadsheet = (tables: SpreadsheetTable[]) => {
+    setSource("");
+    setSpreadsheetTables(tables);
+    setSelectedSheetIndex(suggestGuestSpreadsheetTableIndex(tables));
     setMapping({});
+    setImportedLines(new Set());
   };
 
   const setColumn = (field: keyof GuestImportColumnMapping, value: string | null) => {
@@ -127,14 +161,18 @@ export default function GuestCsvImportDialog({
   };
 
   const reset = () => {
+    sourceRequest.current += 1;
     setSource("");
+    setSpreadsheetTables([]);
+    setSelectedSheetIndex(0);
     setGoogleUrl("");
-    setBusy(false);
+    setReadingSource(false);
     setMapping({});
+    setImportedLines(new Set());
   };
 
   const runImport = async () => {
-    if (valid.length === 0) return;
+    if (ready.length === 0 || importInFlight.current) return;
     if (event.capacity !== null && event.registrationCount + peopleReady > event.capacity) {
       toast({
         title: "This import exceeds the event capacity",
@@ -142,10 +180,11 @@ export default function GuestCsvImportDialog({
       });
       return;
     }
+    importInFlight.current = true;
     setBusy(true);
     let imported = 0;
     try {
-      for (const row of valid) {
+      for (const row of ready) {
         await importGuest.mutateAsync({
           eventId: event.id,
           name: row.name,
@@ -157,11 +196,14 @@ export default function GuestCsvImportDialog({
           quantity: row.partySize,
         });
         imported += 1;
+        setImportedLines((current) => new Set(current).add(row.line));
       }
       toast({
         title: `${imported} ${imported === 1 ? "row" : "rows"} imported`,
         description: `${peopleReady} ${peopleReady === 1 ? "person" : "people"} added${invalid.length ? `; ${invalid.length} row(s) skipped.` : "."}`,
       });
+      importInFlight.current = false;
+      setBusy(false);
       setOpen(false);
       reset();
     } catch (error) {
@@ -171,6 +213,8 @@ export default function GuestCsvImportDialog({
         title: imported === 0 ? "Nothing was imported" : `Imported ${imported} before stopping`,
         description: error instanceof Error ? error.message : undefined,
       });
+    } finally {
+      importInFlight.current = false;
       setBusy(false);
     }
   };
@@ -179,6 +223,7 @@ export default function GuestCsvImportDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (!next && (busy || importInFlight.current)) return;
         setOpen(next);
         if (!next) reset();
       }}
@@ -192,9 +237,9 @@ export default function GuestCsvImportDialog({
 
       <DialogContent className="max-h-[88vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Import guests from CSV</DialogTitle>
+          <DialogTitle>Import guests from Excel (.xlsx), CSV or Google Sheets</DialogTitle>
           <DialogDescription>
-            Export a guest list from HubSpot or Google Sheets as CSV, then upload or paste it here. Guests import as {registrationStatus === "confirmed" ? "confirmed registrants" : "pending registrations"}.
+            Upload an existing guest list and review the suggested columns before importing. Guests import as {registrationStatus === "confirmed" ? "confirmed registrants" : "pending registrations"}.
           </DialogDescription>
         </DialogHeader>
 
@@ -208,6 +253,7 @@ export default function GuestCsvImportDialog({
                 type="url"
                 value={googleUrl}
                 onChange={(changeEvent) => setGoogleUrl(changeEvent.target.value)}
+                disabled={busy || readingSource || hasPartialImport}
                 placeholder="https://docs.google.com/spreadsheets/d/…"
                 className="min-w-0 flex-1"
               />
@@ -215,19 +261,31 @@ export default function GuestCsvImportDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={!googleUrl.trim() || loadGoogleSheet.isPending}
+                disabled={!googleUrl.trim() || readingSource || busy || hasPartialImport}
                 onClick={() => {
-                  void loadGoogleSheet.mutateAsync(googleUrl).then(
-                    (loaded) => replaceSource(loaded.csv),
-                    (error) => toast({
+                  const requestId = ++sourceRequest.current;
+                  setReadingSource(true);
+                  setSource("");
+                  setSpreadsheetTables([]);
+                  setSelectedSheetIndex(0);
+                  setMapping({});
+                  setImportedLines(new Set());
+                  void loadGoogleSheet.mutateAsync(googleUrl).then((loaded) => {
+                    if (sourceRequest.current !== requestId) return;
+                    setSource(loaded.csv);
+                    setReadingSource(false);
+                  }, (error) => {
+                    if (sourceRequest.current !== requestId) return;
+                    setReadingSource(false);
+                    toast({
                       title: "The Google Sheet could not be read",
                       description: error instanceof Error ? error.message : undefined,
-                    }),
-                  );
+                    });
+                  });
                 }}
               >
                 <FileSpreadsheet className="mr-1.5 size-3.5" aria-hidden="true" />
-                {loadGoogleSheet.isPending ? "Reading…" : "Load sheet"}
+                {readingSource ? "Reading…" : "Load sheet"}
               </Button>
             </div>
           </div>
@@ -236,17 +294,43 @@ export default function GuestCsvImportDialog({
             <input
               ref={fileInput}
               type="file"
-              accept=".csv,text/csv"
+              accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+              disabled={busy || readingSource || hasPartialImport}
               className="sr-only"
               onChange={async (changeEvent) => {
                 const file = changeEvent.target.files?.[0];
-                if (file) replaceSource(await file.text());
+                if (file) {
+                  const requestId = ++sourceRequest.current;
+                  setReadingSource(true);
+                  setSource("");
+                  setSpreadsheetTables([]);
+                  setSelectedSheetIndex(0);
+                  setMapping({});
+                  setImportedLines(new Set());
+                  try {
+                    if (file.name.toLowerCase().endsWith(".csv")) {
+                      const nextSource = await file.text();
+                      if (sourceRequest.current === requestId) setSource(nextSource);
+                    } else {
+                      const tables = await readSpreadsheetFile(file);
+                      if (sourceRequest.current === requestId) replaceSpreadsheet(tables);
+                    }
+                  } catch (error) {
+                    if (sourceRequest.current !== requestId) return;
+                    toast({
+                      title: "The guest list could not be read",
+                      description: error instanceof Error ? error.message : undefined,
+                    });
+                  } finally {
+                    if (sourceRequest.current === requestId) setReadingSource(false);
+                  }
+                }
                 changeEvent.target.value = "";
               }}
             />
-            <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
+            <Button variant="outline" size="sm" disabled={readingSource || busy || hasPartialImport} onClick={() => fileInput.current?.click()}>
               <FileUp className="mr-1.5 size-3.5" aria-hidden="true" />
-              Choose file
+              {readingSource ? "Reading file…" : "Choose Excel (.xlsx) or CSV"}
             </Button>
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
               <Download className="mr-1.5 size-3.5" aria-hidden="true" />
@@ -255,11 +339,30 @@ export default function GuestCsvImportDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="csv-source">Or paste CSV</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="csv-source">Or paste CSV</Label>
+              {spreadsheetTables.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || hasPartialImport}
+                  onClick={() => {
+                    setSpreadsheetTables([]);
+                    setSelectedSheetIndex(0);
+                    setMapping({});
+                    setImportedLines(new Set());
+                  }}
+                >
+                  Switch to pasted CSV
+                </Button>
+              ) : null}
+            </div>
             <Textarea
               id="csv-source"
               value={source}
               onChange={(changeEvent) => replaceSource(changeEvent.target.value)}
+              disabled={readingSource || busy || hasPartialImport || spreadsheetTables.length > 0}
               rows={5}
               placeholder={GUEST_CSV_TEMPLATE}
               className="font-mono text-xs"
@@ -268,6 +371,33 @@ export default function GuestCsvImportDialog({
 
           {preview ? (
             <>
+              {spreadsheetTables.length > 0 ? (
+                <div className="space-y-1.5 rounded-lg border border-hairline bg-surface-sunken/40 p-3">
+                  <Label htmlFor="guest-workbook-sheet">Worksheet</Label>
+                  <Select
+                    disabled={busy || hasPartialImport}
+                    value={String(selectedSheetIndex)}
+                    onValueChange={(value) => {
+                      setSelectedSheetIndex(Number(value));
+                      setMapping({});
+                      setImportedLines(new Set());
+                    }}
+                  >
+                    <SelectTrigger id="guest-workbook-sheet" className="h-9 sm:max-w-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {spreadsheetTables.map((table, index) => (
+                        <SelectItem key={`${table.name}-${index}`} value={String(index)}>{table.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Importing “{spreadsheetTables[selectedSheetIndex]?.name}”. Choose another worksheet if your guest list is on a different tab.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="space-y-3 rounded-lg border border-hairline bg-surface-sunken/40 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -276,28 +406,37 @@ export default function GuestCsvImportDialog({
                       Beebizy suggested these matches from the headers and cell values. Change any field before importing.
                     </p>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setMapping({})} disabled={Object.keys(mapping).length === 0}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setMapping({})} disabled={busy || hasPartialImport || Object.keys(mapping).length === 0}>
                     <RotateCcw className="mr-1.5 size-3.5" aria-hidden="true" />
                     Reset suggestions
                   </Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <ColumnPicker label="Full name" value={preview.mapping.name} headers={preview.headers} onChange={(value) => setColumn("name", value)} />
-                  <ColumnPicker label="First name" value={preview.mapping.firstName} headers={preview.headers} onChange={(value) => setColumn("firstName", value)} />
-                  <ColumnPicker label="Last name" value={preview.mapping.lastName} headers={preview.headers} onChange={(value) => setColumn("lastName", value)} />
-                  <ColumnPicker label="Email (optional)" value={preview.mapping.contact} headers={preview.headers} onChange={(value) => setColumn("contact", value)} />
-                  <ColumnPicker label="Attendee count" value={preview.mapping.partySize} headers={preview.headers} onChange={(value) => setColumn("partySize", value)} />
-                  <ColumnPicker label="Guest type" value={preview.mapping.segment} headers={preview.headers} onChange={(value) => setColumn("segment", value)} />
-                  <ColumnPicker label="Organization" value={preview.mapping.organization} headers={preview.headers} onChange={(value) => setColumn("organization", value)} />
-                  <ColumnPicker label="Notes" value={preview.mapping.notes} headers={preview.headers} onChange={(value) => setColumn("notes", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Full name" value={preview.mapping.name} headers={preview.headers} onChange={(value) => setColumn("name", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="First name" value={preview.mapping.firstName} headers={preview.headers} onChange={(value) => setColumn("firstName", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Last name" value={preview.mapping.lastName} headers={preview.headers} onChange={(value) => setColumn("lastName", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Email (optional)" value={preview.mapping.contact} headers={preview.headers} onChange={(value) => setColumn("contact", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="RSVP response" value={preview.mapping.attendance} headers={preview.headers} onChange={(value) => setColumn("attendance", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Attendee count" value={preview.mapping.partySize} headers={preview.headers} onChange={(value) => setColumn("partySize", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Guest type" value={preview.mapping.segment} headers={preview.headers} onChange={(value) => setColumn("segment", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Organization" value={preview.mapping.organization} headers={preview.headers} onChange={(value) => setColumn("organization", value)} />
+                  <ColumnPicker disabled={busy || hasPartialImport} label="Notes" value={preview.mapping.notes} headers={preview.headers} onChange={(value) => setColumn("notes", value)} />
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Pill tone={valid.length > 0 ? "success" : "neutral"}>{valid.length} rows · {peopleReady} people ready</Pill>
+                <Pill tone={ready.length > 0 ? "success" : "neutral"}>{ready.length} rows · {peopleReady} people ready</Pill>
+                {importedLines.size > 0 ? <Pill tone="info">{importedLines.size} already imported</Pill> : null}
                 {invalid.length > 0 ? <Pill tone="warning">{invalid.length} skipped</Pill> : null}
                 <span className="text-muted-foreground">Read {readColumns}</span>
               </div>
+
+              {hasPartialImport ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-info/30 bg-info-tint px-3 py-2 text-xs text-info-text">
+                  <span>The source is locked so a retry cannot duplicate guests that already imported.</span>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={reset}>Start a new import</Button>
+                </div>
+              ) : null}
 
               {preview.matched.name === null ? (
                 <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-tint px-3 py-2 text-xs text-warning-text">
@@ -341,7 +480,9 @@ export default function GuestCsvImportDialog({
                           <TableCell className="text-muted-foreground">{row.segment || "—"}</TableCell>
                         ) : null}
                         <TableCell>
-                          {row.problem ? (
+                          {importedLines.has(row.line) ? (
+                            <Pill tone="info">Imported</Pill>
+                          ) : row.problem ? (
                             <Pill tone="warning">{row.problem}</Pill>
                           ) : (
                             <Pill tone="success">Ready</Pill>
@@ -357,12 +498,12 @@ export default function GuestCsvImportDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button disabled={valid.length === 0 || busy} onClick={() => void runImport()}>
+          <Button disabled={ready.length === 0 || busy || readingSource} onClick={() => void runImport()}>
             <Upload className="mr-1.5 size-4" aria-hidden="true" />
-            Import {valid.length > 0 ? `${valid.length} ${valid.length === 1 ? "row" : "rows"}` : "guests"}
+            Import {ready.length > 0 ? `${ready.length} ${ready.length === 1 ? "row" : "rows"}` : "guests"}
           </Button>
         </DialogFooter>
       </DialogContent>

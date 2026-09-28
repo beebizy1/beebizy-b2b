@@ -20,6 +20,17 @@ describe("spreadsheet import", () => {
     });
   });
 
+  it("keeps repeated CSV headers distinct instead of overwriting a column", () => {
+    const table = parseCsvTable("Name,Email,Email\nGuest One,primary@example.com,backup@example.com", "Guests");
+
+    expect(table.headers).toEqual(["Name", "Email", "Email 2"]);
+    expect(table.rows[0]).toEqual({
+      Name: "Guest One",
+      Email: "primary@example.com",
+      "Email 2": "backup@example.com",
+    });
+  });
+
   it("turns familiar event sheets into one reviewable event plan", () => {
     const plan = buildEventImportPlan(
       [
