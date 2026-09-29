@@ -13,6 +13,7 @@ export const INTERNAL_EMAIL_DOMAIN = "beebizy.com";
 export const PRODUCT_OPERATOR_EMAILS = [
   "hello@beebizy.com",
   "laila@beebizy.com",
+  "mary@beebizy.com",
   "tarang@beebizy.com",
   "sm.shreyamahajan@gmail.com",
 ] as const;

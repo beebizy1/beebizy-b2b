@@ -514,7 +514,7 @@ describe("feedback endpoint", () => {
     });
   });
 
-  it("allows only Laila and Tarang to preview another account experience", async () => {
+  it("allows approved Beebizy product operators to preview another account experience", async () => {
     vi.mocked(authorize).mockResolvedValueOnce({ ...context, email: "tarang@beebizy.com" });
     const tarang = await handleRequest(new Request("http://localhost/api/me"));
 
@@ -527,7 +527,7 @@ describe("feedback endpoint", () => {
     });
     expect(await mary.json()).toMatchObject({
       experience: "standard",
-      canSwitchExperience: false,
+      canSwitchExperience: true,
     });
   });
 
