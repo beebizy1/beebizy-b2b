@@ -238,14 +238,28 @@ describe("registrations", () => {
     })).rejects.toThrow("between 1 and 10,000");
   });
 
+  it("imports a 700-row guest list as one operation", async () => {
+    const rows = Array.from({ length: 700 }, (_, index) => ({
+      eventId: "evt-support-offsite",
+      name: `Load Guest ${index + 1}`,
+      contact: `load-${index + 1}@example.com`,
+      quantity: 1,
+    }));
+
+    const imported = await memoryAdapter.registrations.importGuests(rows);
+
+    expect(imported).toHaveLength(700);
+    expect(await memoryAdapter.registrations.listForEvent("evt-support-offsite")).toHaveLength(700);
+  });
+
   it("rolls back an imported guest when its registration fails", async () => {
     const guestCount = (await memoryAdapter.guests.list()).length;
-    await expect(memoryAdapter.registrations.importGuest({
+    await expect(memoryAdapter.registrations.importGuests([{
       eventId: "evt-atlas",
       name: "Too Large",
       contact: "too-large@example.com",
       quantity: 10_001,
-    })).rejects.toThrow("between 1 and 10,000");
+    }])).rejects.toThrow("between 1 and 10,000");
     expect(await memoryAdapter.guests.list()).toHaveLength(guestCount);
   });
 

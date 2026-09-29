@@ -166,8 +166,8 @@ export interface RegistrationsRepository {
   list(): Promise<RegistrationWithGuest[]>;
   listForEvent(eventId: string): Promise<RegistrationWithGuest[]>;
   create(draft: RegistrationDraft): Promise<Registration>;
-  /** Creates the imported guest and registration in one all-or-nothing operation. */
-  importGuest(draft: GuestRegistrationImportDraft): Promise<RegistrationWithGuest>;
+  /** Creates every imported guest and registration as one all-or-nothing operation. */
+  importGuests(drafts: GuestRegistrationImportDraft[]): Promise<RegistrationWithGuest[]>;
   /** Public share-link registration. The token identifies the event and workspace. */
   registerPublic(shareToken: string, draft: PublicRegistrationDraft): Promise<PublicRegistrationResult>;
   /** Atomically creates a guest, confirmed registration and arrival record. */

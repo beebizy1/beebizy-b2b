@@ -2,9 +2,8 @@
  * Bulk-import guests onto an event from a spreadsheet.
  *
  * Every parsed row is shown, valid or not, with the reason a bad one can't be imported.
- * Only valid rows are sent. Import runs sequentially so a capacity rejection from the
- * data layer stops the run with a truthful count of what did land, rather than firing
- * fifty writes and reporting a number nobody can reconcile.
+ * Only valid rows are sent. The server imports the full batch atomically, so a failed
+ * spreadsheet never leaves a partial guest list behind.
  */
 
 import { useMemo, useRef, useState } from "react";
@@ -26,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { Pill } from "@/components/primitives";
-import { useImportGuestRegistration, useLoadGoogleSheet } from "@/data/hooks";
+import { useImportGuestRegistrations, useLoadGoogleSheet } from "@/data/hooks";
 import {
   GUEST_CSV_TEMPLATE,
   parseGuestCsv,
@@ -85,7 +84,7 @@ export default function GuestCsvImportDialog({
   triggerLabel?: string;
   registrationStatus?: "pending" | "confirmed";
 }) {
-  const importGuest = useImportGuestRegistration();
+  const importGuests = useImportGuestRegistrations();
   const loadGoogleSheet = useLoadGoogleSheet();
   const fileInput = useRef<HTMLInputElement>(null);
   const sourceRequest = useRef(0);
@@ -98,7 +97,6 @@ export default function GuestCsvImportDialog({
   const [busy, setBusy] = useState(false);
   const [readingSource, setReadingSource] = useState(false);
   const [mapping, setMapping] = useState<Partial<GuestImportColumnMapping>>({});
-  const [importedLines, setImportedLines] = useState<Set<number>>(() => new Set());
 
   const preview = useMemo(() => {
     if (source.trim()) return parseGuestCsv(source, mapping);
@@ -131,10 +129,9 @@ export default function GuestCsvImportDialog({
         .join(" · ")
     : "";
   const valid = preview?.rows.filter((row) => row.problem === null) ?? [];
-  const ready = valid.filter((row) => !importedLines.has(row.line));
+  const ready = valid;
   const invalid = preview?.rows.filter((row) => row.problem !== null) ?? [];
   const peopleReady = ready.reduce((total, row) => total + row.partySize, 0);
-  const hasPartialImport = importedLines.size > 0;
 
   const replaceSource = (next: string) => {
     const currentHeaders = source.trim() ? parseCsvTable(source).headers : [];
@@ -144,7 +141,6 @@ export default function GuestCsvImportDialog({
     setSource(next);
     setSpreadsheetTables([]);
     setSelectedSheetIndex(0);
-    setImportedLines(new Set());
     if (currentHeaders.join("\u0000") !== nextHeaders.join("\u0000")) setMapping({});
   };
 
@@ -153,7 +149,6 @@ export default function GuestCsvImportDialog({
     setSpreadsheetTables(tables);
     setSelectedSheetIndex(suggestGuestSpreadsheetTableIndex(tables));
     setMapping({});
-    setImportedLines(new Set());
   };
 
   const setColumn = (field: keyof GuestImportColumnMapping, value: string | null) => {
@@ -168,7 +163,6 @@ export default function GuestCsvImportDialog({
     setGoogleUrl("");
     setReadingSource(false);
     setMapping({});
-    setImportedLines(new Set());
   };
 
   const runImport = async () => {
@@ -182,10 +176,8 @@ export default function GuestCsvImportDialog({
     }
     importInFlight.current = true;
     setBusy(true);
-    let imported = 0;
     try {
-      for (const row of ready) {
-        await importGuest.mutateAsync({
+      const imported = await importGuests.mutateAsync(ready.map((row) => ({
           eventId: event.id,
           name: row.name,
           contact: row.contact,
@@ -194,12 +186,9 @@ export default function GuestCsvImportDialog({
           segment: row.segment,
           organization: row.organization,
           quantity: row.partySize,
-        });
-        imported += 1;
-        setImportedLines((current) => new Set(current).add(row.line));
-      }
+      })));
       toast({
-        title: `${imported} ${imported === 1 ? "row" : "rows"} imported`,
+        title: `${imported.length} ${imported.length === 1 ? "row" : "rows"} imported`,
         description: `${peopleReady} ${peopleReady === 1 ? "person" : "people"} added${invalid.length ? `; ${invalid.length} row(s) skipped.` : "."}`,
       });
       importInFlight.current = false;
@@ -207,10 +196,8 @@ export default function GuestCsvImportDialog({
       setOpen(false);
       reset();
     } catch (error) {
-      // Capacity is enforced by the data layer, so this is the honest place to say how
-      // far the run got before it was refused.
       toast({
-        title: imported === 0 ? "Nothing was imported" : `Imported ${imported} before stopping`,
+        title: "Nothing was imported",
         description: error instanceof Error ? error.message : undefined,
       });
     } finally {
@@ -253,7 +240,7 @@ export default function GuestCsvImportDialog({
                 type="url"
                 value={googleUrl}
                 onChange={(changeEvent) => setGoogleUrl(changeEvent.target.value)}
-                disabled={busy || readingSource || hasPartialImport}
+                disabled={busy || readingSource}
                 placeholder="https://docs.google.com/spreadsheets/d/…"
                 className="min-w-0 flex-1"
               />
@@ -261,7 +248,7 @@ export default function GuestCsvImportDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={!googleUrl.trim() || readingSource || busy || hasPartialImport}
+                disabled={!googleUrl.trim() || readingSource || busy}
                 onClick={() => {
                   const requestId = ++sourceRequest.current;
                   setReadingSource(true);
@@ -269,7 +256,6 @@ export default function GuestCsvImportDialog({
                   setSpreadsheetTables([]);
                   setSelectedSheetIndex(0);
                   setMapping({});
-                  setImportedLines(new Set());
                   void loadGoogleSheet.mutateAsync(googleUrl).then((loaded) => {
                     if (sourceRequest.current !== requestId) return;
                     setSource(loaded.csv);
@@ -295,7 +281,7 @@ export default function GuestCsvImportDialog({
               ref={fileInput}
               type="file"
               accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
-              disabled={busy || readingSource || hasPartialImport}
+              disabled={busy || readingSource}
               className="sr-only"
               onChange={async (changeEvent) => {
                 const file = changeEvent.target.files?.[0];
@@ -306,7 +292,6 @@ export default function GuestCsvImportDialog({
                   setSpreadsheetTables([]);
                   setSelectedSheetIndex(0);
                   setMapping({});
-                  setImportedLines(new Set());
                   try {
                     if (file.name.toLowerCase().endsWith(".csv")) {
                       const nextSource = await file.text();
@@ -328,7 +313,7 @@ export default function GuestCsvImportDialog({
                 changeEvent.target.value = "";
               }}
             />
-            <Button variant="outline" size="sm" disabled={readingSource || busy || hasPartialImport} onClick={() => fileInput.current?.click()}>
+            <Button variant="outline" size="sm" disabled={readingSource || busy} onClick={() => fileInput.current?.click()}>
               <FileUp className="mr-1.5 size-3.5" aria-hidden="true" />
               {readingSource ? "Reading file…" : "Choose Excel (.xlsx) or CSV"}
             </Button>
@@ -346,12 +331,11 @@ export default function GuestCsvImportDialog({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={busy || hasPartialImport}
+                  disabled={busy}
                   onClick={() => {
                     setSpreadsheetTables([]);
                     setSelectedSheetIndex(0);
                     setMapping({});
-                    setImportedLines(new Set());
                   }}
                 >
                   Switch to pasted CSV
@@ -362,7 +346,7 @@ export default function GuestCsvImportDialog({
               id="csv-source"
               value={source}
               onChange={(changeEvent) => replaceSource(changeEvent.target.value)}
-              disabled={readingSource || busy || hasPartialImport || spreadsheetTables.length > 0}
+              disabled={readingSource || busy || spreadsheetTables.length > 0}
               rows={5}
               placeholder={GUEST_CSV_TEMPLATE}
               className="font-mono text-xs"
@@ -375,12 +359,11 @@ export default function GuestCsvImportDialog({
                 <div className="space-y-1.5 rounded-lg border border-hairline bg-surface-sunken/40 p-3">
                   <Label htmlFor="guest-workbook-sheet">Worksheet</Label>
                   <Select
-                    disabled={busy || hasPartialImport}
+                    disabled={busy}
                     value={String(selectedSheetIndex)}
                     onValueChange={(value) => {
                       setSelectedSheetIndex(Number(value));
                       setMapping({});
-                      setImportedLines(new Set());
                     }}
                   >
                     <SelectTrigger id="guest-workbook-sheet" className="h-9 sm:max-w-sm">
@@ -406,37 +389,29 @@ export default function GuestCsvImportDialog({
                       Beebizy suggested these matches from the headers and cell values. Change any field before importing.
                     </p>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setMapping({})} disabled={busy || hasPartialImport || Object.keys(mapping).length === 0}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setMapping({})} disabled={busy || Object.keys(mapping).length === 0}>
                     <RotateCcw className="mr-1.5 size-3.5" aria-hidden="true" />
                     Reset suggestions
                   </Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Full name" value={preview.mapping.name} headers={preview.headers} onChange={(value) => setColumn("name", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="First name" value={preview.mapping.firstName} headers={preview.headers} onChange={(value) => setColumn("firstName", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Last name" value={preview.mapping.lastName} headers={preview.headers} onChange={(value) => setColumn("lastName", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Email (optional)" value={preview.mapping.contact} headers={preview.headers} onChange={(value) => setColumn("contact", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="RSVP response" value={preview.mapping.attendance} headers={preview.headers} onChange={(value) => setColumn("attendance", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Attendee count" value={preview.mapping.partySize} headers={preview.headers} onChange={(value) => setColumn("partySize", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Guest type" value={preview.mapping.segment} headers={preview.headers} onChange={(value) => setColumn("segment", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Organization" value={preview.mapping.organization} headers={preview.headers} onChange={(value) => setColumn("organization", value)} />
-                  <ColumnPicker disabled={busy || hasPartialImport} label="Notes" value={preview.mapping.notes} headers={preview.headers} onChange={(value) => setColumn("notes", value)} />
+                  <ColumnPicker disabled={busy} label="Full name" value={preview.mapping.name} headers={preview.headers} onChange={(value) => setColumn("name", value)} />
+                  <ColumnPicker disabled={busy} label="First name" value={preview.mapping.firstName} headers={preview.headers} onChange={(value) => setColumn("firstName", value)} />
+                  <ColumnPicker disabled={busy} label="Last name" value={preview.mapping.lastName} headers={preview.headers} onChange={(value) => setColumn("lastName", value)} />
+                  <ColumnPicker disabled={busy} label="Email (optional)" value={preview.mapping.contact} headers={preview.headers} onChange={(value) => setColumn("contact", value)} />
+                  <ColumnPicker disabled={busy} label="RSVP response" value={preview.mapping.attendance} headers={preview.headers} onChange={(value) => setColumn("attendance", value)} />
+                  <ColumnPicker disabled={busy} label="Attendee count" value={preview.mapping.partySize} headers={preview.headers} onChange={(value) => setColumn("partySize", value)} />
+                  <ColumnPicker disabled={busy} label="Guest type" value={preview.mapping.segment} headers={preview.headers} onChange={(value) => setColumn("segment", value)} />
+                  <ColumnPicker disabled={busy} label="Organization" value={preview.mapping.organization} headers={preview.headers} onChange={(value) => setColumn("organization", value)} />
+                  <ColumnPicker disabled={busy} label="Notes" value={preview.mapping.notes} headers={preview.headers} onChange={(value) => setColumn("notes", value)} />
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Pill tone={ready.length > 0 ? "success" : "neutral"}>{ready.length} rows · {peopleReady} people ready</Pill>
-                {importedLines.size > 0 ? <Pill tone="info">{importedLines.size} already imported</Pill> : null}
                 {invalid.length > 0 ? <Pill tone="warning">{invalid.length} skipped</Pill> : null}
                 <span className="text-muted-foreground">Read {readColumns}</span>
               </div>
-
-              {hasPartialImport ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-info/30 bg-info-tint px-3 py-2 text-xs text-info-text">
-                  <span>The source is locked so a retry cannot duplicate guests that already imported.</span>
-                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={reset}>Start a new import</Button>
-                </div>
-              ) : null}
 
               {preview.matched.name === null ? (
                 <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-tint px-3 py-2 text-xs text-warning-text">
@@ -480,9 +455,7 @@ export default function GuestCsvImportDialog({
                           <TableCell className="text-muted-foreground">{row.segment || "—"}</TableCell>
                         ) : null}
                         <TableCell>
-                          {importedLines.has(row.line) ? (
-                            <Pill tone="info">Imported</Pill>
-                          ) : row.problem ? (
+                          {row.problem ? (
                             <Pill tone="warning">{row.problem}</Pill>
                           ) : (
                             <Pill tone="success">Ready</Pill>

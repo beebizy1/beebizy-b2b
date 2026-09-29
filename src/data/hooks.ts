@@ -406,10 +406,15 @@ export function useCreateRegistration() {
   );
 }
 
-export function useImportGuestRegistration() {
+export function useImportGuestRegistrations() {
   return useAdapterMutation(
-    (a, draft: GuestRegistrationImportDraft) => a.registrations.importGuest(draft),
-    (draft) => [qk.guests, qk.registrations, qk.eventRegistrations(draft.eventId), ...eventDerivedKeys(draft.eventId)],
+    (a, drafts: GuestRegistrationImportDraft[]) => a.registrations.importGuests(drafts),
+    (drafts) => {
+      const eventId = drafts[0]?.eventId;
+      return eventId
+        ? [qk.guests, qk.registrations, qk.eventRegistrations(eventId), ...eventDerivedKeys(eventId)]
+        : [qk.guests, qk.registrations];
+    },
   );
 }
 

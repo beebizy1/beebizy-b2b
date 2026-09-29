@@ -44,7 +44,7 @@ vi.mock("./repos", () => {
       sendAssignmentSummaries: vi.fn(),
     },
     vendors: { list: vi.fn() },
-    registrations: { ...child, importGuest: vi.fn() },
+    registrations: { ...child, importGuests: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]) },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
@@ -450,7 +450,7 @@ describe("public event signup endpoints", () => {
 });
 
 describe("guest spreadsheet import endpoint", () => {
-  it("routes one row through the atomic guest-registration operation", async () => {
+  it("routes a 700-row spreadsheet through one atomic import operation", async () => {
     const context = {
       userId: "user-pilot",
       workspaceId: "workspace-school",
@@ -466,17 +466,23 @@ describe("guest spreadsheet import endpoint", () => {
       },
     };
     vi.mocked(authorize).mockResolvedValue(context);
-    vi.mocked(registrations.importGuest).mockResolvedValue({ id: "reg-imported" } as never);
-    const draft = { eventId: "event-1", name: "Ada Lovelace", contact: null, quantity: 3 };
+    vi.mocked(registrations.importGuests).mockResolvedValue([] as never);
+    const rows = Array.from({ length: 700 }, (_, index) => ({
+      eventId: "event-1",
+      name: `Guest ${index + 1}`,
+      contact: `guest-${index + 1}@example.com`,
+      quantity: 1,
+    }));
 
     const response = await handleRequest(new Request("http://localhost/api/registrations/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify({ rows }),
     }));
 
     expect(response.status).toBe(201);
-    expect(registrations.importGuest).toHaveBeenCalledWith(context, draft);
+    expect(registrations.importGuests).toHaveBeenCalledTimes(1);
+    expect(registrations.importGuests).toHaveBeenCalledWith(context, { rows });
   });
 });
 

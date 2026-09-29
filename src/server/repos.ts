@@ -1487,53 +1487,82 @@ export const registrations = {
     return joinRegistrations(and(eq(s.registrations.workspaceId, ctx.workspaceId), eq(s.registrations.eventId, eventId)));
   },
 
-  async importGuest(ctx: RequestContext, body: Body): Promise<RegistrationWithGuest> {
-    const eventId = str(body, "eventId");
+  async importGuests(ctx: RequestContext, body: Body): Promise<RegistrationWithGuest[]> {
+    const rawRows = body.rows;
+    if (!Array.isArray(rawRows) || rawRows.length === 0) {
+      throw new HttpError(400, "rows must contain at least one guest.");
+    }
+    if (rawRows.length > 2_000) {
+      throw new HttpError(400, "A single import can contain at most 2,000 rows.");
+    }
+    const rows = rawRows.map((row, index) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        throw new HttpError(400, `rows.${index} must be a guest record.`);
+      }
+      return row as Body;
+    });
+    const eventId = str(rows[0]!, "eventId");
+    if (rows.some((row) => str(row, "eventId") !== eventId)) {
+      throw new HttpError(400, "Every imported guest must belong to the same event.");
+    }
     const event = await events.get(ctx, eventId);
     if (!event) throw new HttpError(404, "That event no longer exists.");
 
-    const name = str(body, "name").trim();
-    if (!name) throw new HttpError(400, "name is required.");
-    const contact = optStr(body, "contact")?.trim().toLowerCase() || null;
-    if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
-      throw new HttpError(400, "Enter a valid email address.");
-    }
-    const status = optStr(body, "status") ?? "pending";
-    if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
-      throw new HttpError(400, `status must be one of ${REGISTRATION_STATUSES.join(", ")}.`);
-    }
-    const quantity = positiveInt(body, "quantity");
-    if (quantity > 10_000) throw new HttpError(400, "quantity must be between 1 and 10,000.");
+    const parsed = rows.map((row, index) => {
+      const name = str(row, "name").trim();
+      if (!name) throw new HttpError(400, `rows.${index}.name is required.`);
+      const contact = optStr(row, "contact")?.trim().toLowerCase() || null;
+      if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+        throw new HttpError(400, `rows.${index}.contact must be a valid email address.`);
+      }
+      const status = optStr(row, "status") ?? "pending";
+      if (!(REGISTRATION_STATUSES as readonly string[]).includes(status)) {
+        throw new HttpError(400, `rows.${index}.status must be one of ${REGISTRATION_STATUSES.join(", ")}.`);
+      }
+      const quantity = positiveInt(row, "quantity");
+      if (quantity > 10_000) throw new HttpError(400, `rows.${index}.quantity must be between 1 and 10,000.`);
+      return {
+        guestId: newId("att"),
+        registrationId: newId("reg"),
+        name,
+        contact,
+        notes: optStr(row, "notes"),
+        status: status as Registration["status"],
+        segment: labelFrom(row, "segment"),
+        organization: labelFrom(row, "organization", 120),
+        quantity,
+      };
+    });
 
-    const guestId = newId("att");
-    const registrationId = newId("reg");
-    const guestInsert = db.insert(s.guests).values({
-      id: guestId,
+    const guestInsert = db.insert(s.guests).values(parsed.map((row) => ({
+      id: row.guestId,
       workspaceId: ctx.workspaceId,
-      name,
-      contact,
-      notes: optStr(body, "notes"),
-    }).returning();
-    const registrationInsert = db.insert(s.registrations).values({
-      id: registrationId,
+      name: row.name,
+      contact: row.contact,
+      notes: row.notes,
+    }))).returning();
+    const registrationInsert = db.insert(s.registrations).values(parsed.map((row) => ({
+      id: row.registrationId,
       workspaceId: ctx.workspaceId,
       eventId,
-      guestId,
-      status: status as Registration["status"],
-      segment: labelFrom(body, "segment"),
-      organization: labelFrom(body, "organization", 120),
-      quantity,
-    }).returning();
+      guestId: row.guestId,
+      status: row.status,
+      segment: row.segment,
+      organization: row.organization,
+      quantity: row.quantity,
+    }))).returning();
 
     try {
       const [guestRows, registrationRows] = await db.batch([guestInsert, registrationInsert]);
-      return {
-        ...map.toRegistration(registrationRows[0]!, event.title),
-        guest: map.toGuest(guestRows[0]!),
-      };
+      const guestsById = new Map(guestRows.map((row) => [row.id, row]));
+      const registrationsById = new Map(registrationRows.map((row) => [row.id, row]));
+      return parsed.map((row) => ({
+        ...map.toRegistration(registrationsById.get(row.registrationId)!, event.title),
+        guest: map.toGuest(guestsById.get(row.guestId)!),
+      }));
     } catch (error) {
       if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
-        throw new HttpError(409, `Someone with the email ${contact} is already in your people list.`);
+        throw new HttpError(409, "One or more email addresses are already in your people list.");
       }
       if (isConstraintViolation(error, "registrations_event_capacity_check")) {
         throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);

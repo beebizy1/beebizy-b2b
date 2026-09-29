@@ -31,6 +31,7 @@ import {
   type AccountExperience,
 } from "../data/accountExperience.ts";
 import { workspaceMemberInsertSelection } from "./workspaceMemberInsert.ts";
+import { VerifiedEmailCache } from "./verifiedEmailCache.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -96,6 +97,7 @@ export function requireBeebizyOperator(email: string | null | undefined): void {
 
 const secretKey = process.env.CLERK_SECRET_KEY;
 const clerk = secretKey ? createClerkClient({ secretKey }) : null;
+const verifiedEmailCache = new VerifiedEmailCache(5 * 60_000);
 
 /** Verifies the bearer token and the user's primary email before any workspace is resolved. */
 async function requireVerifiedUser(request: Request): Promise<{ userId: string; email: string }> {
@@ -117,17 +119,19 @@ async function requireVerifiedUser(request: Request): Promise<{ userId: string; 
 
   let primaryEmail: string | null = null;
   try {
-    const user = await clerk.users.getUser(userId);
-    const primary = user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId);
-    /*
-     * Only a verified address counts. The allowlist is an identity check, and an
-     * unverified address is a claim rather than an identity: anyone can type a pilot
-     * customer's address at sign-up, and without this that claim alone would pass the
-     * check below. Clerk verifies email sign-ups by default, so this is the belt to that
-     * braces — it costs nothing and it is the difference between the allowlist being a
-     * lock and being a formality.
-     */
-    primaryEmail = primary?.verification?.status === "verified" ? primary.emailAddress : null;
+    primaryEmail = await verifiedEmailCache.get(userId, async () => {
+      const user = await clerk.users.getUser(userId);
+      const primary = user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId);
+      /*
+       * Only a verified address counts. The allowlist is an identity check, and an
+       * unverified address is a claim rather than an identity: anyone can type a pilot
+       * customer's address at sign-up, and without this that claim alone would pass the
+       * check below. Clerk verifies email sign-ups by default, so this is the belt to that
+       * braces - it costs nothing and it is the difference between the allowlist being a
+       * lock and being a formality.
+       */
+      return primary?.verification?.status === "verified" ? primary.emailAddress : null;
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("Clerk user lookup failed while verifying the account.", error);

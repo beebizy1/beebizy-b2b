@@ -262,7 +262,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: () => client.get<RegistrationWithGuest[]>("/registrations"),
       listForEvent: (eventId) => client.get<RegistrationWithGuest[]>(`/events/${eventId}/registrations`),
       create: (draft) => client.post<Registration>("/registrations", draft),
-      importGuest: (draft) => client.post<RegistrationWithGuest>("/registrations/import", draft),
+      importGuests: (drafts) => client.post<RegistrationWithGuest[]>("/registrations/import", { rows: drafts }),
       registerPublic: (shareToken, draft) => publicRequest<PublicRegistrationResult>(`/public/events/${shareToken}/registrations`, {
         method: "POST",
         body: JSON.stringify(draft),

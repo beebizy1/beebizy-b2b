@@ -713,20 +713,25 @@ const registrations: RegistrationsRepository = {
     syncRegistrationCount(draft.eventId);
     return copy(registration);
   },
-  async importGuest(draft) {
-    const guest = await guests.create({ name: draft.name, contact: draft.contact, notes: draft.notes });
+  async importGuests(drafts) {
+    const snapshot = copy(store());
+    const imported: RegistrationWithGuest[] = [];
     try {
-      const registration = await registrations.create({
-        eventId: draft.eventId,
-        guestId: guest.id,
-        status: draft.status,
-        segment: draft.segment,
-        organization: draft.organization,
-        quantity: draft.quantity,
-      });
-      return { ...registration, guest };
+      for (const draft of drafts) {
+        const guest = await guests.create({ name: draft.name, contact: draft.contact, notes: draft.notes });
+        const registration = await registrations.create({
+          eventId: draft.eventId,
+          guestId: guest.id,
+          status: draft.status,
+          segment: draft.segment,
+          organization: draft.organization,
+          quantity: draft.quantity,
+        });
+        imported.push({ ...registration, guest });
+      }
+      return imported;
     } catch (error) {
-      await guests.remove(guest.id);
+      db = snapshot;
       throw error;
     }
   },
