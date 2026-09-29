@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Link, Redirect, useLocation } from "wouter";
+import { Link, Redirect, useLocation, useSearch } from "wouter";
 import {
   ArrowLeft,
   ArrowDown,
@@ -82,7 +82,7 @@ import { eventSectionHref, eventSectionLabel, eventTabHref, orderedEventTabs, ta
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
-import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
+import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel, selectedEventDay } from "@/data/eventDays";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
@@ -379,16 +379,16 @@ function WorkspaceHeader({
   experience: AccountExperience;
   canManageAccess: boolean;
 }) {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const search = useSearch();
   const prefs = usePreferences();
   const updateEvent = useUpdateEvent();
   const deleteEvent = useDeleteEvent();
   const saveAsTemplate = useSaveEventAsTemplate();
   const sendAssignmentSummaries = useSendAssignmentSummaries();
   const days = eventDayOptions(event.date, event.endDate, prefs.timeZone);
-  const requestedDay = Number(new URLSearchParams(window.location.search).get("day"));
-  const selectedDay = days.some((day) => day.dayNumber === requestedDay) ? requestedDay : 1;
-  const currentPath = window.location.pathname;
+  const selectedDay = selectedEventDay(search, days);
+  const currentPath = location;
   const selectDay = (dayNumber: number) => navigate(`${currentPath}?day=${dayNumber}`);
   const addDay = () => {
     const nextDay = days.length + 1;
@@ -712,6 +712,7 @@ function ContingencyWorkspace({ event }: { event: Event }) {
 }
 
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
+  const search = useSearch();
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
   const { data: health } = useEventHealth(id);
   const { data: identity } = useMe();
@@ -762,9 +763,8 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     return <Redirect to={experience === "santa-clara" ? eventTabHref(id, "run-of-show") : "/pricing"} replace />;
   }
 
-  const requestedDay = Number(new URLSearchParams(window.location.search).get("day"));
   const days = eventDayOptions(event.date, event.endDate, timeZone);
-  const selectedDay = days.some((day) => day.dayNumber === requestedDay) ? requestedDay : 1;
+  const selectedDay = selectedEventDay(search, days);
 
   return (
     <div className="space-y-6">

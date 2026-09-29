@@ -47,6 +47,12 @@ export function eventDayOptions(
   }));
 }
 
+/** Resolves the event day from Wouter's reactive search string. */
+export function selectedEventDay(search: string, days: EventDayOption[]): number {
+  const requestedDay = Number(new URLSearchParams(search).get("day"));
+  return days.some((day) => day.dayNumber === requestedDay) ? requestedDay : 1;
+}
+
 export function formatEventDayLabel(option: EventDayOption, locale?: string): string {
   const date = new Date(`${option.civilDate}T12:00:00.000Z`);
   const label = new Intl.DateTimeFormat(locale, {
