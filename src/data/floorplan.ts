@@ -16,6 +16,8 @@ const floorplanItemSchema = z.object({
   y: z.number().finite().min(0).max(100),
   seats: z.number().int().min(0).max(10_000).nullable(),
   locked: z.boolean().optional(),
+  width: z.number().finite().min(1).max(100).optional(),
+  height: z.number().finite().min(1).max(100).optional(),
 });
 
 const floorplanPointSchema = z.object({

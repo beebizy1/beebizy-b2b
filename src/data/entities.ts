@@ -714,6 +714,9 @@ export interface FloorplanItem {
   seats: number | null;
   /** Fixed site features stay in place until a planner explicitly unlocks them. */
   locked?: boolean;
+  /** Optional object dimensions as percentages of the room canvas. */
+  width?: number;
+  height?: number;
 }
 
 /**

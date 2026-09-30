@@ -587,6 +587,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
               {workingItems.map((item) => {
                 const spec = SHAPES[item.shape];
                 const isSelected = item.id === selectedId;
+                const width = item.width ?? spec.width;
+                const height = item.height ?? spec.height;
                 return (
                   <div
                     key={item.id}
@@ -606,8 +608,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     style={{
                       left: `${item.x}%`,
                       top: `${item.y}%`,
-                      width: `${spec.width}%`,
-                      height: `${spec.height}%`,
+                      width: `${width}%`,
+                      height: spec.round ? undefined : `${height}%`,
+                      aspectRatio: spec.round ? "1 / 1" : undefined,
                       transform: "translate(-50%, -50%)",
                     }}
                   >
@@ -687,6 +690,42 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     }}
                     inputMode="numeric"
                     aria-label="Seats at this table"
+                    className="h-8 w-20 text-right"
+                  />
+                </label>
+              ) : null}
+              <label className="space-y-1">
+                <span className="block text-xs font-medium text-muted-foreground">Width</span>
+                <Input
+                  value={String(selected.width ?? SHAPES[selected.shape].width)}
+                  onChange={(inputEvent) => {
+                    const parsed = Number(inputEvent.target.value);
+                    updateItem(selected.id, {
+                      width: Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : 1,
+                    });
+                  }}
+                  type="number"
+                  min="1"
+                  max="100"
+                  aria-label="Object width percent"
+                  className="h-8 w-20 text-right"
+                />
+              </label>
+              {!SHAPES[selected.shape].round ? (
+                <label className="space-y-1">
+                  <span className="block text-xs font-medium text-muted-foreground">Height</span>
+                  <Input
+                    value={String(selected.height ?? SHAPES[selected.shape].height)}
+                    onChange={(inputEvent) => {
+                      const parsed = Number(inputEvent.target.value);
+                      updateItem(selected.id, {
+                        height: Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : 1,
+                      });
+                    }}
+                    type="number"
+                    min="1"
+                    max="100"
+                    aria-label="Object height percent"
                     className="h-8 w-20 text-right"
                   />
                 </label>

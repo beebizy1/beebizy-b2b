@@ -37,6 +37,20 @@ describe("parseFloorplanDraft", () => {
     expect(parseFloorplanDraft({ name: "Lawn", items: [base] }).items[0]).not.toHaveProperty("locked");
   });
 
+  it("preserves custom object dimensions for proportionate layouts", () => {
+    const item = {
+      id: "stage-1",
+      shape: "stage" as const,
+      label: "Main stage",
+      x: 50,
+      y: 12,
+      seats: null,
+      width: 46,
+      height: 10,
+    };
+    expect(parseFloorplanDraft({ name: "Main room", items: [item] }).items[0]).toEqual(item);
+  });
+
   it("validates and preserves physical room dimensions and a custom outline", () => {
     const room = {
       shape: "custom" as const,
@@ -70,6 +84,8 @@ describe("parseFloorplanDraft", () => {
     { field: "x", value: 101 },
     { field: "y", value: -1 },
     { field: "seats", value: 1.5 },
+    { field: "width", value: 101 },
+    { field: "height", value: 0 },
   ])("rejects an invalid $field", ({ field, value }) => {
     const item = { id: "table-1", shape: "round-table", label: "Table 1", x: 42, y: 58, seats: 10 };
     expect(() =>
