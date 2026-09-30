@@ -7,6 +7,8 @@
  * keystrokes instead of Events → scroll → click.
  */
 
+/* eslint-disable react-refresh/only-export-components -- the keyboard-state hook and palette component are one feature */
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { CalendarDays, ListChecks, Plus, Search, Store, UserPlus } from "lucide-react";

@@ -1,0 +1,2 @@
+DROP INDEX "workspace_invites_email_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_invites_email_idx" ON "workspace_invites" USING btree ("email") WHERE "workspace_invites"."accepted_at" is null;

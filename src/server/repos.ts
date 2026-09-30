@@ -3623,9 +3623,9 @@ export const members = {
     const [existing] = await db
       .select()
       .from(s.workspaceInvites)
-      .where(eq(s.workspaceInvites.email, email))
+      .where(and(eq(s.workspaceInvites.email, email), isNull(s.workspaceInvites.acceptedAt)))
       .limit(1);
-    if (existing && existing.acceptedAt === null) {
+    if (existing) {
       if (existing.workspaceId !== ctx.workspaceId) {
         throw new HttpError(409, "That address already has a pending invite to another workspace.");
       }
@@ -3658,8 +3658,6 @@ export const members = {
         emailSent: false,
       };
     }
-    if (existing) throw new HttpError(409, "That address has already joined a workspace.");
-
     const inviteId = newId("inv");
     const entitlementLock = db
       .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })

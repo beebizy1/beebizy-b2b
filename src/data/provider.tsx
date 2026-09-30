@@ -6,6 +6,8 @@
  * else, and it is why every screen is testable by mounting it with a stub adapter.
  */
 
+/* eslint-disable react-refresh/only-export-components -- the provider and data hooks intentionally share their context */
+
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useAuth } from "@clerk/react";
 import { isClerkConfigured } from "@/lib/clerk";

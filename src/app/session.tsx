@@ -15,6 +15,8 @@
  *   `anonymous`     — Clerk is configured and nobody is signed in. Gated.
  */
 
+/* eslint-disable react-refresh/only-export-components -- the provider and its session hook are one public context contract */
+
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Redirect } from "wouter";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";

@@ -158,8 +158,11 @@ export const workspaceInvites = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    // One live invite per address, so two workspaces cannot both claim the same person.
-    uniqueIndex("workspace_invites_email_idx").on(table.email),
+    // One *pending* invite per address. Accepted invitations are audit history and must
+    // not prevent the same person from later being added to another workspace or event.
+    uniqueIndex("workspace_invites_email_idx")
+      .on(table.email)
+      .where(sql`${table.acceptedAt} is null`),
     index("workspace_invites_workspace_idx").on(table.workspaceId),
     index("workspace_invites_event_scope_idx").on(table.eventScopeId),
   ],
