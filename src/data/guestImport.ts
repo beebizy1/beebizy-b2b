@@ -10,6 +10,7 @@
  */
 
 import { parseCsvTable, type SpreadsheetTable, type SpreadsheetValue } from "./import";
+import type { ImportedSpreadsheetField } from "./entities";
 
 export interface ParsedGuestRow {
   /** 1-based, matching what a spreadsheet shows, so an error message is findable. */
@@ -21,6 +22,8 @@ export interface ParsedGuestRow {
   notes: string | null;
   organization: string | null;
   segment: string | null;
+  /** Every original cell, so the imported list can still look like the source sheet. */
+  importedFields: ImportedSpreadsheetField[];
   /** Why this row can't be imported, or null when it can. */
   problem: string | null;
 }
@@ -208,6 +211,7 @@ export function parseGuestTable(
     const segment = segmentHeader ? text(row[segmentHeader]) : "";
     const partySizeText = partySizeHeader ? text(row[partySizeHeader]) : "1";
     const partySize = partySizeText === "" ? 1 : Number(partySizeText);
+    const importedFields = table.headers.map((label) => ({ label, value: text(row[label]) }));
 
     let problem: string | null = null;
     if (!name && !contact) problem = "Empty row";
@@ -229,6 +233,7 @@ export function parseGuestTable(
       notes: notes || null,
       organization: organization || null,
       segment: segment || null,
+      importedFields,
       problem,
     };
   });

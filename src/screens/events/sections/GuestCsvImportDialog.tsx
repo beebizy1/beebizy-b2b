@@ -112,9 +112,6 @@ export default function GuestCsvImportDialog({
    * two fields that decide how a guest is grouped at the door were applied without ever
    * being shown. An import preview that hides part of what it imports is not a preview.
    */
-  const showOrganization = preview?.matched.organization != null;
-  const showSegment = preview?.matched.segment != null;
-  const showPartySize = preview?.matched.partySize != null;
   const readColumns = preview
     ? [
         preview.matched.name ?? "no name column",
@@ -186,6 +183,7 @@ export default function GuestCsvImportDialog({
           segment: row.segment,
           organization: row.organization,
           quantity: row.partySize,
+          importedFields: row.importedFields,
       })));
       toast({
         title: `${imported.length} ${imported.length === 1 ? "row" : "rows"} imported`,
@@ -411,6 +409,7 @@ export default function GuestCsvImportDialog({
                 <Pill tone={ready.length > 0 ? "success" : "neutral"}>{ready.length} rows · {peopleReady} people ready</Pill>
                 {invalid.length > 0 ? <Pill tone="warning">{invalid.length} skipped</Pill> : null}
                 <span className="text-muted-foreground">Read {readColumns}</span>
+                <span className="text-muted-foreground">All {preview.headers.length} source columns will be kept.</span>
               </div>
 
               {preview.matched.name === null ? (
@@ -431,11 +430,7 @@ export default function GuestCsvImportDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-14">Line</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      {showPartySize ? <TableHead>People</TableHead> : null}
-                      {showOrganization ? <TableHead>Organization</TableHead> : null}
-                      {showSegment ? <TableHead>Group</TableHead> : null}
+                      {preview.headers.map((header) => <TableHead key={header} className="whitespace-nowrap">{header}</TableHead>)}
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -445,15 +440,11 @@ export default function GuestCsvImportDialog({
                         <TableCell data-numeric className="text-muted-foreground">
                           {row.line}
                         </TableCell>
-                        <TableCell>{row.name || <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell className="text-muted-foreground">{row.contact || "—"}</TableCell>
-                        {showPartySize ? <TableCell data-numeric>{row.partySize}</TableCell> : null}
-                        {showOrganization ? (
-                          <TableCell className="text-muted-foreground">{row.organization || "—"}</TableCell>
-                        ) : null}
-                        {showSegment ? (
-                          <TableCell className="text-muted-foreground">{row.segment || "—"}</TableCell>
-                        ) : null}
+                        {row.importedFields.map((field) => (
+                          <TableCell key={field.label} className="max-w-64 truncate text-muted-foreground" title={field.value || undefined}>
+                            {field.value || "-"}
+                          </TableCell>
+                        ))}
                         <TableCell>
                           {row.problem ? (
                             <Pill tone="warning">{row.problem}</Pill>

@@ -36,7 +36,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { DEFAULT_FEEDBACK_CATEGORY, DEPOSIT_STATUSES, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
-import type { RfpSpaceRequirement } from "../data/entities.ts";
+import type { ImportedSpreadsheetField, RfpSpaceRequirement } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 import type { RegistrationPageSettings } from "../data/registrationPage.ts";
@@ -327,6 +327,8 @@ export const registrations = pgTable(
     checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
     checkInStation: text("check_in_station"),
     checkInNotes: text("check_in_notes"),
+    /** Original spreadsheet cells, retained so users can see the source columns after import. */
+    importedFields: jsonb("imported_fields").$type<ImportedSpreadsheetField[]>().notNull().default([]),
     /** Set when the seat was bought rather than added by an organizer. */
     ticketTypeId: text("ticket_type_id"),
     quantity: integer("quantity").notNull().default(1),

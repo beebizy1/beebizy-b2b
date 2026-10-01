@@ -1,0 +1,1 @@
+ALTER TABLE "registrations" ADD COLUMN "imported_fields" jsonb DEFAULT '[]'::jsonb NOT NULL;

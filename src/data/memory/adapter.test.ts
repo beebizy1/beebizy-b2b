@@ -252,6 +252,25 @@ describe("registrations", () => {
     expect(await memoryAdapter.registrations.listForEvent("evt-support-offsite")).toHaveLength(700);
   });
 
+  it("keeps exact spreadsheet fields on imported registrations", async () => {
+    const [imported] = await memoryAdapter.registrations.importGuests([{
+      eventId: "evt-atlas",
+      name: "Source Column Guest",
+      contact: "source-column@example.com",
+      importedFields: [
+        { label: "Full Name", value: "Source Column Guest" },
+        { label: "Phone", value: "4085550101" },
+        { label: "Source", value: "HubSpot" },
+      ],
+    }]);
+
+    expect(imported!.importedFields).toEqual([
+      { label: "Full Name", value: "Source Column Guest" },
+      { label: "Phone", value: "4085550101" },
+      { label: "Source", value: "HubSpot" },
+    ]);
+  });
+
   it("rolls back an imported guest when its registration fails", async () => {
     const guestCount = (await memoryAdapter.guests.list()).length;
     await expect(memoryAdapter.registrations.importGuests([{

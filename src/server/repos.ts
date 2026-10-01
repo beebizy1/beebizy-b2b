@@ -63,6 +63,7 @@ import type {
   CheckInStation,
   ChecklistItem,
   InviteResult,
+  ImportedSpreadsheetField,
   RunOfShowItem,
   VolunteerShift,
   WalkInRegistrationDraft,
@@ -1474,6 +1475,25 @@ function labelFrom(body: Body, key: string, limit = 60): string | null {
   return trimmed;
 }
 
+function importedFieldsFrom(body: Body, key = "importedFields"): ImportedSpreadsheetField[] {
+  const value = body[key];
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 100) {
+    throw new HttpError(400, `${key} must contain at most 100 spreadsheet columns.`);
+  }
+  return value.map((field, index) => {
+    if (!field || typeof field !== "object" || Array.isArray(field)) {
+      throw new HttpError(400, `${key}.${index} must be a spreadsheet field.`);
+    }
+    const record = field as Body;
+    const label = str(record, "label").trim();
+    const cell = optStr(record, "value") ?? "";
+    if (label.length > 200) throw new HttpError(400, `${key}.${index}.label must be 200 characters or fewer.`);
+    if (cell.length > 10_000) throw new HttpError(400, `${key}.${index}.value must be 10,000 characters or fewer.`);
+    return { label, value: cell };
+  });
+}
+
 export const registrations = {
   list: (ctx: RequestContext) =>
     joinRegistrations(
@@ -1531,6 +1551,7 @@ export const registrations = {
         segment: labelFrom(row, "segment"),
         organization: labelFrom(row, "organization", 120),
         quantity,
+        importedFields: importedFieldsFrom(row),
       };
     });
 
@@ -1550,6 +1571,7 @@ export const registrations = {
       segment: row.segment,
       organization: row.organization,
       quantity: row.quantity,
+      importedFields: row.importedFields,
     }))).returning();
 
     try {

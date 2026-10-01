@@ -132,6 +132,7 @@ export function toRegistration(
     checkedInAt: iso(row.checkedInAt),
     checkInStation: row.checkInStation,
     checkInNotes: row.checkInNotes,
+    importedFields: row.importedFields,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
   };

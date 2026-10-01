@@ -7,10 +7,11 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, ListFilter, Mail, UserPlus, Users } from "lucide-react";
+import { Columns3, Copy, List, ListFilter, Mail, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
@@ -61,6 +62,102 @@ function segmentOptions(rows: RegistrationWithGuest[]): string[] {
 function organizationOptions(rows: RegistrationWithGuest[]): string[] {
   const used = rows.map((row) => row.organization).filter((name): name is string => Boolean(name));
   return [...new Set(used)].sort((a, b) => a.localeCompare(b));
+}
+
+const DEFAULT_SPREADSHEET_HEADERS = [
+  "Full Name",
+  "Email Address",
+  "RSVP Response",
+  "Company Name",
+  "Guest Type",
+  "Notes",
+  "Attendees",
+] as const;
+
+function spreadsheetHeaders(rows: RegistrationWithGuest[]): string[] {
+  const headers: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const field of row.importedFields ?? []) {
+      if (seen.has(field.label)) continue;
+      seen.add(field.label);
+      headers.push(field.label);
+    }
+  }
+  return headers.length > 0 ? headers : [...DEFAULT_SPREADSHEET_HEADERS];
+}
+
+function spreadsheetValue(row: RegistrationWithGuest, header: string): string {
+  const imported = row.importedFields?.find((field) => field.label === header);
+  if (imported) return imported.value;
+  const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return row.guest?.name ?? "";
+  if (["email", "e mail", "email address", "e mail address", "contact email"].includes(key)) return row.guest?.contact ?? "";
+  if (["rsvp", "rsvp response", "attendance", "response", "yes/no"].includes(key)) {
+    return row.status === "confirmed" ? "Yes" : row.status === "cancelled" ? "No" : "Pending";
+  }
+  if (["company", "company name", "organization", "organisation", "school"].includes(key)) return row.organization ?? "";
+  if (["guest type", "segment", "category", "registration type", "lifecycle stage"].includes(key)) return row.segment ?? "";
+  if (["notes", "note", "comment", "comments"].includes(key)) return row.guest?.notes ?? "";
+  if (["attendees", "attendee count", "guest count", "number of guests", "party size", "seats", "quantity"].includes(key)) {
+    return String(row.quantity);
+  }
+  return "";
+}
+
+function SpreadsheetRegistrationTable({
+  rows,
+  sourceRows,
+}: {
+  rows: RegistrationWithGuest[];
+  sourceRows: RegistrationWithGuest[];
+}) {
+  const headers = spreadsheetHeaders(sourceRows);
+  return (
+    <div>
+      <div className="border-b border-hairline bg-surface-sunken/40 px-5 py-2 text-xs text-muted-foreground">
+        Spreadsheet view keeps the original headers and values. Switch to Manage to edit categories and RSVP status.
+      </div>
+      <div className="max-h-[38rem] overflow-auto">
+        <Table className="min-w-max">
+          <TableHeader className="sticky top-0 z-10 bg-background">
+            <TableRow>
+              {headers.map((header, index) => (
+                <TableHead
+                  key={header}
+                  className={cn("whitespace-nowrap", index === 0 && "sticky left-0 z-20 min-w-44 bg-background")}
+                >
+                  {header}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id}>
+                {headers.map((header, index) => {
+                  const value = spreadsheetValue(row, header);
+                  return (
+                    <TableCell
+                      key={header}
+                      title={value || undefined}
+                      className={cn(
+                        "max-w-80 whitespace-nowrap",
+                        index === 0 && "sticky left-0 z-[1] bg-background font-medium",
+                        header.toLowerCase() === "notes" && "max-w-[30rem] truncate",
+                      )}
+                    >
+                      {value || <span className="text-muted-foreground">-</span>}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -302,6 +399,7 @@ export default function GuestsSection({ event }: { event: Event }) {
   const removeRegistration = useDeleteRegistration();
   const share = useShareEvent();
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"manage" | "spreadsheet">("spreadsheet");
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [organizationFilter, setOrganizationFilter] = useState<string | null>(null);
 
@@ -503,6 +601,28 @@ export default function GuestsSection({ event }: { event: Event }) {
           }
           actions={
             <>
+              <div className="flex rounded-md border border-hairline p-0.5" aria-label="Registration view">
+                <Button
+                  type="button"
+                  variant={viewMode === "spreadsheet" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setViewMode("spreadsheet")}
+                >
+                  <Columns3 className="mr-1.5 size-3.5" aria-hidden="true" />
+                  Spreadsheet
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === "manage" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setViewMode("manage")}
+                >
+                  <List className="mr-1.5 size-3.5" aria-hidden="true" />
+                  Manage
+                </Button>
+              </div>
               <Select
                 value={segmentFilter ?? "__all__"}
                 onValueChange={(value) => {
@@ -552,6 +672,8 @@ export default function GuestsSection({ event }: { event: Event }) {
                 : "Register someone above, or import the existing guest list."
             }
           />
+        ) : viewMode === "spreadsheet" ? (
+          <SpreadsheetRegistrationTable rows={visible} sourceRows={registrations ?? []} />
         ) : (
           <ul className="divide-y divide-hairline">
             {visible.map((row) => (

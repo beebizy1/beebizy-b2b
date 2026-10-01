@@ -707,6 +707,7 @@ const registrations: RegistrationsRepository = {
       checkedInAt: null,
       checkInStation: null,
       checkInNotes: null,
+      importedFields: draft.importedFields?.map((field) => ({ ...field })) ?? [],
       createdAt: nowIso(),
     };
     state.registrations.push(registration);
@@ -726,6 +727,7 @@ const registrations: RegistrationsRepository = {
           segment: draft.segment,
           organization: draft.organization,
           quantity: draft.quantity,
+          importedFields: draft.importedFields,
         });
         imported.push({ ...registration, guest });
       }

@@ -45,6 +45,19 @@ describe("parseGuestCsv", () => {
     });
   });
 
+  it("retains every original spreadsheet column in its original order", () => {
+    const { rows } = parseGuestCsv(
+      "Full Name,Email Address,Phone,Source\nAda Lovelace,ada@example.com,4085550101,HubSpot\n",
+    );
+
+    expect(rows[0]!.importedFields).toEqual([
+      { label: "Full Name", value: "Ada Lovelace" },
+      { label: "Email Address", value: "ada@example.com" },
+      { label: "Phone", value: "4085550101" },
+      { label: "Source", value: "HubSpot" },
+    ]);
+  });
+
   it("flags rows rather than dropping them", () => {
     const { rows } = parseGuestCsv(
       ["name,email", "Valid Person,ok@example.com", ",orphan@example.com", "No Email,", "Bad Email,not-an-email"].join(

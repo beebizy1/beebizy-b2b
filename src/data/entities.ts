@@ -156,6 +156,12 @@ export type GuestPatch = Partial<GuestDraft>;
 export const REGISTRATION_STATUSES = ["pending", "confirmed", "cancelled"] as const;
 export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
 
+/** One original spreadsheet cell, kept with its source header for audit and display. */
+export interface ImportedSpreadsheetField {
+  label: string;
+  value: string;
+}
+
 /**
  * Starting points for categorising a guest list, not a fixed set.
  *
@@ -207,6 +213,8 @@ export interface Registration extends OwnedRecord {
   checkInStation: string | null;
   /** Arrival-specific detail such as accessibility help, badge issues or a plus-one. */
   checkInNotes: string | null;
+  /** Exact source columns from a spreadsheet import, in their original order. */
+  importedFields?: ImportedSpreadsheetField[];
 }
 
 export interface RegistrationWithGuest extends Registration {
@@ -220,6 +228,8 @@ export interface RegistrationDraft {
   segment?: string | null;
   organization?: string | null;
   quantity?: number;
+  /** Used by bulk imports; ordinary registrations leave this empty. */
+  importedFields?: ImportedSpreadsheetField[];
 }
 
 /** One spreadsheet row imported atomically as both a guest and an event registration. */
@@ -229,6 +239,7 @@ export interface GuestRegistrationImportDraft extends GuestDraft {
   segment?: string | null;
   organization?: string | null;
   quantity?: number;
+  importedFields?: ImportedSpreadsheetField[];
 }
 
 /** Details a guest submits from one of the event's segment-specific registration links. */
