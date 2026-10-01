@@ -1717,11 +1717,13 @@ export const registrations = {
    * endpoints because they are edited from the same row and often in the same breath, and
    * because a patch that only assigns what it was given cannot blank the other field.
    */
-  async update(ctx: RequestContext, id: string, body: Body): Promise<Registration> {
+  async update(ctx: RequestContext, id: string, body: Body): Promise<RegistrationWithGuest> {
     const patch: {
       status?: Registration["status"];
       segment?: string | null;
       organization?: string | null;
+      quantity?: number;
+      importedFields?: ImportedSpreadsheetField[];
       checkedInAt?: Date | null;
       checkInStation?: string | null;
       checkInNotes?: string | null;
@@ -1736,6 +1738,11 @@ export const registrations = {
     }
     if ("segment" in body) patch.segment = labelFrom(body, "segment");
     if ("organization" in body) patch.organization = labelFrom(body, "organization", 120);
+    if ("quantity" in body) {
+      patch.quantity = positiveInt(body, "quantity");
+      if (patch.quantity > 10_000) throw new HttpError(400, "quantity must be between 1 and 10,000.");
+    }
+    if ("importedFields" in body) patch.importedFields = importedFieldsFrom(body);
     if ("checkedInAt" in body) {
       patch.checkedInAt = parseOptionalDate(body.checkedInAt, "checkedInAt");
       // Someone who arrives has accepted the invitation in the most concrete way.
@@ -1746,22 +1753,68 @@ export const registrations = {
 
     const conditions = [eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)];
     if (ctx.eventScopeId) conditions.push(eq(s.registrations.eventId, ctx.eventScopeId));
-    let updated;
+    const [existing] = await db
+      .select({ guestId: s.registrations.guestId })
+      .from(s.registrations)
+      .where(and(...conditions))
+      .limit(1);
+    if (!existing) throw new HttpError(404, "That registration no longer exists.");
+
+    const guestPatch: { name?: string; contact?: string | null; notes?: string | null; updatedAt: Date } = {
+      updatedAt: patch.updatedAt,
+    };
+    if ("name" in body) {
+      const name = str(body, "name").trim();
+      if (!name) throw new HttpError(400, "name is required.");
+      guestPatch.name = name;
+    }
+    if ("contact" in body) {
+      const contact = optStr(body, "contact")?.trim().toLowerCase() || null;
+      if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+        throw new HttpError(400, "contact must be a valid email address.");
+      }
+      guestPatch.contact = contact;
+    }
+    if ("notes" in body) guestPatch.notes = optStr(body, "notes")?.trim() || null;
+
+    const registrationUpdate = db
+      .update(s.registrations)
+      .set(patch)
+      .where(and(...conditions))
+      .returning();
+    const hasGuestPatch = "name" in body || "contact" in body || "notes" in body;
     try {
-      updated = await db
-        .update(s.registrations)
-        .set(patch)
-        .where(and(...conditions))
-        .returning();
+      if (hasGuestPatch) {
+        const guestUpdate = db
+          .update(s.guests)
+          .set(guestPatch)
+          .where(and(eq(s.guests.id, existing.guestId), eq(s.guests.workspaceId, ctx.workspaceId)))
+          .returning();
+        const [updatedRegistrations, updatedGuests] = await db.batch([registrationUpdate, guestUpdate]);
+        if (updatedRegistrations.length === 0 || updatedGuests.length === 0) {
+          throw new HttpError(404, "That registration no longer exists.");
+        }
+      } else {
+        const updatedRegistrations = await registrationUpdate;
+        if (updatedRegistrations.length === 0) throw new HttpError(404, "That registration no longer exists.");
+      }
     } catch (error) {
       if (isConstraintViolation(error, "registrations_event_capacity_check")) {
         throw new HttpError(409, "This change would exceed the event capacity.");
       }
+      if (isConstraintViolation(error, "registrations_quantity_range")) {
+        throw new HttpError(400, "quantity must be between 1 and 10,000.");
+      }
+      if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
+        throw new HttpError(409, "That email address is already in your people list.");
+      }
       throw error;
     }
-    if (updated.length === 0) throw new HttpError(404, "That registration no longer exists.");
-    const [event] = await db.select({ title: s.events.title }).from(s.events).where(eq(s.events.id, updated[0]!.eventId)).limit(1);
-    return map.toRegistration(updated[0]!, event?.title ?? "");
+    const [updated] = await joinRegistrations(
+      and(eq(s.registrations.id, id), eq(s.registrations.workspaceId, ctx.workspaceId)),
+    );
+    if (!updated) throw new HttpError(404, "That registration no longer exists.");
+    return updated;
   },
 
   async remove(ctx: RequestContext, id: string): Promise<void> {

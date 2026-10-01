@@ -53,6 +53,7 @@ import type {
   RaffleItemDraft,
   RaffleItemPatch,
   RegistrationDraft,
+  RegistrationDetailsPatch,
   PublicRegistrationDraft,
   RegistrationCheckInPatch,
   RegistrationStatus,
@@ -430,6 +431,14 @@ export function useRegisterWalkIn() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: WalkInRegistrationDraft }) =>
       a.registrations.createWalkIn(vars.eventId, vars.draft),
+    (vars) => [qk.guests, qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useUpdateRegistrationDetails() {
+  return useAdapterMutation(
+    (a, vars: { id: string; eventId: string; patch: RegistrationDetailsPatch }) =>
+      a.registrations.updateDetails(vars.id, vars.patch),
     (vars) => [qk.guests, qk.registrations, qk.eventRegistrations(vars.eventId), ...eventDerivedKeys(vars.eventId)],
   );
 }

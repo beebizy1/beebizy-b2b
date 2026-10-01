@@ -232,6 +232,18 @@ export interface RegistrationDraft {
   importedFields?: ImportedSpreadsheetField[];
 }
 
+/** Every editable value in one guest-list row, including its original spreadsheet cells. */
+export interface RegistrationDetailsPatch {
+  name: string;
+  contact: string | null;
+  notes: string | null;
+  status: RegistrationStatus;
+  segment: string | null;
+  organization: string | null;
+  quantity: number;
+  importedFields: ImportedSpreadsheetField[];
+}
+
 /** One spreadsheet row imported atomically as both a guest and an event registration. */
 export interface GuestRegistrationImportDraft extends GuestDraft {
   eventId: string;

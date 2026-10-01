@@ -90,6 +90,7 @@ import type {
   TeamUpdate,
   TeamUpdateDraft,
   Registration,
+  RegistrationDetailsPatch,
   RegistrationStatus,
   RegistrationWithGuest,
   PublicRegistrationDraft,
@@ -824,6 +825,59 @@ const registrations: RegistrationsRepository = {
     state.guests.push(guest);
     state.registrations.push(registration);
     syncRegistrationCount(eventId);
+    return copy({ ...registration, guest });
+  },
+  async updateDetails(id: string, patch: RegistrationDetailsPatch) {
+    await wait();
+    const state = store();
+    const registration = required(
+      state.registrations.find((candidate) => candidate.id === id),
+      `Registration ${id} no longer exists.`,
+    );
+    const guest = required(
+      state.guests.find((candidate) => candidate.id === registration.guestId),
+      "That guest no longer exists.",
+    );
+    const event = requireEvent(registration.eventId);
+    const name = patch.name.trim();
+    const contact = patch.contact?.trim().toLowerCase() || null;
+
+    if (!name) throw new DataError("invalid", "Name is required.");
+    if (contact && !/^\S+@\S+\.\S+$/.test(contact)) {
+      throw new DataError("invalid", "Enter a valid email address.");
+    }
+    if (
+      contact &&
+      state.guests.some((candidate) => candidate.id !== guest.id && candidate.contact?.toLowerCase() === contact)
+    ) {
+      throw new DataError("conflict", "That email address is already in your people list.");
+    }
+    if (!Number.isSafeInteger(patch.quantity) || patch.quantity < 1 || patch.quantity > 10_000) {
+      throw new DataError("invalid", "Attendee count must be between 1 and 10,000.");
+    }
+
+    const currentContribution = registration.status === "cancelled" ? 0 : registration.quantity;
+    const nextContribution = patch.status === "cancelled" ? 0 : patch.quantity;
+    if (event.capacity !== null && event.registrationCount - currentContribution + nextContribution > event.capacity) {
+      throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
+    }
+
+    const updatedAt = nowIso();
+    Object.assign(guest, {
+      name,
+      contact,
+      notes: patch.notes?.trim() || null,
+      updatedAt,
+    });
+    Object.assign(registration, {
+      status: patch.status,
+      segment: patch.segment?.trim() || null,
+      organization: patch.organization?.trim() || null,
+      quantity: patch.quantity,
+      importedFields: patch.importedFields.map((field) => ({ ...field })),
+      updatedAt,
+    });
+    syncRegistrationCount(registration.eventId);
     return copy({ ...registration, guest });
   },
   async setStatus(id, status: RegistrationStatus) {

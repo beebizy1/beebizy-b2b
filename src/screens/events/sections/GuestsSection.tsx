@@ -7,11 +7,21 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Columns3, Copy, List, ListFilter, Mail, UserPlus, Users } from "lucide-react";
+import { Columns3, Copy, List, ListFilter, Mail, Pencil, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
@@ -35,6 +45,7 @@ import {
   useSetRegistrationSegment,
   useSetRegistrationStatus,
   useShareEvent,
+  useUpdateRegistrationDetails,
 } from "@/data/hooks";
 import {
   REGISTRATION_SEGMENTS,
@@ -72,7 +83,33 @@ const DEFAULT_SPREADSHEET_HEADERS = [
   "Guest Type",
   "Notes",
   "Attendees",
+  "Phone",
+  "Source",
 ] as const;
+
+type SpreadsheetFieldKind =
+  | "name"
+  | "email"
+  | "status"
+  | "organization"
+  | "segment"
+  | "notes"
+  | "quantity"
+  | "custom";
+
+function spreadsheetFieldKind(header: string): SpreadsheetFieldKind {
+  const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return "name";
+  if (["email", "e mail", "email address", "e mail address", "contact email"].includes(key)) return "email";
+  if (["rsvp", "rsvp response", "attendance", "response", "yes/no"].includes(key)) return "status";
+  if (["company", "company name", "organization", "organisation", "school"].includes(key)) return "organization";
+  if (["guest type", "segment", "category", "registration type", "lifecycle stage"].includes(key)) return "segment";
+  if (["notes", "note", "comment", "comments"].includes(key)) return "notes";
+  if (["attendees", "attendee count", "guest count", "number of guests", "party size", "seats", "quantity"].includes(key)) {
+    return "quantity";
+  }
+  return "custom";
+}
 
 function spreadsheetHeaders(rows: RegistrationWithGuest[]): string[] {
   const headers: string[] = [];
@@ -90,33 +127,167 @@ function spreadsheetHeaders(rows: RegistrationWithGuest[]): string[] {
 function spreadsheetValue(row: RegistrationWithGuest, header: string): string {
   const imported = row.importedFields?.find((field) => field.label === header);
   if (imported) return imported.value;
-  const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return row.guest?.name ?? "";
-  if (["email", "e mail", "email address", "e mail address", "contact email"].includes(key)) return row.guest?.contact ?? "";
-  if (["rsvp", "rsvp response", "attendance", "response", "yes/no"].includes(key)) {
+  const kind = spreadsheetFieldKind(header);
+  if (kind === "name") return row.guest?.name ?? "";
+  if (kind === "email") return row.guest?.contact ?? "";
+  if (kind === "status") {
     return row.status === "confirmed" ? "Yes" : row.status === "cancelled" ? "No" : "Pending";
   }
-  if (["company", "company name", "organization", "organisation", "school"].includes(key)) return row.organization ?? "";
-  if (["guest type", "segment", "category", "registration type", "lifecycle stage"].includes(key)) return row.segment ?? "";
-  if (["notes", "note", "comment", "comments"].includes(key)) return row.guest?.notes ?? "";
-  if (["attendees", "attendee count", "guest count", "number of guests", "party size", "seats", "quantity"].includes(key)) {
-    return String(row.quantity);
-  }
+  if (kind === "organization") return row.organization ?? "";
+  if (kind === "segment") return row.segment ?? "";
+  if (kind === "notes") return row.guest?.notes ?? "";
+  if (kind === "quantity") return String(row.quantity);
   return "";
+}
+
+function registrationStatusFromSpreadsheet(value: string): RegistrationStatus {
+  const normalised = value.trim().toLowerCase();
+  if (["yes", "y", "confirmed", "attending", "accepted", "true"].includes(normalised)) return "confirmed";
+  if (["no", "n", "cancelled", "canceled", "declined", "not attending", "false"].includes(normalised)) {
+    return "cancelled";
+  }
+  return "pending";
+}
+
+function EditRegistrationDialog({
+  row,
+  headers,
+  eventId,
+  onClose,
+}: {
+  row: RegistrationWithGuest;
+  headers: string[];
+  eventId: string;
+  onClose: () => void;
+}) {
+  const update = useUpdateRegistrationDetails();
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(headers.map((header) => [header, spreadsheetValue(row, header)])),
+  );
+
+  const valueForKind = (kind: SpreadsheetFieldKind, fallback: string) => {
+    const header = headers.find((candidate) => spreadsheetFieldKind(candidate) === kind);
+    return header ? draft[header] ?? "" : fallback;
+  };
+
+  const save = async () => {
+    const name = valueForKind("name", row.guest?.name ?? "").trim();
+    const rawQuantity = valueForKind("quantity", String(row.quantity)).trim();
+    const quantity = Number(rawQuantity);
+    if (!name) {
+      toast({ title: "Name is required" });
+      return;
+    }
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10_000) {
+      toast({ title: "Attendee count must be between 1 and 10,000" });
+      return;
+    }
+
+    try {
+      await update.mutateAsync({
+        id: row.id,
+        eventId,
+        patch: {
+          name,
+          contact: valueForKind("email", row.guest?.contact ?? "").trim().toLowerCase() || null,
+          notes: valueForKind("notes", row.guest?.notes ?? "").trim() || null,
+          status: registrationStatusFromSpreadsheet(
+            valueForKind(
+              "status",
+              row.status === "confirmed" ? "Yes" : row.status === "cancelled" ? "No" : "Pending",
+            ),
+          ),
+          segment: valueForKind("segment", row.segment ?? "").trim() || null,
+          organization: valueForKind("organization", row.organization ?? "").trim() || null,
+          quantity,
+          importedFields: headers.map((label) => ({ label, value: draft[label] ?? "" })),
+        },
+      });
+      toast({ title: "Registration updated" });
+      onClose();
+    } catch (error) {
+      toast({ title: "Couldn't update registration", description: error instanceof Error ? error.message : undefined });
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Edit registration</DialogTitle>
+          <DialogDescription>
+            Update the RSVP and every value from the imported spreadsheet. All changes save together.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {headers.map((header) => {
+            const kind = spreadsheetFieldKind(header);
+            const fieldId = `registration-${row.id}-${header.replace(/[^a-z0-9]/gi, "-")}`;
+            return (
+              <div key={header} className={cn("space-y-1.5", kind === "notes" && "sm:col-span-2")}>
+                <Label htmlFor={fieldId}>{header}</Label>
+                {kind === "status" ? (
+                  <Select
+                    value={draft[header]?.trim() || "Pending"}
+                    onValueChange={(value) => setDraft((current) => ({ ...current, [header]: value }))}
+                  >
+                    <SelectTrigger id={fieldId}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {draft[header]?.trim() && !["Pending", "Yes", "No"].includes(draft[header] ?? "") ? (
+                        <SelectItem value={draft[header]!}>{draft[header]}</SelectItem>
+                      ) : null}
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="Yes">Yes</SelectItem>
+                      <SelectItem value="No">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : kind === "notes" ? (
+                  <Textarea
+                    id={fieldId}
+                    value={draft[header] ?? ""}
+                    onChange={(inputEvent) => setDraft((current) => ({ ...current, [header]: inputEvent.target.value }))}
+                  />
+                ) : (
+                  <Input
+                    id={fieldId}
+                    type={kind === "email" ? "email" : kind === "quantity" ? "number" : "text"}
+                    min={kind === "quantity" ? 1 : undefined}
+                    max={kind === "quantity" ? 10_000 : undefined}
+                    value={draft[header] ?? ""}
+                    onChange={(inputEvent) => setDraft((current) => ({ ...current, [header]: inputEvent.target.value }))}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button>
+          <Button type="button" onClick={() => void save()} disabled={update.isPending}>
+            {update.isPending ? "Saving..." : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function SpreadsheetRegistrationTable({
   rows,
   sourceRows,
+  onEdit,
 }: {
   rows: RegistrationWithGuest[];
   sourceRows: RegistrationWithGuest[];
+  onEdit: (row: RegistrationWithGuest) => void;
 }) {
   const headers = spreadsheetHeaders(sourceRows);
   return (
     <div>
       <div className="border-b border-hairline bg-surface-sunken/40 px-5 py-2 text-xs text-muted-foreground">
-        Spreadsheet view keeps the original headers and values. Switch to Manage to edit categories and RSVP status.
+        Spreadsheet view keeps the original headers and values. Use Edit to change any value.
       </div>
       <div className="max-h-[38rem] overflow-auto">
         <Table className="min-w-max">
@@ -130,6 +301,7 @@ function SpreadsheetRegistrationTable({
                   {header}
                 </TableHead>
               ))}
+              <TableHead className="sticky right-0 z-20 bg-background text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -151,6 +323,12 @@ function SpreadsheetRegistrationTable({
                     </TableCell>
                   );
                 })}
+                <TableCell className="sticky right-0 z-[1] bg-background text-right">
+                  <Button type="button" variant="outline" size="sm" onClick={() => onEdit(row)}>
+                    <Pencil className="mr-1.5 size-3.5" aria-hidden="true" />
+                    Edit
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -402,6 +580,7 @@ export default function GuestsSection({ event }: { event: Event }) {
   const [viewMode, setViewMode] = useState<"manage" | "spreadsheet">("spreadsheet");
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [organizationFilter, setOrganizationFilter] = useState<string | null>(null);
+  const [editingRegistration, setEditingRegistration] = useState<RegistrationWithGuest | null>(null);
 
   const counts = useMemo(() => {
     const rows = registrations ?? [];
@@ -458,6 +637,7 @@ export default function GuestsSection({ event }: { event: Event }) {
 
   const options = useMemo(() => segmentOptions(registrations ?? []), [registrations]);
   const orgOptions = useMemo(() => organizationOptions(registrations ?? []), [registrations]);
+  const headers = useMemo(() => spreadsheetHeaders(registrations ?? []), [registrations]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -673,7 +853,11 @@ export default function GuestsSection({ event }: { event: Event }) {
             }
           />
         ) : viewMode === "spreadsheet" ? (
-          <SpreadsheetRegistrationTable rows={visible} sourceRows={registrations ?? []} />
+          <SpreadsheetRegistrationTable
+            rows={visible}
+            sourceRows={registrations ?? []}
+            onEdit={setEditingRegistration}
+          />
         ) : (
           <ul className="divide-y divide-hairline">
             {visible.map((row) => (
@@ -750,6 +934,11 @@ export default function GuestsSection({ event }: { event: Event }) {
                   </SelectContent>
                 </Select>
 
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditingRegistration(row)}>
+                  <Pencil className="mr-1.5 size-3.5" aria-hidden="true" />
+                  Edit details
+                </Button>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -767,6 +956,16 @@ export default function GuestsSection({ event }: { event: Event }) {
           </ul>
         )}
       </Panel>
+
+      {editingRegistration ? (
+        <EditRegistrationDialog
+          key={editingRegistration.id}
+          row={editingRegistration}
+          headers={headers}
+          eventId={event.id}
+          onClose={() => setEditingRegistration(null)}
+        />
+      ) : null}
     </div>
   );
 }

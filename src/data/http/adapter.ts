@@ -269,6 +269,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       }),
       createWalkIn: (eventId, draft) =>
         client.post<RegistrationWithGuest>(`/events/${eventId}/walk-ins`, draft),
+      updateDetails: (id, patch) => client.patch<RegistrationWithGuest>(`/registrations/${id}`, patch),
       setStatus: (id, status) => client.patch<Registration>(`/registrations/${id}`, { status }),
       setSegment: (id, segment) => client.patch<Registration>(`/registrations/${id}`, { segment }),
       setOrganization: (id, organization) =>

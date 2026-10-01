@@ -271,6 +271,50 @@ describe("registrations", () => {
     ]);
   });
 
+  it("edits every registration and spreadsheet value together", async () => {
+    const [imported] = await memoryAdapter.registrations.importGuests([{
+      eventId: "evt-atlas",
+      name: "Original Guest",
+      contact: "original-guest@example.com",
+      status: "pending",
+      quantity: 1,
+      importedFields: [
+        { label: "Full Name", value: "Original Guest" },
+        { label: "Phone", value: "4085550101" },
+      ],
+    }]);
+
+    const updated = await memoryAdapter.registrations.updateDetails(imported!.id, {
+      name: "Updated Guest",
+      contact: "updated-guest@example.com",
+      notes: "Vegetarian meal",
+      status: "confirmed",
+      segment: "Investor",
+      organization: "Santa Clara University",
+      quantity: 2,
+      importedFields: [
+        { label: "Full Name", value: "Updated Guest" },
+        { label: "Phone", value: "4085550199" },
+      ],
+    });
+
+    expect(updated).toMatchObject({
+      status: "confirmed",
+      segment: "Investor",
+      organization: "Santa Clara University",
+      quantity: 2,
+      guest: {
+        name: "Updated Guest",
+        contact: "updated-guest@example.com",
+        notes: "Vegetarian meal",
+      },
+    });
+    expect(updated.importedFields).toEqual([
+      { label: "Full Name", value: "Updated Guest" },
+      { label: "Phone", value: "4085550199" },
+    ]);
+  });
+
   it("rolls back an imported guest when its registration fails", async () => {
     const guestCount = (await memoryAdapter.guests.list()).length;
     await expect(memoryAdapter.registrations.importGuests([{

@@ -90,6 +90,7 @@ import type {
   Registration,
   RegistrationCheckInPatch,
   RegistrationDraft,
+  RegistrationDetailsPatch,
   InviteResult,
   WorkspaceMember,
   WorkspaceRole,
@@ -172,6 +173,8 @@ export interface RegistrationsRepository {
   registerPublic(shareToken: string, draft: PublicRegistrationDraft): Promise<PublicRegistrationResult>;
   /** Atomically creates a guest, confirmed registration and arrival record. */
   createWalkIn(eventId: string, draft: WalkInRegistrationDraft): Promise<RegistrationWithGuest>;
+  /** Updates the person, RSVP details and original spreadsheet cells as one row. */
+  updateDetails(id: string, patch: RegistrationDetailsPatch): Promise<RegistrationWithGuest>;
   setStatus(id: string, status: RegistrationStatus): Promise<Registration>;
   /** Null clears the category. */
   setSegment(id: string, segment: string | null): Promise<Registration>;
