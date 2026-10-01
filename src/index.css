@@ -104,78 +104,33 @@
   }
 
   .check-in-badge {
-    position: relative;
     box-sizing: border-box;
-    width: 4in;
-    height: 3in;
-    padding: 0.28in;
+    display: grid;
+    width: 100vw;
+    height: 100vh;
+    padding: 0.08in 0.12in;
+    place-items: center;
     overflow: hidden;
-    border: 1px solid #d1d5db;
-    border-top: 0.14in solid #f8d810;
-  }
-
-  .check-in-badge-brand {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-  }
-
-  .check-in-badge-brand span {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 999px;
-    background: #f8d810;
-    box-shadow: inset 0 0 0 2px #111827;
-  }
-
-  .check-in-badge-event {
-    margin: 20px 0 0;
-    color: #4b5563;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
   }
 
   .check-in-badge h1 {
-    margin: 8px 0 0;
-    font-size: 32px;
-    line-height: 1.05;
-    letter-spacing: -0.035em;
-  }
-
-  .check-in-badge-organization {
-    margin: 7px 0 0;
-    font-size: 15px;
-    font-weight: 600;
-  }
-
-  .check-in-badge-role {
-    display: inline-block;
-    margin: 9px 0 0;
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: #fef9c3;
-    font-size: 10px;
+    max-width: 100%;
+    margin: 0;
+    color: #000;
+    font-size: 32pt;
     font-weight: 700;
+    line-height: 0.98;
+    text-align: center;
+    letter-spacing: -0.025em;
+    overflow-wrap: anywhere;
   }
 
-  .check-in-badge footer {
-    position: absolute;
-    right: 0.28in;
-    bottom: 0.24in;
-    left: 0.28in;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding-top: 8px;
-    border-top: 1px solid #d1d5db;
-    color: #4b5563;
-    font-size: 9px;
+  .check-in-badge h1.check-in-badge-name-medium {
+    font-size: 27pt;
+  }
+
+  .check-in-badge h1.check-in-badge-name-long {
+    font-size: 22pt;
   }
 }
 

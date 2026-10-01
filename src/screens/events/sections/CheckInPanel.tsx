@@ -34,6 +34,7 @@ import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill, StatTil
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
+import { useSession } from "@/app/session";
 import { eventTabHref } from "@/app/shell/nav";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
 import { CheckInPrintSheet, type CheckInPrintJob } from "./CheckInPrintSheet";
@@ -199,6 +200,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const updateStation = useUpdateCheckInStation();
   const removeStation = useRemoveCheckInStation();
   const { date: formatDate, timeZoneLabel } = usePreferences();
+  const { user } = useSession();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"confirmed" | "waiting" | "arrived" | "pending">("confirmed");
   const [station, setStation] = useState("");
@@ -209,6 +211,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const [visibleLimit, setVisibleLimit] = useState(50);
   const [printJob, setPrintJob] = useState<CheckInPrintJob | null>(null);
   const [showPrinterSetup, setShowPrinterSetup] = useState(false);
+  const [testBadgeName, setTestBadgeName] = useState(user?.name ?? "");
   const stationRows = useMemo(() => stations ?? [], [stations]);
 
   const rows = useMemo(
@@ -580,20 +583,37 @@ export function CheckInPanel({ event }: { event: Event }) {
       <Dialog open={showPrinterSetup} onOpenChange={setShowPrinterSetup}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Use an iPad at check-in</DialogTitle>
-            <DialogDescription>Beebizy runs in Safari on the iPad. Printing uses Apple AirPrint, so no cable or printer driver is needed.</DialogDescription>
+            <DialogTitle>Test the Brother label printer</DialogTitle>
+            <DialogDescription>Each label prints one full name only. The Brother printer setting controls the physical label size.</DialogDescription>
           </DialogHeader>
           <ol className="space-y-3 text-sm text-foreground">
-            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">1</span><span>Connect the iPad and an AirPrint-compatible printer to the same secure Wi-Fi network.</span></li>
-            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">2</span><span>Open Beebizy in Safari, select the active station, and check in the guest.</span></li>
-            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">3</span><span>Tap Badge or Print guest list, then choose the printer in the iPad print sheet.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">1</span><span>Connect the Brother Label Printer and confirm its label roll is installed.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">2</span><span>In the print window, choose the Brother printer and the exact installed label size.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">3</span><span>Use one copy, scale 100%, no margins, then print one test label.</span></li>
           </ol>
+          <label className="space-y-1.5 text-sm font-medium text-foreground">
+            Full name for the test label
+            <Input
+              value={testBadgeName}
+              onChange={(inputEvent) => setTestBadgeName(inputEvent.target.value)}
+              placeholder="Full name"
+              autoComplete="name"
+            />
+          </label>
           <div className="flex items-start gap-2 rounded-lg border border-info/30 bg-info-tint p-3 text-xs text-info-text">
-            <Wifi className="mt-0.5 size-4 shrink-0" />Printers without AirPrint need the printer maker's iPad app or an AirPrint print server. Test the exact printer and badge stock before event day.
+            <Wifi className="mt-0.5 size-4 shrink-0" />If the Brother printer does not appear, connect it by USB or install Brother iPrint&amp;Label before trying again.
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPrinterSetup(false)}>Close</Button>
-            <Button onClick={() => { setShowPrinterSetup(false); setPrintJob({ kind: "printer-test" }); }}><Printer className="mr-1.5 size-4" />Print test badge</Button>
+            <Button
+              disabled={!testBadgeName.trim()}
+              onClick={() => {
+                setShowPrinterSetup(false);
+                setPrintJob({ kind: "printer-test", name: testBadgeName.trim() });
+              }}
+            >
+              <Printer className="mr-1.5 size-4" />Print one test label
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

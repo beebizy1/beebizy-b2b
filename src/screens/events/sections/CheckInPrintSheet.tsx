@@ -4,7 +4,7 @@ import type { Event, RegistrationWithGuest } from "@/data/entities";
 export type CheckInPrintJob =
   | { kind: "guest-list" }
   | { kind: "badge"; row: RegistrationWithGuest }
-  | { kind: "printer-test" };
+  | { kind: "printer-test"; name: string };
 
 interface CheckInPrintSheetProps {
   event: Event;
@@ -23,29 +23,17 @@ function attendance(row: RegistrationWithGuest, formatDate: Preferences["date"])
 /** The only DOM exposed by the print stylesheet. Screen readers ignore the duplicate content. */
 export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel }: CheckInPrintSheetProps) {
   if (!job) return null;
+  const badgeName = job.kind === "badge" ? job.row.guest?.name ?? "Guest" : job.kind === "printer-test" ? job.name : null;
+  const badgeNameLength = badgeName?.length ?? 0;
 
   return (
     <section className="check-in-print-area" aria-hidden="true">
-      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { size: 4in 3in; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
-      {job.kind === "badge" ? (
+      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
+      {badgeName ? (
         <div className="check-in-badge">
-          <div className="check-in-badge-brand"><span />beebizy</div>
-          <p className="check-in-badge-event">{event.title}</p>
-          <h1>{job.row.guest?.name ?? "Guest"}</h1>
-          {job.row.organization ? <p className="check-in-badge-organization">{job.row.organization}</p> : null}
-          {job.row.segment ? <p className="check-in-badge-role">{job.row.segment}</p> : null}
-          <footer>
-            <span>{formatDate(event.date, "dayMonth")}</span>
-            <span>{event.locationRecord?.name ?? event.location ?? ""}</span>
-          </footer>
-        </div>
-      ) : job.kind === "printer-test" ? (
-        <div className="check-in-badge">
-          <div className="check-in-badge-brand"><span />beebizy</div>
-          <p className="check-in-badge-event">Printer test</p>
-          <h1>Badge ready</h1>
-          <p className="check-in-badge-organization">{event.title}</p>
-          <footer><span>4 × 3 inch badge</span><span>AirPrint test</span></footer>
+          <h1 className={badgeNameLength > 28 ? "check-in-badge-name-long" : badgeNameLength > 18 ? "check-in-badge-name-medium" : undefined}>
+            {badgeName}
+          </h1>
         </div>
       ) : (
         <div className="check-in-guest-list">
