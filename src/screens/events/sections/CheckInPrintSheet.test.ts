@@ -44,7 +44,8 @@ describe("CheckInPrintSheet badge labels", () => {
     const html = render({ kind: "printer-test", name: "Poorvi Shukla" });
 
     expect(html).toContain("Poorvi Shukla");
-    expect(html).toContain("@page { size: landscape; margin: 0; }");
+    expect(html).toContain("@page { size: 62mm 100mm; margin: 0; }");
+    expect(html).not.toContain("@page { size: landscape; margin: 0; }");
     expect(html).not.toContain("@page { size: 100mm 62mm; margin: 0; }");
     expect(html).not.toContain(event.title);
     expect(html).not.toContain("Printer test");

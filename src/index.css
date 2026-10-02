@@ -108,10 +108,10 @@
   .check-in-badge {
     box-sizing: border-box;
     display: grid;
-    width: 100mm;
-    height: 62mm;
+    width: 62mm;
+    height: 100mm;
     margin: 0;
-    padding: 4mm 6mm;
+    padding: 6mm 4mm;
     place-items: center;
     overflow: hidden;
     page-break-after: avoid;
@@ -129,6 +129,7 @@
     text-align: center;
     letter-spacing: -0.025em;
     overflow-wrap: anywhere;
+    transform: rotate(90deg);
   }
 
   .check-in-badge h1.check-in-badge-name-medium {
