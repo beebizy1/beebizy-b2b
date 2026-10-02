@@ -129,7 +129,10 @@
     text-align: center;
     letter-spacing: -0.025em;
     overflow-wrap: anywhere;
-    transform: rotate(90deg);
+    /* The Brother Windows driver rotates the 62 mm portrait page onto the
+       continuous roll. Offset across the print head so the rotated name lands
+       in the physical vertical center instead of near the top edge. */
+    transform: translateX(-11mm) rotate(90deg);
   }
 
   .check-in-badge h1.check-in-badge-name-medium {
