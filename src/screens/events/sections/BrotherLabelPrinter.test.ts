@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BROTHER_BADGE_LENGTH_DOTS,
   BROTHER_BADGE_WIDTH_DOTS,
+  printBrotherNameLabel,
   renderBrotherNameLabel,
 } from "./BrotherLabelPrinter";
 
@@ -47,5 +48,43 @@ describe("renderBrotherNameLabel", () => {
 
   it("rejects an empty name instead of printing a blank label", () => {
     expect(() => renderBrotherNameLabel("   ")).toThrow("Enter a full name before printing.");
+  });
+
+  it("stops waiting when the printer USB transfer never responds", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("document", {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          fillStyle: "",
+          font: "",
+          textAlign: "start",
+          textBaseline: "alphabetic",
+          fillRect: vi.fn(),
+          fillText: vi.fn(),
+          measureText: () => ({ width: 200 }),
+          getImageData: () => ({
+            data: new Uint8ClampedArray(BROTHER_BADGE_WIDTH_DOTS * BROTHER_BADGE_LENGTH_DOTS * 4),
+            width: BROTHER_BADGE_WIDTH_DOTS,
+            height: BROTHER_BADGE_LENGTH_DOTS,
+          }),
+        }),
+      }),
+    });
+    const printer = {
+      connected: true,
+      write: vi.fn(() => new Promise<void>(() => undefined)),
+      close: vi.fn(() => Promise.resolve()),
+    };
+
+    const result = printBrotherNameLabel(printer as never, "Diego", { timeoutMs: 100 })
+      .then(() => "printed", (error: unknown) => error instanceof Error ? error.message : "unknown error");
+    await vi.advanceTimersByTimeAsync(101);
+
+    await expect(Promise.race([result, Promise.resolve("still pending")]))
+      .resolves.toBe("The Brother printer stopped responding. Turn it off and on, then reconnect it.");
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 });
