@@ -276,10 +276,13 @@ export function CheckInPanel({ event }: { event: Event }) {
 
   const existingTasks = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
   const missingTasks = CHECK_IN_STARTER.filter(([title]) => !existingTasks.has(title.toLowerCase()));
-  const alphabeticStationCount = ALPHABETICAL_CHECK_IN_LANES.filter((lane) => stationRows.some((planned) => {
+  const alphabeticStations = ALPHABETICAL_CHECK_IN_LANES.flatMap((lane) => stationRows.filter((planned) => {
     const range = parseAlphabeticalLane(planned.lane);
     return range?.start === lane.start && range.end === lane.end;
-  })).length;
+  }));
+  const alphabeticStationCount = alphabeticStations.length;
+  const alphabeticAssignedCount = alphabeticStations.filter((planned) => planned.leadVolunteerId).length;
+  const alphabeticCountersReady = alphabeticStationCount === 6 && alphabeticAssignedCount === 6;
 
   const saveCheckIn = async (row: RegistrationWithGuest, checkedInAt: string | null, details?: { station?: string | null; notes?: string | null }) => {
     try {
@@ -400,7 +403,7 @@ export function CheckInPanel({ event }: { event: Event }) {
       const existingAlphabeticAssigned = stationRows.filter((planned) => planned.leadVolunteerId && parseAlphabeticalLane(planned.lane)).length;
       const totalAssigned = existingAlphabeticAssigned + newlyAssigned;
       toast({
-        title: "Six alphabetical counters are ready",
+        title: totalAssigned === 6 ? "Six alphabetical counters are ready" : "Six alphabetical counters are set up",
         description: `${created} counter${created === 1 ? "" : "s"} created. ${Math.min(6, totalAssigned)} of 6 have a volunteer with private check-in access.`,
       });
     } catch (caught) {
@@ -452,9 +455,9 @@ export function CheckInPanel({ event }: { event: Event }) {
           description="Save each entrance or lane, who leads it, and the equipment it needs."
           actions={
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => void setUpAlphabeticalCounters()} disabled={settingUpCounters || (alphabeticStationCount === 6 && stationRows.every((planned) => !parseAlphabeticalLane(planned.lane) || planned.leadVolunteerId))}>
+              <Button size="sm" onClick={() => void setUpAlphabeticalCounters()} disabled={settingUpCounters || alphabeticCountersReady}>
                 <UsersRound className="mr-1.5 size-3.5" />
-                {settingUpCounters ? "Setting up…" : alphabeticStationCount === 6 ? "6 counters ready" : "Set up 6 counters"}
+                {settingUpCounters ? "Setting up…" : alphabeticCountersReady ? "6 counters ready" : alphabeticStationCount === 6 ? "Assign volunteers to counters" : "Set up 6 counters"}
               </Button>
               <Button variant="outline" size="sm" onClick={() => { setShowStationForm(true); setEditingStation(null); }}>
                 <Plus className="mr-1.5 size-3.5" />Add station
