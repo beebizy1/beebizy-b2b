@@ -17,6 +17,8 @@ const MAX_NAME_WIDTH_DOTS = BROTHER_BADGE_WIDTH_DOTS - 80;
 const USB_INTERFACE_NUMBER = 0;
 const USB_CONFIGURATION_VALUE = 1;
 const DEFAULT_PRINT_TIMEOUT_MS = 8_000;
+const LOCAL_BRIDGE_URL = "http://127.0.0.1:8765";
+const BRIDGE_HEALTH_TIMEOUT_MS = 750;
 
 interface BadgeCanvasContext {
   fillStyle: string | CanvasGradient | CanvasPattern;
@@ -165,10 +167,43 @@ async function openBrotherQl800(device: BrotherUsbDevice): Promise<BrotherQl800P
   };
 }
 
+async function connectLocalBrotherBridge(): Promise<BrotherQl800Printer | null> {
+  try {
+    const health = await fetch(`${LOCAL_BRIDGE_URL}/health`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(BRIDGE_HEALTH_TIMEOUT_MS),
+    });
+    if (!health.ok) return null;
+  } catch {
+    return null;
+  }
+
+  return {
+    connected: true,
+    async write(data) {
+      const payload = new Uint8Array(data.byteLength);
+      payload.set(data);
+      const response = await fetch(`${LOCAL_BRIDGE_URL}/print`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: payload,
+        signal: AbortSignal.timeout(DEFAULT_PRINT_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const details = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(details?.error || "The local Brother printer connection rejected the badge.");
+      }
+    },
+    close: () => Promise.resolve(),
+  };
+}
+
 export async function connectBrotherQl800(): Promise<BrotherQl800Printer> {
   if (!supportsBrotherWebUsb()) {
     throw new Error("Direct Brother printing requires Chrome or Edge on the secure Beebizy website.");
   }
+  const localBridge = await connectLocalBrotherBridge();
+  if (localBridge) return localBridge;
   const usb = (navigator as NavigatorWithUsb).usb;
   const pairedDevices = await usb.getDevices();
   const device = pairedDevices.find(ql800Device) ?? await usb.requestDevice({
