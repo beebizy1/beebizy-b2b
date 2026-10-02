@@ -29,7 +29,7 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
 
   const sheet = (
     <section className="check-in-print-area" aria-hidden="true">
-      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { size: 100mm 62mm; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
+      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { size: landscape; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
       {badgeName ? (
         <div className="check-in-badge">
           <h1 className={badgeNameLength > 28 ? "check-in-badge-name-long" : badgeNameLength > 18 ? "check-in-badge-name-medium" : undefined}>
