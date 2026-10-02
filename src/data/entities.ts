@@ -768,6 +768,7 @@ export interface FloorplanDraft {
 
 export const HISTORY_RESOURCES = [
   "event",
+  "registration",
   "vendor-booking",
   "checklist",
   "check-in-station",
@@ -850,6 +851,31 @@ export interface PublicAssignmentPayload {
   endTime: string | null;
   /** Number of civil days between the timed assignment's start and end. */
   endDayOffset: number;
+  /** Present only when this volunteer currently leads a private check-in station. */
+  checkInPath?: string | null;
+  checkInStation?: { name: string; lane: string } | null;
+}
+
+/** Minimal guest data exposed to one token-scoped check-in counter. */
+export interface PublicCheckInGuest {
+  registrationId: string;
+  name: string;
+  organization: string | null;
+  segment: string | null;
+  status: RegistrationStatus;
+  checkedInAt: IsoDateTime | null;
+  checkInStation: string | null;
+}
+
+/** Everything a volunteer needs at one counter, and no surrounding workspace data. */
+export interface PublicCheckInStationPayload {
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  timeZone: string;
+  location: string | null;
+  volunteer: { name: string };
+  station: { id: string; name: string; lane: string };
+  guests: PublicCheckInGuest[];
 }
 
 export type EventHistoryChange = Pick<

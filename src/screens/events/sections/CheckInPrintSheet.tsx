@@ -1,6 +1,7 @@
 import type { Preferences } from "@/app/preferences";
 import type { Event, RegistrationWithGuest } from "@/data/entities";
 import { createPortal } from "react-dom";
+import { NameBadgePrintSheet } from "./NameBadgePrintSheet";
 
 export type CheckInPrintJob =
   | { kind: "guest-list" }
@@ -25,19 +26,12 @@ function attendance(row: RegistrationWithGuest, formatDate: Preferences["date"])
 export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel }: CheckInPrintSheetProps) {
   if (!job) return null;
   const badgeName = job.kind === "badge" ? job.row.guest?.name ?? "Guest" : job.kind === "printer-test" ? job.name : null;
-  const badgeNameLength = badgeName?.length ?? 0;
+  if (badgeName) return <NameBadgePrintSheet name={badgeName} />;
 
   const sheet = (
     <section className="check-in-print-area" aria-hidden="true">
-      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { size: 62mm 100mm; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
-      {badgeName ? (
-        <div className="check-in-badge">
-          <h1 className={badgeNameLength > 28 ? "check-in-badge-name-long" : badgeNameLength > 18 ? "check-in-badge-name-medium" : undefined}>
-            {badgeName}
-          </h1>
-        </div>
-      ) : (
-        <div className="check-in-guest-list">
+      <style>{"@page { size: auto; margin: 0.35in; }"}</style>
+      <div className="check-in-guest-list">
           <header>
             <div>
               <p className="check-in-print-kicker">BEEBIZY EVENT CHECK-IN</p>
@@ -77,8 +71,7 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+      </div>
     </section>
   );
 

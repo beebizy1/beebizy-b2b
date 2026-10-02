@@ -63,6 +63,7 @@ import {
   type RegistrationWithGuest,
   type VolunteerShift,
 } from "@/data/entities";
+import { ALPHABETICAL_CHECK_IN_LANES, parseAlphabeticalLane } from "@/data/checkInLanes";
 
 const CHECK_IN_STARTER = [
   ["Assign check-in stations and leads", "Name a lead and backup for every entrance or desk."],
@@ -217,6 +218,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const [visibleLimit, setVisibleLimit] = useState(50);
   const [printJob, setPrintJob] = useState<CheckInPrintJob | null>(null);
   const [showPrinterSetup, setShowPrinterSetup] = useState(false);
+  const [settingUpCounters, setSettingUpCounters] = useState(false);
   const [testBadgeName, setTestBadgeName] = useState(user?.name ?? "");
   const [brotherPrinterState, setBrotherPrinterState] = useState<"idle" | "connecting" | "connected" | "printing">("idle");
   const brotherPrinterRef = useRef<BrotherQl800Printer | null>(null);
@@ -274,6 +276,10 @@ export function CheckInPanel({ event }: { event: Event }) {
 
   const existingTasks = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
   const missingTasks = CHECK_IN_STARTER.filter(([title]) => !existingTasks.has(title.toLowerCase()));
+  const alphabeticStationCount = ALPHABETICAL_CHECK_IN_LANES.filter((lane) => stationRows.some((planned) => {
+    const range = parseAlphabeticalLane(planned.lane);
+    return range?.start === lane.start && range.end === lane.end;
+  })).length;
 
   const saveCheckIn = async (row: RegistrationWithGuest, checkedInAt: string | null, details?: { station?: string | null; notes?: string | null }) => {
     try {
@@ -339,6 +345,71 @@ export function CheckInPanel({ event }: { event: Event }) {
     });
   };
 
+  const setUpAlphabeticalCounters = async () => {
+    if (settingUpCounters) return;
+    setSettingUpCounters(true);
+    try {
+      const activeVolunteers = (volunteers ?? [])
+        .filter((volunteer) => volunteer.status !== "cancelled" && Boolean(volunteer.email))
+        .sort((a, b) => {
+          const score = (volunteer: VolunteerShift) => /check.?in|registration|welcome|front.?door/i.test(volunteer.role) ? 0 : 1;
+          return score(a) - score(b) || a.sortOrder - b.sortOrder;
+        });
+      const uniqueVolunteers = activeVolunteers.filter((volunteer, index, list) =>
+        list.findIndex((candidate) => candidate.email?.toLowerCase() === volunteer.email?.toLowerCase()) === index);
+      const usedVolunteerIds = new Set(stationRows.flatMap((planned) => planned.leadVolunteerId ? [planned.leadVolunteerId] : []));
+      let created = 0;
+      let newlyAssigned = 0;
+
+      for (const lane of ALPHABETICAL_CHECK_IN_LANES) {
+        const existing = stationRows.find((planned) => {
+          const range = parseAlphabeticalLane(planned.lane);
+          return range?.start === lane.start && range.end === lane.end;
+        });
+        const volunteer = uniqueVolunteers.find((candidate) => !usedVolunteerIds.has(candidate.id));
+        if (existing) {
+          if (!existing.leadVolunteerId && volunteer) {
+            await updateStation.mutateAsync({
+              eventId: event.id,
+              id: existing.id,
+              patch: { leadVolunteerId: volunteer.id, lead: volunteer.name },
+            });
+            usedVolunteerIds.add(volunteer.id);
+            newlyAssigned += 1;
+          }
+          continue;
+        }
+        await addStation.mutateAsync({
+          eventId: event.id,
+          draft: {
+            name: lane.stationName,
+            lane: lane.label,
+            leadVolunteerId: volunteer?.id ?? null,
+            lead: volunteer?.name ?? null,
+            deviceCount: 1,
+            notes: "Private volunteer counter for badge printing and guest check-in.",
+            sortOrder: lane.counter,
+          },
+        });
+        if (volunteer) {
+          usedVolunteerIds.add(volunteer.id);
+          newlyAssigned += 1;
+        }
+        created += 1;
+      }
+      const existingAlphabeticAssigned = stationRows.filter((planned) => planned.leadVolunteerId && parseAlphabeticalLane(planned.lane)).length;
+      const totalAssigned = existingAlphabeticAssigned + newlyAssigned;
+      toast({
+        title: "Six alphabetical counters are ready",
+        description: `${created} counter${created === 1 ? "" : "s"} created. ${Math.min(6, totalAssigned)} of 6 have a volunteer with private check-in access.`,
+      });
+    } catch (caught) {
+      toast({ title: "Couldn't finish counter setup", description: caught instanceof Error ? caught.message : undefined, variant: "destructive" });
+    } finally {
+      setSettingUpCounters(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {isError ? <ErrorNotice error={error} onRetry={() => void refetch()} /> : null}
@@ -381,6 +452,10 @@ export function CheckInPanel({ event }: { event: Event }) {
           description="Save each entrance or lane, who leads it, and the equipment it needs."
           actions={
             <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => void setUpAlphabeticalCounters()} disabled={settingUpCounters || (alphabeticStationCount === 6 && stationRows.every((planned) => !parseAlphabeticalLane(planned.lane) || planned.leadVolunteerId))}>
+                <UsersRound className="mr-1.5 size-3.5" />
+                {settingUpCounters ? "Setting up…" : alphabeticStationCount === 6 ? "6 counters ready" : "Set up 6 counters"}
+              </Button>
               <Button variant="outline" size="sm" onClick={() => { setShowStationForm(true); setEditingStation(null); }}>
                 <Plus className="mr-1.5 size-3.5" />Add station
               </Button>
@@ -452,6 +527,13 @@ export function CheckInPanel({ event }: { event: Event }) {
                       <Laptop className="size-3.5" />{planned.deviceCount} device{planned.deviceCount === 1 ? "" : "s"}
                     </span>
                   </div>
+                  <p className={cn("mt-2 text-xs font-medium", linkedVolunteer?.email ? "text-success-text" : "text-warning-text")}>
+                    {linkedVolunteer?.email
+                      ? `Private check-in access enabled for ${linkedVolunteer.email}`
+                      : planned.leadVolunteerId
+                        ? "Add an email to this volunteer to enable private access"
+                        : "Assign one volunteer with an email to enable private access"}
+                  </p>
                   {planned.notes ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{planned.notes}</p> : null}
                   <div className="mt-3 flex gap-1">
                     <Button variant="ghost" size="sm" onClick={() => { setEditingStation(planned); setShowStationForm(false); }}>

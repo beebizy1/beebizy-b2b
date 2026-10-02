@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, CalendarPlus, CheckCircle2, Clock3, MapPin, RotateCcw } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, Clock3, MapPin, Printer, RotateCcw } from "lucide-react";
 import { EmptyState, LoadingRows, Panel, Pill } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import type { PublicAssignmentPayload } from "@/data/entities";
@@ -86,6 +86,15 @@ export default function PublicAssignment({ token }: { token: string }) {
           {assignment.dueDateCivil ? <p className="rounded-lg bg-warning-tint p-3 text-sm text-warning-text">Due {new Date(`${assignment.dueDateCivil}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" })}</p> : null}
           {assignment.description ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{assignment.description}</p> : null}
           <div className="space-y-3 rounded-xl border border-hairline bg-surface-sunken/50 p-4">
+            {assignment.kind === "volunteer" && assignment.checkInPath && assignment.checkInStation ? (
+              <div className="rounded-lg border border-primary/30 bg-primary-muted/50 p-3">
+                <p className="text-sm font-semibold text-foreground">{assignment.checkInStation.name}: {assignment.checkInStation.lane}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Your private counter shows only your assigned last-name range.</p>
+                <Button asChild className="mt-3">
+                  <a href={assignment.checkInPath}><Printer className="mr-2 size-4" />Open check-in and badge printing</a>
+                </Button>
+              </div>
+            ) : null}
             {assignment.completed ? (
               <div className="flex flex-wrap items-center gap-3">
                 <p role="status" className="flex items-center gap-2 text-sm font-semibold text-success-text"><CheckCircle2 className="size-4" />Completed and saved to the {completionLabel}</p>

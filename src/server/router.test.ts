@@ -23,6 +23,8 @@ vi.mock("./repos", () => {
     publicVendorConversation: vi.fn(),
     publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
+    publicCheckInStation: vi.fn(),
+    setPublicCheckIn: vi.fn(),
     completePublicAssignment: vi.fn(),
     reopenPublicAssignment: vi.fn(),
     checklist: child,
@@ -65,7 +67,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 describe("single-event collaborator routing", () => {
@@ -395,6 +397,70 @@ describe("public assignment endpoint", () => {
     vi.mocked(reopenPublicAssignment).mockResolvedValue(null);
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/expired-token/reopen", {
       method: "POST",
+    }));
+    expect(response.status).toBe(404);
+  });
+
+  it("returns only the station guest list addressed by a private volunteer link", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicCheckInStation).mockResolvedValue({
+      eventTitle: "Demo Day",
+      eventDate: "2026-09-21T16:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+      location: "Mission Gardens",
+      volunteer: { name: "Volunteer 2" },
+      station: { id: "station-2", name: "Counter 2", lane: "Last names E-H" },
+      guests: [{
+        registrationId: "reg-goyal",
+        name: "Tarang Goyal",
+        organization: "Beebizy",
+        segment: "General",
+        status: "confirmed",
+        checkedInAt: null,
+        checkInStation: null,
+      }],
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      volunteer: { name: "Volunteer 2" },
+      station: { lane: "Last names E-H" },
+      guests: [{ name: "Tarang Goyal" }],
+    });
+    expect(publicCheckInStation).toHaveBeenCalledWith("volunteer-token");
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("checks in or undoes only the registration addressed by the station link", async () => {
+    vi.mocked(setPublicCheckIn).mockResolvedValue({
+      registrationId: "reg-goyal",
+      name: "Tarang Goyal",
+      organization: "Beebizy",
+      segment: "General",
+      status: "confirmed",
+      checkedInAt: "2026-09-21T16:05:00.000Z",
+      checkInStation: "Counter 2",
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/reg-goyal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkedIn: true }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ registrationId: "reg-goyal", checkedInAt: expect.any(String) });
+    expect(setPublicCheckIn).toHaveBeenCalledWith("volunteer-token", "reg-goyal", true);
+  });
+
+  it("rejects an inactive or out-of-range check-in link without exposing a guest", async () => {
+    vi.mocked(setPublicCheckIn).mockResolvedValue(null);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/reg-outside-range", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkedIn: false }),
     }));
     expect(response.status).toBe(404);
   });

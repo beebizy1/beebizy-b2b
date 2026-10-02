@@ -16,7 +16,7 @@
  *     race past.
  */
 
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./db.ts";
 import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import * as s from "./schema.ts";
@@ -70,6 +70,8 @@ import type {
   WorkspaceMember,
   TeamUpdate,
   PublicAssignmentPayload,
+  PublicCheckInGuest,
+  PublicCheckInStationPayload,
   PublicRegistrationDraft,
   PublicRegistrationResult,
   PublicVolunteerSignupDraft,
@@ -107,6 +109,7 @@ import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
+import { guestMatchesLane, lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -1202,6 +1205,15 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     eq(s.volunteerShifts.email, email),
   )).limit(1);
   if (!shift || shift.status === "cancelled") return null;
+  const [station] = await db.select({ name: s.checkInStations.name, lane: s.checkInStations.lane })
+    .from(s.checkInStations)
+    .where(and(
+      eq(s.checkInStations.eventId, link.eventId),
+      eq(s.checkInStations.workspaceId, link.workspaceId),
+      eq(s.checkInStations.leadVolunteerId, shift.id),
+    ))
+    .limit(1);
+  const hasPrivateCheckIn = Boolean(station && parseAlphabeticalLane(station.lane));
   return {
     kind,
     ...eventFields,
@@ -1216,7 +1228,151 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     startTime: shift.startTime,
     endTime: shift.endTime,
     endDayOffset: shift.endTime <= shift.startTime ? 1 : 0,
+    checkInPath: hasPrivateCheckIn ? `/check-in/${encodeURIComponent(token)}` : null,
+    checkInStation: hasPrivateCheckIn && station ? station : null,
   };
+}
+
+interface PublicVolunteerCheckInAccess {
+  link: typeof s.eventHistory.$inferSelect;
+  shift: typeof s.volunteerShifts.$inferSelect;
+  station: typeof s.checkInStations.$inferSelect;
+}
+
+/** Resolves a private volunteer link to its currently assigned counter, failing closed. */
+async function publicVolunteerCheckInAccess(token: string): Promise<PublicVolunteerCheckInAccess | null> {
+  const [link] = await db.select().from(s.eventHistory)
+    .where(and(eq(s.eventHistory.resource, "assignment-link"), eq(s.eventHistory.resourceId, token)))
+    .limit(1);
+  const details = link?.after;
+  const assignmentId = details?.assignmentId;
+  const email = details?.email;
+  if (!link || details?.kind !== "volunteer" || typeof assignmentId !== "string" || typeof email !== "string") return null;
+
+  const [shift] = await db.select().from(s.volunteerShifts).where(and(
+    eq(s.volunteerShifts.id, assignmentId),
+    eq(s.volunteerShifts.eventId, link.eventId),
+    eq(s.volunteerShifts.workspaceId, link.workspaceId),
+    eq(s.volunteerShifts.email, email),
+  )).limit(1);
+  if (!shift || shift.status === "cancelled") return null;
+
+  const [station] = await db.select().from(s.checkInStations).where(and(
+    eq(s.checkInStations.eventId, link.eventId),
+    eq(s.checkInStations.workspaceId, link.workspaceId),
+    eq(s.checkInStations.leadVolunteerId, shift.id),
+  )).limit(1);
+  if (!station || !parseAlphabeticalLane(station.lane)) return null;
+  return { link, shift, station };
+}
+
+function toPublicCheckInGuest(
+  registration: typeof s.registrations.$inferSelect,
+  guest: typeof s.guests.$inferSelect,
+): PublicCheckInGuest {
+  return {
+    registrationId: registration.id,
+    name: guest.name,
+    organization: registration.organization,
+    segment: registration.segment,
+    status: registration.status,
+    checkedInAt: registration.checkedInAt?.toISOString() ?? null,
+    checkInStation: registration.checkInStation,
+  };
+}
+
+/** Returns only the guests whose last name belongs to the volunteer's assigned counter. */
+export async function publicCheckInStation(token: string): Promise<PublicCheckInStationPayload | null> {
+  const access = await publicVolunteerCheckInAccess(token);
+  if (!access) return null;
+  const { link, shift, station } = access;
+  const [eventRow] = await db.select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone }).from(s.events)
+    .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
+    .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
+    .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId))).limit(1);
+  if (!eventRow) return null;
+
+  const registrationRows = await db.select({ registration: s.registrations, guest: s.guests })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+      sql`${s.registrations.status} <> 'cancelled'`,
+    ));
+  const guests = registrationRows
+    .filter((row) => guestMatchesLane(row.guest.name, station.lane))
+    .sort((a, b) => lastNameSearchValue(a.guest.name).localeCompare(lastNameSearchValue(b.guest.name)))
+    .map((row) => toPublicCheckInGuest(row.registration, row.guest));
+
+  return {
+    eventTitle: eventRow.event.title,
+    eventDate: eventRow.event.startsAt.toISOString(),
+    timeZone: eventRow.timeZone,
+    location: eventRow.location
+      ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
+      : eventRow.event.venue,
+    volunteer: { name: shift.name },
+    station: { id: station.id, name: station.name, lane: station.lane },
+    guests,
+  };
+}
+
+/** Checks in or undoes one in-range guest and records the volunteer identity in history. */
+export async function setPublicCheckIn(token: string, registrationId: string, checkedIn: boolean): Promise<PublicCheckInGuest | null> {
+  const access = await publicVolunteerCheckInAccess(token);
+  if (!access) return null;
+  const { link, shift, station } = access;
+  const [current] = await db.select({ registration: s.registrations, guest: s.guests })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.id, registrationId),
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+      sql`${s.registrations.status} <> 'cancelled'`,
+    ))
+    .limit(1);
+  if (!current || !guestMatchesLane(current.guest.name, station.lane)) return null;
+
+  const checkedInAt = checkedIn ? new Date() : null;
+  const before = toPublicCheckInGuest(current.registration, current.guest);
+  const update = db.update(s.registrations)
+    .set({
+      checkedInAt,
+      status: checkedIn ? "confirmed" : current.registration.status,
+      checkInStation: station.name,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(s.registrations.id, registrationId),
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+    ))
+    .returning();
+  const after: PublicCheckInGuest = {
+    ...before,
+    status: checkedIn ? "confirmed" : current.registration.status,
+    checkedInAt: checkedInAt?.toISOString() ?? null,
+    checkInStation: station.name,
+  };
+  const [updated] = await db.batch([
+    update,
+    db.insert(s.eventHistory).values({
+      id: newId("hist"),
+      workspaceId: link.workspaceId,
+      eventId: link.eventId,
+      actorId: `public:${shift.email}`,
+      resource: "registration",
+      resourceId: registrationId,
+      action: "updated",
+      summary: `${checkedIn ? "Checked in" : "Undid check-in for"} ${current.guest.name} at ${station.name} by ${shift.name}`,
+      before: before as unknown as Record<string, unknown>,
+      after: after as unknown as Record<string, unknown>,
+    }),
+  ]);
+  if (updated.length === 0) return null;
+  return after;
 }
 
 /** A private assignment link can change only the task, cue or shift it was issued for. */
@@ -2617,6 +2773,43 @@ async function notifyInternalVolunteerAssignment(
   }
 }
 
+async function notifyCheckInStationAssignment(
+  ctx: RequestContext,
+  eventId: string,
+  after: CheckInStation,
+  before: CheckInStation | null,
+): Promise<void> {
+  if (!after.leadVolunteerId || after.leadVolunteerId === before?.leadVolunteerId) return;
+  try {
+    const [volunteer] = await db.select().from(s.volunteerShifts).where(and(
+      eq(s.volunteerShifts.id, after.leadVolunteerId),
+      eq(s.volunteerShifts.eventId, eventId),
+      eq(s.volunteerShifts.workspaceId, ctx.workspaceId),
+      sql`${s.volunteerShifts.status} <> 'cancelled'`,
+    )).limit(1);
+    if (!volunteer?.email) return;
+    const event = await events.get(ctx, eventId);
+    if (!event) return;
+    const url = await createAssignmentAccess(ctx, eventId, {
+      kind: "volunteer",
+      id: volunteer.id,
+      email: volunteer.email,
+    });
+    await notifyVolunteerAssignment({
+      to: volunteer.email,
+      volunteerName: volunteer.name,
+      role: `${after.name}: ${after.lane}`,
+      eventTitle: event.title,
+      dayNumber: volunteer.dayNumber,
+      startTime: volunteer.startTime,
+      endTime: volunteer.endTime,
+      url,
+    });
+  } catch (error) {
+    console.warn("CHECK_IN_STATION_NOTIFICATION_FAILED", after.id, error instanceof Error ? error.message : String(error));
+  }
+}
+
 export const checklist = eventScoped({
   table: s.checklistItems as never,
   mapper: map.toChecklistItem as never,
@@ -2694,9 +2887,21 @@ export const checkInStations = eventScoped({
       sql`${s.volunteerShifts.status} <> 'cancelled'`,
     )).limit(1);
     if (!volunteer) throw new HttpError(400, "That volunteer is not available for this event.");
+    const duplicateConditions = [
+      eq(s.checkInStations.eventId, eventId),
+      eq(s.checkInStations.workspaceId, ctx.workspaceId),
+      eq(s.checkInStations.leadVolunteerId, volunteer.id),
+    ];
+    if (station) duplicateConditions.push(ne(s.checkInStations.id, station.id));
+    const [alreadyAssigned] = await db.select({ name: s.checkInStations.name })
+      .from(s.checkInStations)
+      .where(and(...duplicateConditions))
+      .limit(1);
+    if (alreadyAssigned) throw new HttpError(409, `${volunteer.name} is already assigned to ${alreadyAssigned.name}.`);
     body.leadVolunteerId = volunteer.id;
     body.lead = volunteer.name;
   },
+  afterWrite: notifyCheckInStationAssignment,
 });
 
 export const runOfShow = eventScoped({
