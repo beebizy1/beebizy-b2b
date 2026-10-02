@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   CheckCircle2,
@@ -37,6 +37,12 @@ import { usePreferences } from "@/app/preferences";
 import { useSession } from "@/app/session";
 import { eventTabHref } from "@/app/shell/nav";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
+import {
+  connectBrotherQl800,
+  printBrotherNameLabel,
+  supportsBrotherWebUsb,
+  type BrotherQl800Printer,
+} from "./BrotherLabelPrinter";
 import { CheckInPrintSheet, type CheckInPrintJob } from "./CheckInPrintSheet";
 import { OnSiteRegistration } from "./OnSiteRegistration";
 import {
@@ -212,6 +218,8 @@ export function CheckInPanel({ event }: { event: Event }) {
   const [printJob, setPrintJob] = useState<CheckInPrintJob | null>(null);
   const [showPrinterSetup, setShowPrinterSetup] = useState(false);
   const [testBadgeName, setTestBadgeName] = useState(user?.name ?? "");
+  const [brotherPrinterState, setBrotherPrinterState] = useState<"idle" | "connecting" | "connected" | "printing">("idle");
+  const brotherPrinterRef = useRef<BrotherQl800Printer | null>(null);
   const stationRows = useMemo(() => stations ?? [], [stations]);
 
   const rows = useMemo(
@@ -257,6 +265,11 @@ export function CheckInPanel({ event }: { event: Event }) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [printJob]);
+  useEffect(() => () => {
+    const printer = brotherPrinterRef.current;
+    brotherPrinterRef.current = null;
+    if (printer) void printer.close();
+  }, []);
   const displayed = visible.slice(0, visibleLimit);
 
   const existingTasks = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
@@ -276,6 +289,37 @@ export function CheckInPanel({ event }: { event: Event }) {
       setEditingId(null);
     } catch (caught) {
       toast({ title: "Couldn't update check-in", description: caught instanceof Error ? caught.message : undefined });
+    }
+  };
+
+  const brotherErrorMessage = (caught: unknown): string => {
+    if (caught instanceof DOMException && caught.name === "NotFoundError") return "No printer was selected. Choose Brother QL-800 and try again.";
+    if (caught instanceof DOMException && caught.name === "NetworkError") return "The Brother printer is busy. Turn it off and on once, then reconnect.";
+    return caught instanceof Error ? caught.message : "The Brother printer could not be reached.";
+  };
+
+  const printNameDirectly = async (name: string, allowConnectionPrompt = true) => {
+    try {
+      let printer = brotherPrinterRef.current;
+      if (!printer?.connected) {
+        if (!allowConnectionPrompt) {
+          toast({ title: "Connect the Brother printer first", description: "Open iPad & printer setup, then choose Connect & print one label." });
+          return;
+        }
+        setBrotherPrinterState("connecting");
+        printer = await connectBrotherQl800();
+        brotherPrinterRef.current = printer;
+      }
+      setBrotherPrinterState("printing");
+      await printBrotherNameLabel(printer, name);
+      setBrotherPrinterState("connected");
+      toast({ title: "Badge sent to Brother QL-800", description: `${name.trim()} is centered on one label.` });
+    } catch (caught) {
+      const printer = brotherPrinterRef.current;
+      brotherPrinterRef.current = null;
+      if (printer) void printer.close();
+      setBrotherPrinterState("idle");
+      toast({ title: "Badge did not print", description: brotherErrorMessage(caught), variant: "destructive" });
     }
   };
 
@@ -326,7 +370,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           event={event}
           station={station}
           onRegistered={(row, printBadge) => {
-            if (printBadge) setPrintJob({ kind: "badge", row });
+            if (printBadge) void printNameDirectly(row.guest?.name ?? "Guest", false);
           }}
         />
       </Panel>
@@ -514,7 +558,7 @@ export function CheckInPanel({ event }: { event: Event }) {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "badge", row })}>
+                    <Button type="button" variant="outline" size="sm" onClick={() => void printNameDirectly(row.guest?.name ?? "Guest")} disabled={brotherPrinterState === "connecting" || brotherPrinterState === "printing"}>
                       <Printer className="mr-1.5 size-3.5" />Badge
                     </Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(editingId === row.id ? null : row.id)}>
@@ -584,12 +628,12 @@ export function CheckInPanel({ event }: { event: Event }) {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Test the Brother label printer</DialogTitle>
-            <DialogDescription>Each label prints one full name only. The Brother printer setting controls the physical label size.</DialogDescription>
+            <DialogDescription>Print one centered full name directly to the Brother QL-800. This bypasses the macOS print queue.</DialogDescription>
           </DialogHeader>
           <ol className="space-y-3 text-sm text-foreground">
-            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">1</span><span>Connect the Brother Label Printer and confirm its label roll is installed.</span></li>
-            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">2</span><span>In the print window, choose the Brother printer and the exact installed label size.</span></li>
-            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">3</span><span>Use one copy, scale 100%, no margins, then print one test label.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">1</span><span>Keep the QL-800 connected by USB, powered on, and loaded with the DK-22251 roll.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">2</span><span>Click Connect &amp; print, then choose Brother QL-800 in Chrome's USB window.</span></li>
+            <li className="flex gap-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-muted text-xs font-bold">3</span><span>Beebizy will center the name, print one label, and cut it automatically.</span></li>
           </ol>
           <label className="space-y-1.5 text-sm font-medium text-foreground">
             Full name for the test label
@@ -600,19 +644,31 @@ export function CheckInPanel({ event }: { event: Event }) {
               autoComplete="name"
             />
           </label>
-          <div className="flex items-start gap-2 rounded-lg border border-info/30 bg-info-tint p-3 text-xs text-info-text">
-            <Wifi className="mt-0.5 size-4 shrink-0" />If the Brother printer does not appear, connect it by USB or install Brother iPrint&amp;Label before trying again.
+          <div className={cn("flex items-start gap-2 rounded-lg border p-3 text-xs", brotherPrinterState === "connected" ? "border-success/30 bg-success-tint text-success-text" : "border-info/30 bg-info-tint text-info-text")}>
+            <Wifi className="mt-0.5 size-4 shrink-0" />
+            {brotherPrinterState === "connected"
+              ? "Brother QL-800 is connected and ready for badge buttons on this page."
+              : supportsBrotherWebUsb()
+                ? "Chrome will ask for USB access the first time. Beebizy does not use the macOS print queue."
+                : "Open Beebizy in Chrome or Edge to print directly to the Brother QL-800."}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPrinterSetup(false)}>Close</Button>
             <Button
-              disabled={!testBadgeName.trim()}
+              variant="outline"
+              disabled={!testBadgeName.trim() || brotherPrinterState === "connecting" || brotherPrinterState === "printing"}
               onClick={() => {
                 setShowPrinterSetup(false);
                 setPrintJob({ kind: "printer-test", name: testBadgeName.trim() });
               }}
             >
-              <Printer className="mr-1.5 size-4" />Print one test label
+              Use system print
+            </Button>
+            <Button
+              disabled={!testBadgeName.trim() || !supportsBrotherWebUsb() || brotherPrinterState === "connecting" || brotherPrinterState === "printing"}
+              onClick={() => void printNameDirectly(testBadgeName.trim())}
+            >
+              <Printer className="mr-1.5 size-4" />
+              {brotherPrinterState === "connecting" ? "Connecting…" : brotherPrinterState === "printing" ? "Printing…" : brotherPrinterState === "connected" ? "Print one label" : "Connect & print one label"}
             </Button>
           </DialogFooter>
         </DialogContent>
