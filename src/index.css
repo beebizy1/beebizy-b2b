@@ -11,19 +11,21 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden !important;
+  html,
+  body {
+    width: 100%;
+    height: auto;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
-  .check-in-print-area,
-  .check-in-print-area * {
-    visibility: visible !important;
+  body > * {
+    display: none !important;
   }
 
-  .check-in-print-area {
+  body > .check-in-print-area {
     display: block !important;
-    position: absolute;
-    inset: 0;
+    position: static;
     color: #111827;
     background: #fff;
     font-family: Arial, sans-serif;
@@ -106,31 +108,35 @@
   .check-in-badge {
     box-sizing: border-box;
     display: grid;
-    width: 100vw;
-    height: 100vh;
-    padding: 0.08in 0.12in;
+    width: 100mm;
+    height: 62mm;
+    margin: 0;
+    padding: 4mm 6mm;
     place-items: center;
     overflow: hidden;
+    page-break-after: avoid;
+    break-after: avoid-page;
   }
 
   .check-in-badge h1 {
-    max-width: 100%;
+    width: 88mm;
+    max-width: 88mm;
     margin: 0;
     color: #000;
-    font-size: 32pt;
+    font-size: 36pt;
     font-weight: 700;
-    line-height: 0.98;
+    line-height: 1;
     text-align: center;
     letter-spacing: -0.025em;
     overflow-wrap: anywhere;
   }
 
   .check-in-badge h1.check-in-badge-name-medium {
-    font-size: 27pt;
+    font-size: 30pt;
   }
 
   .check-in-badge h1.check-in-badge-name-long {
-    font-size: 22pt;
+    font-size: 24pt;
   }
 }
 

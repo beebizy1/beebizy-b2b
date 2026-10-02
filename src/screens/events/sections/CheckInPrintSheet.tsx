@@ -1,5 +1,6 @@
 import type { Preferences } from "@/app/preferences";
 import type { Event, RegistrationWithGuest } from "@/data/entities";
+import { createPortal } from "react-dom";
 
 export type CheckInPrintJob =
   | { kind: "guest-list" }
@@ -26,9 +27,9 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
   const badgeName = job.kind === "badge" ? job.row.guest?.name ?? "Guest" : job.kind === "printer-test" ? job.name : null;
   const badgeNameLength = badgeName?.length ?? 0;
 
-  return (
+  const sheet = (
     <section className="check-in-print-area" aria-hidden="true">
-      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
+      <style>{job.kind === "badge" || job.kind === "printer-test" ? "@page { size: 100mm 62mm; margin: 0; }" : "@page { size: auto; margin: 0.35in; }"}</style>
       {badgeName ? (
         <div className="check-in-badge">
           <h1 className={badgeNameLength > 28 ? "check-in-badge-name-long" : badgeNameLength > 18 ? "check-in-badge-name-medium" : undefined}>
@@ -80,4 +81,9 @@ export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel 
       )}
     </section>
   );
+
+  // Keep the printable sheet outside the application root. This lets the print
+  // stylesheet remove the full app from layout instead of merely hiding it,
+  // preventing empty pages before or after a single badge.
+  return typeof document === "undefined" ? sheet : createPortal(sheet, document.body);
 }
