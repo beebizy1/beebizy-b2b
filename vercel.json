@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "alias": "beebizy-studio-preview.vercel.app",
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
