@@ -298,9 +298,20 @@ export function CheckInPanel({ event }: { event: Event }) {
         },
       });
       setEditingId(null);
+      return true;
     } catch (caught) {
       toast({ title: "Couldn't update check-in", description: caught instanceof Error ? caught.message : undefined });
+      return false;
     }
+  };
+
+  const printBadge = async (row: RegistrationWithGuest) => {
+    if (row.checkedInAt) {
+      setPrintJob({ kind: "badge", row });
+      return;
+    }
+    const saved = await saveCheckIn(row, new Date().toISOString(), { station: station.trim() || null });
+    if (saved) setPrintJob({ kind: "badge", row });
   };
 
   const brotherErrorMessage = (caught: unknown): string => {
@@ -652,8 +663,8 @@ export function CheckInPanel({ event }: { event: Event }) {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "badge", row })}>
-                      <Printer className="mr-1.5 size-3.5" />Print badge
+                    <Button type="button" variant="outline" size="sm" onClick={() => void printBadge(row)} disabled={update.isPending}>
+                      <Printer className="mr-1.5 size-3.5" />{row.checkedInAt ? "Reprint badge" : "Print badge & check in"}
                     </Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(editingId === row.id ? null : row.id)}>
                       <Pencil className="mr-1.5 size-3.5" />Details
@@ -671,7 +682,7 @@ export function CheckInPanel({ event }: { event: Event }) {
                   <CheckInDetails
                     row={row}
                     onClose={() => setEditingId(null)}
-                    onSave={(nextStation, notes) => saveCheckIn(row, row.checkedInAt, { station: nextStation, notes })}
+                    onSave={async (nextStation, notes) => { await saveCheckIn(row, row.checkedInAt, { station: nextStation, notes }); }}
                   />
                 ) : null}
               </li>
