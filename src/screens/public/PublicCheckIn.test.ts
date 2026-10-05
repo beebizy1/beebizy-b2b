@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PublicCheckInGuest } from "@/data/entities";
 import { PublicCheckInGuestActions } from "./PublicCheckIn";
+import { publicCheckInArrivalAction } from "./publicCheckInPolicy";
 
 const founder = {
   registrationId: "reg-founder",
@@ -31,13 +32,16 @@ describe("PublicCheckInGuestActions", () => {
   it("lets a founder check in without offering to print their pre-printed badge", () => {
     const html = render(founder);
 
+    expect(publicCheckInArrivalAction(founder)).toMatchObject({ label: "Check in", printAfter: false });
     expect(html).toContain("Check in");
     expect(html).not.toContain("Print badge &amp; check in");
   });
 
   it("keeps badge printing attached to check-in for guests without pre-printed badges", () => {
-    const html = render({ ...founder, registrationId: "reg-guest", segment: "General" });
+    const guest = { ...founder, registrationId: "reg-guest", segment: "General" };
+    const html = render(guest);
 
+    expect(publicCheckInArrivalAction(guest)).toMatchObject({ label: "Print badge & check in", printAfter: true });
     expect(html).toContain("Print badge &amp; check in");
   });
 
