@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, UserCheck } from "lucide-react";
+import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, UserCheck, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, Pill } from "@/components/primitives";
 import type { PublicCheckInGuest, PublicCheckInStationPayload } from "@/data/entities";
-import { lastNameSearchValue } from "@/data/checkInLanes";
+import { expandedAlphabeticalLaneLabel, lastNameSearchValue } from "@/data/checkInLanes";
 import { resolveTimeZone } from "@/lib/datetime";
 import { NameBadgePrintSheet } from "@/screens/events/sections/NameBadgePrintSheet";
 import { PublicFrame } from "./PublicEvent";
@@ -22,12 +23,18 @@ export default function PublicCheckIn({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [switchingStation, setSwitchingStation] = useState(false);
+  const [walkInName, setWalkInName] = useState("");
+  const [savingWalkIn, setSavingWalkIn] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [printName, setPrintName] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = async (stationId?: string | null) => {
     setError(null);
+    if (payload) setSwitchingStation(true);
     try {
-      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/check-in`);
+      const query = stationId ? `?stationId=${encodeURIComponent(stationId)}` : "";
+      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/check-in${query}`);
       const result: unknown = await response.json().catch(() => null);
       if (response.status === 404) {
         setPayload(null);
@@ -43,11 +50,12 @@ export default function PublicCheckIn({ token }: { token: string }) {
       setError(caught instanceof Error ? caught.message : "The counter list could not be loaded.");
     } finally {
       setLoading(false);
+      setSwitchingStation(false);
     }
   };
 
   useEffect(() => {
-    void load();
+    void load(null);
     // The token is the complete identity for this deliberately session-free screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -74,11 +82,12 @@ export default function PublicCheckIn({ token }: { token: string }) {
     if (savingId) return;
     setSavingId(guest.registrationId);
     setError(null);
+    setSavedMessage(null);
     try {
       const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/check-in/${encodeURIComponent(guest.registrationId)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ checkedIn }),
+        body: JSON.stringify({ checkedIn, stationId: payload?.station.id }),
       });
       const result: unknown = await response.json().catch(() => null);
       if (response.status === 404) {
@@ -90,6 +99,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
         throw new Error(errorMessage(result, "The check-in could not be saved."));
       }
       const updated = result as PublicCheckInGuest;
+      setSavedMessage(checkedIn ? `${updated.name} is checked in.` : `${updated.name}'s check-in was undone.`);
       setPayload((current) => current ? {
         ...current,
         guests: current.guests.map((row) => row.registrationId === updated.registrationId ? updated : row),
@@ -99,6 +109,41 @@ export default function PublicCheckIn({ token }: { token: string }) {
       setError(caught instanceof Error ? caught.message : "The check-in could not be saved.");
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const createWalkIn = async () => {
+    if (!payload || savingWalkIn) return;
+    const name = walkInName.trim().replace(/\s+/g, " ");
+    if (!name) {
+      setError("Enter the walk-in guest's full name.");
+      return;
+    }
+    setSavingWalkIn(true);
+    setError(null);
+    setSavedMessage(null);
+    try {
+      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/check-in/walk-ins`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, stationId: payload.station.id }),
+      });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok || !result || typeof result !== "object" || !("registrationId" in result)) {
+        throw new Error(errorMessage(result, "The walk-in could not be saved."));
+      }
+      const created = result as PublicCheckInGuest;
+      setPayload((current) => current ? {
+        ...current,
+        guests: [created, ...current.guests.filter((guest) => guest.registrationId !== created.registrationId)],
+      } : current);
+      setWalkInName("");
+      setSavedMessage(`${created.name} was added and checked in.`);
+      setPrintName(created.name);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The walk-in could not be saved.");
+    } finally {
+      setSavingWalkIn(false);
     }
   };
 
@@ -127,21 +172,79 @@ export default function PublicCheckIn({ token }: { token: string }) {
           <div className="border-b border-hairline bg-primary-muted/40 p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <Pill tone="brand">Private volunteer counter</Pill>
-                <h1 className="mt-3 text-2xl font-bold text-foreground">{payload.station.name}</h1>
-                <p className="mt-1 text-sm font-semibold text-foreground">{payload.station.lane}</p>
+                <Pill tone="brand">Shared event-day desk</Pill>
+                <h1 className="mt-3 text-2xl font-bold text-foreground">Guest check-in and badge printing</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Choose a counter, find the guest, then print and check them in.</p>
               </div>
-              <div className="rounded-xl border border-hairline bg-card px-4 py-3 text-right">
-                <p className="text-xs text-muted-foreground">Signed in as</p>
-                <p className="font-semibold text-foreground">{payload.volunteer.name}</p>
+              <div className="rounded-xl border border-hairline bg-card px-4 py-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-foreground"><Users className="size-4 text-primary" />No login required</p>
+                <p className="mt-1 text-xs text-muted-foreground">Anyone with this secure link can help.</p>
               </div>
             </div>
           </div>
-          <div className="grid gap-3 p-5 text-sm sm:grid-cols-3 sm:p-6">
+          <div className="grid gap-4 p-5 text-sm sm:grid-cols-4 sm:p-6">
             <div><p className="text-xs text-muted-foreground">Event</p><p className="font-semibold text-foreground">{payload.eventTitle}</p></div>
             <div><p className="text-xs text-muted-foreground">Date</p><p className="font-semibold text-foreground">{eventDate}</p></div>
+            <div>
+              <label htmlFor="event-day-counter" className="text-xs text-muted-foreground">Counter</label>
+              <Select
+                value={payload.station.id}
+                disabled={switchingStation || savingId !== null || savingWalkIn}
+                onValueChange={(stationId) => {
+                  setSearch("");
+                  setSavedMessage(null);
+                  void load(stationId);
+                }}
+              >
+                <SelectTrigger id="event-day-counter" className="mt-1 h-9 bg-card" aria-label="Select check-in counter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {payload.stations.map((station) => (
+                    <SelectItem key={station.id} value={station.id}>
+                      {station.name} · {expandedAlphabeticalLaneLabel(station.lane)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div><p className="text-xs text-muted-foreground">Progress</p><p className="font-semibold text-foreground">{checkedIn} of {payload.guests.length} checked in</p></div>
           </div>
+        </Panel>
+
+        <Panel className="overflow-hidden">
+          <div className="border-b border-hairline p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-primary-muted p-2 text-primary"><UserPlus className="size-4" /></div>
+              <div>
+                <h2 className="font-semibold text-foreground">Not on the guest list?</h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">Enter the person's full name. Beebizy will add the walk-in, check them in and open one name badge for printing.</p>
+              </div>
+            </div>
+          </div>
+          <form
+            className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end sm:p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createWalkIn();
+            }}
+          >
+            <label className="min-w-0 flex-1 text-sm font-medium text-foreground">
+              Full name
+              <Input
+                value={walkInName}
+                onChange={(event) => setWalkInName(event.target.value)}
+                placeholder="Type first and last name"
+                autoComplete="name"
+                maxLength={120}
+                className="mt-1"
+              />
+            </label>
+            <Button type="submit" disabled={savingWalkIn || switchingStation || savingId !== null || !walkInName.trim()}>
+              {savingWalkIn ? <RefreshCw className="mr-1.5 size-4 animate-spin" /> : <Printer className="mr-1.5 size-4" />}
+              {savingWalkIn ? "Saving…" : "Print walk-in badge & check in"}
+            </Button>
+          </form>
         </Panel>
 
         <Panel className="overflow-hidden">
@@ -156,14 +259,15 @@ export default function PublicCheckIn({ token }: { token: string }) {
                 className="pl-9"
               />
             </label>
-            <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
-              <RefreshCw className="mr-1.5 size-3.5" />Refresh
+            <Button type="button" variant="outline" size="sm" disabled={switchingStation} onClick={() => void load(payload.station.id)}>
+              <RefreshCw className={`mr-1.5 size-3.5 ${switchingStation ? "animate-spin" : ""}`} />Refresh
             </Button>
           </div>
 
           {error ? <p role="alert" className="border-b border-danger/20 bg-danger-tint px-5 py-3 text-sm text-danger-text">{error}</p> : null}
+          {savedMessage ? <p role="status" className="border-b border-success/20 bg-success-tint px-5 py-3 text-sm text-success-text">{savedMessage}</p> : null}
           {payload.guests.length === 0 ? (
-            <EmptyState icon={UserCheck} title="No guests are assigned to this range" description={`Only ${payload.station.lane.toLowerCase()} appear at this private counter.`} />
+            <EmptyState icon={UserCheck} title="No guests are assigned to this range" description={`Only ${payload.station.lane.toLowerCase()} appear at this counter.`} />
           ) : visibleGuests.length === 0 ? (
             <EmptyState icon={Search} title="No matching guest" description="Check the spelling or send the guest to the counter shown for their last name." />
           ) : (
@@ -200,7 +304,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
           )}
         </Panel>
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
-          <LockKeyhole className="mt-0.5 size-3.5 shrink-0" />This private link can only view and check in guests assigned to {payload.station.name}. It cannot open event settings, budgets, vendors, or other counters.
+          <LockKeyhole className="mt-0.5 size-3.5 shrink-0" />Anyone with this secure link can use all six check-in counters and add walk-ins. The link cannot open event settings, budgets, vendors or other workspace information.
         </p>
       </div>
       <NameBadgePrintSheet name={printName} />

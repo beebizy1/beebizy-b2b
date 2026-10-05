@@ -251,13 +251,22 @@ async function handlePublic(segments: string[], method: string, request: Request
       return assignment ? json(assignment) : json({ error: "This assignment link is no longer active." }, 404);
     }
     if (method === "GET" && segments[3] === "check-in" && segments.length === 4) {
-      const station = await repos.publicCheckInStation(segments[2]);
+      const stationId = new URL(request.url).searchParams.get("stationId");
+      const station = await repos.publicCheckInStation(segments[2], stationId);
       return station ? json(station) : json({ error: "This check-in link is no longer active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "check-in" && segments[4] === "walk-ins" && segments.length === 5) {
+      const body = await readBody(request);
+      if (typeof body.name !== "string") return json({ error: "name is required." }, 400);
+      if (body.stationId !== undefined && typeof body.stationId !== "string") return json({ error: "stationId must be a string." }, 400);
+      const guest = await repos.createPublicWalkIn(segments[2], body.name, body.stationId);
+      return guest ? json(guest, 201) : json({ error: "This check-in link or counter is no longer active." }, 404);
     }
     if (method === "POST" && segments[3] === "check-in" && segments[4] && segments.length === 5) {
       const body = await readBody(request);
       if (typeof body.checkedIn !== "boolean") return json({ error: "checkedIn must be true or false." }, 400);
-      const guest = await repos.setPublicCheckIn(segments[2], segments[4], body.checkedIn);
+      if (body.stationId !== undefined && typeof body.stationId !== "string") return json({ error: "stationId must be a string." }, 400);
+      const guest = await repos.setPublicCheckIn(segments[2], segments[4], body.checkedIn, body.stationId);
       return guest ? json(guest) : json({ error: "This guest is not available at this check-in station." }, 404);
     }
     return json({ error: "Method not allowed" }, 405);

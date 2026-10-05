@@ -867,14 +867,21 @@ export interface PublicCheckInGuest {
   checkInStation: string | null;
 }
 
-/** Everything a volunteer needs at one counter, and no surrounding workspace data. */
+export interface PublicCheckInStation {
+  id: string;
+  name: string;
+  lane: string;
+}
+
+/** Everything a door volunteer needs, without exposing the surrounding workspace. */
 export interface PublicCheckInStationPayload {
   eventTitle: string;
   eventDate: IsoDateTime;
   timeZone: string;
   location: string | null;
   volunteer: { name: string };
-  station: { id: string; name: string; lane: string };
+  stations: PublicCheckInStation[];
+  station: PublicCheckInStation;
   guests: PublicCheckInGuest[];
 }
 

@@ -25,6 +25,7 @@ vi.mock("./repos", () => {
     publicAssignment: vi.fn(),
     publicCheckInStation: vi.fn(),
     setPublicCheckIn: vi.fn(),
+    createPublicWalkIn: vi.fn(),
     completePublicAssignment: vi.fn(),
     reopenPublicAssignment: vi.fn(),
     checklist: child,
@@ -67,7 +68,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, createPublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 describe("single-event collaborator routing", () => {
@@ -401,7 +402,7 @@ describe("public assignment endpoint", () => {
     expect(response.status).toBe(404);
   });
 
-  it("returns only the station guest list addressed by a private volunteer link", async () => {
+  it("returns one selected counter plus every counter available through the shared event-day link", async () => {
     vi.mocked(authorize).mockClear();
     vi.mocked(publicCheckInStation).mockResolvedValue({
       eventTitle: "Demo Day",
@@ -409,6 +410,10 @@ describe("public assignment endpoint", () => {
       timeZone: "America/Los_Angeles",
       location: "Mission Gardens",
       volunteer: { name: "Volunteer 2" },
+      stations: [
+        { id: "station-1", name: "Counter 1", lane: "Last names A-D" },
+        { id: "station-2", name: "Counter 2", lane: "Last names E-H" },
+      ],
       station: { id: "station-2", name: "Counter 2", lane: "Last names E-H" },
       guests: [{
         registrationId: "reg-goyal",
@@ -421,15 +426,16 @@ describe("public assignment endpoint", () => {
       }],
     });
 
-    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in"));
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in?stationId=station-2"));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       volunteer: { name: "Volunteer 2" },
+      stations: [{ id: "station-1" }, { id: "station-2" }],
       station: { lane: "Last names E-H" },
       guests: [{ name: "Tarang Goyal" }],
     });
-    expect(publicCheckInStation).toHaveBeenCalledWith("volunteer-token");
+    expect(publicCheckInStation).toHaveBeenCalledWith("volunteer-token", "station-2");
     expect(authorize).not.toHaveBeenCalled();
   });
 
@@ -447,12 +453,34 @@ describe("public assignment endpoint", () => {
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/reg-goyal", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ checkedIn: true }),
+      body: JSON.stringify({ checkedIn: true, stationId: "station-2" }),
     }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ registrationId: "reg-goyal", checkedInAt: expect.any(String) });
-    expect(setPublicCheckIn).toHaveBeenCalledWith("volunteer-token", "reg-goyal", true);
+    expect(setPublicCheckIn).toHaveBeenCalledWith("volunteer-token", "reg-goyal", true, "station-2");
+  });
+
+  it("registers, checks in and returns a name-only walk-in for immediate badge printing", async () => {
+    vi.mocked(createPublicWalkIn).mockResolvedValue({
+      registrationId: "reg-walk-in",
+      name: "Ada Lovelace",
+      organization: null,
+      segment: "Walk-in",
+      status: "confirmed",
+      checkedInAt: "2026-09-21T16:10:00.000Z",
+      checkInStation: "Counter 3",
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/walk-ins", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Ada Lovelace", stationId: "station-3" }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ name: "Ada Lovelace", checkedInAt: expect.any(String) });
+    expect(createPublicWalkIn).toHaveBeenCalledWith("volunteer-token", "Ada Lovelace", "station-3");
   });
 
   it("rejects an inactive or out-of-range check-in link without exposing a guest", async () => {

@@ -71,6 +71,7 @@ import type {
   TeamUpdate,
   PublicAssignmentPayload,
   PublicCheckInGuest,
+  PublicCheckInStation,
   PublicCheckInStationPayload,
   PublicRegistrationDraft,
   PublicRegistrationResult,
@@ -1239,6 +1240,30 @@ interface PublicVolunteerCheckInAccess {
   station: typeof s.checkInStations.$inferSelect;
 }
 
+async function publicEventDayStations(
+  access: PublicVolunteerCheckInAccess,
+  selectedStationId?: string | null,
+): Promise<{ stations: PublicCheckInStation[]; station: typeof s.checkInStations.$inferSelect } | null> {
+  const rows = await db.select().from(s.checkInStations).where(and(
+    eq(s.checkInStations.eventId, access.link.eventId),
+    eq(s.checkInStations.workspaceId, access.link.workspaceId),
+  ));
+  const alphabetical = rows
+    .flatMap((station) => {
+      const range = parseAlphabeticalLane(station.lane);
+      return range ? [{ station, start: range.start, end: range.end }] : [];
+    })
+    .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end) || a.station.name.localeCompare(b.station.name));
+  const selected = selectedStationId
+    ? alphabetical.find((row) => row.station.id === selectedStationId)?.station
+    : alphabetical.find((row) => row.station.id === access.station.id)?.station;
+  if (!selected) return null;
+  return {
+    stations: alphabetical.map(({ station }) => ({ id: station.id, name: station.name, lane: station.lane })),
+    station: selected,
+  };
+}
+
 /** Resolves a private volunteer link to its currently assigned counter, failing closed. */
 async function publicVolunteerCheckInAccess(token: string): Promise<PublicVolunteerCheckInAccess | null> {
   const [link] = await db.select().from(s.eventHistory)
@@ -1281,11 +1306,14 @@ function toPublicCheckInGuest(
   };
 }
 
-/** Returns only the guests whose last name belongs to the volunteer's assigned counter. */
-export async function publicCheckInStation(token: string): Promise<PublicCheckInStationPayload | null> {
+/** Returns the selected counter and only the guests that desk is responsible for. */
+export async function publicCheckInStation(token: string, selectedStationId?: string | null): Promise<PublicCheckInStationPayload | null> {
   const access = await publicVolunteerCheckInAccess(token);
   if (!access) return null;
-  const { link, shift, station } = access;
+  const eventDay = await publicEventDayStations(access, selectedStationId);
+  if (!eventDay) return null;
+  const { link, shift } = access;
+  const { station, stations } = eventDay;
   const [eventRow] = await db.select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone }).from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
@@ -1301,7 +1329,8 @@ export async function publicCheckInStation(token: string): Promise<PublicCheckIn
       sql`${s.registrations.status} <> 'cancelled'`,
     ));
   const guests = registrationRows
-    .filter((row) => guestMatchesLane(row.guest.name, station.lane))
+    .filter((row) => guestMatchesLane(row.guest.name, station.lane)
+      || (row.registration.segment === "Walk-in" && row.registration.checkInStation === station.name))
     .sort((a, b) => lastNameSearchValue(a.guest.name).localeCompare(lastNameSearchValue(b.guest.name)))
     .map((row) => toPublicCheckInGuest(row.registration, row.guest));
 
@@ -1313,16 +1342,25 @@ export async function publicCheckInStation(token: string): Promise<PublicCheckIn
       ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
       : eventRow.event.venue,
     volunteer: { name: shift.name },
+    stations,
     station: { id: station.id, name: station.name, lane: station.lane },
     guests,
   };
 }
 
 /** Checks in or undoes one in-range guest and records the volunteer identity in history. */
-export async function setPublicCheckIn(token: string, registrationId: string, checkedIn: boolean): Promise<PublicCheckInGuest | null> {
+export async function setPublicCheckIn(
+  token: string,
+  registrationId: string,
+  checkedIn: boolean,
+  selectedStationId?: string | null,
+): Promise<PublicCheckInGuest | null> {
   const access = await publicVolunteerCheckInAccess(token);
   if (!access) return null;
-  const { link, shift, station } = access;
+  const eventDay = await publicEventDayStations(access, selectedStationId);
+  if (!eventDay) return null;
+  const { link, shift } = access;
+  const { station } = eventDay;
   const [current] = await db.select({ registration: s.registrations, guest: s.guests })
     .from(s.registrations)
     .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
@@ -1333,7 +1371,10 @@ export async function setPublicCheckIn(token: string, registrationId: string, ch
       sql`${s.registrations.status} <> 'cancelled'`,
     ))
     .limit(1);
-  if (!current || !guestMatchesLane(current.guest.name, station.lane)) return null;
+  const belongsToStation = current
+    && (guestMatchesLane(current.guest.name, station.lane)
+      || (current.registration.segment === "Walk-in" && current.registration.checkInStation === station.name));
+  if (!current || !belongsToStation) return null;
 
   const checkedInAt = checkedIn ? new Date() : null;
   const before = toPublicCheckInGuest(current.registration, current.guest);
@@ -1366,13 +1407,101 @@ export async function setPublicCheckIn(token: string, registrationId: string, ch
       resource: "registration",
       resourceId: registrationId,
       action: "updated",
-      summary: `${checkedIn ? "Checked in" : "Undid check-in for"} ${current.guest.name} at ${station.name} by ${shift.name}`,
+      summary: `${checkedIn ? "Checked in" : "Undid check-in for"} ${current.guest.name} at ${station.name} through the shared event-day desk`,
       before: before as unknown as Record<string, unknown>,
       after: after as unknown as Record<string, unknown>,
     }),
   ]);
   if (updated.length === 0) return null;
   return after;
+}
+
+/** Creates a name-only walk-in, records arrival and returns the printable guest row. */
+export async function createPublicWalkIn(
+  token: string,
+  rawName: string,
+  selectedStationId?: string | null,
+): Promise<PublicCheckInGuest | null> {
+  const access = await publicVolunteerCheckInAccess(token);
+  if (!access) return null;
+  const eventDay = await publicEventDayStations(access, selectedStationId);
+  if (!eventDay) return null;
+  const name = rawName.trim().replace(/\s+/g, " ");
+  if (!name) throw new HttpError(400, "Enter the guest's full name.");
+  if (name.length > 120) throw new HttpError(400, "The guest name must be 120 characters or fewer.");
+
+  const { link, shift } = access;
+  const { station } = eventDay;
+  const [eventRow] = await db.select({ capacity: s.events.capacity }).from(s.events).where(and(
+    eq(s.events.id, link.eventId),
+    eq(s.events.workspaceId, link.workspaceId),
+  )).limit(1);
+  if (!eventRow) return null;
+  if (eventRow.capacity !== null) {
+    const [registered] = await db.select({ total: sql<number>`coalesce(sum(${s.registrations.quantity}), 0)` })
+      .from(s.registrations)
+      .where(and(
+        eq(s.registrations.eventId, link.eventId),
+        eq(s.registrations.workspaceId, link.workspaceId),
+        sql`${s.registrations.status} <> 'cancelled'`,
+      ));
+    if (Number(registered?.total ?? 0) >= eventRow.capacity) {
+      throw new HttpError(409, "This event is at capacity. Ask an organizer before adding a walk-in.");
+    }
+  }
+
+  const guestId = newId("att");
+  const registrationId = newId("reg");
+  const checkedInAt = new Date();
+  const result: PublicCheckInGuest = {
+    registrationId,
+    name,
+    organization: null,
+    segment: "Walk-in",
+    status: "confirmed",
+    checkedInAt: checkedInAt.toISOString(),
+    checkInStation: station.name,
+  };
+  try {
+    await db.batch([
+      db.insert(s.guests).values({
+        id: guestId,
+        workspaceId: link.workspaceId,
+        name,
+        contact: null,
+        notes: "Registered at event check-in.",
+      }),
+      db.insert(s.registrations).values({
+        id: registrationId,
+        workspaceId: link.workspaceId,
+        eventId: link.eventId,
+        guestId,
+        status: "confirmed",
+        segment: "Walk-in",
+        checkedInAt,
+        checkInStation: station.name,
+        checkInNotes: "Registered on site.",
+      }),
+      db.insert(s.eventHistory).values({
+        id: newId("hist"),
+        workspaceId: link.workspaceId,
+        eventId: link.eventId,
+        actorId: `public:${shift.email}`,
+        resource: "registration",
+        resourceId: registrationId,
+        action: "created",
+        summary: `Registered and checked in walk-in ${name} at ${station.name} through the shared event-day desk`,
+        before: null,
+        after: result as unknown as Record<string, unknown>,
+      }),
+    ]);
+  } catch (error) {
+    if (isConstraintViolation(error, "registrations_event_capacity_check")) {
+      throw new HttpError(409, "This event is at capacity. Ask an organizer before adding a walk-in.");
+    }
+    throw error;
+  }
+  return result;
 }
 
 /** A private assignment link can change only the task, cue or shift it was issued for. */
