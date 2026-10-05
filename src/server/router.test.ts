@@ -402,7 +402,7 @@ describe("public assignment endpoint", () => {
     expect(response.status).toBe(404);
   });
 
-  it("returns one selected counter plus every counter available through the shared event-day link", async () => {
+  it("returns the complete A-Z guest list through every shared event-day link", async () => {
     vi.mocked(authorize).mockClear();
     vi.mocked(publicCheckInStation).mockResolvedValue({
       eventTitle: "Demo Day",
@@ -410,10 +410,6 @@ describe("public assignment endpoint", () => {
       timeZone: "America/Los_Angeles",
       location: "Mission Gardens",
       volunteer: { name: "Volunteer 2" },
-      stations: [
-        { id: "station-1", name: "Counter 1", lane: "Last names A-D" },
-        { id: "station-2", name: "Counter 2", lane: "Last names E-H" },
-      ],
       station: { id: "station-2", name: "Counter 2", lane: "Last names E-H" },
       guests: [{
         registrationId: "reg-goyal",
@@ -426,16 +422,15 @@ describe("public assignment endpoint", () => {
       }],
     });
 
-    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in?stationId=station-2"));
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in"));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       volunteer: { name: "Volunteer 2" },
-      stations: [{ id: "station-1" }, { id: "station-2" }],
       station: { lane: "Last names E-H" },
       guests: [{ name: "Tarang Goyal" }],
     });
-    expect(publicCheckInStation).toHaveBeenCalledWith("volunteer-token", "station-2");
+    expect(publicCheckInStation).toHaveBeenCalledWith("volunteer-token");
     expect(authorize).not.toHaveBeenCalled();
   });
 
@@ -453,12 +448,12 @@ describe("public assignment endpoint", () => {
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/reg-goyal", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ checkedIn: true, stationId: "station-2" }),
+      body: JSON.stringify({ checkedIn: true }),
     }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ registrationId: "reg-goyal", checkedInAt: expect.any(String) });
-    expect(setPublicCheckIn).toHaveBeenCalledWith("volunteer-token", "reg-goyal", true, "station-2");
+    expect(setPublicCheckIn).toHaveBeenCalledWith("volunteer-token", "reg-goyal", true);
   });
 
   it("registers, checks in and returns a name-only walk-in for immediate badge printing", async () => {
@@ -475,12 +470,12 @@ describe("public assignment endpoint", () => {
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/walk-ins", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Ada Lovelace", stationId: "station-3" }),
+      body: JSON.stringify({ name: "Ada Lovelace" }),
     }));
 
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({ name: "Ada Lovelace", checkedInAt: expect.any(String) });
-    expect(createPublicWalkIn).toHaveBeenCalledWith("volunteer-token", "Ada Lovelace", "station-3");
+    expect(createPublicWalkIn).toHaveBeenCalledWith("volunteer-token", "Ada Lovelace");
   });
 
   it("rejects an inactive or out-of-range check-in link without exposing a guest", async () => {

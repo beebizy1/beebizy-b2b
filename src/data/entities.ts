@@ -867,12 +867,6 @@ export interface PublicCheckInGuest {
   checkInStation: string | null;
 }
 
-export interface PublicCheckInStation {
-  id: string;
-  name: string;
-  lane: string;
-}
-
 /** Everything a door volunteer needs, without exposing the surrounding workspace. */
 export interface PublicCheckInStationPayload {
   eventTitle: string;
@@ -880,8 +874,7 @@ export interface PublicCheckInStationPayload {
   timeZone: string;
   location: string | null;
   volunteer: { name: string };
-  stations: PublicCheckInStation[];
-  station: PublicCheckInStation;
+  station: { id: string; name: string; lane: string };
   guests: PublicCheckInGuest[];
 }
 

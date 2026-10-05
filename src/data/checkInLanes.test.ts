@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ALPHABETICAL_CHECK_IN_LANES,
   checkInLaneForGuest,
-  expandedAlphabeticalLaneLabel,
   guestLastInitial,
   guestMatchesLane,
   parseAlphabeticalLane,
@@ -53,12 +52,6 @@ describe("alphabetical check-in lanes", () => {
   it("accepts range punctuation used in typed station labels", () => {
     expect(parseAlphabeticalLane("Last names A–D")).toEqual({ start: "A", end: "D" });
     expect(parseAlphabeticalLane("u - z")).toEqual({ start: "U", end: "Z" });
-  });
-
-  it("spells out each counter's letters for the event-day dropdown", () => {
-    expect(expandedAlphabeticalLaneLabel("Last names A-D")).toBe("A-B-C-D");
-    expect(expandedAlphabeticalLaneLabel("Last names U–Z")).toBe("U-V-W-X-Y-Z");
-    expect(expandedAlphabeticalLaneLabel("VIP guests")).toBe("VIP guests");
   });
 
   it("fails closed for missing names and non-alphabetical lanes", () => {

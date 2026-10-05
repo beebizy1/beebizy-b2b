@@ -71,7 +71,6 @@ import type {
   TeamUpdate,
   PublicAssignmentPayload,
   PublicCheckInGuest,
-  PublicCheckInStation,
   PublicCheckInStationPayload,
   PublicRegistrationDraft,
   PublicRegistrationResult,
@@ -110,7 +109,7 @@ import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
-import { guestMatchesLane, lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
+import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -1240,30 +1239,6 @@ interface PublicVolunteerCheckInAccess {
   station: typeof s.checkInStations.$inferSelect;
 }
 
-async function publicEventDayStations(
-  access: PublicVolunteerCheckInAccess,
-  selectedStationId?: string | null,
-): Promise<{ stations: PublicCheckInStation[]; station: typeof s.checkInStations.$inferSelect } | null> {
-  const rows = await db.select().from(s.checkInStations).where(and(
-    eq(s.checkInStations.eventId, access.link.eventId),
-    eq(s.checkInStations.workspaceId, access.link.workspaceId),
-  ));
-  const alphabetical = rows
-    .flatMap((station) => {
-      const range = parseAlphabeticalLane(station.lane);
-      return range ? [{ station, start: range.start, end: range.end }] : [];
-    })
-    .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end) || a.station.name.localeCompare(b.station.name));
-  const selected = selectedStationId
-    ? alphabetical.find((row) => row.station.id === selectedStationId)?.station
-    : alphabetical.find((row) => row.station.id === access.station.id)?.station;
-  if (!selected) return null;
-  return {
-    stations: alphabetical.map(({ station }) => ({ id: station.id, name: station.name, lane: station.lane })),
-    station: selected,
-  };
-}
-
 /** Resolves a private volunteer link to its currently assigned counter, failing closed. */
 async function publicVolunteerCheckInAccess(token: string): Promise<PublicVolunteerCheckInAccess | null> {
   const [link] = await db.select().from(s.eventHistory)
@@ -1306,14 +1281,11 @@ function toPublicCheckInGuest(
   };
 }
 
-/** Returns the selected counter and only the guests that desk is responsible for. */
-export async function publicCheckInStation(token: string, selectedStationId?: string | null): Promise<PublicCheckInStationPayload | null> {
+/** Returns the complete A-Z guest list through any active event-day volunteer link. */
+export async function publicCheckInStation(token: string): Promise<PublicCheckInStationPayload | null> {
   const access = await publicVolunteerCheckInAccess(token);
   if (!access) return null;
-  const eventDay = await publicEventDayStations(access, selectedStationId);
-  if (!eventDay) return null;
-  const { link, shift } = access;
-  const { station, stations } = eventDay;
+  const { link, shift, station } = access;
   const [eventRow] = await db.select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone }).from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
@@ -1329,8 +1301,6 @@ export async function publicCheckInStation(token: string, selectedStationId?: st
       sql`${s.registrations.status} <> 'cancelled'`,
     ));
   const guests = registrationRows
-    .filter((row) => guestMatchesLane(row.guest.name, station.lane)
-      || (row.registration.segment === "Walk-in" && row.registration.checkInStation === station.name))
     .sort((a, b) => lastNameSearchValue(a.guest.name).localeCompare(lastNameSearchValue(b.guest.name)))
     .map((row) => toPublicCheckInGuest(row.registration, row.guest));
 
@@ -1342,7 +1312,6 @@ export async function publicCheckInStation(token: string, selectedStationId?: st
       ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
       : eventRow.event.venue,
     volunteer: { name: shift.name },
-    stations,
     station: { id: station.id, name: station.name, lane: station.lane },
     guests,
   };
@@ -1353,14 +1322,10 @@ export async function setPublicCheckIn(
   token: string,
   registrationId: string,
   checkedIn: boolean,
-  selectedStationId?: string | null,
 ): Promise<PublicCheckInGuest | null> {
   const access = await publicVolunteerCheckInAccess(token);
   if (!access) return null;
-  const eventDay = await publicEventDayStations(access, selectedStationId);
-  if (!eventDay) return null;
-  const { link, shift } = access;
-  const { station } = eventDay;
+  const { link, shift, station } = access;
   const [current] = await db.select({ registration: s.registrations, guest: s.guests })
     .from(s.registrations)
     .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
@@ -1371,10 +1336,7 @@ export async function setPublicCheckIn(
       sql`${s.registrations.status} <> 'cancelled'`,
     ))
     .limit(1);
-  const belongsToStation = current
-    && (guestMatchesLane(current.guest.name, station.lane)
-      || (current.registration.segment === "Walk-in" && current.registration.checkInStation === station.name));
-  if (!current || !belongsToStation) return null;
+  if (!current) return null;
 
   const checkedInAt = checkedIn ? new Date() : null;
   const before = toPublicCheckInGuest(current.registration, current.guest);
@@ -1420,18 +1382,14 @@ export async function setPublicCheckIn(
 export async function createPublicWalkIn(
   token: string,
   rawName: string,
-  selectedStationId?: string | null,
 ): Promise<PublicCheckInGuest | null> {
   const access = await publicVolunteerCheckInAccess(token);
   if (!access) return null;
-  const eventDay = await publicEventDayStations(access, selectedStationId);
-  if (!eventDay) return null;
   const name = rawName.trim().replace(/\s+/g, " ");
   if (!name) throw new HttpError(400, "Enter the guest's full name.");
   if (name.length > 120) throw new HttpError(400, "The guest name must be 120 characters or fewer.");
 
-  const { link, shift } = access;
-  const { station } = eventDay;
+  const { link, shift, station } = access;
   const [eventRow] = await db.select({ capacity: s.events.capacity }).from(s.events).where(and(
     eq(s.events.id, link.eventId),
     eq(s.events.workspaceId, link.workspaceId),

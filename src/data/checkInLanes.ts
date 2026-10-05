@@ -41,16 +41,6 @@ export function parseAlphabeticalLane(lane: string): Pick<AlphabeticalCheckInLan
   return { start: match[1], end: match[2] };
 }
 
-export function expandedAlphabeticalLaneLabel(lane: string): string {
-  const range = parseAlphabeticalLane(lane);
-  if (!range) return lane;
-  const letters: string[] = [];
-  for (let code = range.start.charCodeAt(0); code <= range.end.charCodeAt(0); code += 1) {
-    letters.push(String.fromCharCode(code));
-  }
-  return letters.join("-");
-}
-
 export function guestMatchesLane(name: string, lane: string): boolean {
   const initial = guestLastInitial(name);
   const range = parseAlphabeticalLane(lane);
