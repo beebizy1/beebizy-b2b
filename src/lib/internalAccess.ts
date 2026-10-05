@@ -15,6 +15,7 @@ export const PRODUCT_OPERATOR_EMAILS = [
   "laila@beebizy.com",
   "mary@beebizy.com",
   "tarang@beebizy.com",
+  "tim@beebizy.com",
   "sm.shreyamahajan@gmail.com",
 ] as const;
 

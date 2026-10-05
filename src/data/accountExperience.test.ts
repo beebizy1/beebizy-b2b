@@ -36,6 +36,7 @@ describe("account experience", () => {
     expect(canSwitchAccountExperience(" SM.SHREYAMAHAJAN@GMAIL.COM ")).toBe(true);
     expect(canSwitchAccountExperience(" HELLO@BEEBIZY.COM ")).toBe(true);
     expect(canSwitchAccountExperience("mary@beebizy.com")).toBe(true);
+    expect(canSwitchAccountExperience(" TIM@BEEBIZY.COM ")).toBe(true);
     expect(canSwitchAccountExperience("ccismasflorea@scu.edu")).toBe(false);
     expect(canSwitchAccountExperience("annie@sevareid.com")).toBe(false);
     expect(canSwitchAccountExperience(null)).toBe(false);
