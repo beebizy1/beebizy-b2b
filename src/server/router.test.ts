@@ -26,6 +26,7 @@ vi.mock("./repos", () => {
     publicCheckInStation: vi.fn(),
     setPublicCheckIn: vi.fn(),
     createPublicWalkIn: vi.fn(),
+    removePublicWalkIn: vi.fn(),
     completePublicAssignment: vi.fn(),
     reopenPublicAssignment: vi.fn(),
     checklist: child,
@@ -68,7 +69,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, createPublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 describe("single-event collaborator routing", () => {
@@ -419,6 +420,7 @@ describe("public assignment endpoint", () => {
         status: "confirmed",
         checkedInAt: null,
         checkInStation: null,
+        removable: false,
       }],
     });
 
@@ -443,6 +445,7 @@ describe("public assignment endpoint", () => {
       status: "confirmed",
       checkedInAt: "2026-09-21T16:05:00.000Z",
       checkInStation: "Counter 2",
+      removable: false,
     });
 
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/reg-goyal", {
@@ -465,6 +468,7 @@ describe("public assignment endpoint", () => {
       status: "confirmed",
       checkedInAt: "2026-09-21T16:10:00.000Z",
       checkInStation: "Counter 3",
+      removable: true,
     });
 
     const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/walk-ins", {
@@ -476,6 +480,28 @@ describe("public assignment endpoint", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({ name: "Ada Lovelace", checkedInAt: expect.any(String) });
     expect(createPublicWalkIn).toHaveBeenCalledWith("volunteer-token", "Ada Lovelace");
+  });
+
+  it("removes a walk-in through the shared desk", async () => {
+    vi.mocked(removePublicWalkIn).mockResolvedValue(true);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/walk-ins/reg-walk-in", {
+      method: "DELETE",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ removed: true });
+    expect(removePublicWalkIn).toHaveBeenCalledWith("volunteer-token", "reg-walk-in");
+  });
+
+  it("refuses to remove a registered guest through the shared desk", async () => {
+    vi.mocked(removePublicWalkIn).mockResolvedValue(false);
+    const response = await handleRequest(new Request("http://localhost/api/public/assignments/volunteer-token/check-in/walk-ins/reg-registered", {
+      method: "DELETE",
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Only walk-ins can be removed from this check-in desk." });
+    expect(removePublicWalkIn).toHaveBeenCalledWith("volunteer-token", "reg-registered");
   });
 
   it("rejects an inactive or out-of-range check-in link without exposing a guest", async () => {

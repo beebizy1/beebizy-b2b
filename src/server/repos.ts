@@ -1278,6 +1278,7 @@ function toPublicCheckInGuest(
     status: registration.status,
     checkedInAt: registration.checkedInAt?.toISOString() ?? null,
     checkInStation: registration.checkInStation,
+    removable: registration.segment === "Walk-in" && guest.notes === "Registered at event check-in.",
   };
 }
 
@@ -1419,6 +1420,7 @@ export async function createPublicWalkIn(
     status: "confirmed",
     checkedInAt: checkedInAt.toISOString(),
     checkInStation: station.name,
+    removable: true,
   };
   try {
     await db.batch([
@@ -1460,6 +1462,54 @@ export async function createPublicWalkIn(
     throw error;
   }
   return result;
+}
+
+/** Removes only an on-site walk-in from this event; imported and registered guests fail closed. */
+export async function removePublicWalkIn(token: string, registrationId: string): Promise<boolean> {
+  const access = await publicVolunteerCheckInAccess(token);
+  if (!access) return false;
+  const { link, shift } = access;
+  const [current] = await db.select({ registration: s.registrations, guest: s.guests })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.id, registrationId),
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+    ))
+    .limit(1);
+  if (!current || current.registration.segment !== "Walk-in" || current.guest.notes !== "Registered at event check-in.") {
+    return false;
+  }
+
+  const [usage] = await db.select({ total: count() }).from(s.registrations)
+    .where(and(
+      eq(s.registrations.guestId, current.guest.id),
+      eq(s.registrations.workspaceId, link.workspaceId),
+    ));
+  const remove = Number(usage?.total ?? 0) === 1
+    ? db.delete(s.guests).where(and(eq(s.guests.id, current.guest.id), eq(s.guests.workspaceId, link.workspaceId)))
+    : db.delete(s.registrations).where(and(
+      eq(s.registrations.id, registrationId),
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+    ));
+  await db.batch([
+    remove,
+    db.insert(s.eventHistory).values({
+      id: newId("hist"),
+      workspaceId: link.workspaceId,
+      eventId: link.eventId,
+      actorId: `public:${shift.email}`,
+      resource: "registration",
+      resourceId: registrationId,
+      action: "deleted",
+      summary: `Removed walk-in ${current.guest.name} through the shared event-day desk`,
+      before: toPublicCheckInGuest(current.registration, current.guest) as unknown as Record<string, unknown>,
+      after: null,
+    }),
+  ]);
+  return true;
 }
 
 /** A private assignment link can change only the task, cue or shift it was issued for. */

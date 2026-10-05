@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, UserCheck, UserPlus, Users } from "lucide-react";
+import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, Trash2, UserCheck, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, Pill } from "@/components/primitives";
 import type { PublicCheckInGuest, PublicCheckInStationPayload } from "@/data/entities";
 import { lastNameSearchValue } from "@/data/checkInLanes";
@@ -24,6 +34,8 @@ export default function PublicCheckIn({ token }: { token: string }) {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [walkInName, setWalkInName] = useState("");
   const [savingWalkIn, setSavingWalkIn] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PublicCheckInGuest | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [printName, setPrintName] = useState<string | null>(null);
 
@@ -139,6 +151,31 @@ export default function PublicCheckIn({ token }: { token: string }) {
       setError(caught instanceof Error ? caught.message : "The walk-in could not be saved.");
     } finally {
       setSavingWalkIn(false);
+    }
+  };
+
+  const removeWalkIn = async (guest: PublicCheckInGuest) => {
+    if (removingId || !guest.removable) return;
+    setRemovingId(guest.registrationId);
+    setError(null);
+    setSavedMessage(null);
+    try {
+      const response = await fetch(`/api/public/assignments/${encodeURIComponent(token)}/check-in/walk-ins/${encodeURIComponent(guest.registrationId)}`, {
+        method: "DELETE",
+      });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(errorMessage(result, "The walk-in could not be removed."));
+      setPayload((current) => current ? {
+        ...current,
+        guests: current.guests.filter((row) => row.registrationId !== guest.registrationId),
+      } : current);
+      setDeleteTarget(null);
+      setSavedMessage(`${guest.name} was removed from the guest list.`);
+    } catch (caught) {
+      setDeleteTarget(null);
+      setError(caught instanceof Error ? caught.message : "The walk-in could not be removed.");
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -269,6 +306,11 @@ export default function PublicCheckIn({ token }: { token: string }) {
                         {savingId === guest.registrationId ? "Saving…" : "Print badge & check in"}
                       </Button>
                     )}
+                    {guest.removable ? (
+                      <Button type="button" size="sm" variant="ghost" disabled={removingId !== null || savingId !== null} onClick={() => setDeleteTarget(guest)}>
+                        <Trash2 className="mr-1.5 size-3.5 text-danger-text" />Remove
+                      </Button>
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -280,6 +322,28 @@ export default function PublicCheckIn({ token }: { token: string }) {
         </p>
       </div>
       <NameBadgePrintSheet name={printName} />
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open && !removingId) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the walk-in and their check-in record from this event. Registered guests cannot be removed from this screen.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removingId !== null}>Keep walk-in</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removingId !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteTarget) void removeWalkIn(deleteTarget);
+              }}
+            >
+              {removingId ? "Removing…" : "Remove walk-in"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PublicFrame>
   );
 }

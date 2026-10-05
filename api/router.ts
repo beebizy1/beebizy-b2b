@@ -260,6 +260,10 @@ async function handlePublic(segments: string[], method: string, request: Request
       const guest = await repos.createPublicWalkIn(segments[2], body.name);
       return guest ? json(guest, 201) : json({ error: "This check-in link or counter is no longer active." }, 404);
     }
+    if (method === "DELETE" && segments[3] === "check-in" && segments[4] === "walk-ins" && segments[5] && segments.length === 6) {
+      const removed = await repos.removePublicWalkIn(segments[2], segments[5]);
+      return removed ? json({ removed: true }) : json({ error: "Only walk-ins can be removed from this check-in desk." }, 404);
+    }
     if (method === "POST" && segments[3] === "check-in" && segments[4] && segments.length === 5) {
       const body = await readBody(request);
       if (typeof body.checkedIn !== "boolean") return json({ error: "checkedIn must be true or false." }, 400);

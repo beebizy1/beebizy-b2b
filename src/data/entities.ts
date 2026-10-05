@@ -865,6 +865,8 @@ export interface PublicCheckInGuest {
   status: RegistrationStatus;
   checkedInAt: IsoDateTime | null;
   checkInStation: string | null;
+  /** True only for on-site walk-ins that may be removed from the shared desk. */
+  removable: boolean;
 }
 
 /** Everything a door volunteer needs, without exposing the surrounding workspace. */
