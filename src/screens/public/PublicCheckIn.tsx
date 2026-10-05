@@ -25,6 +25,56 @@ function errorMessage(result: unknown, fallback: string): string {
     : fallback;
 }
 
+type PublicCheckInGuestActionsProps = {
+  guest: PublicCheckInGuest;
+  savingId: string | null;
+  removingId: string | null;
+  onPrint: (name: string) => void;
+  onSetCheckedIn: (guest: PublicCheckInGuest, checkedIn: boolean, printAfter: boolean) => void | Promise<void>;
+  onRemove: (guest: PublicCheckInGuest) => void;
+};
+
+export function PublicCheckInGuestActions({
+  guest,
+  savingId,
+  removingId,
+  onPrint,
+  onSetCheckedIn,
+  onRemove,
+}: PublicCheckInGuestActionsProps) {
+  const founderBadgeIsPreprinted = guest.segment?.trim().toLocaleLowerCase() === "founder";
+
+  return (
+    <div className="flex shrink-0 flex-wrap gap-2">
+      {guest.checkedInAt ? (
+        <>
+          <Button type="button" size="sm" variant="outline" onClick={() => onPrint(guest.name)}>
+            <Printer className="mr-1.5 size-3.5" />Reprint badge
+          </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={savingId === guest.registrationId} onClick={() => void onSetCheckedIn(guest, false, false)}>
+            <RotateCcw className="mr-1.5 size-3.5" />Undo
+          </Button>
+        </>
+      ) : founderBadgeIsPreprinted ? (
+        <Button type="button" size="sm" disabled={savingId !== null} onClick={() => void onSetCheckedIn(guest, true, false)}>
+          {savingId === guest.registrationId ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> : <UserCheck className="mr-1.5 size-3.5" />}
+          {savingId === guest.registrationId ? "Saving…" : "Check in"}
+        </Button>
+      ) : (
+        <Button type="button" size="sm" disabled={savingId !== null} onClick={() => void onSetCheckedIn(guest, true, true)}>
+          {savingId === guest.registrationId ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> : <Printer className="mr-1.5 size-3.5" />}
+          {savingId === guest.registrationId ? "Saving…" : "Print badge & check in"}
+        </Button>
+      )}
+      {guest.removable ? (
+        <Button type="button" size="sm" variant="ghost" disabled={removingId !== null || savingId !== null} onClick={() => onRemove(guest)}>
+          <Trash2 className="mr-1.5 size-3.5 text-danger-text" />Remove
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PublicCheckIn({ token }: { token: string }) {
   const [payload, setPayload] = useState<PublicCheckInStationPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -290,28 +340,14 @@ export default function PublicCheckIn({ token }: { token: string }) {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">{[guest.organization, guest.segment].filter(Boolean).join(" · ") || "No additional identifying details"}</p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    {guest.checkedInAt ? (
-                      <>
-                        <Button type="button" size="sm" variant="outline" onClick={() => setPrintName(guest.name)}>
-                          <Printer className="mr-1.5 size-3.5" />Reprint badge
-                        </Button>
-                        <Button type="button" size="sm" variant="ghost" disabled={savingId === guest.registrationId} onClick={() => void setCheckedIn(guest, false, false)}>
-                          <RotateCcw className="mr-1.5 size-3.5" />Undo
-                        </Button>
-                      </>
-                    ) : (
-                      <Button type="button" size="sm" disabled={savingId !== null} onClick={() => void setCheckedIn(guest, true, true)}>
-                        {savingId === guest.registrationId ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> : <Printer className="mr-1.5 size-3.5" />}
-                        {savingId === guest.registrationId ? "Saving…" : "Print badge & check in"}
-                      </Button>
-                    )}
-                    {guest.removable ? (
-                      <Button type="button" size="sm" variant="ghost" disabled={removingId !== null || savingId !== null} onClick={() => setDeleteTarget(guest)}>
-                        <Trash2 className="mr-1.5 size-3.5 text-danger-text" />Remove
-                      </Button>
-                    ) : null}
-                  </div>
+                  <PublicCheckInGuestActions
+                    guest={guest}
+                    savingId={savingId}
+                    removingId={removingId}
+                    onPrint={setPrintName}
+                    onSetCheckedIn={setCheckedIn}
+                    onRemove={setDeleteTarget}
+                  />
                 </li>
               ))}
             </ul>
