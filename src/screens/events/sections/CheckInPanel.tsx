@@ -63,7 +63,7 @@ import {
   type RegistrationWithGuest,
   type VolunteerShift,
 } from "@/data/entities";
-import { ALPHABETICAL_CHECK_IN_LANES, parseAlphabeticalLane } from "@/data/checkInLanes";
+import { ALPHABETICAL_CHECK_IN_LANES, guestMatchesLane, parseAlphabeticalLane } from "@/data/checkInLanes";
 
 const CHECK_IN_STARTER = [
   ["Assign check-in stations and leads", "Name a lead and backup for every entrance or desk."],
@@ -209,7 +209,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const { date: formatDate, timeZoneLabel } = usePreferences();
   const { user } = useSession();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"confirmed" | "waiting" | "arrived" | "pending">("confirmed");
+  const [filter, setFilter] = useState<"all" | "confirmed" | "waiting" | "arrived" | "pending">("all");
   const [station, setStation] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showStationForm, setShowStationForm] = useState(false);
@@ -240,9 +240,11 @@ export function CheckInPanel({ event }: { event: Event }) {
     .reduce((total, row) => total + row.quantity, 0);
   const remaining = expected - arrived;
   const eventFinished = event.status === "completed" || Boolean(event.endDate && new Date(event.endDate).getTime() < Date.now());
+  const activeStation = stationRows.find((planned) => planned.name === station);
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
+      if (activeStation && parseAlphabeticalLane(activeStation.lane) && !guestMatchesLane(row.guest?.name ?? "", activeStation.lane)) return false;
       if (filter === "confirmed" && row.status !== "confirmed") return false;
       if (filter === "waiting" && (row.status !== "confirmed" || row.checkedInAt)) return false;
       if (filter === "arrived" && !row.checkedInAt) return false;
@@ -252,10 +254,10 @@ export function CheckInPanel({ event }: { event: Event }) {
         .filter(Boolean)
         .some((value) => value!.toLowerCase().includes(needle));
     });
-  }, [filter, rows, search]);
+  }, [activeStation, filter, rows, search]);
 
   // A 900-person event should search instantly without mounting 900 interactive rows.
-  useEffect(() => setVisibleLimit(50), [filter, search]);
+  useEffect(() => setVisibleLimit(50), [filter, search, station]);
   useEffect(() => {
     if (!station && stationRows[0]) setStation(stationRows[0].name);
   }, [station, stationRows]);
@@ -514,6 +516,9 @@ export function CheckInPanel({ event }: { event: Event }) {
               const stationArrivals = rows
                 .filter((row) => row.checkedInAt && row.checkInStation === planned.name)
                 .reduce((total, row) => total + row.quantity, 0);
+              const assignedGuests = parseAlphabeticalLane(planned.lane)
+                ? rows.filter((row) => guestMatchesLane(row.guest?.name ?? "", planned.lane)).length
+                : null;
               const linkedVolunteer = volunteers?.find((volunteer) => volunteer.id === planned.leadVolunteerId);
               return (
                 <li key={planned.id} className="rounded-lg border border-hairline p-3">
@@ -522,7 +527,10 @@ export function CheckInPanel({ event }: { event: Event }) {
                       <p className="font-semibold text-foreground">{planned.name}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">{planned.lane}</p>
                     </div>
-                    <Pill tone={stationArrivals ? "success" : "neutral"}>{stationArrivals} arrived</Pill>
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {assignedGuests !== null ? <Pill tone="brand">{assignedGuests} assigned</Pill> : null}
+                      <Pill tone={stationArrivals ? "success" : "neutral"}>{stationArrivals} arrived</Pill>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span>Lead: {linkedVolunteer?.name ?? (planned.leadVolunteerId ? "Volunteer no longer assigned" : planned.lead ?? "Unassigned")}</span>
@@ -589,6 +597,7 @@ export function CheckInPanel({ event }: { event: Event }) {
             <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
               <SelectTrigger className="w-[150px]" aria-label="Arrival filter"><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All imported guests</SelectItem>
                 <SelectItem value="confirmed">Confirmed list</SelectItem>
                 <SelectItem value="waiting">{eventFinished ? "No-shows" : "Still expected"}</SelectItem>
                 <SelectItem value="arrived">Checked in</SelectItem>
@@ -643,8 +652,8 @@ export function CheckInPanel({ event }: { event: Event }) {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => void printNameDirectly(row.guest?.name ?? "Guest")} disabled={brotherPrinterState === "connecting" || brotherPrinterState === "printing"}>
-                      <Printer className="mr-1.5 size-3.5" />Badge
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPrintJob({ kind: "badge", row })}>
+                      <Printer className="mr-1.5 size-3.5" />Print badge
                     </Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(editingId === row.id ? null : row.id)}>
                       <Pencil className="mr-1.5 size-3.5" />Details

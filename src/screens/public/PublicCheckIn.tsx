@@ -178,15 +178,13 @@ export default function PublicCheckIn({ token }: { token: string }) {
                     <p className="mt-1 text-xs text-muted-foreground">{[guest.organization, guest.segment].filter(Boolean).join(" · ") || "No additional identifying details"}</p>
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => setPrintName(guest.name)}>
+                      <Printer className="mr-1.5 size-3.5" />Print badge
+                    </Button>
                     {guest.checkedInAt ? (
-                      <>
-                        <Button type="button" size="sm" variant="outline" onClick={() => setPrintName(guest.name)}>
-                          <Printer className="mr-1.5 size-3.5" />Reprint badge
-                        </Button>
-                        <Button type="button" size="sm" variant="ghost" disabled={savingId === guest.registrationId} onClick={() => void setCheckedIn(guest, false, false)}>
-                          <RotateCcw className="mr-1.5 size-3.5" />Undo
-                        </Button>
-                      </>
+                      <Button type="button" size="sm" variant="ghost" disabled={savingId === guest.registrationId} onClick={() => void setCheckedIn(guest, false, false)}>
+                        <RotateCcw className="mr-1.5 size-3.5" />Undo
+                      </Button>
                     ) : (
                       <Button type="button" size="sm" disabled={savingId !== null} onClick={() => void setCheckedIn(guest, true, true)}>
                         {savingId === guest.registrationId ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 size-3.5" />}

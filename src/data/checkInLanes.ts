@@ -47,6 +47,11 @@ export function guestMatchesLane(name: string, lane: string): boolean {
   return Boolean(initial && range && initial >= range.start && initial <= range.end);
 }
 
+/** Returns the one event-day counter responsible for this guest's last name. */
+export function checkInLaneForGuest(name: string): AlphabeticalCheckInLane | null {
+  return ALPHABETICAL_CHECK_IN_LANES.find((lane) => guestMatchesLane(name, lane.label)) ?? null;
+}
+
 export function lastNameSearchValue(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "";
