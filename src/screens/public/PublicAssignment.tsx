@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, CalendarPlus, CheckCircle2, Clock3, MapPin, Printer, RotateCcw } from "lucide-react";
+import { Redirect } from "wouter";
 import { EmptyState, LoadingRows, Panel, Pill } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
+import { directPublicAssignmentDestination } from "@/data/assignmentDestination";
 import type { PublicAssignmentPayload } from "@/data/entities";
 import { googleCalendarUrl } from "@/data/assignmentCalendar";
 import { resolveTimeZone } from "@/lib/datetime";
@@ -61,6 +63,9 @@ export default function PublicAssignment({ token }: { token: string }) {
   if (!assignment) {
     return <PublicFrame><Panel><EmptyState icon={CheckCircle2} title="This assignment link is no longer active" description="The assignment may have been changed or removed. Ask the event organizer for a fresh link." /></Panel></PublicFrame>;
   }
+
+  const directDestination = directPublicAssignmentDestination(assignment);
+  if (directDestination) return <Redirect to={directDestination} replace />;
 
   const date = new Date(assignment.eventDate).toLocaleDateString("en-US", { dateStyle: "full", timeZone: resolveTimeZone(assignment.timeZone) });
   const kindLabel = assignment.kind === "checklist" ? "Checklist assignment" : assignment.kind === "run-of-show" ? "Run of Show assignment" : "Volunteer shift";
