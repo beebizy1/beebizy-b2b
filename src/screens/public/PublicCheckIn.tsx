@@ -169,7 +169,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
               <div>
                 <Pill tone="brand">Shared event-day desk</Pill>
                 <h1 className="mt-3 text-2xl font-bold text-foreground">Guest check-in and badge printing</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Choose a counter, find the guest, then print and check them in.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Search the full guest list, then print the badge and check the person in.</p>
               </div>
               <div className="rounded-xl border border-hairline bg-card px-4 py-3">
                 <p className="flex items-center gap-2 text-sm font-semibold text-foreground"><Users className="size-4 text-primary" />No login required</p>
