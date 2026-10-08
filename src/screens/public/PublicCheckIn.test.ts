@@ -32,7 +32,7 @@ describe("PublicCheckInGuestActions", () => {
   it("keeps founder badge printing optional and separate from check-in", () => {
     const html = render(founder);
 
-    expect(publicCheckInArrivalAction(founder)).toMatchObject({ label: "Check in", printAfter: false });
+    expect(publicCheckInArrivalAction(founder)).toMatchObject({ label: "Check in", kind: "check-in" });
     expect(html).toContain("Check in");
     expect(html).toContain("Print badge");
     expect(html).not.toContain("Print badge &amp; check in");
@@ -42,7 +42,10 @@ describe("PublicCheckInGuestActions", () => {
     const guest = { ...founder, registrationId: "reg-guest", segment: "General" };
     const html = render(guest);
 
-    expect(publicCheckInArrivalAction(guest)).toMatchObject({ label: "Print badge & check in", printAfter: true });
+    expect(publicCheckInArrivalAction(guest)).toMatchObject({
+      label: "Print badge & check in",
+      kind: "badge-editor",
+    });
     expect(html).toContain("Print badge &amp; check in");
   });
 
