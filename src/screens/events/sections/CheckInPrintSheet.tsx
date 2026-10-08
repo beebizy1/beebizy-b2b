@@ -2,11 +2,12 @@ import type { Preferences } from "@/app/preferences";
 import type { Event, RegistrationWithGuest } from "@/data/entities";
 import { createPortal } from "react-dom";
 import { NameBadgePrintSheet } from "./NameBadgePrintSheet";
+import type { BadgeNameLayout } from "./badgeNameLayout";
 
 export type CheckInPrintJob =
   | { kind: "guest-list" }
-  | { kind: "badge"; row: RegistrationWithGuest }
-  | { kind: "printer-test"; name: string };
+  | { kind: "badge"; row: RegistrationWithGuest; layout?: BadgeNameLayout }
+  | { kind: "printer-test"; name: string; layout?: BadgeNameLayout };
 
 interface CheckInPrintSheetProps {
   event: Event;
@@ -26,7 +27,7 @@ function attendance(row: RegistrationWithGuest, formatDate: Preferences["date"])
 export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel }: CheckInPrintSheetProps) {
   if (!job) return null;
   const badgeName = job.kind === "badge" ? job.row.guest?.name ?? "Guest" : job.kind === "printer-test" ? job.name : null;
-  if (badgeName) return <NameBadgePrintSheet name={badgeName} />;
+  if (badgeName) return <NameBadgePrintSheet name={badgeName} layout={job.kind === "guest-list" ? null : job.layout} />;
 
   const sheet = (
     <section className="check-in-print-area" aria-hidden="true">

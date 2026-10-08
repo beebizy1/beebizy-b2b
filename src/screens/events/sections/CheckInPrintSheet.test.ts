@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Event, RegistrationWithGuest } from "@/data/entities";
 import { CheckInPrintSheet, type CheckInPrintJob } from "./CheckInPrintSheet";
 import { NameBadgePrintSheet } from "./NameBadgePrintSheet";
-import { suggestBadgeNameLayout } from "./badgeNameLayout";
+import { badgeNameLayoutMatchesOriginal, suggestBadgeNameLayout } from "./badgeNameLayout";
 
 const event = {
   id: "evt-print-test",
@@ -39,6 +39,21 @@ describe("CheckInPrintSheet badge labels", () => {
     });
   });
 
+  it("allows only line-break changes that preserve the complete guest name", () => {
+    expect(badgeNameLayoutMatchesOriginal(
+      { line1: "Shantik", line2: "Azima-Taylor" },
+      "Shantik Azima-Taylor",
+    )).toBe(true);
+    expect(badgeNameLayoutMatchesOriginal(
+      { line1: "Shantik Azima-Taylor", line2: "" },
+      "Shantik Azima-Taylor",
+    )).toBe(true);
+    expect(badgeNameLayoutMatchesOriginal(
+      { line1: "Shantik", line2: "Taylor" },
+      "Shantik Azima-Taylor",
+    )).toBe(false);
+  });
+
   it("prints the volunteer's exact two-line badge layout", () => {
     const html = renderToStaticMarkup(createElement(NameBadgePrintSheet, {
       name: null,
@@ -47,6 +62,17 @@ describe("CheckInPrintSheet badge labels", () => {
 
     expect(html).toContain('<span class="check-in-badge-line">Shantik</span>');
     expect(html).toContain('<span class="check-in-badge-line">Azima-Taylor</span>');
+  });
+
+  it("uses the organizer's chosen line break for a guest badge job", () => {
+    const html = render({
+      kind: "badge",
+      row: { ...row, guest: { ...row.guest!, name: "Shantik Azima-Taylor" } },
+      layout: { line1: "Shantik Azima", line2: "Taylor" },
+    });
+
+    expect(html).toContain(">Shantik Azima</span>");
+    expect(html).toContain(">Taylor</span>");
   });
 
   it("prints one existing guest's full name and no badge design content", () => {

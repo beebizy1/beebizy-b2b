@@ -7,6 +7,7 @@ import {
   type BrotherQLMedia,
   type RawImageData,
 } from "@thermal-label/brother-ql-core";
+import { normalizeBadgeName, suggestBadgeNameLayout, type BadgeNameLayout } from "./badgeNameLayout";
 
 export const BROTHER_BADGE_WIDTH_DOTS = 696;
 export const BROTHER_BADGE_LENGTH_DOTS = 1063;
@@ -75,17 +76,22 @@ interface NavigatorWithUsb extends Navigator {
   };
 }
 
-function normalizeName(name: string): string {
-  const normalized = name.trim().replace(/\s+/g, " ");
+function normalizeLayout(nameOrLayout: string | BadgeNameLayout): BadgeNameLayout {
+  const layout = typeof nameOrLayout === "string" ? suggestBadgeNameLayout(nameOrLayout) : nameOrLayout;
+  const normalized = normalizeBadgeName(`${layout.line1} ${layout.line2}`);
   if (!normalized) throw new Error("Enter a full name before printing.");
-  return normalized;
+  return {
+    line1: normalizeBadgeName(layout.line1),
+    line2: normalizeBadgeName(layout.line2),
+  };
 }
 
 export function renderBrotherNameLabel(
-  name: string,
+  nameOrLayout: string | BadgeNameLayout,
   createCanvas: CanvasFactory = () => document.createElement("canvas") as unknown as BadgeCanvas,
 ): RawImageData {
-  const normalizedName = normalizeName(name);
+  const layout = normalizeLayout(nameOrLayout);
+  const lines = [layout.line1, layout.line2].filter(Boolean);
   const canvas = createCanvas();
   canvas.width = BROTHER_BADGE_WIDTH_DOTS;
   canvas.height = BROTHER_BADGE_LENGTH_DOTS;
@@ -97,15 +103,21 @@ export function renderBrotherNameLabel(
   context.textAlign = "center";
   context.textBaseline = "middle";
 
-  let fontSize = 128;
+  let fontSize = lines.length === 2 ? 112 : 128;
   do {
     context.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
-    if (context.measureText(normalizedName).width <= MAX_NAME_WIDTH_DOTS || fontSize === 48) break;
+    if (Math.max(...lines.map((line) => context.measureText(line).width)) <= MAX_NAME_WIDTH_DOTS || fontSize === 48) break;
     fontSize = Math.max(48, fontSize - 4);
   } while (fontSize >= 48);
 
   context.fillStyle = "#000000";
-  context.fillText(normalizedName, canvas.width / 2, canvas.height / 2);
+  const lineOffset = fontSize * 0.625;
+  lines.forEach((line, index) => {
+    const y = lines.length === 1
+      ? canvas.height / 2
+      : canvas.height / 2 + (index === 0 ? -lineOffset : lineOffset);
+    context.fillText(line, canvas.width / 2, y);
+  });
   const image = context.getImageData(0, 0, canvas.width, canvas.height);
   return {
     width: image.width,
@@ -177,13 +189,13 @@ export async function connectBrotherQl800(): Promise<BrotherQl800Printer> {
   return openBrotherQl800(device);
 }
 
-function encodeBrotherNameLabel(name: string): Uint8Array {
+function encodeBrotherNameLabel(nameOrLayout: string | BadgeNameLayout): Uint8Array {
   const media = findMedia(DK_22251_MEDIA_ID) as BrotherQLMedia | undefined;
   if (!media) throw new Error("The Brother DK-22251 label format is unavailable.");
   const device = findDevice(BROTHER_QL800_VENDOR_ID, BROTHER_QL800_PRODUCT_ID);
   const engine = device?.engines[0];
   if (!device || !engine) throw new Error("The Brother QL-800 print format is unavailable.");
-  const { black, red } = renderMultiPlaneImage(renderBrotherNameLabel(name), {
+  const { black, red } = renderMultiPlaneImage(renderBrotherNameLabel(nameOrLayout), {
     palette: media.palette ?? [],
     rotate: 0,
   });
@@ -213,8 +225,8 @@ async function withPrintTimeout<T>(work: Promise<T>, timeoutMs: number): Promise
 
 export async function printBrotherNameLabel(
   printer: BrotherQl800Printer,
-  name: string,
+  nameOrLayout: string | BadgeNameLayout,
   options: PrintOptions = {},
 ): Promise<void> {
-  await withPrintTimeout(printer.write(encodeBrotherNameLabel(name)), options.timeoutMs ?? DEFAULT_PRINT_TIMEOUT_MS);
+  await withPrintTimeout(printer.write(encodeBrotherNameLabel(nameOrLayout)), options.timeoutMs ?? DEFAULT_PRINT_TIMEOUT_MS);
 }

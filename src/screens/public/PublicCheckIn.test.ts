@@ -29,11 +29,12 @@ function render(guest: PublicCheckInGuest) {
 }
 
 describe("PublicCheckInGuestActions", () => {
-  it("lets a founder check in without offering to print their pre-printed badge", () => {
+  it("keeps founder badge printing optional and separate from check-in", () => {
     const html = render(founder);
 
     expect(publicCheckInArrivalAction(founder)).toMatchObject({ label: "Check in", printAfter: false });
     expect(html).toContain("Check in");
+    expect(html).toContain("Print badge");
     expect(html).not.toContain("Print badge &amp; check in");
   });
 

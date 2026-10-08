@@ -3,8 +3,16 @@ export type BadgeNameLayout = {
   line2: string;
 };
 
+export function normalizeBadgeName(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+export function badgeNameLayoutMatchesOriginal(layout: BadgeNameLayout, originalName: string): boolean {
+  return normalizeBadgeName(`${layout.line1} ${layout.line2}`) === normalizeBadgeName(originalName);
+}
+
 export function suggestBadgeNameLayout(name: string): BadgeNameLayout {
-  const normalized = name.trim().replace(/\s+/g, " ");
+  const normalized = normalizeBadgeName(name);
   const words = normalized.split(" ").filter(Boolean);
   if (normalized.length <= 18 || words.length < 2) return { line1: normalized, line2: "" };
 

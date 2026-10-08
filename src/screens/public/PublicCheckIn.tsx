@@ -25,7 +25,8 @@ import type { PublicCheckInGuest, PublicCheckInStationPayload } from "@/data/ent
 import { lastNameSearchValue } from "@/data/checkInLanes";
 import { resolveTimeZone } from "@/lib/datetime";
 import { NameBadgePrintSheet } from "@/screens/events/sections/NameBadgePrintSheet";
-import { suggestBadgeNameLayout, type BadgeNameLayout } from "@/screens/events/sections/badgeNameLayout";
+import { BadgeNameLayoutFields } from "@/screens/events/sections/BadgeNameLayoutFields";
+import { badgeNameLayoutMatchesOriginal, suggestBadgeNameLayout, type BadgeNameLayout } from "@/screens/events/sections/badgeNameLayout";
 import { PublicFrame } from "./PublicEvent";
 import { publicCheckInArrivalAction } from "./publicCheckInPolicy";
 
@@ -63,6 +64,16 @@ export function PublicCheckInGuestActions({
           </Button>
           <Button type="button" size="sm" variant="ghost" disabled={savingId === guest.registrationId} onClick={() => void onSetCheckedIn(guest, false, false)}>
             <RotateCcw className="mr-1.5 size-3.5" />Undo
+          </Button>
+        </>
+      ) : !arrivalAction.printAfter ? (
+        <>
+          <Button type="button" size="sm" variant="outline" disabled={savingId !== null} onClick={() => onPrint(guest.name)}>
+            <Printer className="mr-1.5 size-3.5" />Print badge
+          </Button>
+          <Button type="button" size="sm" disabled={savingId !== null} onClick={() => void onSetCheckedIn(guest, true, false)}>
+            {savingId === guest.registrationId ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> : <UserCheck className="mr-1.5 size-3.5" />}
+            {savingId === guest.registrationId ? "Saving…" : "Check in"}
           </Button>
         </>
       ) : (
@@ -381,44 +392,19 @@ export default function PublicCheckIn({ token }: { token: string }) {
             </DialogDescription>
           </DialogHeader>
           {badgeEditor ? (
-            <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-sm font-medium text-foreground">
-                  Line 1
-                  <Input
-                    autoFocus
-                    value={badgeEditor.line1}
-                    onChange={(event) => setBadgeEditor((current) => current ? { ...current, line1: event.target.value } : current)}
-                    maxLength={80}
-                    className="mt-1"
-                  />
-                </label>
-                <label className="text-sm font-medium text-foreground">
-                  Line 2 <span className="font-normal text-muted-foreground">(optional)</span>
-                  <Input
-                    value={badgeEditor.line2}
-                    onChange={(event) => setBadgeEditor((current) => current ? { ...current, line2: event.target.value } : current)}
-                    maxLength={80}
-                    className="mt-1"
-                  />
-                </label>
-              </div>
-              <div className="aspect-[100/62] rounded-xl border border-dashed border-hairline bg-background p-4 text-brand-ink shadow-inner" aria-label="Badge preview">
-                <div className="flex h-full flex-col items-center justify-center text-center text-2xl font-bold leading-tight sm:text-3xl">
-                  <span className="whitespace-nowrap">{badgeEditor.line1 || "Line 1"}</span>
-                  {badgeEditor.line2 ? <span className="whitespace-nowrap">{badgeEditor.line2}</span> : null}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Original guest name: {badgeEditor.name}</p>
-            </div>
+            <BadgeNameLayoutFields
+              originalName={badgeEditor.name}
+              layout={badgeEditor}
+              onChange={(layout) => setBadgeEditor({ name: badgeEditor.name, ...layout })}
+            />
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setBadgeEditor(null)}>Cancel</Button>
             <Button
               type="button"
-              disabled={!badgeEditor?.line1.trim()}
+              disabled={!badgeEditor || !badgeNameLayoutMatchesOriginal(badgeEditor, badgeEditor.name)}
               onClick={() => {
-                if (!badgeEditor?.line1.trim()) return;
+                if (!badgeEditor || !badgeNameLayoutMatchesOriginal(badgeEditor, badgeEditor.name)) return;
                 setPrintLayout({ line1: badgeEditor.line1.trim(), line2: badgeEditor.line2.trim() });
                 setBadgeEditor(null);
               }}

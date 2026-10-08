@@ -44,6 +44,13 @@ import {
   type BrotherQl800Printer,
 } from "./BrotherLabelPrinter";
 import { CheckInPrintSheet, type CheckInPrintJob } from "./CheckInPrintSheet";
+import { BadgeNameLayoutFields } from "./BadgeNameLayoutFields";
+import {
+  badgeNameLayoutMatchesOriginal,
+  normalizeBadgeName,
+  suggestBadgeNameLayout,
+  type BadgeNameLayout,
+} from "./badgeNameLayout";
 import { OnSiteRegistration } from "./OnSiteRegistration";
 import {
   useAddChecklistItem,
@@ -73,6 +80,13 @@ const CHECK_IN_STARTER = [
   ["Brief accessibility and escalation support", "Document who can resolve access, safety and guest-list issues."],
   ["Print the emergency contact sheet", "Include venue, security, medical and event-lead contacts at each station."],
 ] as const;
+
+type BadgePrintRequest = BadgeNameLayout & {
+  name: string;
+  destination: "guest-system" | "test-system" | "brother";
+  row?: RegistrationWithGuest;
+  allowConnectionPrompt?: boolean;
+};
 
 function StationEditor({
   initial,
@@ -217,6 +231,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const [deleteStation, setDeleteStation] = useState<CheckInStation | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(50);
   const [printJob, setPrintJob] = useState<CheckInPrintJob | null>(null);
+  const [badgeEditor, setBadgeEditor] = useState<BadgePrintRequest | null>(null);
   const [showPrinterSetup, setShowPrinterSetup] = useState(false);
   const [settingUpCounters, setSettingUpCounters] = useState(false);
   const [testBadgeName, setTestBadgeName] = useState(user?.name ?? "");
@@ -305,13 +320,11 @@ export function CheckInPanel({ event }: { event: Event }) {
     }
   };
 
-  const printBadge = async (row: RegistrationWithGuest) => {
-    if (row.checkedInAt) {
-      setPrintJob({ kind: "badge", row });
-      return;
-    }
-    const saved = await saveCheckIn(row, new Date().toISOString(), { station: station.trim() || null });
-    if (saved) setPrintJob({ kind: "badge", row });
+  const openBadgeEditor = (
+    name: string,
+    request: Omit<BadgePrintRequest, "name" | "line1" | "line2">,
+  ) => {
+    setBadgeEditor({ name, ...suggestBadgeNameLayout(name), ...request });
   };
 
   const brotherErrorMessage = (caught: unknown): string => {
@@ -320,7 +333,8 @@ export function CheckInPanel({ event }: { event: Event }) {
     return caught instanceof Error ? caught.message : "The Brother printer could not be reached.";
   };
 
-  const printNameDirectly = async (name: string, allowConnectionPrompt = true) => {
+  const printNameDirectly = async (layout: BadgeNameLayout, allowConnectionPrompt = true) => {
+    const name = normalizeBadgeName(`${layout.line1} ${layout.line2}`);
     try {
       let printer = brotherPrinterRef.current;
       if (!printer?.connected) {
@@ -333,7 +347,7 @@ export function CheckInPanel({ event }: { event: Event }) {
         brotherPrinterRef.current = printer;
       }
       setBrotherPrinterState("printing");
-      await printBrotherNameLabel(printer, name);
+      await printBrotherNameLabel(printer, layout);
       setBrotherPrinterState("connected");
       toast({ title: "Badge sent to Brother QL-800", description: `${name.trim()} is centered on one label.` });
     } catch (caught) {
@@ -343,6 +357,27 @@ export function CheckInPanel({ event }: { event: Event }) {
       setBrotherPrinterState("idle");
       toast({ title: "Badge did not print", description: brotherErrorMessage(caught), variant: "destructive" });
     }
+  };
+
+  const confirmBadgePrint = async () => {
+    if (!badgeEditor || !badgeNameLayoutMatchesOriginal(badgeEditor, badgeEditor.name)) return;
+    const layout = { line1: badgeEditor.line1.trim(), line2: badgeEditor.line2.trim() };
+    if (badgeEditor.destination === "guest-system" && badgeEditor.row) {
+      if (!badgeEditor.row.checkedInAt) {
+        const saved = await saveCheckIn(badgeEditor.row, new Date().toISOString(), { station: station.trim() || null });
+        if (!saved) return;
+      }
+      setBadgeEditor(null);
+      setPrintJob({ kind: "badge", row: badgeEditor.row, layout });
+      return;
+    }
+    if (badgeEditor.destination === "test-system") {
+      setBadgeEditor(null);
+      setPrintJob({ kind: "printer-test", name: badgeEditor.name, layout });
+      return;
+    }
+    setBadgeEditor(null);
+    await printNameDirectly(layout, badgeEditor.allowConnectionPrompt ?? true);
   };
 
   const addStarter = async () => {
@@ -457,7 +492,10 @@ export function CheckInPanel({ event }: { event: Event }) {
           event={event}
           station={station}
           onRegistered={(row, printBadge) => {
-            if (printBadge) void printNameDirectly(row.guest?.name ?? "Guest", false);
+            if (printBadge) openBadgeEditor(row.guest?.name ?? "Guest", {
+              destination: "brother",
+              allowConnectionPrompt: false,
+            });
           }}
         />
       </Panel>
@@ -663,7 +701,13 @@ export function CheckInPanel({ event }: { event: Event }) {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => void printBadge(row)} disabled={update.isPending}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openBadgeEditor(row.guest?.name ?? "Guest", { destination: "guest-system", row })}
+                      disabled={update.isPending}
+                    >
                       <Printer className="mr-1.5 size-3.5" />{row.checkedInAt ? "Reprint badge" : "Print badge & check in"}
                     </Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(editingId === row.id ? null : row.id)}>
@@ -763,17 +807,54 @@ export function CheckInPanel({ event }: { event: Event }) {
               disabled={!testBadgeName.trim() || brotherPrinterState === "connecting" || brotherPrinterState === "printing"}
               onClick={() => {
                 setShowPrinterSetup(false);
-                setPrintJob({ kind: "printer-test", name: testBadgeName.trim() });
+                openBadgeEditor(testBadgeName.trim(), { destination: "test-system" });
               }}
             >
               Use system print
             </Button>
             <Button
               disabled={!testBadgeName.trim() || !supportsBrotherWebUsb() || brotherPrinterState === "connecting" || brotherPrinterState === "printing"}
-              onClick={() => void printNameDirectly(testBadgeName.trim())}
+              onClick={() => {
+                setShowPrinterSetup(false);
+                openBadgeEditor(testBadgeName.trim(), { destination: "brother" });
+              }}
             >
               <Printer className="mr-1.5 size-4" />
               {brotherPrinterState === "connecting" ? "Connecting…" : brotherPrinterState === "printing" ? "Printing…" : brotherPrinterState === "connected" ? "Print one label" : "Connect & print one label"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={badgeEditor !== null} onOpenChange={(open) => { if (!open) setBadgeEditor(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose the badge line break</DialogTitle>
+            <DialogDescription>
+              Move whole words between the two lines. The full guest name must stay unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          {badgeEditor ? (
+            <BadgeNameLayoutFields
+              originalName={badgeEditor.name}
+              layout={badgeEditor}
+              onChange={(layout) => setBadgeEditor({ ...badgeEditor, ...layout })}
+            />
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBadgeEditor(null)}>Cancel</Button>
+            <Button
+              type="button"
+              disabled={
+                !badgeEditor
+                || !badgeNameLayoutMatchesOriginal(badgeEditor, badgeEditor.name)
+                || update.isPending
+                || brotherPrinterState === "connecting"
+                || brotherPrinterState === "printing"
+              }
+              onClick={() => void confirmBadgePrint()}
+            >
+              <Printer className="mr-1.5 size-4" />
+              {update.isPending || brotherPrinterState === "connecting" || brotherPrinterState === "printing" ? "Working…" : "Print badge"}
             </Button>
           </DialogFooter>
         </DialogContent>

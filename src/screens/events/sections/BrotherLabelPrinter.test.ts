@@ -50,6 +50,30 @@ describe("renderBrotherNameLabel", () => {
     expect(() => renderBrotherNameLabel("   ")).toThrow("Enter a full name before printing.");
   });
 
+  it("centers an explicit two-line name without breaking the hyphenated last name", () => {
+    const fillText = vi.fn();
+    const context = {
+      fillStyle: "",
+      font: "",
+      textAlign: "start" as CanvasTextAlign,
+      textBaseline: "alphabetic" as CanvasTextBaseline,
+      fillRect: vi.fn(),
+      fillText,
+      getImageData: vi.fn(() => ({
+        data: new Uint8ClampedArray(BROTHER_BADGE_WIDTH_DOTS * BROTHER_BADGE_LENGTH_DOTS * 4),
+        width: BROTHER_BADGE_WIDTH_DOTS,
+        height: BROTHER_BADGE_LENGTH_DOTS,
+      }) as ImageData),
+      measureText: vi.fn((value: string) => ({ width: value.length * 48 })),
+    };
+    const canvas = { width: 0, height: 0, getContext: vi.fn(() => context) };
+
+    renderBrotherNameLabel({ line1: "Shantik", line2: "Azima-Taylor" }, () => canvas);
+
+    expect(fillText).toHaveBeenNthCalledWith(1, "Shantik", BROTHER_BADGE_WIDTH_DOTS / 2, BROTHER_BADGE_LENGTH_DOTS / 2 - 70);
+    expect(fillText).toHaveBeenNthCalledWith(2, "Azima-Taylor", BROTHER_BADGE_WIDTH_DOTS / 2, BROTHER_BADGE_LENGTH_DOTS / 2 + 70);
+  });
+
   it("stops waiting when the printer USB transfer never responds", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("document", {

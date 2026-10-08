@@ -118,7 +118,7 @@
     break-after: avoid-page;
   }
 
-  .check-in-badge h1 {
+  .check-in-badge .check-in-badge-artwork {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -127,7 +127,6 @@
     max-width: 88mm;
     margin: 0;
     color: #000;
-    font-size: 36pt;
     font-weight: 700;
     line-height: 1;
     text-align: center;
@@ -143,14 +142,26 @@
     max-width: 88mm;
     white-space: nowrap;
   }
+}
 
-  .check-in-badge h1.check-in-badge-name-medium {
-    font-size: 30pt;
-  }
+.badge-name-preview {
+  display: grid;
+  place-items: center;
+}
 
-  .check-in-badge h1.check-in-badge-name-long {
-    font-size: 24pt;
-  }
+.badge-name-preview .check-in-badge-artwork {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 88mm;
+  color: #000;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  letter-spacing: -0.025em;
 }
 
 /*
