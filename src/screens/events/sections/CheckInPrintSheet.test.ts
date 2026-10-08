@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import type { Event, RegistrationWithGuest } from "@/data/entities";
 import { CheckInPrintSheet, type CheckInPrintJob } from "./CheckInPrintSheet";
+import { NameBadgePrintSheet } from "./NameBadgePrintSheet";
+import { suggestBadgeNameLayout } from "./badgeNameLayout";
 
 const event = {
   id: "evt-print-test",
@@ -30,6 +32,23 @@ function render(job: CheckInPrintJob) {
 }
 
 describe("CheckInPrintSheet badge labels", () => {
+  it("suggests a clean two-line layout without splitting a hyphenated last name", () => {
+    expect(suggestBadgeNameLayout("Shantik Azima-Taylor")).toEqual({
+      line1: "Shantik",
+      line2: "Azima-Taylor",
+    });
+  });
+
+  it("prints the volunteer's exact two-line badge layout", () => {
+    const html = renderToStaticMarkup(createElement(NameBadgePrintSheet, {
+      name: null,
+      layout: { line1: "Shantik", line2: "Azima-Taylor" },
+    }));
+
+    expect(html).toContain('<span class="check-in-badge-line">Shantik</span>');
+    expect(html).toContain('<span class="check-in-badge-line">Azima-Taylor</span>');
+  });
+
   it("prints one existing guest's full name and no badge design content", () => {
     const html = render({ kind: "badge", row });
 

@@ -119,6 +119,10 @@
   }
 
   .check-in-badge h1 {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     width: 88mm;
     max-width: 88mm;
     margin: 0;
@@ -128,11 +132,16 @@
     line-height: 1;
     text-align: center;
     letter-spacing: -0.025em;
-    overflow-wrap: anywhere;
     /* The Brother Windows driver rotates the 62 mm portrait page onto the
        continuous roll. Offset across the print head so the rotated name lands
        in the physical vertical center instead of near the top edge. */
     transform: translateX(-11mm) rotate(90deg);
+  }
+
+  .check-in-badge-line {
+    display: block;
+    max-width: 88mm;
+    white-space: nowrap;
   }
 
   .check-in-badge h1.check-in-badge-name-medium {

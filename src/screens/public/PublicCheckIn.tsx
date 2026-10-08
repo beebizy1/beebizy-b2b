@@ -3,6 +3,14 @@ import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, Trash2, UserCheck, 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -17,6 +25,7 @@ import type { PublicCheckInGuest, PublicCheckInStationPayload } from "@/data/ent
 import { lastNameSearchValue } from "@/data/checkInLanes";
 import { resolveTimeZone } from "@/lib/datetime";
 import { NameBadgePrintSheet } from "@/screens/events/sections/NameBadgePrintSheet";
+import { suggestBadgeNameLayout, type BadgeNameLayout } from "@/screens/events/sections/badgeNameLayout";
 import { PublicFrame } from "./PublicEvent";
 import { publicCheckInArrivalAction } from "./publicCheckInPolicy";
 
@@ -87,7 +96,12 @@ export default function PublicCheckIn({ token }: { token: string }) {
   const [deleteTarget, setDeleteTarget] = useState<PublicCheckInGuest | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
-  const [printName, setPrintName] = useState<string | null>(null);
+  const [badgeEditor, setBadgeEditor] = useState<(BadgeNameLayout & { name: string }) | null>(null);
+  const [printLayout, setPrintLayout] = useState<BadgeNameLayout | null>(null);
+
+  const openBadgeEditor = (name: string) => {
+    setBadgeEditor({ name, ...suggestBadgeNameLayout(name) });
+  };
 
   const load = async () => {
     setError(null);
@@ -118,13 +132,13 @@ export default function PublicCheckIn({ token }: { token: string }) {
   }, [token]);
 
   useEffect(() => {
-    if (!printName) return;
+    if (!printLayout) return;
     const frame = window.requestAnimationFrame(() => {
       window.print();
-      setPrintName(null);
+      setPrintLayout(null);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [printName]);
+  }, [printLayout]);
 
   const visibleGuests = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -161,7 +175,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
         ...current,
         guests: current.guests.map((row) => row.registrationId === updated.registrationId ? updated : row),
       } : current);
-      if (printAfter) setPrintName(updated.name);
+      if (printAfter) openBadgeEditor(updated.name);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The check-in could not be saved.");
     } finally {
@@ -196,7 +210,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
       } : current);
       setWalkInName("");
       setSavedMessage(`${created.name} was added and checked in.`);
-      setPrintName(created.name);
+      openBadgeEditor(created.name);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The walk-in could not be saved.");
     } finally {
@@ -344,7 +358,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
                     guest={guest}
                     savingId={savingId}
                     removingId={removingId}
-                    onPrint={setPrintName}
+                    onPrint={openBadgeEditor}
                     onSetCheckedIn={setCheckedIn}
                     onRemove={setDeleteTarget}
                   />
@@ -357,7 +371,63 @@ export default function PublicCheckIn({ token }: { token: string }) {
           <LockKeyhole className="mt-0.5 size-3.5 shrink-0" />Anyone with this secure link can search the complete A-Z guest list, print badges, check people in and add walk-ins. The link cannot open event settings, budgets, vendors or other workspace information.
         </p>
       </div>
-      <NameBadgePrintSheet name={printName} />
+      <NameBadgePrintSheet layout={printLayout} />
+      <Dialog open={badgeEditor !== null} onOpenChange={(open) => { if (!open) setBadgeEditor(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose the badge line break</DialogTitle>
+            <DialogDescription>
+              Put the name exactly where you want it. This changes only the printed badge, not the guest list.
+            </DialogDescription>
+          </DialogHeader>
+          {badgeEditor ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-medium text-foreground">
+                  Line 1
+                  <Input
+                    autoFocus
+                    value={badgeEditor.line1}
+                    onChange={(event) => setBadgeEditor((current) => current ? { ...current, line1: event.target.value } : current)}
+                    maxLength={80}
+                    className="mt-1"
+                  />
+                </label>
+                <label className="text-sm font-medium text-foreground">
+                  Line 2 <span className="font-normal text-muted-foreground">(optional)</span>
+                  <Input
+                    value={badgeEditor.line2}
+                    onChange={(event) => setBadgeEditor((current) => current ? { ...current, line2: event.target.value } : current)}
+                    maxLength={80}
+                    className="mt-1"
+                  />
+                </label>
+              </div>
+              <div className="aspect-[100/62] rounded-xl border border-dashed border-hairline bg-background p-4 text-brand-ink shadow-inner" aria-label="Badge preview">
+                <div className="flex h-full flex-col items-center justify-center text-center text-2xl font-bold leading-tight sm:text-3xl">
+                  <span className="whitespace-nowrap">{badgeEditor.line1 || "Line 1"}</span>
+                  {badgeEditor.line2 ? <span className="whitespace-nowrap">{badgeEditor.line2}</span> : null}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Original guest name: {badgeEditor.name}</p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBadgeEditor(null)}>Cancel</Button>
+            <Button
+              type="button"
+              disabled={!badgeEditor?.line1.trim()}
+              onClick={() => {
+                if (!badgeEditor?.line1.trim()) return;
+                setPrintLayout({ line1: badgeEditor.line1.trim(), line2: badgeEditor.line2.trim() });
+                setBadgeEditor(null);
+              }}
+            >
+              <Printer className="mr-1.5 size-4" />Print badge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open && !removingId) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
