@@ -830,7 +830,7 @@ export function CheckInPanel({ event }: { event: Event }) {
           <DialogHeader>
             <DialogTitle>Choose the badge line break</DialogTitle>
             <DialogDescription>
-              Move whole words between the two lines. The full guest name must stay unchanged.
+              Correct capitalization or move whole words between the lines. Keep the full name and punctuation unchanged.
             </DialogDescription>
           </DialogHeader>
           {badgeEditor ? (

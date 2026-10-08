@@ -388,7 +388,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
           <DialogHeader>
             <DialogTitle>Choose the badge line break</DialogTitle>
             <DialogDescription>
-              Put the name exactly where you want it. This changes only the printed badge, not the guest list.
+              Correct capitalization or move whole words between the lines. This changes only the printed badge, not the guest list.
             </DialogDescription>
           </DialogHeader>
           {badgeEditor ? (

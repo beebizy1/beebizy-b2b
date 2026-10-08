@@ -8,7 +8,8 @@ export function normalizeBadgeName(name: string): string {
 }
 
 export function badgeNameLayoutMatchesOriginal(layout: BadgeNameLayout, originalName: string): boolean {
-  return normalizeBadgeName(`${layout.line1} ${layout.line2}`) === normalizeBadgeName(originalName);
+  return normalizeBadgeName(`${layout.line1} ${layout.line2}`).toLocaleLowerCase()
+    === normalizeBadgeName(originalName).toLocaleLowerCase();
 }
 
 export function suggestBadgeNameLayout(name: string): BadgeNameLayout {

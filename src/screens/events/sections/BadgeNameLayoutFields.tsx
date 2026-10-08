@@ -42,7 +42,7 @@ export function BadgeNameLayoutFields({
       <div className="space-y-1 text-xs">
         <p className="text-muted-foreground">Original guest name: {originalName}</p>
         {!matchesOriginal ? (
-          <p role="alert" className="font-medium text-danger-text">Keep the full name unchanged. Move whole words between Line 1 and Line 2 only.</p>
+          <p role="alert" className="font-medium text-danger-text">Keep every name and punctuation mark. You may correct capitalization or move whole words between the lines.</p>
         ) : null}
       </div>
     </div>

@@ -39,7 +39,7 @@ describe("CheckInPrintSheet badge labels", () => {
     });
   });
 
-  it("allows only line-break changes that preserve the complete guest name", () => {
+  it("allows capitalization and line-break changes while preserving the complete guest name", () => {
     expect(badgeNameLayoutMatchesOriginal(
       { line1: "Shantik", line2: "Azima-Taylor" },
       "Shantik Azima-Taylor",
@@ -47,6 +47,10 @@ describe("CheckInPrintSheet badge labels", () => {
     expect(badgeNameLayoutMatchesOriginal(
       { line1: "Shantik Azima-Taylor", line2: "" },
       "Shantik Azima-Taylor",
+    )).toBe(true);
+    expect(badgeNameLayoutMatchesOriginal(
+      { line1: "Shantik", line2: "Azima-Taylor" },
+      "shantik azima-taylor",
     )).toBe(true);
     expect(badgeNameLayoutMatchesOriginal(
       { line1: "Shantik", line2: "Taylor" },
