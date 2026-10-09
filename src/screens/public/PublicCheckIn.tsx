@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
-import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, Trash2, UserCheck, UserPlus, Users } from "lucide-react";
+import { LockKeyhole, PencilLine, Printer, RefreshCw, RotateCcw, Search, Trash2, UserCheck, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -48,6 +48,7 @@ type PublicCheckInGuestActionsProps = {
   savingId: string | null;
   removingId: string | null;
   onPrint: (guest: PublicCheckInGuest, completion: BadgeEditorCompletion) => void;
+  onEditBadge: (guest: PublicCheckInGuest, completion: BadgeEditorCompletion) => void;
   onSetCheckedIn: (guest: PublicCheckInGuest, checkedIn: boolean) => void | Promise<PublicCheckInGuest | null>;
   onRemove: (guest: PublicCheckInGuest) => void;
 };
@@ -62,6 +63,7 @@ export function PublicCheckInGuestActions({
   savingId,
   removingId,
   onPrint,
+  onEditBadge,
   onSetCheckedIn,
   onRemove,
 }: PublicCheckInGuestActionsProps) {
@@ -74,6 +76,9 @@ export function PublicCheckInGuestActions({
           <Button type="button" size="sm" variant="outline" onClick={() => onPrint(guest, { kind: "print-only" })}>
             <Printer className="mr-1.5 size-3.5" />Reprint badge
           </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => onEditBadge(guest, { kind: "print-only" })}>
+            <PencilLine className="mr-1.5 size-3.5" />Edit badge
+          </Button>
           <Button type="button" size="sm" variant="ghost" disabled={savingId === guest.registrationId} onClick={() => void onSetCheckedIn(guest, false)}>
             <RotateCcw className="mr-1.5 size-3.5" />Undo
           </Button>
@@ -83,20 +88,28 @@ export function PublicCheckInGuestActions({
           <Button type="button" size="sm" variant="outline" disabled={savingId !== null} onClick={() => onPrint(guest, { kind: "print-only" })}>
             <Printer className="mr-1.5 size-3.5" />Print badge
           </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={savingId !== null} onClick={() => onEditBadge(guest, { kind: "print-only" })}>
+            <PencilLine className="mr-1.5 size-3.5" />Edit badge
+          </Button>
           <Button type="button" size="sm" disabled={savingId !== null} onClick={() => void onSetCheckedIn(guest, true)}>
             {savingId === guest.registrationId ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" /> : <UserCheck className="mr-1.5 size-3.5" />}
             {savingId === guest.registrationId ? "Saving…" : "Check in"}
           </Button>
         </>
       ) : (
-        <Button type="button" size="sm" disabled={savingId !== null} onClick={() => onPrint(guest, { kind: "check-in", guest })}>
-          {savingId === guest.registrationId
-            ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
-            : arrivalAction.icon === "print"
-              ? <Printer className="mr-1.5 size-3.5" />
-              : <UserCheck className="mr-1.5 size-3.5" />}
-          {savingId === guest.registrationId ? "Saving…" : arrivalAction.label}
-        </Button>
+        <>
+          <Button type="button" size="sm" disabled={savingId !== null} onClick={() => onPrint(guest, { kind: "check-in", guest })}>
+            {savingId === guest.registrationId
+              ? <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
+              : arrivalAction.icon === "print"
+                ? <Printer className="mr-1.5 size-3.5" />
+                : <UserCheck className="mr-1.5 size-3.5" />}
+            {savingId === guest.registrationId ? "Saving…" : arrivalAction.label}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={savingId !== null} onClick={() => onEditBadge(guest, { kind: "check-in", guest })}>
+            <PencilLine className="mr-1.5 size-3.5" />Edit badge
+          </Button>
+        </>
       )}
       {guest.removable ? (
         <Button type="button" size="sm" variant="ghost" disabled={removingId !== null || savingId !== null} onClick={() => onRemove(guest)}>
@@ -229,7 +242,29 @@ export default function PublicCheckIn({ token }: { token: string }) {
     }
   };
 
-  const prepareWalkInBadge = () => {
+  const printBadge = async (editor: BadgeEditorState) => {
+    if (!badgeNameLayoutMatchesOriginal(editor, editor.name)) return;
+    flushSync(() => {
+      setPrintLayout({ line1: editor.line1.trim(), line2: editor.line2.trim() });
+      setBadgeEditor(null);
+    });
+    await printBadgeBeforeCompletion(
+      () => {
+        window.print();
+        setPrintLayout(null);
+      },
+      async () => {
+        if (editor.completion.kind === "check-in") {
+          await setCheckedIn(editor.completion.guest, true);
+        }
+        if (editor.completion.kind === "create-walk-in") {
+          await createWalkIn(editor.name);
+        }
+      },
+    );
+  };
+
+  const prepareWalkInBadge = (editLayout = false) => {
     if (!payload || savingWalkIn) return;
     const name = walkInName.trim().replace(/\s+/g, " ");
     if (!name) {
@@ -238,7 +273,9 @@ export default function PublicCheckIn({ token }: { token: string }) {
     }
     setError(null);
     setSavedMessage(null);
-    openBadgeEditor(name, { kind: "create-walk-in" });
+    const editor = { name, completion: { kind: "create-walk-in" } as const, ...suggestBadgeNameLayout(name) };
+    if (editLayout) openBadgeEditor(name, editor.completion);
+    else void printBadge(editor);
   };
 
   const removeWalkIn = async (guest: PublicCheckInGuest) => {
@@ -285,28 +322,6 @@ export default function PublicCheckIn({ token }: { token: string }) {
   });
   const badgeEditorBusy = savingWalkIn || savingId !== null;
 
-  const printBadge = async (editor: BadgeEditorState) => {
-    if (!badgeNameLayoutMatchesOriginal(editor, editor.name)) return;
-    flushSync(() => {
-      setPrintLayout({ line1: editor.line1.trim(), line2: editor.line2.trim() });
-      setBadgeEditor(null);
-    });
-    await printBadgeBeforeCompletion(
-      () => {
-        window.print();
-        setPrintLayout(null);
-      },
-      async () => {
-        if (editor.completion.kind === "check-in") {
-          await setCheckedIn(editor.completion.guest, true);
-        }
-        if (editor.completion.kind === "create-walk-in") {
-          await createWalkIn(editor.name);
-        }
-      },
-    );
-  };
-
   return (
     <PublicFrame>
       <div className="space-y-5">
@@ -337,7 +352,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
               <div className="rounded-full bg-primary-muted p-2 text-primary"><UserPlus className="size-4" /></div>
               <div>
                 <h2 className="font-semibold text-foreground">Not on the guest list?</h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">Enter the person's full name, review the badge, then print and check them in.</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">Enter the person's full name and print immediately. Use Edit badge only when you need a custom line break.</p>
               </div>
             </div>
           </div>
@@ -345,7 +360,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
             className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end sm:p-5"
             onSubmit={(event) => {
               event.preventDefault();
-              prepareWalkInBadge();
+              prepareWalkInBadge(false);
             }}
           >
             <label className="min-w-0 flex-1 text-sm font-medium text-foreground">
@@ -359,6 +374,9 @@ export default function PublicCheckIn({ token }: { token: string }) {
                 className="mt-1"
               />
             </label>
+            <Button type="button" variant="outline" disabled={savingWalkIn || savingId !== null || !walkInName.trim()} onClick={() => prepareWalkInBadge(true)}>
+              <PencilLine className="mr-1.5 size-4" />Edit badge
+            </Button>
             <Button type="submit" disabled={savingWalkIn || savingId !== null || !walkInName.trim()}>
               {savingWalkIn ? <RefreshCw className="mr-1.5 size-4 animate-spin" /> : <Printer className="mr-1.5 size-4" />}
               {savingWalkIn ? "Saving…" : "Print walk-in badge & check in"}
@@ -404,7 +422,8 @@ export default function PublicCheckIn({ token }: { token: string }) {
                     guest={guest}
                     savingId={savingId}
                     removingId={removingId}
-                    onPrint={(guest, completion) => openBadgeEditor(guest.name, completion)}
+                    onPrint={(guest, completion) => void printBadge({ name: guest.name, completion, ...suggestBadgeNameLayout(guest.name) })}
+                    onEditBadge={(guest, completion) => openBadgeEditor(guest.name, completion)}
                     onSetCheckedIn={setCheckedIn}
                     onRemove={setDeleteTarget}
                   />

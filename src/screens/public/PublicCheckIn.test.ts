@@ -24,6 +24,7 @@ function render(guest: PublicCheckInGuest) {
     savingId: null,
     removingId: null,
     onPrint: vi.fn(),
+    onEditBadge: vi.fn(),
     onSetCheckedIn: vi.fn(),
     onRemove: vi.fn(),
   }));
@@ -36,6 +37,7 @@ describe("PublicCheckInGuestActions", () => {
     expect(publicCheckInArrivalAction(founder)).toMatchObject({ label: "Check in", kind: "check-in" });
     expect(html).toContain("Check in");
     expect(html).toContain("Print badge");
+    expect(html).toContain("Edit badge");
     expect(html).not.toContain("Print badge &amp; check in");
   });
 
@@ -48,6 +50,7 @@ describe("PublicCheckInGuestActions", () => {
       kind: "badge-editor",
     });
     expect(html).toContain("Print badge &amp; check in");
+    expect(html).toContain("Edit badge");
   });
 
   it("keeps undo and reprint available after a founder is checked in", () => {
