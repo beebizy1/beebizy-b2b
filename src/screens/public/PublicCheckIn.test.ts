@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PublicCheckInGuest } from "@/data/entities";
 import { PublicCheckInGuestActions } from "./PublicCheckIn";
+import { printBadgeBeforeCompletion } from "./printBadgeFlow";
 import { publicCheckInArrivalAction } from "./publicCheckInPolicy";
 
 const founder = {
@@ -54,5 +55,18 @@ describe("PublicCheckInGuestActions", () => {
 
     expect(html).toContain("Reprint badge");
     expect(html).toContain("Undo");
+  });
+});
+
+describe("printBadgeBeforeCompletion", () => {
+  it("opens the browser print flow before waiting for check-in persistence", async () => {
+    const order: string[] = [];
+
+    await printBadgeBeforeCompletion(
+      () => order.push("print"),
+      async () => { order.push("check-in"); },
+    );
+
+    expect(order).toEqual(["print", "check-in"]);
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { LockKeyhole, Printer, RefreshCw, RotateCcw, Search, Trash2, UserCheck, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ import { NameBadgePrintSheet } from "@/screens/events/sections/NameBadgePrintShe
 import { BadgeNameLayoutFields } from "@/screens/events/sections/BadgeNameLayoutFields";
 import { badgeNameLayoutMatchesOriginal, suggestBadgeNameLayout, type BadgeNameLayout } from "@/screens/events/sections/badgeNameLayout";
 import { PublicFrame } from "./PublicEvent";
+import { printBadgeBeforeCompletion } from "./printBadgeFlow";
 import { publicCheckInArrivalAction } from "./publicCheckInPolicy";
 
 function errorMessage(result: unknown, fallback: string): string {
@@ -151,15 +153,6 @@ export default function PublicCheckIn({ token }: { token: string }) {
     // The token is the complete identity for this deliberately session-free screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-
-  useEffect(() => {
-    if (!printLayout) return;
-    const frame = window.requestAnimationFrame(() => {
-      window.print();
-      setPrintLayout(null);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [printLayout]);
 
   const visibleGuests = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -291,6 +284,28 @@ export default function PublicCheckIn({ token }: { token: string }) {
     timeZone: resolveTimeZone(payload.timeZone),
   });
   const badgeEditorBusy = savingWalkIn || savingId !== null;
+
+  const printBadge = async (editor: BadgeEditorState) => {
+    if (!badgeNameLayoutMatchesOriginal(editor, editor.name)) return;
+    flushSync(() => {
+      setPrintLayout({ line1: editor.line1.trim(), line2: editor.line2.trim() });
+      setBadgeEditor(null);
+    });
+    await printBadgeBeforeCompletion(
+      () => {
+        window.print();
+        setPrintLayout(null);
+      },
+      async () => {
+        if (editor.completion.kind === "check-in") {
+          await setCheckedIn(editor.completion.guest, true);
+        }
+        if (editor.completion.kind === "create-walk-in") {
+          await createWalkIn(editor.name);
+        }
+      },
+    );
+  };
 
   return (
     <PublicFrame>
@@ -424,19 +439,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
             <Button
               type="button"
               disabled={badgeEditorBusy || !badgeEditor || !badgeNameLayoutMatchesOriginal(badgeEditor, badgeEditor.name)}
-              onClick={() => void (async () => {
-                if (!badgeEditor || !badgeNameLayoutMatchesOriginal(badgeEditor, badgeEditor.name)) return;
-                if (badgeEditor.completion.kind === "check-in") {
-                  const updated = await setCheckedIn(badgeEditor.completion.guest, true);
-                  if (!updated) return;
-                }
-                if (badgeEditor.completion.kind === "create-walk-in") {
-                  const created = await createWalkIn(badgeEditor.name);
-                  if (!created) return;
-                }
-                setPrintLayout({ line1: badgeEditor.line1.trim(), line2: badgeEditor.line2.trim() });
-                setBadgeEditor(null);
-              })()}
+              onClick={() => { if (badgeEditor) void printBadge(badgeEditor); }}
             >
               {badgeEditorBusy ? <RefreshCw className="mr-1.5 size-4 animate-spin" /> : <Printer className="mr-1.5 size-4" />}
               {badgeEditorBusy ? "Saving…" : "Print badge"}
