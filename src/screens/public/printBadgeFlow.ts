@@ -1,7 +1,8 @@
 export async function printBadgeBeforeCompletion(
-  printBadge: () => void,
+  printBadge: () => boolean,
   complete: () => Promise<unknown>,
-): Promise<void> {
-  printBadge();
+): Promise<boolean> {
+  if (!printBadge()) return false;
   await complete();
+  return true;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { LockKeyhole, PencilLine, Printer, RefreshCw, RotateCcw, Search, Trash2, UserCheck, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -134,6 +134,7 @@ export default function PublicCheckIn({ token }: { token: string }) {
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [badgeEditor, setBadgeEditor] = useState<BadgeEditorState | null>(null);
   const [printLayout, setPrintLayout] = useState<BadgeNameLayout | null>(null);
+  const pendingManualPrintCleanupRef = useRef<(() => void) | null>(null);
 
   const openBadgeEditor = (name: string, completion: BadgeEditorCompletion = { kind: "print-only" }) => {
     setBadgeEditor({ name, completion, ...suggestBadgeNameLayout(name) });
@@ -166,6 +167,8 @@ export default function PublicCheckIn({ token }: { token: string }) {
     // The token is the complete identity for this deliberately session-free screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => () => pendingManualPrintCleanupRef.current?.(), []);
 
   const visibleGuests = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -244,24 +247,56 @@ export default function PublicCheckIn({ token }: { token: string }) {
 
   const printBadge = async (editor: BadgeEditorState) => {
     if (!badgeNameLayoutMatchesOriginal(editor, editor.name)) return;
+    pendingManualPrintCleanupRef.current?.();
+    pendingManualPrintCleanupRef.current = null;
+    setError(null);
+    setSavedMessage(null);
     flushSync(() => {
       setPrintLayout({ line1: editor.line1.trim(), line2: editor.line2.trim() });
       setBadgeEditor(null);
     });
-    await printBadgeBeforeCompletion(
+    const completePrint = async () => {
+      if (editor.completion.kind === "check-in") {
+        await setCheckedIn(editor.completion.guest, true);
+      }
+      if (editor.completion.kind === "create-walk-in") {
+        await createWalkIn(editor.name);
+      }
+    };
+    const printStarted = await printBadgeBeforeCompletion(
       () => {
-        window.print();
-        setPrintLayout(null);
-      },
-      async () => {
-        if (editor.completion.kind === "check-in") {
-          await setCheckedIn(editor.completion.guest, true);
+        let started = false;
+        const markStarted = () => { started = true; };
+        window.addEventListener("beforeprint", markStarted, { once: true });
+        try {
+          window.print();
+        } catch {
+          return false;
+        } finally {
+          window.removeEventListener("beforeprint", markStarted);
         }
-        if (editor.completion.kind === "create-walk-in") {
-          await createWalkIn(editor.name);
-        }
+        return started;
       },
+      completePrint,
     );
+    if (!printStarted) {
+      const finishManualPrint = () => {
+        pendingManualPrintCleanupRef.current?.();
+        pendingManualPrintCleanupRef.current = null;
+        setError(null);
+        void completePrint();
+      };
+      const waitForManualPrintToFinish = () => {
+        window.addEventListener("afterprint", finishManualPrint, { once: true });
+      };
+      const cleanupManualPrintListeners = () => {
+        window.removeEventListener("beforeprint", waitForManualPrintToFinish);
+        window.removeEventListener("afterprint", finishManualPrint);
+      };
+      pendingManualPrintCleanupRef.current = cleanupManualPrintListeners;
+      window.addEventListener("beforeprint", waitForManualPrintToFinish, { once: true });
+      setError("Chrome did not open system print. Press Ctrl+P now. The prepared badge will print, and check-in will finish when the print window closes.");
+    }
   };
 
   const prepareWalkInBadge = (editLayout = false) => {

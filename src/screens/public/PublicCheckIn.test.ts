@@ -66,10 +66,25 @@ describe("printBadgeBeforeCompletion", () => {
     const order: string[] = [];
 
     await printBadgeBeforeCompletion(
-      () => order.push("print"),
+      () => {
+        order.push("print");
+        return true;
+      },
       async () => { order.push("check-in"); },
     );
 
     expect(order).toEqual(["print", "check-in"]);
+  });
+
+  it("does not mark the guest checked in when the browser never starts printing", async () => {
+    const complete = vi.fn();
+
+    const started = await printBadgeBeforeCompletion(
+      () => false,
+      complete,
+    );
+
+    expect(started).toBe(false);
+    expect(complete).not.toHaveBeenCalled();
   });
 });
