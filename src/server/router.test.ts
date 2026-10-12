@@ -84,8 +84,10 @@ vi.mock("./commercePayments", () => ({
   refundTicketOrder: vi.fn(),
   closeAuctionItem: vi.fn(),
   offerAuctionSecondChance: vi.fn(),
+  settleDueAuctionItems: vi.fn(),
   listAuctionOrders: vi.fn(),
   refundAuctionOrder: vi.fn(),
+  getPublicTicketOrderStatus: vi.fn(),
 }));
 vi.mock("./ticketInvitations", () => ({
   listTicketInvitations: vi.fn(),

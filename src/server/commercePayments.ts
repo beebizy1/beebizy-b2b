@@ -2,7 +2,7 @@ import Stripe from "stripe";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { platformFeeCents } from "../data/commerce.ts";
 import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
-import type { AuctionOrder, StripeConnectStatus, TicketCheckoutResult, TicketOrder } from "../data/entities.ts";
+import type { AuctionOrder, PublicTicketOrderStatus, StripeConnectStatus, TicketCheckoutResult, TicketOrder } from "../data/entities.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
 import { notifyAuctionPaymentConfirmation, notifyAuctionWinner, notifyTicketOrderConfirmation } from "./notify.ts";
@@ -554,6 +554,30 @@ export async function listTicketOrders(ctx: RequestContext, eventId: string): Pr
   }));
 }
 
+export async function getPublicTicketOrderStatus(
+  shareToken: string,
+  orderId: string,
+): Promise<PublicTicketOrderStatus | null> {
+  const [row] = await db.select({ order: ticketOrders }).from(ticketOrders)
+    .innerJoin(events, eq(ticketOrders.eventId, events.id))
+    .where(and(eq(ticketOrders.id, orderId), eq(events.shareToken, shareToken)))
+    .limit(1);
+  if (!row) return null;
+  const [{ registrationsCreated } = { registrationsCreated: 0 }] = await db.select({
+    registrationsCreated: sql<number>`count(*)::integer`,
+  }).from(registrations).where(eq(registrations.ticketOrderId, orderId));
+  const [local, domain = ""] = row.order.buyerEmail.split("@");
+  const buyerEmailMasked = `${local ? `${local.slice(0, 2)}***` : "***"}@${domain}`;
+  return {
+    orderId: row.order.id,
+    status: row.order.status,
+    quantity: row.order.quantity,
+    amountCents: row.order.amountCents,
+    buyerEmailMasked,
+    registrationConfirmed: row.order.status === "paid" && Number(registrationsCreated) > 0,
+  };
+}
+
 export async function refundTicketOrder(ctx: RequestContext, eventId: string, orderId: string): Promise<TicketOrder> {
   if (!(["owner", "admin"] as const).includes(ctx.role as "owner" | "admin")) {
     throw new HttpError(403, "Only an owner or admin can refund a ticket order.");
@@ -835,6 +859,30 @@ export async function offerAuctionSecondChance(
     }).where(eq(auctionItems.id, itemId)),
   ]);
   return closeAuctionItem(ctx, eventId, itemId, request) as Promise<{ status: "winner-notified"; paymentUrl: string | null }>;
+}
+
+export async function settleDueAuctionItems(auctionToken: string, request: Request): Promise<void> {
+  const [event] = await db.select({ id: events.id, workspaceId: events.workspaceId }).from(events)
+    .where(eq(events.auctionPublicToken, auctionToken)).limit(1);
+  if (!event) return;
+  const dueItems = await db.select({ id: auctionItems.id }).from(auctionItems).where(and(
+    eq(auctionItems.eventId, event.id),
+    eq(auctionItems.status, "open"),
+    sql`${auctionItems.closesAt} is not null and ${auctionItems.closesAt} <= now()`,
+  )).limit(50);
+  const systemContext: RequestContext = {
+    userId: "auction-deadline",
+    email: null,
+    workspaceId: event.workspaceId,
+    role: "owner",
+  };
+  for (const item of dueItems) {
+    try {
+      await closeAuctionItem(systemContext, event.id, item.id, request);
+    } catch (error) {
+      console.error("AUCTION_DEADLINE_SETTLEMENT_FAILED", event.id, item.id, error);
+    }
+  }
 }
 
 export async function completeAuctionCheckoutSession(session: Stripe.Checkout.Session): Promise<void> {

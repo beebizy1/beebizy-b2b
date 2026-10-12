@@ -1612,6 +1612,10 @@ const tickets: TicketsRepository = {
     if (!consentConfirmed) throw new DataError("invalid", "Confirm that these recipients expect event communication before sending.");
     return { attempted: recipients.length, sent: recipients.length, failed: 0, invitations: [] };
   },
+  async getPublicOrderStatus() {
+    await wait();
+    return null;
+  },
 };
 
 /* -------------------------------------------------------------------- raffle */

@@ -1024,6 +1024,15 @@ export interface TicketInvitationBatchResult {
   invitations: TicketInvitation[];
 }
 
+export interface PublicTicketOrderStatus {
+  orderId: string;
+  status: PaymentStatus;
+  quantity: number;
+  amountCents: Cents;
+  buyerEmailMasked: string;
+  registrationConfirmed: boolean;
+}
+
 export interface StripeConnectStatus {
   accountId: string | null;
   detailsSubmitted: boolean;

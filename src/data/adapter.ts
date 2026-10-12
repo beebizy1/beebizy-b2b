@@ -121,6 +121,7 @@ import type {
   TicketOrder,
   TicketInvitation,
   TicketInvitationBatchResult,
+  PublicTicketOrderStatus,
   StripeConnectStatus,
   TicketTypeDraft,
   TicketTypePatch,
@@ -237,6 +238,7 @@ export interface TicketsRepository extends EventScopedRepository<TicketType, Tic
     recipients: Array<{ name: string; email: string }>,
     consentConfirmed: boolean,
   ): Promise<TicketInvitationBatchResult>;
+  getPublicOrderStatus(shareToken: string, orderId: string): Promise<PublicTicketOrderStatus | null>;
 }
 
 export interface AuctionRepository extends EventScopedRepository<AuctionItem, AuctionItemDraft, AuctionItemPatch> {

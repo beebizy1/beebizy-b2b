@@ -135,6 +135,7 @@ export const qk = {
   ticketOrders: (eventId: string) => ["tickets", eventId, "orders"] as const,
   stripeConnect: ["billing", "stripe-connect"] as const,
   ticketInvitations: (eventId: string) => ["tickets", eventId, "invitations"] as const,
+  publicTicketOrder: (shareToken: string, orderId: string) => ["tickets", "public-order", shareToken, orderId] as const,
 
   auction: (eventId: string) => ["auction", eventId] as const,
   auctionDonors: (eventId: string) => ["auction", eventId, "donors"] as const,
@@ -864,6 +865,14 @@ export function useSendTicketInvitations() {
   );
 }
 
+export function usePublicTicketOrderStatus(shareToken: string, orderId: string | null) {
+  return useAdapterQuery(
+    qk.publicTicketOrder(shareToken, orderId ?? "none"),
+    (a) => orderId ? a.tickets.getPublicOrderStatus(shareToken, orderId) : Promise.resolve(null),
+    { enabled: Boolean(shareToken && orderId), refetchInterval: 2_000 },
+  );
+}
+
 export function useAddTicketType() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: TicketTypeDraft }) => a.tickets.create(vars.eventId, vars.draft),
@@ -913,11 +922,11 @@ export function useAuctionDonors(eventId: string) {
 }
 
 export function useAuctionBidders(eventId: string) {
-  return useAdapterQuery(qk.auctionBidders(eventId), (a) => a.auction.listBidders(eventId), { enabled: !!eventId });
+  return useAdapterQuery(qk.auctionBidders(eventId), (a) => a.auction.listBidders(eventId), { enabled: !!eventId, refetchInterval: 10_000 });
 }
 
 export function useAuctionBids(eventId: string) {
-  return useAdapterQuery(qk.auctionBids(eventId), (a) => a.auction.listBids(eventId), { enabled: !!eventId });
+  return useAdapterQuery(qk.auctionBids(eventId), (a) => a.auction.listBids(eventId), { enabled: !!eventId, refetchInterval: 5_000 });
 }
 
 export function useAddAuctionDonor() {
@@ -995,7 +1004,7 @@ export function useOfferAuctionSecondChance() {
 }
 
 export function useAuctionOrders(eventId: string) {
-  return useAdapterQuery(qk.auctionOrders(eventId), (a) => a.auction.listOrders(eventId), { enabled: !!eventId });
+  return useAdapterQuery(qk.auctionOrders(eventId), (a) => a.auction.listOrders(eventId), { enabled: !!eventId, refetchInterval: 10_000 });
 }
 
 export function useRefundAuctionOrder() {
@@ -1006,7 +1015,7 @@ export function useRefundAuctionOrder() {
 }
 
 export function usePublicAuction(token: string) {
-  return useAdapterQuery(qk.publicAuction(token), (a) => a.auction.getPublic(token), { enabled: !!token });
+  return useAdapterQuery(qk.publicAuction(token), (a) => a.auction.getPublic(token), { enabled: !!token, refetchInterval: 5_000 });
 }
 
 export function useRegisterAuctionBidder() {

@@ -31,8 +31,10 @@ import {
   refundTicketOrder,
   closeAuctionItem,
   offerAuctionSecondChance,
+  settleDueAuctionItems,
   listAuctionOrders,
   refundAuctionOrder,
+  getPublicTicketOrderStatus,
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { z, ZodError } from "zod";
@@ -259,6 +261,13 @@ async function handlePublic(segments: string[], method: string, request: Request
     // agenda and tickets ride along because the guest has no session to fetch them with.
     return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
   }
+  if (
+    segments[0] === "public" && segments[1] === "events" && segments[2] &&
+    segments[3] === "ticket-orders" && segments[4] && method === "GET"
+  ) {
+    const status = await getPublicTicketOrderStatus(segments[2], segments[4]);
+    return status ? json(status) : json({ error: "This ticket order is not available." }, 404);
+  }
 
   if (segments[0] === "public" && segments[1] === "attendance" && segments[2] && segments.length === 3) {
     if (method !== "GET") return json({ error: "Method not allowed" }, 405);
@@ -268,6 +277,7 @@ async function handlePublic(segments: string[], method: string, request: Request
 
   if (segments[0] === "public" && segments[1] === "auctions" && segments[2]) {
     if (method === "GET" && segments.length === 3) {
+      await settleDueAuctionItems(segments[2], request);
       const auction = await repos.publicAuction(segments[2]);
       return auction ? json(auction) : json({ error: "This auction link is no longer active." }, 404);
     }

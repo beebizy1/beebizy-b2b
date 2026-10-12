@@ -16,7 +16,7 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { BrandLogo } from "@/components/BrandLogo";
-import { useEventByShareToken, usePublicRegistration, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
+import { useEventByShareToken, usePublicRegistration, usePublicTicketOrderStatus, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import type { Event, PublicRegistrationResult } from "@/data/entities";
@@ -338,9 +338,13 @@ export function PublicTicketsPage({ token }: { token: string }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [guestNames, setGuestNames] = useState<string[]>([""]);
-  const [done, setDone] = useState(
-    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("checkout") === "success",
-  );
+  const [done, setDone] = useState(false);
+  const checkoutOrderId = typeof window === "undefined"
+    ? null
+    : new URLSearchParams(window.location.search).get("checkout") === "success"
+      ? new URLSearchParams(window.location.search).get("order")
+      : null;
+  const { data: checkoutOrder, isLoading: checkoutOrderLoading } = usePublicTicketOrderStatus(token, checkoutOrderId);
 
   const onSale = useMemo(
     () => (tickets ?? []).filter((ticket) => ticket.isActive),
@@ -358,7 +362,8 @@ export function PublicTicketsPage({ token }: { token: string }) {
   }
   if (!event) return <EventNotFound />;
 
-  if (done) {
+  if (done || checkoutOrder?.registrationConfirmed) {
+    const confirmedQuantity = checkoutOrder?.quantity ?? quantity;
     return (
       <PublicFrame event={event}>
         <Panel className="p-8 text-center">
@@ -367,12 +372,34 @@ export function PublicTicketsPage({ token }: { token: string }) {
           </span>
           <h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your {quantity === 1 ? "ticket is" : "tickets are"} confirmed for {event.title}.
-            {contact ? ` A confirmation goes to ${contact}.` : " A receipt is on its way to the buyer's email."}
+            Your {confirmedQuantity === 1 ? "ticket is" : `${confirmedQuantity} tickets are`} confirmed for {event.title}.
+            {contact ? ` A confirmation goes to ${contact}.` : checkoutOrder?.buyerEmailMasked ? ` A receipt is on its way to ${checkoutOrder.buyerEmailMasked}.` : " A receipt is on its way to the buyer's email."}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-4">
             <Link href={`/e/${token}`}>Back to the event</Link>
           </Button>
+        </Panel>
+      </PublicFrame>
+    );
+  }
+
+  if (checkoutOrderId) {
+    const failed = !checkoutOrderLoading && (!checkoutOrder || ["failed", "refunded"].includes(checkoutOrder.status));
+    return (
+      <PublicFrame event={event}>
+        <Panel className="p-8 text-center">
+          <span className={`mx-auto grid size-11 place-items-center rounded-xl ${failed ? "bg-danger-tint text-danger-text" : "bg-primary-muted text-primary"}`}>
+            <Ticket className="size-5" aria-hidden="true" />
+          </span>
+          <h1 className="mt-3 text-lg font-semibold text-foreground">{failed ? "Payment was not completed" : "Confirming your registration"}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {failed
+              ? "No registration was created. Return to the ticket page when you are ready to try again."
+              : checkoutOrderLoading || checkoutOrder?.status === "pending"
+                ? "Stripe is confirming the payment. This page updates automatically and will show your ticket only after the signed payment confirmation arrives."
+                : "We are finishing the guest registration now. This page updates automatically."}
+          </p>
+          {failed ? <Button className="mt-4" onClick={() => window.location.assign(`/e/${token}/tickets`)}>Return to tickets</Button> : null}
         </Panel>
       </PublicFrame>
     );

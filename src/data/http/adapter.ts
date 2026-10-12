@@ -70,6 +70,7 @@ import type {
   TicketOrder,
   TicketInvitation,
   TicketInvitationBatchResult,
+  PublicTicketOrderStatus,
   StripeConnectStatus,
   TicketTypeWithEvent,
   UserSettings,
@@ -458,6 +459,14 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       listInvitations: (eventId) => client.get<TicketInvitation[]>(`/events/${eventId}/ticket-invitations`),
       sendInvitations: (eventId, recipients, consentConfirmed) =>
         client.post<TicketInvitationBatchResult>(`/events/${eventId}/ticket-invitations`, { recipients, consentConfirmed }),
+      getPublicOrderStatus: async (shareToken, orderId) => {
+        try {
+          return await publicRequest<PublicTicketOrderStatus>(`/public/events/${shareToken}/ticket-orders/${orderId}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
     },
 
     raffle: {

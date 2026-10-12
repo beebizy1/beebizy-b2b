@@ -358,6 +358,13 @@
       "when": 1791838136052,
       "tag": "0050_reserved_capacity_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1791838503984,
+      "tag": "0051_unified_event_capacity_lock",
+      "breakpoints": true
     }
   ]
 }
