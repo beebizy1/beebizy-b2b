@@ -31,6 +31,8 @@ import {
   useAddSponsorship,
   useAddTicketType,
   useAuctionItems,
+  useAuctionDonors,
+  useAddAuctionDonor,
   useBudget,
   useDrawRaffle,
   useEventRoi,
@@ -44,7 +46,18 @@ import {
   useSellRaffleTickets,
   useSponsorships,
   useTickets,
+  useTicketOrders,
+  useRefundTicketOrder,
+  useTicketInvitations,
+  useSendTicketInvitations,
   useUpdateAuctionItem,
+  useShareAuction,
+  useUpdateAuctionSettings,
+  usePublishAuctionItem,
+  useUploadAuctionImage,
+  useCloseAuctionItem,
+  useAuctionOrders,
+  useRefundAuctionOrder,
   useUpdateBudgetItem,
   useUpdateSponsorship,
   useUpdateTicketType,
@@ -63,6 +76,7 @@ import {
   type SponsorshipTier,
 } from "@/data/entities";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
+import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 
 /** Inline money field that only writes on blur, so every keystroke isn't a mutation. */
 function MoneyCell({
@@ -576,9 +590,15 @@ export function TicketsPanel({ event }: { event: Event }) {
   const add = useAddTicketType();
   const update = useUpdateTicketType();
   const remove = useRemoveTicketType();
+  const { data: orders, isLoading: ordersLoading } = useTicketOrders(event.id);
+  const refund = useRefundTicketOrder();
+  const { data: invitations } = useTicketInvitations(event.id);
+  const sendInvitations = useSendTicketInvitations();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [allocation, setAllocation] = useState("");
+  const [invitationRows, setInvitationRows] = useState("");
+  const [invitationConsent, setInvitationConsent] = useState(false);
 
   const revenue = sumCents((tickets ?? []).map((ticket) => ticket.priceCents * ticket.quantitySold));
   const sold = (tickets ?? []).reduce((total, ticket) => total + ticket.quantitySold, 0);
@@ -760,6 +780,93 @@ export function TicketsPanel({ event }: { event: Event }) {
         </ul>
       )}
     </Panel>
+    <Panel>
+      <PanelHeader
+        title="Designed ticket invitations"
+        description={invitations?.length ? `${invitations.filter((invitation) => invitation.status === "registered").length} registered from ${invitations.length} invitations` : "Send each guest a unique, textable ticket link"}
+      />
+      <form
+        className="space-y-4 p-5"
+        onSubmit={(formEvent) => {
+          formEvent.preventDefault();
+          const recipients = invitationRows.split(/\r?\n/).flatMap((line) => {
+            const [name, email] = line.split(",").map((value) => value.trim());
+            return name && email ? [{ name, email }] : [];
+          });
+          if (recipients.length === 0) {
+            toast({ title: "Add invitees", description: "Use one line per person: Full name, email@example.com" });
+            return;
+          }
+          sendInvitations.mutate({ eventId: event.id, recipients, consentConfirmed: invitationConsent }, {
+            onSuccess: (result) => {
+              setInvitationRows("");
+              toast({ title: `${result.sent} invitations sent`, description: result.failed ? `${result.failed} could not be delivered.` : undefined });
+            },
+            onError: (error) => toast({ title: "Couldn't send invitations", description: error.message }),
+          });
+        }}
+      >
+        <div className="space-y-1.5">
+          <label htmlFor="ticket-invitees" className="text-sm font-medium text-foreground">Guest list</label>
+          <textarea id="ticket-invitees" value={invitationRows} onChange={(event) => setInvitationRows(event.target.value)} placeholder={"Poorvi Shukla, poorvi@example.com\nTarang Goyal, tarang@example.com"} className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
+          <p className="text-xs text-muted-foreground">Paste rows from a spreadsheet as Full name, email. Duplicate emails are sent once.</p>
+        </div>
+        <label className="flex items-start gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={invitationConsent} onChange={(event) => setInvitationConsent(event.target.checked)} className="mt-1 size-4 accent-[hsl(var(--primary))]" />
+          <span>I confirm these recipients expect communication about this event.</span>
+        </label>
+        <Button type="submit" disabled={!invitationRows.trim() || !invitationConsent || sendInvitations.isPending}>
+          {sendInvitations.isPending ? "Sending…" : "Send invitations"}
+        </Button>
+      </form>
+    </Panel>
+    <Panel>
+      <PanelHeader
+        title="Ticket orders"
+        description={orders?.length ? `${orders.length} orders with buyer and payment status` : "Paid and free orders will appear here"}
+      />
+      {ordersLoading ? (
+        <LoadingRows rows={3} className="p-4" />
+      ) : (orders ?? []).length === 0 ? (
+        <EmptyState icon={Coins} title="No ticket orders yet" description="Share the guest ticket link to start accepting registrations." />
+      ) : (
+        <ul className="divide-y divide-hairline">
+          {(orders ?? []).map((order) => (
+            <li key={order.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">{order.buyerName}</p>
+                <p className="truncate text-xs text-muted-foreground">{order.buyerEmail}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {order.guests.map((guest) => guest.fullName).join(", ")}
+                </p>
+              </div>
+              <div className="text-right">
+                <p data-numeric className="text-sm font-semibold text-foreground">{formatMoney(order.amountCents)}</p>
+                <Pill tone={order.status === "paid" ? "success" : order.status === "refunded" ? "warning" : undefined}>
+                  {order.status}
+                </Pill>
+              </div>
+              {order.status === "paid" ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={refund.isPending}
+                  onClick={() => refund.mutate(
+                    { eventId: event.id, orderId: order.id },
+                    {
+                      onSuccess: () => toast({ title: "Ticket order refunded" }),
+                      onError: (error) => toast({ title: "Couldn't refund order", description: error.message }),
+                    },
+                  )}
+                >
+                  Refund
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
     </div>
   );
 }
@@ -776,14 +883,41 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
   const add = useAddAuctionItem();
   const update = useUpdateAuctionItem();
   const remove = useRemoveAuctionItem();
+  const shareAuction = useShareAuction();
+  const updateSettings = useUpdateAuctionSettings();
+  const publish = usePublishAuctionItem();
+  const uploadImage = useUploadAuctionImage();
+  const closeAuction = useCloseAuctionItem();
+  const { data: auctionOrders } = useAuctionOrders(event.id);
+  const refundAuction = useRefundAuctionOrder();
+  const { data: donors } = useAuctionDonors(event.id);
+  const addDonor = useAddAuctionDonor();
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<AuctionKind>(only ?? "silent");
   const [opening, setOpening] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [fairMarketValue, setFairMarketValue] = useState("");
+  const [increment, setIncrement] = useState("");
+  const [closesAt, setClosesAt] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [auctionToken, setAuctionToken] = useState(event.auctionPublicToken ?? null);
+  const [donorBusiness, setDonorBusiness] = useState("");
+  const [donorContact, setDonorContact] = useState("");
+  const [donorEmail, setDonorEmail] = useState("");
 
   const lots = only ? allLots?.filter((lot) => lot.auctionType === only) : allLots;
   const bids = sumCents((lots ?? []).map((lot) => lot.currentBidCents));
+  const settings = normalizeAuctionPageSettings(event.auctionPage);
+  const auctionUrl = auctionToken ? `${window.location.origin}/auction/${auctionToken}` : null;
+
+  const saveSetting = (patch: Partial<typeof settings>) => updateSettings.mutate(
+    { eventId: event.id, settings: { ...settings, ...patch } },
+    { onError: (error) => toast({ title: "Couldn't update auction settings", description: error.message }) },
+  );
 
   return (
+    <div className="space-y-6">
     <Panel>
       <PanelHeader
         title={only === "live" ? "Live auction lots" : only === "silent" ? "Silent auction lots" : "Auction lots"}
@@ -798,8 +932,34 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
         }
       />
 
+      <div className="space-y-4 border-b border-hairline bg-surface-sunken/40 p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">Public auction page</p>
+            <p className="truncate text-xs text-muted-foreground">{auctionUrl ?? "Create a private, shareable auction link for donors and bidders."}</p>
+          </div>
+          {auctionUrl ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(auctionUrl); toast({ title: "Auction link copied" }); }}><Copy className="mr-1.5 size-3.5" />Copy</Button>
+              <Button asChild variant="outline" size="sm"><a href={auctionUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 size-3.5" />Open</a></Button>
+            </>
+          ) : (
+            <Button size="sm" disabled={shareAuction.isPending} onClick={() => shareAuction.mutate(event.id, {
+              onSuccess: (result) => setAuctionToken(result.auctionPublicToken),
+              onError: (error) => toast({ title: "Couldn't create auction link", description: error.message }),
+            })}>Create auction link</Button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant={settings.registrationOpen ? "default" : "outline"} onClick={() => saveSetting({ registrationOpen: !settings.registrationOpen })}>Bidder registration {settings.registrationOpen ? "open" : "closed"}</Button>
+          <Button type="button" size="sm" variant={settings.catalogPublished ? "default" : "outline"} onClick={() => saveSetting({ catalogPublished: !settings.catalogPublished })}>Catalog {settings.catalogPublished ? "published" : "hidden"}</Button>
+          <Button type="button" size="sm" variant={settings.allowRemoteBidders ? "default" : "outline"} onClick={() => saveSetting({ allowRemoteBidders: !settings.allowRemoteBidders })}>Remote bidding {settings.allowRemoteBidders ? "on" : "off"}</Button>
+          <Button type="button" size="sm" variant={settings.automaticBiddingEnabled ? "default" : "outline"} onClick={() => saveSetting({ automaticBiddingEnabled: !settings.automaticBiddingEnabled })}>Automatic bidding {settings.automaticBiddingEnabled ? "on" : "off"}</Button>
+        </div>
+      </div>
+
       <form
-        className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
+        className="grid gap-3 border-b border-hairline px-5 py-4 sm:grid-cols-2 lg:grid-cols-4"
         onSubmit={(formEvent) => {
           formEvent.preventDefault();
           const trimmed = title.trim();
@@ -810,8 +970,14 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
               eventId: event.id,
               draft: {
                 title: trimmed,
+                description: description.trim() || null,
+                imageUrl: imageUrl || null,
+                category: category.trim() || null,
                 auctionType: kind,
                 startingBidCents: centsFromInput(opening),
+                fairMarketValueCents: centsFromInput(fairMarketValue),
+                bidIncrementCents: centsFromInput(increment),
+                closesAt: closesAt ? new Date(closesAt).toISOString() : null,
                 lotNumber: nextLot,
               },
             },
@@ -819,6 +985,12 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
               onSuccess: () => {
                 setTitle("");
                 setOpening("");
+                setDescription("");
+                setCategory("");
+                setFairMarketValue("");
+                setIncrement("");
+                setClosesAt("");
+                setImageUrl("");
               },
               onError: (error) => toast({ title: "Couldn't add lot", description: error.message }),
             },
@@ -830,8 +1002,10 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           onChange={(inputEvent) => setTitle(inputEvent.target.value)}
           placeholder="Lot title…"
           aria-label="Lot title"
-          className="min-w-[10rem] flex-1"
+          className="min-w-[10rem]"
         />
+        <Input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Category" aria-label="Auction category" />
+        <Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" aria-label="Auction description" className="lg:col-span-2" />
         {only ? null : (
           <Select value={kind} onValueChange={(value) => setKind(value as AuctionKind)}>
             <SelectTrigger className="w-[110px]" aria-label="Auction type">
@@ -849,9 +1023,23 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           placeholder="Opening bid"
           inputMode="decimal"
           aria-label="Opening bid"
-          className="w-32 text-right"
+          className="text-right"
         />
-        <Button type="submit" size="sm" disabled={!title.trim() || add.isPending}>
+        <Input value={fairMarketValue} onChange={(event) => setFairMarketValue(event.target.value)} placeholder="Fair market value" inputMode="decimal" aria-label="Fair market value" className="text-right" />
+        <Input value={increment} onChange={(event) => setIncrement(event.target.value)} placeholder="Bid increment" inputMode="decimal" aria-label="Bid increment" className="text-right" />
+        <Input type="datetime-local" value={closesAt} onChange={(event) => setClosesAt(event.target.value)} aria-label="Closing time" />
+        <label className="flex h-10 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm text-muted-foreground">
+          {uploadImage.isPending ? "Uploading photo…" : imageUrl ? "Photo uploaded" : "Upload item photo"}
+          <input type="file" accept="image/*" className="sr-only" onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            uploadImage.mutate(file, {
+              onSuccess: setImageUrl,
+              onError: (error) => toast({ title: "Couldn't upload photo", description: error.message }),
+            });
+          }} />
+        </label>
+        <Button type="submit" size="sm" disabled={!title.trim() || add.isPending || uploadImage.isPending} className="lg:col-span-4">
           <Plus className="mr-1.5 size-3.5" />
           Add lot
         </Button>
@@ -914,6 +1102,42 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 }}
               />
 
+              <Button
+                type="button"
+                size="sm"
+                variant={lot.isPublished ? "outline" : "default"}
+                disabled={publish.isPending}
+                onClick={() => publish.mutate(
+                  { eventId: event.id, itemId: lot.id, published: !lot.isPublished },
+                  {
+                    onSuccess: () => toast({ title: lot.isPublished ? "Item hidden from catalog" : "Item published" }),
+                    onError: (error) => toast({ title: "Item is not ready", description: error.message }),
+                  },
+                )}
+              >
+                {lot.isPublished ? "Unpublish" : "Publish"}
+              </Button>
+              {lot.status === "open" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={closeAuction.isPending}
+                  onClick={() => closeAuction.mutate(
+                    { eventId: event.id, itemId: lot.id },
+                    {
+                      onSuccess: (result) => toast({
+                        title: result.status === "winner-notified" ? "Winner notified" : "Item closed with no bids",
+                        description: result.paymentUrl ? "A secure payment link was emailed to the winner." : undefined,
+                      }),
+                      onError: (error) => toast({ title: "Couldn't close item", description: error.message }),
+                    },
+                  )}
+                >
+                  Close item
+                </Button>
+              ) : null}
+
               <button
                 type="button"
                 aria-label={`Delete lot ${lot.title}`}
@@ -932,6 +1156,82 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
         </ul>
       )}
     </Panel>
+    <Panel>
+      <PanelHeader title="Auction donors" description="Track who donated each item and share their private intake link." />
+      <form
+        className="grid gap-3 border-b border-hairline px-5 py-4 sm:grid-cols-4"
+        onSubmit={(formEvent) => {
+          formEvent.preventDefault();
+          if (!donorBusiness.trim()) return;
+          addDonor.mutate({
+            eventId: event.id,
+            draft: {
+              businessName: donorBusiness.trim(),
+              contactName: donorContact.trim() || null,
+              email: donorEmail.trim() || null,
+              solicitationStatus: "contacted",
+            },
+          }, {
+            onSuccess: () => { setDonorBusiness(""); setDonorContact(""); setDonorEmail(""); },
+            onError: (error) => toast({ title: "Couldn't add donor", description: error.message }),
+          });
+        }}
+      >
+        <Input value={donorBusiness} onChange={(event) => setDonorBusiness(event.target.value)} placeholder="Business or donor" required />
+        <Input value={donorContact} onChange={(event) => setDonorContact(event.target.value)} placeholder="Contact name" />
+        <Input value={donorEmail} onChange={(event) => setDonorEmail(event.target.value)} placeholder="Email" type="email" />
+        <Button type="submit" disabled={!donorBusiness.trim() || addDonor.isPending}><Plus className="mr-1.5 size-4" />Add donor</Button>
+      </form>
+      {(donors ?? []).length === 0 ? (
+        <EmptyState icon={Handshake} title="No donors yet" description="Add a donor to create a private donation intake link." />
+      ) : (
+        <ul className="divide-y divide-hairline">
+          {(donors ?? []).map((donor) => {
+            const donorLink = `${window.location.origin}/donate/${donor.publicToken}`;
+            return (
+              <li key={donor.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">{donor.businessName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{donor.contactName || donor.email || "Contact not added"}</p>
+                </div>
+                <Pill>{donor.solicitationStatus}</Pill>
+                <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(donorLink); toast({ title: "Donor link copied" }); }}><Copy className="mr-1.5 size-3.5" />Copy intake link</Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
+    <Panel>
+      <PanelHeader title="Auction payments and fulfillment" description="Winning bids, Beebizy fees, payment status, and handoff in one report." />
+      {(auctionOrders ?? []).length === 0 ? (
+        <EmptyState icon={Coins} title="No winner payments yet" description="Close an item with a winning bid to send its secure payment link." />
+      ) : (
+        <ul className="divide-y divide-hairline">
+          {(auctionOrders ?? []).map((order) => (
+            <li key={order.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">{order.itemTitle}</p>
+                <p className="truncate text-xs text-muted-foreground">{order.bidderName} · {order.bidderEmail}</p>
+              </div>
+              <div className="text-right text-xs text-muted-foreground">
+                <p data-numeric className="text-sm font-semibold text-foreground">{formatMoney(order.amountCents)}</p>
+                <p>Beebizy 2%: {formatMoney(order.applicationFeeCents)}</p>
+              </div>
+              <Pill tone={order.status === "paid" ? "success" : order.status === "refunded" ? "warning" : undefined}>{order.status}</Pill>
+              <Pill>{order.fulfillmentStatus}</Pill>
+              {order.status === "paid" ? (
+                <Button size="sm" variant="outline" disabled={refundAuction.isPending} onClick={() => refundAuction.mutate(
+                  { eventId: event.id, orderId: order.id },
+                  { onSuccess: () => toast({ title: "Auction payment refunded" }), onError: (error) => toast({ title: "Couldn't refund", description: error.message }) },
+                )}>Refund</Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+    </div>
   );
 }
 

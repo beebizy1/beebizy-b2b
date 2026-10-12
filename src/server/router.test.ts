@@ -18,6 +18,11 @@ vi.mock("./repos", () => {
     publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
     publicRegistration: vi.fn(),
     publicVolunteerSignup: vi.fn(),
+    publicAuction: vi.fn(),
+    registerPublicAuctionBidder: vi.fn(),
+    placePublicAuctionBid: vi.fn(),
+    publicAuctionDonor: vi.fn(),
+    submitPublicAuctionDonation: vi.fn(),
     publicRfp: vi.fn(),
     publicRfpResponse: vi.fn(),
     publicVendorConversation: vi.fn(),
@@ -44,6 +49,10 @@ vi.mock("./repos", () => {
     eventVendors: child,
     tickets: child,
     raffle: child,
+    auctionDonors: child,
+    auctionManagement: {
+      share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(),
+    },
     events: {
       get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
       sendAssignmentSummaries: vi.fn(),
@@ -67,11 +76,28 @@ vi.mock("./billing", () => ({
   createPortalSession: vi.fn(),
   handleStripeWebhook: vi.fn(),
 }));
+vi.mock("./commercePayments", () => ({
+  createPublicTicketCheckout: vi.fn(),
+  createStripeConnectOnboarding: vi.fn(),
+  getStripeConnectStatus: vi.fn(),
+  listTicketOrders: vi.fn(),
+  refundTicketOrder: vi.fn(),
+  closeAuctionItem: vi.fn(),
+  listAuctionOrders: vi.fn(),
+  refundAuctionOrder: vi.fn(),
+}));
+vi.mock("./ticketInvitations", () => ({
+  listTicketInvitations: vi.fn(),
+  openTicketInvitation: vi.fn(),
+  sendTicketInvitations: vi.fn(),
+}));
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
+const { openTicketInvitation } = await import("./ticketInvitations");
+const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 
 describe("single-event collaborator routing", () => {
   const context = {
@@ -600,6 +626,40 @@ describe("public event signup endpoints", () => {
       needId: "need-1", name: "Grace", email: "grace@example.com",
     });
     expect(authorize).not.toHaveBeenCalled();
+  });
+});
+
+describe("public commerce endpoints", () => {
+  it("serves a public auction and registers bidders without a login", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicAuction).mockResolvedValue({ eventTitle: "Gala", items: [] } as never);
+    vi.mocked(registerPublicAuctionBidder).mockResolvedValue({ id: "bidder-1" } as never);
+
+    const catalog = await handleRequest(new Request("http://localhost/api/public/auctions/auction-token"));
+    const registration = await handleRequest(new Request("http://localhost/api/public/auctions/auction-token/bidders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Ada", email: "ada@example.com", participantType: "remote" }),
+    }));
+
+    expect(catalog.status).toBe(200);
+    expect(registration.status).toBe(201);
+    expect(registerPublicAuctionBidder).toHaveBeenCalledWith("auction-token", {
+      name: "Ada", email: "ada@example.com", participantType: "remote",
+    });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("opens donor intake and redirects unique ticket invitations", async () => {
+    vi.mocked(publicAuctionDonor).mockResolvedValue({ eventTitle: "Gala", items: [] } as never);
+    vi.mocked(openTicketInvitation).mockResolvedValue("/e/share-token/tickets?invite=invite-token");
+
+    const donor = await handleRequest(new Request("http://localhost/api/public/auction-donors/donor-token"));
+    const invitation = await handleRequest(new Request("http://localhost/api/public/ticket-invitations/invite-token"));
+
+    expect(donor.status).toBe(200);
+    expect(invitation.status).toBe(302);
+    expect(invitation.headers.get("location")).toBe("http://localhost/e/share-token/tickets?invite=invite-token");
   });
 });
 

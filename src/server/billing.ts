@@ -16,6 +16,13 @@ import { db } from "./db.ts";
 import { HttpError, type RequestContext } from "./auth.ts";
 import { annualEventQuotaRank, workspaceFitsSoloSeatLimit } from "./entitlements.ts";
 import { eventQuotaSlots, events, workspaces } from "./schema.ts";
+import {
+  completeTicketCheckoutSession,
+  completeAuctionCheckoutSession,
+  failAuctionCheckoutSession,
+  failTicketCheckoutSession,
+  syncStripeConnectedAccount,
+} from "./commercePayments.ts";
 
 function stripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -595,20 +602,35 @@ export async function handleStripeWebhook(request: Request): Promise<{ received:
 
   switch (event.type) {
     case "checkout.session.completed":
-    case "checkout.session.async_payment_succeeded":
-      await syncCheckoutSession(stripe, event.data.object, event.created);
-      break;
-    case "checkout.session.async_payment_failed": {
+    case "checkout.session.async_payment_succeeded": {
       const session = event.data.object;
-      const subscriptionId = checkoutSubscriptionId(session);
-      if (subscriptionId) {
-        await syncStripeSubscription(await stripe.subscriptions.retrieve(subscriptionId), event.created);
-      }
-      await releaseCheckoutSession(session);
+      if (session.metadata?.kind === "ticket-order") await completeTicketCheckoutSession(session);
+      else if (session.metadata?.kind === "auction-order") await completeAuctionCheckoutSession(session);
+      else await syncCheckoutSession(stripe, session, event.created);
       break;
     }
-    case "checkout.session.expired":
-      await releaseCheckoutSession(event.data.object);
+    case "checkout.session.async_payment_failed": {
+      const session = event.data.object;
+      if (session.metadata?.kind === "ticket-order") await failTicketCheckoutSession(session);
+      else if (session.metadata?.kind === "auction-order") await failAuctionCheckoutSession(session);
+      else {
+        const subscriptionId = checkoutSubscriptionId(session);
+        if (subscriptionId) {
+          await syncStripeSubscription(await stripe.subscriptions.retrieve(subscriptionId), event.created);
+        }
+        await releaseCheckoutSession(session);
+      }
+      break;
+    }
+    case "checkout.session.expired": {
+      const session = event.data.object;
+      if (session.metadata?.kind === "ticket-order") await failTicketCheckoutSession(session);
+      else if (session.metadata?.kind === "auction-order") await failAuctionCheckoutSession(session);
+      else await releaseCheckoutSession(session);
+      break;
+    }
+    case "account.updated":
+      await syncStripeConnectedAccount(event.data.object);
       break;
     case "customer.subscription.created":
     case "customer.subscription.updated":

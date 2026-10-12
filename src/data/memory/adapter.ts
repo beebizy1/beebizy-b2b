@@ -11,6 +11,7 @@
 
 import type {
   AnalyticsRepository,
+  AuctionRepository,
   CanvasesRepository,
   DataAdapter,
   EventScopedRepository,
@@ -32,6 +33,8 @@ import type {
   VendorMessagesRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
+import { platformFeeCents } from "../commerce";
+import { normalizeAuctionPageSettings } from "../auctionSettings";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
 import { teamUpdateFromHistory } from "../teamUpdates";
@@ -42,6 +45,9 @@ import type {
   AuctionItem,
   AuctionItemDraft,
   AuctionItemPatch,
+  AuctionDonor,
+  AuctionBidder,
+  AuctionBid,
   BudgetItem,
   BudgetItemDraft,
   BudgetItemPatch,
@@ -1265,7 +1271,7 @@ const moodBoard = eventScoped<MoodBoardImage, { url: string; caption?: string | 
   }),
 );
 
-const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
+const auctionBase = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
   () => store().auction,
   "auc",
   (eventId, draft) => ({
@@ -1279,6 +1285,21 @@ const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
     fairMarketValueCents: draft.fairMarketValueCents ?? null,
     winnerName: draft.winnerName ?? null,
     donorName: draft.donorName ?? null,
+    donorId: draft.donorId ?? null,
+    category: draft.category ?? null,
+    restrictions: draft.restrictions ?? null,
+    expiresAt: draft.expiresAt ?? null,
+    deliveryDetails: draft.deliveryDetails ?? null,
+    bidIncrementCents: draft.bidIncrementCents ?? null,
+    readinessStatus: draft.readinessStatus ?? "draft",
+    isPublished: draft.isPublished ?? false,
+    opensAt: draft.opensAt ?? null,
+    closesAt: draft.closesAt ?? null,
+    extensionMinutes: draft.extensionMinutes ?? 0,
+    quantityAvailable: draft.quantityAvailable ?? 1,
+    winningBidderId: draft.winningBidderId ?? null,
+    fulfillmentStatus: draft.fulfillmentStatus ?? "pending",
+    fulfilledAt: draft.fulfilledAt ?? null,
     paymentMethod: draft.paymentMethod ?? null,
     paymentLink: draft.paymentLink ?? null,
     paymentReceivedAt: draft.paymentReceivedAt ?? null,
@@ -1290,6 +1311,154 @@ const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
   undefined,
   (a, b) => (a.lotNumber ?? 999) - (b.lotNumber ?? 999),
 );
+
+const memoryAuctionDonors: AuctionDonor[] = [];
+const memoryAuctionBidders: AuctionBidder[] = [];
+const memoryAuctionBids: AuctionBid[] = [];
+
+const auction: AuctionRepository = {
+  ...auctionBase,
+  async listDonors(eventId) {
+    await wait();
+    return copy(memoryAuctionDonors.filter((donor) => donor.eventId === eventId));
+  },
+  async createDonor(eventId, draft) {
+    const donor: AuctionDonor = {
+      id: newId("adon"), ownerId: DEMO_OWNER_ID, eventId, publicToken: newId("donor"),
+      businessName: draft.businessName, contactName: draft.contactName ?? null,
+      email: draft.email ?? null, phone: draft.phone ?? null, solicitedBy: draft.solicitedBy ?? null,
+      solicitationStatus: draft.solicitationStatus ?? "prospect", previousDonations: draft.previousDonations ?? null,
+      notes: draft.notes ?? null, recognitionPreference: draft.recognitionPreference ?? null,
+      thankYouStatus: draft.thankYouStatus ?? "pending", createdAt: nowIso(),
+    };
+    memoryAuctionDonors.push(donor);
+    return copy(donor);
+  },
+  async updateDonor(eventId, donorId, patch) {
+    const donor = required(memoryAuctionDonors.find((row) => row.id === donorId && row.eventId === eventId), "That donor no longer exists.");
+    Object.assign(donor, patch, { updatedAt: nowIso() });
+    return copy(donor);
+  },
+  async removeDonor(eventId, donorId) {
+    const index = memoryAuctionDonors.findIndex((row) => row.id === donorId && row.eventId === eventId);
+    if (index >= 0) memoryAuctionDonors.splice(index, 1);
+  },
+  async share(eventId) {
+    const event = requireEvent(eventId);
+    event.auctionPublicToken ??= newId("auction");
+    event.auctionPage = normalizeAuctionPageSettings(event.auctionPage);
+    return { auctionPublicToken: event.auctionPublicToken };
+  },
+  async updateSettings(eventId, settings) {
+    const event = requireEvent(eventId);
+    event.auctionPage = normalizeAuctionPageSettings(settings);
+    return event.auctionPage;
+  },
+  async publishItem(eventId, itemId, published) {
+    return auctionBase.update(eventId, itemId, { isPublished: published, readinessStatus: published ? "published" : "ready" });
+  },
+  async listBidders(eventId) {
+    return copy(memoryAuctionBidders.filter((bidder) => bidder.eventId === eventId));
+  },
+  async listBids(eventId) {
+    return copy(memoryAuctionBids.filter((bid) => bid.eventId === eventId));
+  },
+  async getPublic(token) {
+    const event = store().events.find((row) => row.auctionPublicToken === token);
+    if (!event) return null;
+    const settings = normalizeAuctionPageSettings(event.auctionPage);
+    const items = store().auction.filter((item) => item.eventId === event.id && item.isPublished).map((item) => ({
+      id: item.id, title: item.title, description: item.description, imageUrl: item.imageUrl,
+      category: item.category ?? null, restrictions: item.restrictions ?? null, expiresAt: item.expiresAt ?? null,
+      deliveryDetails: item.deliveryDetails ?? null, fairMarketValueCents: item.fairMarketValueCents,
+      startingBidCents: item.startingBidCents ?? 0, currentBidCents: item.currentBidCents,
+      bidIncrementCents: item.bidIncrementCents ?? 100, opensAt: item.opensAt ?? null, closesAt: item.closesAt ?? null,
+      status: item.status, lotNumber: item.lotNumber,
+      bidCount: memoryAuctionBids.filter((bid) => bid.itemId === item.id).length,
+      hasBid: memoryAuctionBids.some((bid) => bid.itemId === item.id),
+    }));
+    return {
+      eventTitle: event.title, eventDate: event.date, timeZone: store().settings.timeZone, settings,
+      categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))],
+      items,
+    };
+  },
+  async registerPublic(token, draft) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder: AuctionBidder = {
+      id: newId("abidder"), eventId: event.id, name: draft.name, email: draft.email,
+      phone: draft.phone ?? null, participantType: draft.participantType, publicToken: newId("bidder"),
+      status: "active", createdAt: nowIso(),
+    };
+    memoryAuctionBidders.push(bidder);
+    return copy(bidder);
+  },
+  async placePublicBid(token, bidderToken, itemId, maximumAmountCents) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder = required(memoryAuctionBidders.find((row) => row.publicToken === bidderToken && row.eventId === event.id), "This bidder is not registered.");
+    const item = required(store().auction.find((row) => row.id === itemId && row.eventId === event.id), "This auction item is not available.");
+    const increment = item.bidIncrementCents ?? 100;
+    const minimum = item.currentBidCents === null ? item.startingBidCents ?? 0 : item.currentBidCents + increment;
+    if (maximumAmountCents < minimum) throw new DataError("conflict", `The minimum next bid is ${minimum} cents.`);
+    item.currentBidCents = maximumAmountCents;
+    item.winningBidderId = bidder.id;
+    memoryAuctionBids.push({
+      id: newId("abid"), eventId: event.id, itemId, bidderId: bidder.id, bidderName: bidder.name,
+      amountCents: maximumAmountCents, maximumAmountCents, isAutomatic: false, createdAt: nowIso(),
+    });
+    const payload = await auction.getPublic(token);
+    return {
+      item: payload!.items.find((row) => row.id === itemId)!,
+      bidderIsLeading: true,
+      minimumNextBidCents: maximumAmountCents + increment,
+    };
+  },
+  async uploadImage(file) {
+    return URL.createObjectURL(file);
+  },
+  async getPublicDonor(token) {
+    const donor = memoryAuctionDonors.find((row) => row.publicToken === token);
+    if (!donor) return null;
+    const event = requireEvent(donor.eventId);
+    return {
+      eventTitle: event.title,
+      donor: {
+        businessName: donor.businessName, contactName: donor.contactName, email: donor.email,
+        phone: donor.phone, recognitionPreference: donor.recognitionPreference,
+      },
+      items: store().auction.filter((item) => item.donorId === donor.id).map((item) => ({
+        id: item.id, title: item.title, description: item.description, imageUrl: item.imageUrl,
+        category: item.category ?? null, restrictions: item.restrictions ?? null, expiresAt: item.expiresAt ?? null,
+        fairMarketValueCents: item.fairMarketValueCents, deliveryDetails: item.deliveryDetails ?? null,
+        readinessStatus: item.readinessStatus ?? "incomplete",
+      })),
+    };
+  },
+  async uploadPublicDonorImage(_token, file) {
+    return URL.createObjectURL(file);
+  },
+  async submitPublicDonation(token, draft) {
+    const donor = required(memoryAuctionDonors.find((row) => row.publicToken === token), "This donation link is no longer active.");
+    await auctionBase.create(donor.eventId, {
+      ...draft, donorId: donor.id, donorName: donor.businessName, readinessStatus: "incomplete",
+      isPublished: false, auctionType: "silent", status: "open",
+    });
+    donor.solicitationStatus = "received";
+    donor.recognitionPreference = draft.recognitionPreference ?? donor.recognitionPreference;
+    return (await auction.getPublicDonor(token))!;
+  },
+  async closeItem(eventId, itemId) {
+    const item = required(store().auction.find((row) => row.id === itemId && row.eventId === eventId), "That auction item no longer exists.");
+    item.status = item.winningBidderId ? "won" : "closed";
+    return { status: item.winningBidderId ? "winner-notified" : "closed-no-bids", paymentUrl: null };
+  },
+  async listOrders() {
+    return [];
+  },
+  async refundOrder() {
+    throw new DataError("not-found", "That auction order no longer exists.");
+  },
+};
 
 const sponsorships = eventScoped<Sponsorship, SponsorshipDraft, SponsorshipPatch>(
   () => store().sponsorships,
@@ -1403,6 +1572,29 @@ const tickets: TicketsRepository = {
       createdAt: nowIso(),
     });
     syncRegistrationCount(event.id);
+    return {
+      orderId: newId("tord"),
+      kind: "free-confirmed",
+      checkoutUrl: null,
+      applicationFeeCents: platformFeeCents(ticket.priceCents * buyer.quantity),
+    };
+  },
+  async listOrders() {
+    await wait();
+    return [];
+  },
+  async refundOrder() {
+    await wait();
+    throw new DataError("not-found", "That ticket order no longer exists.");
+  },
+  async listInvitations() {
+    await wait();
+    return [];
+  },
+  async sendInvitations(_eventId, recipients, consentConfirmed) {
+    await wait();
+    if (!consentConfirmed) throw new DataError("invalid", "Confirm that these recipients expect event communication before sending.");
+    return { attempted: recipients.length, sent: recipients.length, failed: 0, invitations: [] };
   },
 };
 
@@ -2249,6 +2441,21 @@ export const memoryAdapter: DataAdapter = {
   billing: {
     checkout: async () => ({ url: "/pricing?demo=true" }),
     portal: async () => ({ url: "/pricing?demo=true" }),
+    connectStatus: async () => ({
+      accountId: "acct_demo",
+      detailsSubmitted: true,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      ready: true,
+    }),
+    startConnectOnboarding: async () => ({
+      accountId: "acct_demo",
+      detailsSubmitted: true,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      ready: true,
+      onboardingUrl: "/app/tickets?stripe=demo",
+    }),
   },
   assistant: {
     chat: async ({ messages }) => {

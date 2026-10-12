@@ -302,6 +302,41 @@
       "when": 1790891517471,
       "tag": "0042_modern_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791834698096,
+      "tag": "0043_cooing_scarlet_spider",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791834977839,
+      "tag": "0044_reserve_ticket_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791835059551,
+      "tag": "0045_ticket_order_registration_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791835834364,
+      "tag": "0046_auction_bid_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791836572045,
+      "tag": "0047_auction_order_payment_refs",
+      "breakpoints": true
     }
   ]
 }

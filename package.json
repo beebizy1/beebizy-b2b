@@ -59,6 +59,7 @@
     "@uppy/core": "^5.2.0",
     "@uppy/dashboard": "^5.1.1",
     "@uppy/react": "^5.2.0",
+    "@vercel/blob": "^2.8.1",
     "ai": "^7.0.83",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

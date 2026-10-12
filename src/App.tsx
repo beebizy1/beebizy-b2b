@@ -65,6 +65,8 @@ import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
 import FeedbackInbox from "@/screens/FeedbackInbox";
 import { PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
+import PublicAuctionPage from "@/screens/public/PublicAuction";
+import PublicAuctionDonationPage from "@/screens/public/PublicAuctionDonation";
 import PublicAssignment from "@/screens/public/PublicAssignment";
 import PublicCheckIn from "@/screens/public/PublicCheckIn";
 import PublicRfp from "@/screens/public/PublicRfp";
@@ -192,6 +194,8 @@ function Routes() {
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>
+      <Route path="/auction/:token">{(params) => <PublicAuctionPage token={params.token} />}</Route>
+      <Route path="/donate/:token">{(params) => <PublicAuctionDonationPage token={params.token} />}</Route>
       <Route path="/e/:token/register/:segment">{(params) => <PublicRegistrationPage token={params.token} segment={params.segment} />}</Route>
       <Route path="/e/:token/volunteer">{(params) => <PublicVolunteerSignupPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>

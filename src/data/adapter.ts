@@ -20,6 +20,15 @@ import type {
   AuctionItem,
   AuctionItemDraft,
   AuctionItemPatch,
+  AuctionDonor,
+  AuctionDonorDraft,
+  AuctionBidder,
+  AuctionBid,
+  AuctionOrder,
+  AuctionPageSettings,
+  PublicAuctionPayload,
+  PublicAuctionBidResult,
+  PublicAuctionDonorPayload,
   BudgetItem,
   BudgetItemDraft,
   BudgetItemPatch,
@@ -108,6 +117,11 @@ import type {
   TemplateDetail,
   TemplateDraft,
   TicketType,
+  TicketCheckoutResult,
+  TicketOrder,
+  TicketInvitation,
+  TicketInvitationBatchResult,
+  StripeConnectStatus,
   TicketTypeDraft,
   TicketTypePatch,
   TicketTypeWithEvent,
@@ -210,7 +224,59 @@ export interface TicketsRepository extends EventScopedRepository<TicketType, Tic
   /** Every ticket type across the portfolio, joined with its event. */
   listAll(): Promise<TicketTypeWithEvent[]>;
   /** Public checkout against a share token. Fails if the allocation is exhausted. */
-  purchase(shareToken: string, ticketTypeId: string, buyer: { name: string; contact: string; quantity: number }): Promise<void>;
+  purchase(
+    shareToken: string,
+    ticketTypeId: string,
+    buyer: { name: string; contact: string; quantity: number; guestNames?: string[] },
+  ): Promise<TicketCheckoutResult>;
+  listOrders(eventId: string): Promise<TicketOrder[]>;
+  refundOrder(eventId: string, orderId: string): Promise<TicketOrder>;
+  listInvitations(eventId: string): Promise<TicketInvitation[]>;
+  sendInvitations(
+    eventId: string,
+    recipients: Array<{ name: string; email: string }>,
+    consentConfirmed: boolean,
+  ): Promise<TicketInvitationBatchResult>;
+}
+
+export interface AuctionRepository extends EventScopedRepository<AuctionItem, AuctionItemDraft, AuctionItemPatch> {
+  listDonors(eventId: string): Promise<AuctionDonor[]>;
+  createDonor(eventId: string, draft: AuctionDonorDraft): Promise<AuctionDonor>;
+  updateDonor(eventId: string, donorId: string, patch: Partial<AuctionDonorDraft>): Promise<AuctionDonor>;
+  removeDonor(eventId: string, donorId: string): Promise<void>;
+  share(eventId: string): Promise<{ auctionPublicToken: string }>;
+  updateSettings(eventId: string, settings: AuctionPageSettings): Promise<AuctionPageSettings>;
+  publishItem(eventId: string, itemId: string, published: boolean): Promise<AuctionItem>;
+  listBidders(eventId: string): Promise<AuctionBidder[]>;
+  listBids(eventId: string): Promise<AuctionBid[]>;
+  getPublic(token: string): Promise<PublicAuctionPayload | null>;
+  registerPublic(
+    token: string,
+    draft: { name: string; email: string; phone?: string | null; participantType: "gala" | "remote" },
+  ): Promise<AuctionBidder>;
+  placePublicBid(
+    token: string,
+    bidderToken: string,
+    itemId: string,
+    maximumAmountCents: number,
+  ): Promise<PublicAuctionBidResult>;
+  uploadImage(file: File): Promise<string>;
+  getPublicDonor(token: string): Promise<PublicAuctionDonorPayload | null>;
+  uploadPublicDonorImage(token: string, file: File): Promise<string>;
+  submitPublicDonation(token: string, draft: {
+    title: string;
+    description: string;
+    imageUrl: string;
+    category: string;
+    restrictions?: string | null;
+    expiresAt?: string | null;
+    fairMarketValueCents: number;
+    deliveryDetails: string;
+    recognitionPreference?: string | null;
+  }): Promise<PublicAuctionDonorPayload>;
+  closeItem(eventId: string, itemId: string): Promise<{ status: "closed-no-bids" | "winner-notified"; paymentUrl: string | null }>;
+  listOrders(eventId: string): Promise<AuctionOrder[]>;
+  refundOrder(eventId: string, orderId: string): Promise<AuctionOrder>;
 }
 
 /**
@@ -340,6 +406,8 @@ export interface FeedbackRepository {
 export interface BillingRepository {
   checkout(interval: BillingInterval): Promise<{ url: string }>;
   portal(): Promise<{ url: string }>;
+  connectStatus(): Promise<StripeConnectStatus>;
+  startConnectOnboarding(): Promise<StripeConnectStatus>;
 }
 
 /** Identity and authorization as the server sees them. */
@@ -387,7 +455,7 @@ export interface DataAdapter {
   menu: EventScopedRepository<MenuItem, MenuItemDraft, MenuItemPatch>;
   moodBoard: EventScopedRepository<MoodBoardImage, { url: string; caption?: string | null }, { caption?: string | null; sortOrder?: number }>;
   tickets: TicketsRepository;
-  auction: EventScopedRepository<AuctionItem, AuctionItemDraft, AuctionItemPatch>;
+  auction: AuctionRepository;
   raffle: RaffleRepository;
   sponsorships: EventScopedRepository<Sponsorship, SponsorshipDraft, SponsorshipPatch>;
   rfps: RfpsRepository;

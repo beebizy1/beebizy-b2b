@@ -23,7 +23,19 @@ import { feedbackDraftSchema, feedbackValidationMessage } from "../src/data/feed
 import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
 import { effectivePlan, planHasCapability, type PlanCapability } from "../src/data/plans.ts";
 import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
+import {
+  createPublicTicketCheckout,
+  createStripeConnectOnboarding,
+  getStripeConnectStatus,
+  listTicketOrders,
+  refundTicketOrder,
+  closeAuctionItem,
+  listAuctionOrders,
+  refundAuctionOrder,
+} from "../src/server/commercePayments.ts";
+import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { z, ZodError } from "zod";
+import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
 
 export const config = { runtime: "nodejs", api: { bodyParser: false } };
@@ -220,6 +232,16 @@ async function handlePublic(segments: string[], method: string, request: Request
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "POST") {
     if (segments[3] === "registrations") return json(await repos.publicRegistration(segments[2], await readBody(request)), 201);
     if (segments[3] === "volunteers") return json(await repos.publicVolunteerSignup(segments[2], await readBody(request)), 201);
+    if (segments[3] === "tickets" && segments[4] === "checkout") {
+      const input = z.object({
+        ticketTypeId: z.string().min(1).max(100),
+        buyerName: z.string().trim().min(1).max(160),
+        buyerEmail: z.string().trim().email().max(320),
+        quantity: z.number().int().min(1).max(100),
+        guestNames: z.array(z.string().trim().min(1).max(160)).max(100),
+      }).parse(await readBody(request));
+      return json(await createPublicTicketCheckout(segments[2], input, request), 201);
+    }
   }
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET" && !segments[3]) {
     const shared = await eventByShareToken(segments[2]);
@@ -241,6 +263,63 @@ async function handlePublic(segments: string[], method: string, request: Request
     if (method !== "GET") return json({ error: "Method not allowed" }, 405);
     const dashboard = await repos.publicAttendanceDashboard(segments[2]);
     return dashboard ? json(dashboard) : json({ error: "This attendance dashboard link is no longer active." }, 404);
+  }
+
+  if (segments[0] === "public" && segments[1] === "auctions" && segments[2]) {
+    if (method === "GET" && segments.length === 3) {
+      const auction = await repos.publicAuction(segments[2]);
+      return auction ? json(auction) : json({ error: "This auction link is no longer active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "bidders" && segments.length === 4) {
+      return json(await repos.registerPublicAuctionBidder(segments[2], await readBody(request)), 201);
+    }
+    if (
+      method === "POST" && segments[3] === "bidders" && segments[4] &&
+      segments[5] === "items" && segments[6] && segments[7] === "bids" && segments.length === 8
+    ) {
+      const body = await readBody(request);
+      if (typeof body.maximumAmountCents !== "number") throw new HttpError(400, "maximumAmountCents is required.");
+      return json(await repos.placePublicAuctionBid(
+        segments[2],
+        segments[4],
+        segments[6],
+        body.maximumAmountCents,
+      ), 201);
+    }
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  if (segments[0] === "public" && segments[1] === "auction-donors" && segments[2]) {
+    const donor = await repos.publicAuctionDonor(segments[2]);
+    if (!donor) return json({ error: "This donation link is no longer active." }, 404);
+    if (method === "GET" && segments.length === 3) return json(donor);
+    if (method === "POST" && segments[3] === "donations" && segments.length === 4) {
+      return json(await repos.submitPublicAuctionDonation(segments[2], await readBody(request)), 201);
+    }
+    if (method === "POST" && segments[3] === "upload" && segments.length === 4) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Auction image storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
+      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
+      const blob = await put(`auction/donors/${segments[2]}/${safeName}`, file, {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: file.type,
+      });
+      return json({ url: blob.url });
+    }
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  if (segments[0] === "public" && segments[1] === "ticket-invitations" && segments[2] && segments.length === 3) {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const location = await openTicketInvitation(segments[2]);
+    return location
+      ? Response.redirect(new URL(location, request.url), 302)
+      : json({ error: "This invitation link is no longer active." }, 404);
   }
 
   if (segments[0] === "public" && segments[1] === "assignments" && segments[2]) {
@@ -391,7 +470,7 @@ async function handleAuthed(
   url: URL,
 ): Promise<Response> {
   const [resource, a, b, c] = segments;
-  const body = await readBody(request);
+  const body = resource === "uploads" ? {} : await readBody(request);
   requireScopedRoute(ctx, segments, method, body, url);
 
   switch (resource) {
@@ -412,6 +491,23 @@ async function handleAuthed(
       });
       }
 
+    case "uploads": {
+      if (a !== "auction-image" || method !== "POST") return notFound();
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Auction image storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
+      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
+      const blob = await put(`auction/${ctx.workspaceId}/${safeName}`, file, {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: file.type,
+      });
+      return json({ url: blob.url });
+    }
+
     /* ---------------------------------------------------------------- billing */
     case "billing": {
       if (a === "checkout" && method === "POST") {
@@ -419,6 +515,10 @@ async function handleAuthed(
         return json(await createCheckoutSession(ctx, "month", request));
       }
       if (a === "portal" && method === "POST") return json(await createPortalSession(ctx, request));
+      if (a === "connect" && method === "GET") return json(await getStripeConnectStatus(ctx));
+      if (a === "connect" && b === "onboarding" && method === "POST") {
+        return json(await createStripeConnectOnboarding(ctx, request));
+      }
       return notFound();
     }
 
@@ -541,6 +641,62 @@ async function handleAuthed(
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]
       if (a && b) {
+        if (b === "auction-donors") {
+          if (!c && method === "GET") return json(await repos.auctionDonors.list(ctx, a));
+          if (!c && method === "POST") return json(await repos.auctionDonors.create(ctx, a, body), 201);
+          if (c && method === "PATCH") return json(await repos.auctionDonors.update(ctx, a, c, body));
+          if (c && method === "DELETE") {
+            await repos.auctionDonors.remove(ctx, a, c);
+            return json({ ok: true });
+          }
+          return notFound();
+        }
+        if (b === "auction-share" && !c && method === "POST") {
+          return json(await repos.auctionManagement.share(ctx, a));
+        }
+        if (b === "auction-settings" && !c && method === "PATCH") {
+          return json(await repos.auctionManagement.updateSettings(ctx, a, body as never));
+        }
+        if (b === "auction-bidders" && !c && method === "GET") {
+          return json(await repos.auctionManagement.listBidders(ctx, a));
+        }
+        if (b === "auction-bids" && !c && method === "GET") {
+          return json(await repos.auctionManagement.listBids(ctx, a));
+        }
+        if (b === "auction-orders") {
+          if (!c && method === "GET") return json(await listAuctionOrders(ctx, a));
+          if (c && segments[4] === "refund" && method === "POST") {
+            return json(await refundAuctionOrder(ctx, a, c));
+          }
+          return notFound();
+        }
+        if (b === "auction" && c && segments[4] === "publish" && method === "POST") {
+          return json(await repos.auctionManagement.publishItem(ctx, a, c, body.published !== false));
+        }
+        if (b === "auction" && c && segments[4] === "close" && method === "POST") {
+          return json(await closeAuctionItem(ctx, a, c, request));
+        }
+        if (b === "ticket-orders") {
+          if (!c && method === "GET") return json(await listTicketOrders(ctx, a));
+          if (c && segments[4] === "refund" && method === "POST") {
+            return json(await refundTicketOrder(ctx, a, c));
+          }
+          return notFound();
+        }
+        if (b === "ticket-invitations") {
+          if (!c && method === "GET") return json(await listTicketInvitations(ctx, a));
+          if (!c && method === "POST") {
+            const input = z.object({
+              recipients: z.array(z.object({
+                name: z.string().trim().min(1).max(160),
+                email: z.string().trim().email().max(320),
+              })).min(1).max(500),
+              consentConfirmed: z.boolean(),
+            }).parse(body);
+            return json(await sendTicketInvitations(ctx, a, input.recipients, input.consentConfirmed, request), 201);
+          }
+          return notFound();
+        }
         if (b === "rfps") {
           requireCapability(ctx, "vendorManagement");
           const action = segments[4];

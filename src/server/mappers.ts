@@ -50,6 +50,7 @@ import type {
 } from "../data/entities.ts";
 import { normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { readStoredFloorplan } from "../data/floorplan.ts";
+import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
 const isoRequired = (value: Date): string => value.toISOString();
@@ -97,6 +98,8 @@ export function toEvent(
     registrationCount: extras.registrationCount ?? 0,
     shareToken: row.shareToken,
     registrationPage: normalizeRegistrationPage(row.registrationPage),
+    auctionPublicToken: row.auctionPublicToken,
+    auctionPage: normalizeAuctionPageSettings(row.auctionPage),
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
   };
@@ -423,6 +426,8 @@ export function toTicketType(row: InferSelectModel<typeof s.ticketTypes>): Ticke
     quantityTotal: row.quantityTotal,
     quantitySold: row.quantitySold,
     isActive: row.isActive,
+    maxPerOrder: row.maxPerOrder,
+    collectGuestNames: row.collectGuestNames,
     sortOrder: row.sortOrder,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
@@ -441,6 +446,21 @@ export function toAuctionItem(row: InferSelectModel<typeof s.auctionItems>): Auc
     fairMarketValueCents: row.fairMarketValueCents,
     winnerName: row.winnerName,
     donorName: row.donorName,
+    donorId: row.donorId,
+    category: row.category,
+    restrictions: row.restrictions,
+    expiresAt: iso(row.expiresAt),
+    deliveryDetails: row.deliveryDetails,
+    bidIncrementCents: row.bidIncrementCents,
+    readinessStatus: row.readinessStatus,
+    isPublished: row.isPublished,
+    opensAt: iso(row.opensAt),
+    closesAt: iso(row.closesAt),
+    extensionMinutes: row.extensionMinutes,
+    quantityAvailable: row.quantityAvailable,
+    winningBidderId: row.winningBidderId,
+    fulfillmentStatus: row.fulfillmentStatus,
+    fulfilledAt: iso(row.fulfilledAt),
     paymentMethod: row.paymentMethod,
     paymentLink: row.paymentLink,
     paymentReceivedAt: iso(row.paymentReceivedAt),

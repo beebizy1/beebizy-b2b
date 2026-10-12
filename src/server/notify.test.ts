@@ -3,6 +3,9 @@ import {
   notifyAssignmentSummary,
   notifyFeedbackSubmission,
   notifyRegistrationConfirmation,
+  notifyTicketOrderConfirmation,
+  notifyTicketInvitation,
+  notifyAuctionOutbid,
   notifyTeamUpdate,
   notifyVolunteerAssignment,
   notifyWorkAssignment,
@@ -124,6 +127,60 @@ describe("product feedback email", () => {
     });
     expect(body.text).toContain("Exact feedback:\nExact feedback, including punctuation!");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("product-feedback-feedback-123");
+  });
+});
+
+describe("ticket order confirmation email", () => {
+  it("sends an accessible branded receipt with a plain-text alternative and stable key", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyTicketOrderConfirmation({
+      orderId: "tord-123",
+      to: "buyer@example.com",
+      buyerName: "Tarang Goyal",
+      eventTitle: "School Gala",
+      ticketName: "General admission",
+      quantity: 2,
+      amountCents: 20_000,
+      applicationFeeCents: 400,
+      startsAt: "2026-11-01T01:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("Total paid: $200.00");
+    expect(body.html).toContain('<html lang="en" dir="ltr">');
+    expect(body.html).toContain('role="presentation"');
+    expect(body.html).toContain("Your tickets are confirmed");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-order-confirmation-tord-123");
+  });
+});
+
+describe("ticket and auction action emails", () => {
+  it("sends an accessible ticket invitation with a descriptive action", async () => {
+    const fetch = configureDelivery();
+    await notifyTicketInvitation({
+      invitationId: "invite-1", to: "guest@example.com", recipientName: "Ada",
+      eventTitle: "School Gala", startsAt: "2026-11-01T01:00:00.000Z",
+      timeZone: "America/Los_Angeles", invitationUrl: "https://beebizy.test/invite/one",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.html).toContain(">Choose a ticket</a>");
+    expect(body.text).toContain("Choose a free or paid ticket");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-1");
+  });
+
+  it("uses the bid event as the idempotency key for outbid alerts", async () => {
+    const fetch = configureDelivery();
+    await notifyAuctionOutbid({
+      bidId: "bid-2", to: "bidder@example.com", bidderName: "Grace", eventTitle: "Gala",
+      itemTitle: "Dinner", currentBidCents: 8_500, auctionUrl: "https://beebizy.test/auction/one",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("$85.00");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("auction-outbid-bid-2-bidder@example.com");
   });
 });
 

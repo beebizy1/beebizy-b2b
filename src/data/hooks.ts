@@ -132,8 +132,17 @@ export const qk = {
 
   tickets: (eventId: string) => ["tickets", eventId] as const,
   allTickets: ["tickets", "all"] as const,
+  ticketOrders: (eventId: string) => ["tickets", eventId, "orders"] as const,
+  stripeConnect: ["billing", "stripe-connect"] as const,
+  ticketInvitations: (eventId: string) => ["tickets", eventId, "invitations"] as const,
 
   auction: (eventId: string) => ["auction", eventId] as const,
+  auctionDonors: (eventId: string) => ["auction", eventId, "donors"] as const,
+  auctionBidders: (eventId: string) => ["auction", eventId, "bidders"] as const,
+  auctionBids: (eventId: string) => ["auction", eventId, "bids"] as const,
+  auctionOrders: (eventId: string) => ["auction", eventId, "orders"] as const,
+  publicAuction: (token: string) => ["auction", "public", token] as const,
+  publicAuctionDonor: (token: string) => ["auction", "donor", token] as const,
   raffle: (eventId: string) => ["raffle", eventId] as const,
   raffleTickets: (eventId: string, raffleItemId: string) => ["raffle", eventId, raffleItemId, "tickets"] as const,
   sponsorships: (eventId: string) => ["sponsorships", eventId] as const,
@@ -821,6 +830,40 @@ export function useAllTickets() {
   return useAdapterQuery(qk.allTickets, (a) => a.tickets.listAll());
 }
 
+export function useStripeConnectStatus() {
+  return useAdapterQuery(qk.stripeConnect, (a) => a.billing.connectStatus());
+}
+
+export function useStartStripeConnect() {
+  return useAdapterMutation(
+    (a) => a.billing.startConnectOnboarding(),
+    () => [qk.stripeConnect],
+  );
+}
+
+export function useTicketOrders(eventId: string) {
+  return useAdapterQuery(qk.ticketOrders(eventId), (a) => a.tickets.listOrders(eventId), { enabled: !!eventId });
+}
+
+export function useRefundTicketOrder() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; orderId: string }) => a.tickets.refundOrder(vars.eventId, vars.orderId),
+    (vars) => [qk.ticketOrders(vars.eventId), qk.tickets(vars.eventId), qk.allTickets, ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useTicketInvitations(eventId: string) {
+  return useAdapterQuery(qk.ticketInvitations(eventId), (a) => a.tickets.listInvitations(eventId), { enabled: !!eventId });
+}
+
+export function useSendTicketInvitations() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; recipients: Array<{ name: string; email: string }>; consentConfirmed: boolean }) =>
+      a.tickets.sendInvitations(vars.eventId, vars.recipients, vars.consentConfirmed),
+    (vars) => [qk.ticketInvitations(vars.eventId)],
+  );
+}
+
 export function useAddTicketType() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: TicketTypeDraft }) => a.tickets.create(vars.eventId, vars.draft),
@@ -845,11 +888,12 @@ export function useRemoveTicketType() {
 
 export function usePurchaseTickets() {
   return useAdapterMutation(
-    (a, vars: { shareToken: string; ticketTypeId: string; name: string; contact: string; quantity: number }) =>
+    (a, vars: { shareToken: string; ticketTypeId: string; name: string; contact: string; quantity: number; guestNames: string[] }) =>
       a.tickets.purchase(vars.shareToken, vars.ticketTypeId, {
         name: vars.name,
         contact: vars.contact,
         quantity: vars.quantity,
+        guestNames: vars.guestNames,
       }),
     // `["tickets"]` as a prefix, not `qk.allTickets`: the public page reads
     // `qk.tickets(eventId)`, so invalidating only the portfolio key left the buyer
@@ -862,6 +906,128 @@ export function usePurchaseTickets() {
 
 export function useAuctionItems(eventId: string) {
   return useAdapterQuery(qk.auction(eventId), (a) => a.auction.list(eventId), { enabled: !!eventId });
+}
+
+export function useAuctionDonors(eventId: string) {
+  return useAdapterQuery(qk.auctionDonors(eventId), (a) => a.auction.listDonors(eventId), { enabled: !!eventId });
+}
+
+export function useAuctionBidders(eventId: string) {
+  return useAdapterQuery(qk.auctionBidders(eventId), (a) => a.auction.listBidders(eventId), { enabled: !!eventId });
+}
+
+export function useAuctionBids(eventId: string) {
+  return useAdapterQuery(qk.auctionBids(eventId), (a) => a.auction.listBids(eventId), { enabled: !!eventId });
+}
+
+export function useAddAuctionDonor() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: Parameters<DataAdapter["auction"]["createDonor"]>[1] }) =>
+      a.auction.createDonor(vars.eventId, vars.draft),
+    (vars) => [qk.auctionDonors(vars.eventId)],
+  );
+}
+
+export function useUpdateAuctionDonor() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; donorId: string; patch: Parameters<DataAdapter["auction"]["updateDonor"]>[2] }) =>
+      a.auction.updateDonor(vars.eventId, vars.donorId, vars.patch),
+    (vars) => [qk.auctionDonors(vars.eventId)],
+  );
+}
+
+export function useRemoveAuctionDonor() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; donorId: string }) => a.auction.removeDonor(vars.eventId, vars.donorId),
+    (vars) => [qk.auctionDonors(vars.eventId), qk.auction(vars.eventId)],
+  );
+}
+
+export function useShareAuction() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.auction.share(eventId),
+    (eventId) => [qk.event(eventId), qk.auction(eventId)],
+  );
+}
+
+export function useUpdateAuctionSettings() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; settings: Parameters<DataAdapter["auction"]["updateSettings"]>[1] }) =>
+      a.auction.updateSettings(vars.eventId, vars.settings),
+    (vars) => [qk.event(vars.eventId), qk.auction(vars.eventId)],
+  );
+}
+
+export function usePublishAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string; published: boolean }) =>
+      a.auction.publishItem(vars.eventId, vars.itemId, vars.published),
+    (vars) => [qk.auction(vars.eventId), qk.publicAuction(vars.eventId)],
+  );
+}
+
+export function useUploadAuctionImage() {
+  return useAdapterMutation(
+    (a, file: File) => a.auction.uploadImage(file),
+    () => [],
+  );
+}
+
+export function useCloseAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string }) => a.auction.closeItem(vars.eventId, vars.itemId),
+    (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.auctionBids(vars.eventId)],
+  );
+}
+
+export function useAuctionOrders(eventId: string) {
+  return useAdapterQuery(qk.auctionOrders(eventId), (a) => a.auction.listOrders(eventId), { enabled: !!eventId });
+}
+
+export function useRefundAuctionOrder() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; orderId: string }) => a.auction.refundOrder(vars.eventId, vars.orderId),
+    (vars) => [qk.auctionOrders(vars.eventId), qk.auction(vars.eventId)],
+  );
+}
+
+export function usePublicAuction(token: string) {
+  return useAdapterQuery(qk.publicAuction(token), (a) => a.auction.getPublic(token), { enabled: !!token });
+}
+
+export function useRegisterAuctionBidder() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: Parameters<DataAdapter["auction"]["registerPublic"]>[1] }) =>
+      a.auction.registerPublic(vars.token, vars.draft),
+    (vars) => [qk.publicAuction(vars.token)],
+  );
+}
+
+export function usePlaceAuctionBid() {
+  return useAdapterMutation(
+    (a, vars: { token: string; bidderToken: string; itemId: string; maximumAmountCents: number }) =>
+      a.auction.placePublicBid(vars.token, vars.bidderToken, vars.itemId, vars.maximumAmountCents),
+    (vars) => [qk.publicAuction(vars.token)],
+  );
+}
+
+export function usePublicAuctionDonor(token: string) {
+  return useAdapterQuery(qk.publicAuctionDonor(token), (a) => a.auction.getPublicDonor(token), { enabled: !!token });
+}
+
+export function useUploadPublicAuctionDonorImage() {
+  return useAdapterMutation(
+    (a, vars: { token: string; file: File }) => a.auction.uploadPublicDonorImage(vars.token, vars.file),
+    () => [],
+  );
+}
+
+export function useSubmitPublicAuctionDonation() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: Parameters<DataAdapter["auction"]["submitPublicDonation"]>[1] }) =>
+      a.auction.submitPublicDonation(vars.token, vars.draft),
+    (vars) => [qk.publicAuctionDonor(vars.token)],
+  );
 }
 
 export function useAddAuctionItem() {

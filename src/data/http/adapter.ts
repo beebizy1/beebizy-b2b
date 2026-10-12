@@ -16,6 +16,14 @@ import type {
   Guest,
   AttentionItem,
   AuctionItem,
+  AuctionDonor,
+  AuctionBidder,
+  AuctionBid,
+  AuctionOrder,
+  AuctionPageSettings,
+  PublicAuctionPayload,
+  PublicAuctionBidResult,
+  PublicAuctionDonorPayload,
   BudgetItem,
   Canvas,
   CanvasCard,
@@ -58,6 +66,11 @@ import type {
   TemplateContents,
   TemplateDetail,
   TicketType,
+  TicketCheckoutResult,
+  TicketOrder,
+  TicketInvitation,
+  TicketInvitationBatchResult,
+  StripeConnectStatus,
   TicketTypeWithEvent,
   UserSettings,
   Vendor,
@@ -108,7 +121,7 @@ function createClient({ getToken, getOrgId, baseUrl = "/api" }: HttpAdapterOptio
       response = await fetch(`${baseUrl}${path}`, {
         ...init,
         headers: {
-          "content-type": "application/json",
+          ...(init.body instanceof FormData ? {} : { "content-type": "application/json" }),
           authorization: `Bearer ${token}`,
           ...(orgId ? { "x-clerk-org-id": orgId } : {}),
           ...init.headers,
@@ -143,6 +156,7 @@ function createClient({ getToken, getOrgId, baseUrl = "/api" }: HttpAdapterOptio
     patch: <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
     put: <T>(path: string, body: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
     del: (path: string) => request<{ ok: true }>(path, { method: "DELETE" }),
+    upload: <T>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
   };
 }
 
@@ -182,6 +196,25 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     }
     return payload as T;
   };
+  const publicUpload = async <T>(path: string, file: File): Promise<T> => {
+    const form = new FormData();
+    form.set("file", file);
+    let response: Response;
+    try {
+      response = await fetch(`${options.baseUrl ?? "/api"}${path}`, { method: "POST", body: form });
+    } catch {
+      throw new DataError("unavailable", "Couldn't reach the server. Check your connection.");
+    }
+    const text = await response.text();
+    const payload = text ? (JSON.parse(text) as unknown) : null;
+    if (!response.ok) {
+      const message = payload && typeof payload === "object" && "error" in payload
+        ? String((payload as { error: unknown }).error)
+        : `Request failed with ${response.status}.`;
+      throw new DataError(codeFor(response.status), message);
+    }
+    return payload as T;
+  };
 
   return {
     kind: "postgres",
@@ -192,6 +225,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     billing: {
       checkout: (interval) => client.post<{ url: string }>("/billing/checkout", { interval }),
       portal: () => client.post<{ url: string }>("/billing/portal"),
+      connectStatus: () => client.get<StripeConnectStatus>("/billing/connect"),
+      startConnectOnboarding: () => client.post<StripeConnectStatus>("/billing/connect/onboarding"),
     },
 
     assistant: {
@@ -317,7 +352,60 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     budget: eventScoped<BudgetItem, never, never>(client, "budget") as DataAdapter["budget"],
     menu: eventScoped<MenuItem, never, never>(client, "menu") as DataAdapter["menu"],
     moodBoard: eventScoped<MoodBoardImage, never, never>(client, "mood-board") as DataAdapter["moodBoard"],
-    auction: eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"],
+    auction: {
+      ...(eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"]),
+      listDonors: (eventId) => client.get<AuctionDonor[]>(`/events/${eventId}/auction-donors`),
+      createDonor: (eventId, draft) => client.post<AuctionDonor>(`/events/${eventId}/auction-donors`, draft),
+      updateDonor: (eventId, donorId, patch) => client.patch<AuctionDonor>(`/events/${eventId}/auction-donors/${donorId}`, patch),
+      removeDonor: async (eventId, donorId) => {
+        await client.del(`/events/${eventId}/auction-donors/${donorId}`);
+      },
+      share: (eventId) => client.post<{ auctionPublicToken: string }>(`/events/${eventId}/auction-share`),
+      updateSettings: (eventId, settings) => client.patch<AuctionPageSettings>(`/events/${eventId}/auction-settings`, settings),
+      publishItem: (eventId, itemId, published) => client.post<AuctionItem>(`/events/${eventId}/auction/${itemId}/publish`, { published }),
+      listBidders: (eventId) => client.get<AuctionBidder[]>(`/events/${eventId}/auction-bidders`),
+      listBids: (eventId) => client.get<AuctionBid[]>(`/events/${eventId}/auction-bids`),
+      getPublic: async (token) => {
+        try {
+          return await publicRequest<PublicAuctionPayload>(`/public/auctions/${token}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      registerPublic: (token, draft) => publicRequest<AuctionBidder>(`/public/auctions/${token}/bidders`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
+      placePublicBid: (token, bidderToken, itemId, maximumAmountCents) =>
+        publicRequest<PublicAuctionBidResult>(`/public/auctions/${token}/bidders/${bidderToken}/items/${itemId}/bids`, {
+          method: "POST",
+          body: JSON.stringify({ maximumAmountCents }),
+        }),
+      uploadImage: async (file) => {
+        const form = new FormData();
+        form.set("file", file);
+        return (await client.upload<{ url: string }>("/uploads/auction-image", form)).url;
+      },
+      getPublicDonor: async (token) => {
+        try {
+          return await publicRequest<PublicAuctionDonorPayload>(`/public/auction-donors/${token}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      uploadPublicDonorImage: async (token, file) =>
+        (await publicUpload<{ url: string }>(`/public/auction-donors/${token}/upload`, file)).url,
+      submitPublicDonation: (token, draft) =>
+        publicRequest<PublicAuctionDonorPayload>(`/public/auction-donors/${token}/donations`, {
+          method: "POST",
+          body: JSON.stringify(draft),
+        }),
+      closeItem: (eventId, itemId) => client.post<{ status: "closed-no-bids" | "winner-notified"; paymentUrl: string | null }>(`/events/${eventId}/auction/${itemId}/close`),
+      listOrders: (eventId) => client.get<AuctionOrder[]>(`/events/${eventId}/auction-orders`),
+      refundOrder: (eventId, orderId) => client.post<AuctionOrder>(`/events/${eventId}/auction-orders/${orderId}/refund`),
+    },
     sponsorships: eventScoped<Sponsorship, never, never>(client, "sponsorships") as DataAdapter["sponsorships"],
 
     // `list` returns each RFP with its responses attached, matching the memory adapter,
@@ -351,9 +439,23 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     tickets: {
       ...(eventScoped<TicketType, never, never>(client, "ticket-types") as DataAdapter["tickets"]),
       listAll: () => client.get<TicketTypeWithEvent[]>("/tickets"),
-      purchase: async () => {
-        throw new DataError("unavailable", "Ticket checkout isn't connected yet.");
-      },
+      purchase: (shareToken, ticketTypeId, buyer) =>
+        publicRequest<TicketCheckoutResult>(`/public/events/${shareToken}/tickets/checkout`, {
+          method: "POST",
+          body: JSON.stringify({
+            ticketTypeId,
+            buyerName: buyer.name,
+            buyerEmail: buyer.contact,
+            quantity: buyer.quantity,
+            guestNames: buyer.guestNames ?? [],
+          }),
+        }),
+      listOrders: (eventId) => client.get<TicketOrder[]>(`/events/${eventId}/ticket-orders`),
+      refundOrder: (eventId, orderId) =>
+        client.post<TicketOrder>(`/events/${eventId}/ticket-orders/${orderId}/refund`),
+      listInvitations: (eventId) => client.get<TicketInvitation[]>(`/events/${eventId}/ticket-invitations`),
+      sendInvitations: (eventId, recipients, consentConfirmed) =>
+        client.post<TicketInvitationBatchResult>(`/events/${eventId}/ticket-invitations`, { recipients, consentConfirmed }),
     },
 
     raffle: {

@@ -20,8 +20,9 @@ export type EmailOutcome = { status: "sent" } | { status: "skipped"; reason: str
 export interface EmailMessage {
   to: string;
   subject: string;
-  /** Plain text. No HTML template until there is a design worth templating. */
+  /** Plain-text alternative is required even when a branded HTML version is present. */
   text: string;
+  html?: string;
   /** A monitored address so the internal team can answer the person directly. */
   replyTo?: string | null;
   /** Stable business-event key. Resend uses it to collapse uncertain retries. */
@@ -48,6 +49,7 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
         to: [message.to],
         subject: message.subject,
         text: message.text,
+        ...(message.html ? { html: message.html } : {}),
         ...(message.replyTo ? { reply_to: message.replyTo } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
@@ -59,6 +61,234 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
   } catch (error) {
     return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
+function brandedEmail(input: {
+  title: string;
+  greeting: string;
+  paragraphs: string[];
+  details: Array<[string, string]>;
+  action?: { label: string; url: string };
+}): string {
+  const details = input.details.map(([label, value]) => `
+    <tr>
+      <th scope="row" style="padding:8px 12px;text-align:left;color:#665c35;font-size:14px;font-weight:600;vertical-align:top">${escapeHtml(label)}</th>
+      <td style="padding:8px 12px;color:#171717;font-size:14px">${escapeHtml(value)}</td>
+    </tr>`).join("");
+  return `<!doctype html>
+<html lang="en" dir="ltr">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(input.title)}</title></head>
+  <body lang="en" dir="ltr" style="margin:0;background:#fffaf0;color:#171717;font-family:Arial,sans-serif">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fffaf0;padding:24px 12px">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #eadfbc;border-radius:16px;overflow:hidden">
+          <tr><td style="background:#ffd700;padding:18px 24px;font-size:20px;font-weight:800">beebizy</td></tr>
+          <tr><td style="padding:28px 24px">
+            <h1 style="margin:0 0 18px;font-size:24px;line-height:1.25">${escapeHtml(input.title)}</h1>
+            <p style="margin:0 0 14px;font-size:16px;line-height:1.55">${escapeHtml(input.greeting)}</p>
+            ${input.paragraphs.map((paragraph) => `<p style="margin:0 0 14px;font-size:16px;line-height:1.55">${escapeHtml(paragraph)}</p>`).join("")}
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;background:#fffaf0;border-radius:10px">${details}</table>
+            ${input.action ? `<p style="margin:22px 0 0"><a href="${escapeHtml(input.action.url)}" style="display:inline-block;background:#17130a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700">${escapeHtml(input.action.label)}</a></p>` : ""}
+          </td></tr>
+          <tr><td style="padding:18px 24px;color:#665c35;font-size:13px;line-height:1.5">Questions? Reply to this email and the event team will help.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+/** Sends one receipt after a free registration or confirmed Stripe payment. */
+export async function notifyTicketOrderConfirmation(input: {
+  orderId: string;
+  to: string;
+  buyerName: string;
+  eventTitle: string;
+  ticketName: string;
+  quantity: number;
+  amountCents: number;
+  applicationFeeCents: number;
+  startsAt: string;
+  timeZone: string;
+}): Promise<EmailOutcome> {
+  const when = formatInZone(input.startsAt, input.timeZone, "full");
+  const total = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
+  const subject = `Tickets confirmed - ${emailSubjectPart(input.eventTitle)}`;
+  const details: Array<[string, string]> = [
+    ["Event", input.eventTitle],
+    ["When", `${when} ${timeZoneLabel(input.timeZone, new Date(input.startsAt))}`],
+    ["Ticket", input.ticketName],
+    ["Quantity", String(input.quantity)],
+    ["Total paid", total],
+    ["Order", input.orderId],
+  ];
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `ticket-order-confirmation-${input.orderId}`,
+    subject,
+    text: [
+      `Hi ${input.buyerName},`,
+      "",
+      `Your tickets for ${input.eventTitle} are confirmed.`,
+      ...details.map(([label, value]) => `${label}: ${value}`),
+      "",
+      "Questions? Reply to this email and the event team will help.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Your tickets are confirmed",
+      greeting: `Hi ${input.buyerName},`,
+      paragraphs: [`Your tickets for ${input.eventTitle} are confirmed.`],
+      details,
+    }),
+  });
+  if (outcome.status !== "sent") {
+    console.warn("TICKET_CONFIRMATION_EMAIL_NOT_SENT", input.orderId, outcome.status, outcome.reason);
+  }
+  return outcome;
+}
+
+/** A direct invitation to a specific event, kept separate from promotional campaigns. */
+export async function notifyTicketInvitation(input: {
+  invitationId: string;
+  to: string;
+  recipientName: string;
+  eventTitle: string;
+  startsAt: string;
+  timeZone: string;
+  invitationUrl: string;
+}): Promise<EmailOutcome> {
+  const when = `${formatInZone(input.startsAt, input.timeZone, "full")} ${timeZoneLabel(input.timeZone, new Date(input.startsAt))}`;
+  const subject = `You're invited - ${emailSubjectPart(input.eventTitle)}`;
+  const details: Array<[string, string]> = [["Event", input.eventTitle], ["When", when]];
+  const text = [
+    `Hi ${input.recipientName},`,
+    "",
+    `You are invited to ${input.eventTitle}.`,
+    `When: ${when}`,
+    "",
+    `Choose a free or paid ticket: ${input.invitationUrl}`,
+    "",
+    "This invitation was sent by the event organizer through Beebizy. Questions? Reply to this email.",
+  ].join("\n");
+  const html = brandedEmail({
+    title: `You're invited to ${input.eventTitle}`,
+    greeting: `Hi ${input.recipientName},`,
+    paragraphs: [`You are invited to ${input.eventTitle}.`],
+    details,
+    action: { label: "Choose a ticket", url: input.invitationUrl },
+  });
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `ticket-invitation-${input.invitationId}`,
+    subject,
+    text,
+    html,
+  });
+  if (outcome.status !== "sent") {
+    console.warn("TICKET_INVITATION_EMAIL_NOT_SENT", input.invitationId, outcome.status, outcome.reason);
+  }
+  return outcome;
+}
+
+export async function notifyAuctionOutbid(input: {
+  bidId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  itemTitle: string;
+  currentBidCents: number;
+  auctionUrl: string;
+}): Promise<EmailOutcome> {
+  const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.currentBidCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-outbid-${input.bidId}-${input.to.toLowerCase()}`,
+    subject: `You've been outbid - ${emailSubjectPart(input.itemTitle)}`,
+    text: [
+      `Hi ${input.bidderName},`, "", `Another bidder is leading ${input.itemTitle} at ${amount}.`,
+      `Return to ${input.eventTitle}: ${input.auctionUrl}`,
+    ].join("\n"),
+    html: brandedEmail({
+      title: "You've been outbid",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [`Another bidder is leading ${input.itemTitle} at ${amount}.`],
+      details: [["Auction", input.eventTitle], ["Item", input.itemTitle], ["Current bid", amount]],
+      action: { label: "Return to the auction", url: input.auctionUrl },
+    }),
+  });
+}
+
+export async function notifyAuctionWinner(input: {
+  orderId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  itemTitle: string;
+  amountCents: number;
+  paymentUrl: string;
+}): Promise<EmailOutcome> {
+  const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-winner-${input.orderId}`,
+    subject: `You won ${emailSubjectPart(input.itemTitle)}`,
+    text: [
+      `Hi ${input.bidderName},`, "", `You won ${input.itemTitle} for ${amount} at ${input.eventTitle}.`,
+      `Complete payment securely: ${input.paymentUrl}`,
+    ].join("\n"),
+    html: brandedEmail({
+      title: "You won!",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [`You won ${input.itemTitle} at ${input.eventTitle}.`],
+      details: [["Winning item", input.itemTitle], ["Winning bid", amount]],
+      action: { label: "Complete secure payment", url: input.paymentUrl },
+    }),
+  });
+}
+
+export async function notifyAuctionPaymentConfirmation(input: {
+  orderId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  itemTitle: string;
+  amountCents: number;
+  deliveryDetails: string | null;
+}): Promise<EmailOutcome> {
+  const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-payment-confirmation-${input.orderId}`,
+    subject: `Payment confirmed - ${emailSubjectPart(input.itemTitle)}`,
+    text: [
+      `Hi ${input.bidderName},`, "", `Your ${amount} payment for ${input.itemTitle} is confirmed.`,
+      input.deliveryDetails ? `Fulfillment: ${input.deliveryDetails}` : "The event team will contact you about pickup or delivery.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Auction payment confirmed",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [
+        `Your ${amount} payment for ${input.itemTitle} at ${input.eventTitle} is confirmed.`,
+        input.deliveryDetails || "The event team will contact you about pickup or delivery.",
+      ],
+      details: [["Item", input.itemTitle], ["Amount paid", amount], ["Order", input.orderId]],
+    }),
+  });
 }
 
 const FEEDBACK_NOTIFICATION_EMAIL = "hello@beebizy.com";

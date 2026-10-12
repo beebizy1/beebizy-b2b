@@ -337,7 +337,10 @@ export function PublicTicketsPage({ token }: { token: string }) {
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
-  const [done, setDone] = useState(false);
+  const [guestNames, setGuestNames] = useState<string[]>([""]);
+  const [done, setDone] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("checkout") === "success",
+  );
 
   const onSale = useMemo(
     () => (tickets ?? []).filter((ticket) => ticket.isActive),
@@ -364,7 +367,8 @@ export function PublicTicketsPage({ token }: { token: string }) {
           </span>
           <h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {quantity} {quantity === 1 ? "ticket" : "tickets"} for {event.title}. A confirmation goes to {contact}.
+            Your {quantity === 1 ? "ticket is" : "tickets are"} confirmed for {event.title}.
+            {contact ? ` A confirmation goes to ${contact}.` : " A receipt is on its way to the buyer's email."}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-4">
             <Link href={`/e/${token}`}>Back to the event</Link>
@@ -394,6 +398,13 @@ export function PublicTicketsPage({ token }: { token: string }) {
             onSubmit={(formEvent) => {
               formEvent.preventDefault();
               if (!chosen || !name.trim() || !contact.trim()) return;
+              const names = chosen.collectGuestNames
+                ? Array.from({ length: quantity }, (_, index) => (guestNames[index] || (index === 0 ? name : "")).trim())
+                : [name.trim()];
+              if (chosen.collectGuestNames && names.some((guestName) => !guestName)) {
+                toast({ title: "Add every ticket holder", description: `Enter a full name for all ${quantity} tickets.` });
+                return;
+              }
               purchase.mutate(
                 {
                   shareToken: token,
@@ -401,9 +412,13 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   name: name.trim(),
                   contact: contact.trim(),
                   quantity,
+                  guestNames: names,
                 },
                 {
-                  onSuccess: () => setDone(true),
+                  onSuccess: (result) => {
+                    if (result.checkoutUrl) window.location.assign(result.checkoutUrl);
+                    else setDone(true);
+                  },
                   onError: (error) => toast({ title: "Couldn't complete", description: error.message }),
                 },
               );
@@ -433,6 +448,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
                           onChange={() => {
                             setSelected(ticket.id);
                             setQuantity(1);
+                            setGuestNames([name]);
                           }}
                           className="mt-1 size-4 accent-[hsl(var(--primary))]"
                         />
@@ -468,7 +484,14 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   <Input
                     id="buyer-name"
                     value={name}
-                    onChange={(inputEvent) => setName(inputEvent.target.value)}
+                    onChange={(inputEvent) => {
+                      const nextName = inputEvent.target.value;
+                      setGuestNames((current) => [
+                        !current[0] || current[0] === name ? nextName : current[0],
+                        ...current.slice(1),
+                      ]);
+                      setName(nextName);
+                    }}
                     required
                     autoComplete="name"
                   />
@@ -490,9 +513,17 @@ export function PublicTicketsPage({ token }: { token: string }) {
                     id="buyer-quantity"
                     type="number"
                     min={1}
-                    max={remaining ?? undefined}
+                    max={Math.min(remaining ?? Number.POSITIVE_INFINITY, chosen?.maxPerOrder ?? 10)}
                     value={quantity}
-                    onChange={(inputEvent) => setQuantity(Math.max(1, Number.parseInt(inputEvent.target.value, 10) || 1))}
+                    onChange={(inputEvent) => {
+                      const requested = Math.max(1, Number.parseInt(inputEvent.target.value, 10) || 1);
+                      const nextQuantity = Math.min(requested, remaining ?? requested, chosen?.maxPerOrder ?? 10);
+                      setQuantity(nextQuantity);
+                      setGuestNames((current) => Array.from(
+                        { length: nextQuantity },
+                        (_, index) => current[index] ?? (index === 0 ? name : ""),
+                      ));
+                    }}
                   />
                   {remaining !== null ? (
                     <p data-numeric className="text-xs text-muted-foreground">
@@ -500,6 +531,33 @@ export function PublicTicketsPage({ token }: { token: string }) {
                     </p>
                   ) : null}
                 </div>
+                {chosen?.collectGuestNames ? (
+                  <div className="space-y-3 sm:col-span-2">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Ticket holder names</p>
+                      <p className="text-xs text-muted-foreground">Enter the full name that should appear on each guest record.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {Array.from({ length: quantity }, (_, index) => (
+                        <div key={index} className="space-y-1.5">
+                          <Label htmlFor={`ticket-holder-${index}`}>Ticket {index + 1}</Label>
+                          <Input
+                            id={`ticket-holder-${index}`}
+                            value={guestNames[index] ?? (index === 0 ? name : "")}
+                            onChange={(inputEvent) => setGuestNames((current) => Array.from(
+                              { length: quantity },
+                              (_, guestIndex) => guestIndex === index
+                                ? inputEvent.target.value
+                                : current[guestIndex] ?? (guestIndex === 0 ? name : ""),
+                            ))}
+                            required
+                            autoComplete={index === 0 ? "name" : "off"}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-5 py-4">
                 <p className="text-sm text-muted-foreground">
@@ -510,7 +568,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
                 </p>
                 <Button type="submit" disabled={!chosen || !name.trim() || !contact.trim() || purchase.isPending}>
                   <Ticket className="mr-1.5 size-4" />
-                  Confirm
+                  {purchase.isPending ? "Reserving…" : chosen && chosen.priceCents > 0 ? "Continue to secure payment" : "Confirm registration"}
                 </Button>
               </div>
             </Panel>

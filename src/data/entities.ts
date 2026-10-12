@@ -82,6 +82,9 @@ export interface Event extends OwnedRecord {
   shareToken: string | null;
   /** Branding and content for the guest-facing registration site. */
   registrationPage: RegistrationPageSettings;
+  /** Present after the organizer creates the public auction catalog link. */
+  auctionPublicToken?: string | null;
+  auctionPage?: AuctionPageSettings;
 }
 
 export interface EventDraft {
@@ -97,6 +100,7 @@ export interface EventDraft {
   category: EventCategory;
   imageUrl?: string | null;
   registrationPage?: RegistrationPageSettings;
+  auctionPage?: AuctionPageSettings;
 }
 
 export type EventPatch = Partial<EventDraft>;
@@ -940,6 +944,8 @@ export interface TicketType {
   quantityTotal: number;
   quantitySold: number;
   isActive: boolean;
+  maxPerOrder?: number;
+  collectGuestNames?: boolean;
   sortOrder: number;
   createdAt: IsoDateTime;
   updatedAt?: IsoDateTime;
@@ -951,6 +957,8 @@ export interface TicketTypeDraft {
   priceCents: Cents;
   quantityTotal: number;
   isActive?: boolean;
+  maxPerOrder?: number;
+  collectGuestNames?: boolean;
   sortOrder?: number;
 }
 
@@ -963,9 +971,146 @@ export interface TicketTypeWithEvent extends TicketType {
   eventCategory: string;
 }
 
+export type PaymentStatus = "pending" | "paid" | "refunded" | "failed";
+
+export interface TicketOrderGuest {
+  id: string;
+  orderId: string;
+  fullName: string;
+  email: string | null;
+}
+
+export interface TicketOrder {
+  id: string;
+  eventId: string;
+  ticketTypeId: string;
+  buyerName: string;
+  buyerEmail: string;
+  quantity: number;
+  amountCents: Cents;
+  applicationFeeCents: Cents;
+  status: PaymentStatus;
+  checkoutUrl?: string | null;
+  guests: TicketOrderGuest[];
+  paidAt: IsoDateTime | null;
+  refundedAt: IsoDateTime | null;
+  createdAt: IsoDateTime;
+}
+
+export interface TicketCheckoutResult {
+  orderId: string;
+  kind: "free-confirmed" | "stripe-checkout";
+  checkoutUrl: string | null;
+  applicationFeeCents: Cents;
+}
+
+export interface TicketInvitation {
+  id: string;
+  eventId: string;
+  recipientName: string;
+  recipientEmail: string;
+  publicToken: string;
+  status: "pending" | "sent" | "opened" | "registered" | "failed";
+  sentAt: IsoDateTime | null;
+  openedAt: IsoDateTime | null;
+  registeredAt: IsoDateTime | null;
+  createdAt: IsoDateTime;
+}
+
+export interface TicketInvitationBatchResult {
+  attempted: number;
+  sent: number;
+  failed: number;
+  invitations: TicketInvitation[];
+}
+
+export interface StripeConnectStatus {
+  accountId: string | null;
+  detailsSubmitted: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  ready: boolean;
+  onboardingUrl?: string | null;
+}
+
 export type AuctionKind = "silent" | "live";
 export const AUCTION_ITEM_STATUSES = ["open", "closed", "won"] as const;
 export type AuctionItemStatus = (typeof AUCTION_ITEM_STATUSES)[number];
+export const AUCTION_DONOR_STATUSES = ["prospect", "contacted", "committed", "received", "declined"] as const;
+export type AuctionDonorStatus = (typeof AUCTION_DONOR_STATUSES)[number];
+export const AUCTION_THANK_YOU_STATUSES = ["pending", "sent", "waived"] as const;
+export type AuctionThankYouStatus = (typeof AUCTION_THANK_YOU_STATUSES)[number];
+export const AUCTION_READINESS_STATUSES = ["draft", "incomplete", "ready", "published"] as const;
+export type AuctionReadinessStatus = (typeof AUCTION_READINESS_STATUSES)[number];
+export const AUCTION_PARTICIPANT_TYPES = ["gala", "remote"] as const;
+export type AuctionParticipantType = (typeof AUCTION_PARTICIPANT_TYPES)[number];
+export const AUCTION_FULFILLMENT_STATUSES = ["pending", "ready", "picked-up", "delivered"] as const;
+export type AuctionFulfillmentStatus = (typeof AUCTION_FULFILLMENT_STATUSES)[number];
+
+export interface AuctionPageSettings {
+  title: string;
+  welcomeMessage: string;
+  startsAt: IsoDateTime | null;
+  closesAt: IsoDateTime | null;
+  registrationOpen: boolean;
+  catalogPublished: boolean;
+  allowRemoteBidders: boolean;
+  automaticBiddingEnabled: boolean;
+  secondChanceEnabled: boolean;
+  staggeredClosingEnabled: boolean;
+  autoExtendMinutes: number;
+}
+
+export interface AuctionDonor extends OwnedRecord {
+  eventId: string;
+  businessName: string;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  publicToken: string;
+  solicitedBy: string | null;
+  solicitationStatus: AuctionDonorStatus;
+  previousDonations: string | null;
+  notes: string | null;
+  recognitionPreference: string | null;
+  thankYouStatus: AuctionThankYouStatus;
+}
+
+export interface AuctionDonorDraft {
+  businessName: string;
+  contactName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  solicitedBy?: string | null;
+  solicitationStatus?: AuctionDonorStatus;
+  previousDonations?: string | null;
+  notes?: string | null;
+  recognitionPreference?: string | null;
+  thankYouStatus?: AuctionThankYouStatus;
+}
+
+export interface PublicAuctionDonorPayload {
+  eventTitle: string;
+  donor: {
+    businessName: string;
+    contactName: string | null;
+    email: string | null;
+    phone: string | null;
+    recognitionPreference: string | null;
+  };
+  items: Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    imageUrl: string | null;
+    category: string | null;
+    restrictions: string | null;
+    expiresAt: IsoDateTime | null;
+    fairMarketValueCents: Cents | null;
+    deliveryDetails: string | null;
+    readinessStatus: AuctionReadinessStatus;
+  }>;
+}
 
 export interface AuctionItem {
   id: string;
@@ -978,6 +1123,21 @@ export interface AuctionItem {
   fairMarketValueCents: Cents | null;
   winnerName: string | null;
   donorName: string | null;
+  donorId?: string | null;
+  category?: string | null;
+  restrictions?: string | null;
+  expiresAt?: IsoDateTime | null;
+  deliveryDetails?: string | null;
+  bidIncrementCents?: Cents | null;
+  readinessStatus?: AuctionReadinessStatus;
+  isPublished?: boolean;
+  opensAt?: IsoDateTime | null;
+  closesAt?: IsoDateTime | null;
+  extensionMinutes?: number;
+  quantityAvailable?: number;
+  winningBidderId?: string | null;
+  fulfillmentStatus?: AuctionFulfillmentStatus;
+  fulfilledAt?: IsoDateTime | null;
   paymentMethod: string | null;
   paymentLink: string | null;
   paymentReceivedAt: IsoDateTime | null;
@@ -997,6 +1157,21 @@ export interface AuctionItemDraft {
   fairMarketValueCents?: Cents | null;
   winnerName?: string | null;
   donorName?: string | null;
+  donorId?: string | null;
+  category?: string | null;
+  restrictions?: string | null;
+  expiresAt?: IsoDateTime | null;
+  deliveryDetails?: string | null;
+  bidIncrementCents?: Cents | null;
+  readinessStatus?: AuctionReadinessStatus;
+  isPublished?: boolean;
+  opensAt?: IsoDateTime | null;
+  closesAt?: IsoDateTime | null;
+  extensionMinutes?: number;
+  quantityAvailable?: number;
+  winningBidderId?: string | null;
+  fulfillmentStatus?: AuctionFulfillmentStatus;
+  fulfilledAt?: IsoDateTime | null;
   paymentMethod?: string | null;
   paymentLink?: string | null;
   paymentReceivedAt?: IsoDateTime | null;
@@ -1006,6 +1181,83 @@ export interface AuctionItemDraft {
 }
 
 export type AuctionItemPatch = Partial<AuctionItemDraft>;
+
+export interface AuctionBidder {
+  id: string;
+  eventId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  participantType: AuctionParticipantType;
+  publicToken: string;
+  status: "active" | "blocked";
+  createdAt: IsoDateTime;
+}
+
+export interface AuctionBid {
+  id: string;
+  eventId: string;
+  itemId: string;
+  bidderId: string;
+  bidderName: string;
+  amountCents: Cents;
+  maximumAmountCents: Cents;
+  isAutomatic: boolean;
+  createdAt: IsoDateTime;
+}
+
+export interface AuctionOrder {
+  id: string;
+  eventId: string;
+  itemId: string;
+  itemTitle: string;
+  bidderId: string;
+  bidderName: string;
+  bidderEmail: string;
+  amountCents: Cents;
+  applicationFeeCents: Cents;
+  status: PaymentStatus;
+  paidAt: IsoDateTime | null;
+  refundedAt: IsoDateTime | null;
+  fulfillmentStatus: AuctionFulfillmentStatus;
+  createdAt: IsoDateTime;
+}
+
+export interface PublicAuctionItem {
+  id: string;
+  title: string;
+  description: string | null;
+  imageUrl: string | null;
+  category: string | null;
+  restrictions: string | null;
+  expiresAt: IsoDateTime | null;
+  deliveryDetails: string | null;
+  fairMarketValueCents: Cents | null;
+  startingBidCents: Cents;
+  currentBidCents: Cents | null;
+  bidIncrementCents: Cents;
+  opensAt: IsoDateTime | null;
+  closesAt: IsoDateTime | null;
+  status: AuctionItemStatus;
+  lotNumber: number | null;
+  bidCount: number;
+  hasBid: boolean;
+}
+
+export interface PublicAuctionPayload {
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  timeZone: string;
+  settings: AuctionPageSettings;
+  categories: string[];
+  items: PublicAuctionItem[];
+}
+
+export interface PublicAuctionBidResult {
+  item: PublicAuctionItem;
+  bidderIsLeading: boolean;
+  minimumNextBidCents: Cents;
+}
 
 export const RAFFLE_STATUSES = ["open", "closed", "drawn"] as const;
 export type RaffleStatus = (typeof RAFFLE_STATUSES)[number];
