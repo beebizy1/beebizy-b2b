@@ -111,7 +111,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
           {auction.settings.closesAt ? (
             <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#ffd700]"><Clock3 className="size-4" />Silent auction closes in {Math.max(0, Math.ceil((new Date(auction.settings.closesAt).getTime() - clockNow) / 60_000))} minutes</p>
           ) : null}
-          {auction.donationToken ? <Button className="mt-5" variant="outline" onClick={() => window.location.assign(`/give/${auction.donationToken}`)}><Gift className="mr-1.5 size-4" />Make a donation</Button> : null}
+          {auction.donationToken ? <Button className="mt-5 border-white bg-white text-[#17130a] hover:bg-white/90 hover:text-[#17130a]" variant="outline" onClick={() => window.location.assign(`/give/${auction.donationToken}`)}><Gift className="mr-1.5 size-4" />Make a donation</Button> : null}
         </section>
         {(auction.announcements ?? []).map((announcement) => <div key={announcement.id} className="rounded-xl border border-primary/25 bg-primary-muted px-4 py-3 text-sm font-medium text-foreground">{announcement.message}</div>)}
 

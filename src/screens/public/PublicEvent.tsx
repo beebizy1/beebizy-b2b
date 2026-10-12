@@ -554,13 +554,11 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   <Input id="buyer-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required autoComplete="tel" placeholder="(408) 555-0123" />
                   <p className="text-xs text-muted-foreground">Used for auction access and important event updates.</p>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="buyer-grades">School connection (optional)</Label>
-                  <select id="buyer-grades" multiple value={grades} onChange={(event) => setGrades(Array.from(event.currentTarget.selectedOptions, (option) => option.value as SchoolGrade).slice(0, 5))} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    {SCHOOL_GRADES.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
-                  </select>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">School connection (optional)</legend>
+                  <div className="flex flex-wrap gap-2">{SCHOOL_GRADES.map((grade) => <label key={grade} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs ${grades.includes(grade) ? "border-primary bg-primary-muted font-semibold" : "border-hairline bg-background"}`}><input type="checkbox" className="sr-only" checked={grades.includes(grade)} onChange={() => setGrades((current) => current.includes(grade) ? current.filter((item) => item !== grade) : current.length < 5 ? [...current, grade] : current)} />{grade}</label>)}</div>
                   <p className="text-xs text-muted-foreground">Choose up to five grades or community groups.</p>
-                </div>
+                </fieldset>
                 <div className="space-y-1.5">
                   <Label htmlFor="buyer-quantity">How many</Label>
                   <Input
