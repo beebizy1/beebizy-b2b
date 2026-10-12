@@ -115,4 +115,25 @@ describe("Stripe webhook signatures", () => {
       ),
     ).rejects.toThrow(/Invalid Stripe signature/);
   });
+
+  it("accepts connected-account events signed with the separate Connect secret", async () => {
+    const secret = "whsec_beebizy_connect_test";
+    const payload = JSON.stringify({
+      id: "evt_test_connect_signature",
+      object: "event",
+      type: "customer.created",
+      account: "acct_connected",
+      data: { object: { id: "cus_connected" } },
+    });
+    const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret });
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_beebizy_signature_only");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_different_platform_secret");
+    vi.stubEnv("STRIPE_CONNECT_WEBHOOK_SECRET", secret);
+
+    await expect(handleStripeWebhook(new Request("http://localhost/api/billing/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": signature },
+      body: payload,
+    }))).resolves.toEqual({ received: true });
+  });
 });

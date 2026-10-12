@@ -587,18 +587,25 @@ async function syncInvoiceSubscription(stripe: Stripe, invoice: Stripe.Invoice, 
 }
 
 export async function handleStripeWebhook(request: Request): Promise<{ received: true }> {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) throw new HttpError(503, "Stripe webhooks are not configured yet.");
+  const secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET]
+    .map((secret) => secret?.trim())
+    .filter((secret): secret is string => Boolean(secret));
+  if (secrets.length === 0) throw new HttpError(503, "Stripe webhooks are not configured yet.");
   const signature = request.headers.get("stripe-signature");
   if (!signature) throw new HttpError(400, "Missing Stripe signature.");
 
   const stripe = stripeClient();
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(await request.text(), signature, secret);
-  } catch {
-    throw new HttpError(400, "Invalid Stripe signature.");
+  const payload = await request.text();
+  let event: Stripe.Event | null = null;
+  for (const secret of secrets) {
+    try {
+      event = stripe.webhooks.constructEvent(payload, signature, secret);
+      break;
+    } catch {
+      // A platform webhook and a Connect webhook sign with different secrets.
+    }
   }
+  if (!event) throw new HttpError(400, "Invalid Stripe signature.");
 
   switch (event.type) {
     case "checkout.session.completed":
