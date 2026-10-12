@@ -297,9 +297,13 @@ export async function notifyAuctionDonorThankYou(input: {
   contactName: string;
   donorName: string;
   eventTitle: string;
-  itemTitles: string[];
+  items: Array<{ title: string; fairMarketValueCents: number | null }>;
 }): Promise<EmailOutcome> {
-  const itemSummary = input.itemTitles.length > 0 ? input.itemTitles.join(", ") : "your auction donation";
+  const itemSummary = input.items.length > 0
+    ? input.items.map((item) => item.fairMarketValueCents == null
+      ? item.title
+      : `${item.title} (${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(item.fairMarketValueCents / 100)} fair market value)`).join(", ")
+    : "your auction donation";
   return sendEmail({
     to: input.to,
     replyTo: "hello@beebizy.com",
@@ -307,14 +311,14 @@ export async function notifyAuctionDonorThankYou(input: {
     subject: `Thank you for supporting ${emailSubjectPart(input.eventTitle)}`,
     text: [
       `Hi ${input.contactName},`, "", `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
-      `Donation: ${itemSummary}`, "", "Your contribution helps make this event possible.",
+      `Donation acknowledgment: ${itemSummary}`, "", "Your contribution helps make this event possible. Keep this email for your records. Consult a tax professional about deductibility.",
     ].join("\n"),
     html: brandedEmail({
       title: "Thank you for your auction donation",
       greeting: `Hi ${input.contactName},`,
       paragraphs: [
         `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
-        "Your contribution helps make this event possible.",
+        "Your contribution helps make this event possible. Keep this email for your records. Consult a tax professional about deductibility.",
       ],
       details: [["Event", input.eventTitle], ["Donation", itemSummary]],
     }),

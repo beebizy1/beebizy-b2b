@@ -385,6 +385,30 @@ export async function failTicketCheckoutSession(session: Stripe.Checkout.Session
     .where(and(eq(ticketOrders.id, orderId), eq(ticketOrders.status, "pending")));
 }
 
+async function reconcileExpiredTicketOrders(eventId: string): Promise<void> {
+  const expired = await db.select().from(ticketOrders).where(and(
+    eq(ticketOrders.eventId, eventId),
+    eq(ticketOrders.status, "pending"),
+    sql`${ticketOrders.checkoutExpiresAt} <= now()`,
+  )).limit(20);
+  for (const order of expired) {
+    if (!order.stripeSessionId || !order.stripeConnectedAccountId) {
+      await db.update(ticketOrders).set({ status: "failed", updatedAt: new Date() })
+        .where(and(eq(ticketOrders.id, order.id), eq(ticketOrders.status, "pending")));
+      continue;
+    }
+    const stripe = stripeClient();
+    const options = { stripeAccount: order.stripeConnectedAccountId };
+    let session = await stripe.checkout.sessions.retrieve(order.stripeSessionId, {}, options);
+    if (session.payment_status === "paid") {
+      await completeTicketCheckoutSession(session);
+      continue;
+    }
+    if (session.status === "open") session = await stripe.checkout.sessions.expire(session.id, {}, options);
+    if (session.status === "expired") await failTicketCheckoutSession(session);
+  }
+}
+
 export async function createPublicTicketCheckout(
   shareToken: string,
   input: PublicTicketCheckoutInput,
@@ -406,6 +430,7 @@ export async function createPublicTicketCheckout(
   if (!row || ["cancelled", "completed"].includes(row.event.status)) {
     throw new HttpError(404, "This ticket link is no longer active.");
   }
+  await reconcileExpiredTicketOrders(row.event.id);
   if (!row.ticket.isActive) throw new HttpError(409, `${row.ticket.name} is not on sale.`);
   if (input.quantity > row.ticket.maxPerOrder) {
     throw new HttpError(409, `You can purchase at most ${row.ticket.maxPerOrder} at a time.`);
@@ -582,13 +607,21 @@ export async function refundTicketOrder(ctx: RequestContext, eventId: string, or
       where id = ${order.id} and status = 'refunding'
       returning ticket_type_id, quantity
     )
-    update ${ticketTypes} as ticket
-    set quantity_sold = greatest(0, ticket.quantity_sold - finalized.quantity), updated_at = ${refundedAt}
-    from finalized
-    where ticket.id = finalized.ticket_type_id
+    , released_inventory as (
+      update ${ticketTypes} as ticket
+      set quantity_sold = greatest(0, ticket.quantity_sold - finalized.quantity), updated_at = ${refundedAt}
+      from finalized
+      where ticket.id = finalized.ticket_type_id
+      returning ticket.id
+    ), cancelled_registrations as (
+      update ${registrations}
+      set status = 'cancelled', updated_at = ${refundedAt}
+      where ticket_order_id = ${order.id} and exists (select 1 from finalized)
+      returning id
+    )
+    select (select count(*) from released_inventory)::integer as released,
+           (select count(*) from cancelled_registrations)::integer as cancelled
   `);
-  await db.update(registrations).set({ status: "cancelled", updatedAt: refundedAt })
-    .where(eq(registrations.ticketOrderId, order.id));
   return (await listTicketOrders(ctx, eventId)).find((item) => item.id === orderId)!;
 }
 
@@ -741,12 +774,37 @@ export async function offerAuctionSecondChance(
     throw new HttpError(409, "Turn on second-chance offers in auction settings first.");
   }
   if (!row.item.winningBidderId) throw new HttpError(409, "This item does not have a current winner.");
-  const [paidOrder] = await db.select({ status: auctionOrders.status }).from(auctionOrders).where(and(
+  const [previousOrder] = await db.select().from(auctionOrders).where(and(
     eq(auctionOrders.itemId, itemId),
     eq(auctionOrders.bidderId, row.item.winningBidderId),
   )).limit(1);
-  if (paidOrder?.status === "paid" || paidOrder?.status === "refunding") {
+  if (previousOrder?.status === "paid" || previousOrder?.status === "refunding") {
     throw new HttpError(409, "Refund the current winner before making a second-chance offer.");
+  }
+  if (previousOrder?.status === "pending" && previousOrder.stripeSessionId) {
+    if (!previousOrder.stripeConnectedAccountId) {
+      throw new HttpError(409, "The original winner's payment session is missing its connected account reference.");
+    }
+    const stripe = stripeClient();
+    const options = { stripeAccount: previousOrder.stripeConnectedAccountId };
+    let session = await stripe.checkout.sessions.retrieve(previousOrder.stripeSessionId, {}, options);
+    if (session.payment_status === "paid") {
+      await completeAuctionCheckoutSession(session);
+      throw new HttpError(409, "The current winner already paid. Refund them before making a second-chance offer.");
+    }
+    if (session.status === "open") {
+      try {
+        session = await stripe.checkout.sessions.expire(session.id, {}, options);
+      } catch (error) {
+        if (!(error instanceof Stripe.errors.StripeInvalidRequestError)) throw error;
+        session = await stripe.checkout.sessions.retrieve(previousOrder.stripeSessionId, {}, options);
+        if (session.payment_status === "paid") await completeAuctionCheckoutSession(session);
+        throw new HttpError(409, "The original payment link changed while the second-chance offer was prepared. Refresh and try again.");
+      }
+    }
+    if (session.status !== "expired") {
+      throw new HttpError(409, "The original winner's payment link could not be closed.");
+    }
   }
   const [runnerUp] = await db.select({
     bidderId: auctionBidders.id,
@@ -764,8 +822,7 @@ export async function offerAuctionSecondChance(
   if (!runnerUp) throw new HttpError(409, "There is no runner-up bidder for this item.");
   await db.batch([
     db.update(auctionOrders).set({ status: "failed", updatedAt: new Date() }).where(and(
-      eq(auctionOrders.itemId, itemId),
-      eq(auctionOrders.bidderId, row.item.winningBidderId),
+      eq(auctionOrders.id, previousOrder?.id ?? "missing"),
       eq(auctionOrders.status, "pending"),
     )),
     db.update(auctionItems).set({

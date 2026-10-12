@@ -351,6 +351,13 @@
       "when": 1791837353439,
       "tag": "0049_durable_ticket_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791838136052,
+      "tag": "0050_reserved_capacity_guard",
+      "breakpoints": true
     }
   ]
 }

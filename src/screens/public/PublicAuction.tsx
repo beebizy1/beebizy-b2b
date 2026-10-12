@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, Gavel, Search, UserRoundPlus } from "lucide-react";
 import { PublicFrame } from "./PublicEvent";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,12 @@ export default function PublicAuctionPage({ token }: { token: string }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [clockNow, setClockNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const items = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -110,7 +116,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
           <div className="grid gap-5 sm:grid-cols-2">
             {items.map((item) => {
               const minimum = item.currentBidCents === null ? item.startingBidCents : item.currentBidCents + item.bidIncrementCents;
-              const now = Date.now();
+              const now = clockNow;
               const opensAt = item.opensAt ? new Date(item.opensAt).getTime() : null;
               const closesAt = item.closesAt ? new Date(item.closesAt).getTime() : null;
               const biddingOpen = item.status === "open" && (opensAt === null || now >= opensAt) && (closesAt === null || now < closesAt);

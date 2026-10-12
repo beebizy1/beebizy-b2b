@@ -82,7 +82,6 @@ import {
 } from "@/data/entities";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
-import { platformFeeCents } from "@/data/commerce";
 import { readSpreadsheetFile } from "@/data/import";
 
 /** Inline money field that only writes on blur, so every keystroke isn't a mutation. */
@@ -1292,7 +1291,11 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">{donor.businessName}</p>
                   <p className="truncate text-xs text-muted-foreground">{donor.contactName || donor.email || "Contact not added"}</p>
-                  <details className="mt-1 text-xs"><summary className="cursor-pointer text-primary">Donor history and notes</summary><div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <details className="mt-1 text-xs"><summary className="cursor-pointer text-primary">Donor contact, history, and notes</summary><div className="mt-2 grid gap-2 sm:grid-cols-4">
+                    <Input defaultValue={donor.businessName} placeholder="Business or donor" className="h-8" onBlur={(inputEvent) => { const next = inputEvent.target.value.trim(); if (next && next !== donor.businessName) updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { businessName: next } }); }} />
+                    <Input defaultValue={donor.contactName ?? ""} placeholder="Contact name" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { contactName: inputEvent.target.value.trim() || null } })} />
+                    <Input defaultValue={donor.email ?? ""} placeholder="Email" type="email" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { email: inputEvent.target.value.trim() || null } })} />
+                    <Input defaultValue={donor.phone ?? ""} placeholder="Phone" type="tel" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { phone: inputEvent.target.value.trim() || null } })} />
                     <Input defaultValue={donor.solicitedBy ?? ""} placeholder="Solicited by" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { solicitedBy: inputEvent.target.value.trim() || null } })} />
                     <Input defaultValue={donor.previousDonations ?? ""} placeholder="Previous donations" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { previousDonations: inputEvent.target.value.trim() || null } })} />
                     <Input defaultValue={donor.notes ?? ""} placeholder="Internal notes" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { notes: inputEvent.target.value.trim() || null } })} />
@@ -1334,7 +1337,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 lot.lotNumber ?? "", lot.title, lot.status, lot.fairMarketValueCents ?? "", lot.currentBidCents ?? "",
                 itemBids.length, new Set(itemBids.map((bidRow) => bidRow.bidderId)).size, lot.winnerName ?? "",
                 order?.status ?? "no order", order?.fulfillmentStatus ?? lot.fulfillmentStatus ?? "pending",
-                platformFeeCents(order?.amountCents ?? lot.currentBidCents ?? 0),
+                order?.status === "paid" ? order.applicationFeeCents : 0,
               ];
             });
             const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
@@ -1347,8 +1350,10 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           }}>Export CSV</Button>
         }
       />
-      <div className="grid grid-cols-2 gap-3 border-b border-hairline p-5 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 border-b border-hairline p-5 lg:grid-cols-3">
         <StatTile label="Registered bidders" value={String(auctionBidders?.length ?? 0)} />
+        <StatTile label="At the gala" value={String((auctionBidders ?? []).filter((bidder) => bidder.participantType === "gala").length)} />
+        <StatTile label="Remote bidders" value={String((auctionBidders ?? []).filter((bidder) => bidder.participantType === "remote").length)} />
         <StatTile label="Bids placed" value={String(auctionBidHistory?.length ?? 0)} />
         <StatTile label="Items with no bids" value={String((allLots ?? []).filter((lot) => !(auctionBidHistory ?? []).some((bidRow) => bidRow.itemId === lot.id)).length)} />
         <StatTile label="Current proceeds" value={formatMoney(sumCents((allLots ?? []).map((lot) => lot.currentBidCents)))} tone="success" />
@@ -1358,7 +1363,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           <thead className="border-b border-hairline text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-5 py-3">Item</th><th className="px-3 py-3 text-right">FMV</th><th className="px-3 py-3 text-right">Bid</th><th className="px-3 py-3 text-right">Bids</th><th className="px-3 py-3 text-right">Bidders</th><th className="px-5 py-3">Result</th></tr></thead>
           <tbody className="divide-y divide-hairline">{(allLots ?? []).map((lot) => {
             const itemBids = (auctionBidHistory ?? []).filter((bidRow) => bidRow.itemId === lot.id);
-            return <tr key={lot.id}><td className="px-5 py-3 font-medium">{lot.title}</td><td className="px-3 py-3 text-right">{lot.fairMarketValueCents == null ? "—" : formatMoney(lot.fairMarketValueCents)}</td><td className="px-3 py-3 text-right">{lot.currentBidCents == null ? "—" : formatMoney(lot.currentBidCents)}</td><td className="px-3 py-3 text-right">{itemBids.length}</td><td className="px-3 py-3 text-right">{new Set(itemBids.map((bidRow) => bidRow.bidderId)).size}</td><td className="px-5 py-3">{lot.winnerName || (itemBids.length ? lot.status : "No bids")}</td></tr>;
+            return <tr key={lot.id}><td className="px-5 py-3 font-medium">{lot.title}</td><td className="px-3 py-3 text-right">{lot.fairMarketValueCents == null ? "-" : formatMoney(lot.fairMarketValueCents)}</td><td className="px-3 py-3 text-right">{lot.currentBidCents == null ? "-" : formatMoney(lot.currentBidCents)}</td><td className="px-3 py-3 text-right">{itemBids.length}</td><td className="px-3 py-3 text-right">{new Set(itemBids.map((bidRow) => bidRow.bidderId)).size}</td><td className="px-5 py-3">{lot.winnerName || (itemBids.length ? lot.status : "No bids")}</td></tr>;
           })}</tbody>
         </table>
       </div>
