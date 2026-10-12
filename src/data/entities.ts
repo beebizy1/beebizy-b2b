@@ -706,6 +706,9 @@ export const FLOORPLAN_SHAPES = [
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
+export const FLOORPLAN_CUSTOM_SHAPE_MODES = ["polygon", "curved", "freehand"] as const;
+export type FloorplanCustomShapeMode = (typeof FLOORPLAN_CUSTOM_SHAPE_MODES)[number];
+
 export const FLOORPLAN_ROOM_SHAPES = ["rectangle", "oval", "l-shape", "custom"] as const;
 export type FloorplanRoomShape = (typeof FLOORPLAN_ROOM_SHAPES)[number];
 
@@ -745,6 +748,8 @@ export interface FloorplanItem {
   rotation?: number;
   /** Normalized vertices for a custom object. Other object types ignore this. */
   points?: FloorplanPoint[];
+  /** Straight anchors, smoothed anchors, or a freehand outline. */
+  customShapeMode?: FloorplanCustomShapeMode;
 }
 
 /**

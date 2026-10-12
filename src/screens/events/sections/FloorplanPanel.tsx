@@ -43,6 +43,7 @@ import {
   FLOORPLAN_SHAPES,
   type Event,
   type Floorplan,
+  type FloorplanCustomShapeMode,
   type FloorplanItem,
   type FloorplanPoint,
   type FloorplanRoom,
@@ -58,6 +59,7 @@ import {
   pointIsInsideRoom,
   roomClipPath,
   roomPointsForShape,
+  smoothClosedPath,
 } from "@/data/floorplanGeometry";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 
@@ -116,12 +118,14 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
   const [selectedItemCorner, setSelectedItemCorner] = useState<number | null>(null);
+  const [freehandDraft, setFreehandDraft] = useState<FloorplanPoint[] | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const cornerDragState = useRef<{ index: number } | null>(null);
   const itemCornerDragState = useRef<{ id: string; index: number } | null>(null);
   const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
   const suppressPaletteClick = useRef(false);
+  const freehandDraftRef = useRef<FloorplanPoint[] | null>(null);
 
   // Local edits win until saved or reset; otherwise mirror the stored plan. Memoized so
   // the derived values below don't recompute on every render.
@@ -137,6 +141,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const selectedCustomPoints = selected?.shape === "custom-shape"
     ? selected.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
     : null;
+  const selectedCustomMode: FloorplanCustomShapeMode = selected?.customShapeMode ?? "polygon";
 
   const seatTotal = useMemo(
     () => workingItems.reduce((total, item) => total + (item.seats ?? 0), 0),
@@ -156,6 +161,55 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
         points: points.map((current, currentIndex) => currentIndex === index ? point : current),
       };
     }));
+  };
+
+  const pointInDrawingPad = (
+    pointerEvent: React.PointerEvent<HTMLDivElement>,
+  ): FloorplanPoint => {
+    const bounds = pointerEvent.currentTarget.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(100, ((pointerEvent.clientX - bounds.left) / bounds.width) * 100)),
+      y: Math.max(0, Math.min(100, ((pointerEvent.clientY - bounds.top) / bounds.height) * 100)),
+    };
+  };
+
+  const beginFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (!selected || selected.shape !== "custom-shape" || selected.locked || pointerEvent.button !== 0) return;
+    const draft = [pointInDrawingPad(pointerEvent)];
+    freehandDraftRef.current = draft;
+    setFreehandDraft(draft);
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+  };
+
+  const continueFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    const draft = freehandDraftRef.current;
+    if (!draft || draft.length >= 256) return;
+    const point = pointInDrawingPad(pointerEvent);
+    const previous = draft.at(-1)!;
+    if (Math.hypot(point.x - previous.x, point.y - previous.y) < 1.5) return;
+    const next = [...draft, point];
+    freehandDraftRef.current = next;
+    setFreehandDraft(next);
+  };
+
+  const finishFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    const draft = freehandDraftRef.current;
+    freehandDraftRef.current = null;
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+    }
+    if (selected && draft && draft.length >= 3) {
+      updateItem(selected.id, { customShapeMode: "freehand", points: draft });
+    }
+    setFreehandDraft(null);
+  };
+
+  const cancelFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    freehandDraftRef.current = null;
+    setFreehandDraft(null);
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+    }
   };
 
   const updateRoom = (patch: Partial<FloorplanRoom>) => {
@@ -202,12 +256,14 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       locked: false,
       rotation: 0,
       ...(shape === "custom-shape"
-        ? { points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
+        ? { customShapeMode: "polygon" as const, points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
         : {}),
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
     setSelectedItemCorner(null);
+    setFreehandDraft(null);
+    freehandDraftRef.current = null;
   };
 
   const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
@@ -251,12 +307,18 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     setItems(workingItems.filter((item) => item.id !== selected.id));
     setSelectedId(null);
     setSelectedItemCorner(null);
+    setFreehandDraft(null);
+    freehandDraftRef.current = null;
   };
 
   /* --------------------------------------------------------------- dragging */
 
   const onPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>, item: FloorplanItem) => {
-    if (item.id !== selectedId) setSelectedItemCorner(null);
+    if (item.id !== selectedId) {
+      setSelectedItemCorner(null);
+      setFreehandDraft(null);
+      freehandDraftRef.current = null;
+    }
     setSelectedId(item.id);
     if (item.locked) return;
     const room = roomRef.current;
@@ -406,6 +468,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   setSelectedId(null);
                   setSelectedCorner(null);
                   setSelectedItemCorner(null);
+                  setFreehandDraft(null);
+                  freehandDraftRef.current = null;
                 }}
               >
                 <RotateCcw className="mr-1.5 size-3.5" />
@@ -643,6 +707,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 const customPoints = item.shape === "custom-shape"
                   ? item.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
                   : null;
+                const customMode: FloorplanCustomShapeMode = item.customShapeMode ?? "polygon";
                 return (
                   <div
                     key={item.id}
@@ -671,15 +736,24 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     {customPoints ? (
                       <>
                         <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                          <polygon
-                            points={customPoints.map((point) => `${point.x},${point.y}`).join(" ")}
-                            className="fill-info-tint stroke-info/60"
-                            strokeWidth="2"
-                            vectorEffect="non-scaling-stroke"
-                          />
+                          {customMode === "polygon" ? (
+                            <polygon
+                              points={customPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                              className="fill-info-tint stroke-info/60"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          ) : (
+                            <path
+                              d={smoothClosedPath(customPoints)}
+                              className="fill-info-tint stroke-info/60"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
                         </svg>
                         <span className="relative z-10 px-2">{item.label}</span>
-                        {isSelected && !item.locked
+                        {isSelected && !item.locked && customMode !== "freehand"
                           ? customPoints.map((point, index) => (
                               <button
                                 key={`${item.id}-corner-${index}`}
@@ -737,6 +811,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                         pointerEvent.stopPropagation();
                         setSelectedId(null);
                         setSelectedItemCorner(null);
+                        setFreehandDraft(null);
+                        freehandDraftRef.current = null;
                         setSelectedCorner(index);
                         cornerDragState.current = { index };
                         pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
@@ -769,7 +845,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
             <p className="mt-2 text-xs text-muted-foreground">
               Drag objects from the toolbar to place them inside the room outline. Select one to move, resize, rotate,
-              or lock it. Custom shapes also have draggable corner points.
+              or lock it. Custom shapes can use straight anchors, smooth curves, or a freehand outline.
             </p>
           </div>
 
@@ -880,39 +956,118 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 </div>
               </div>
               {selectedCustomPoints ? (
-                <div className="space-y-1">
-                  <span className="block text-xs font-medium text-muted-foreground">Shape corners</span>
-                  <div className="flex items-center gap-1">
-                    <Pill tone="neutral">{selectedCustomPoints.length}</Pill>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={selected.locked || selectedCustomPoints.length >= 24}
-                      onClick={() => {
-                        const result = addRoomCorner(selectedCustomPoints);
-                        updateItem(selected.id, { points: result.points });
-                        setSelectedItemCorner(result.index);
-                      }}
-                    >
-                      <Plus className="mr-1 size-3.5" />
-                      Add corner
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={selected.locked || selectedItemCorner === null || selectedCustomPoints.length <= 3}
-                      onClick={() => {
-                        if (selectedItemCorner === null) return;
-                        updateItem(selected.id, { points: selectedCustomPoints.filter((_, index) => index !== selectedItemCorner) });
-                        setSelectedItemCorner(null);
-                      }}
-                    >
-                      <Minus className="mr-1 size-3.5" />
-                      Remove corner
-                    </Button>
+                <div className="basis-full rounded-lg border border-hairline bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">Outline</span>
+                    <div className="flex rounded-md border border-hairline bg-surface-sunken p-0.5">
+                      {(["polygon", "curved", "freehand"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          aria-pressed={selectedCustomMode === mode}
+                          disabled={selected.locked}
+                          onClick={() => {
+                            updateItem(selected.id, { customShapeMode: mode });
+                            setSelectedItemCorner(null);
+                            setFreehandDraft(null);
+                            freehandDraftRef.current = null;
+                          }}
+                          className={cn(
+                            "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                            selectedCustomMode === mode
+                              ? "bg-secondary text-secondary-foreground shadow-xs"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {mode === "polygon" ? "Straight" : mode}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedCustomMode === "freehand"
+                        ? "Draw a closed outline in the pad below."
+                        : "Drag the yellow anchor points directly on the floor plan."}
+                    </span>
                   </div>
+
+                  {selectedCustomMode === "freehand" ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(240px,360px)_1fr] sm:items-center">
+                      <div
+                        role="application"
+                        tabIndex={0}
+                        aria-label="Freehand shape drawing pad. Drag to replace the current outline."
+                        onPointerDown={beginFreehand}
+                        onPointerMove={continueFreehand}
+                        onPointerUp={finishFreehand}
+                        onPointerCancel={cancelFreehand}
+                        className={cn(
+                          "relative h-32 touch-none overflow-hidden rounded-md border border-dashed border-info/60 bg-info-tint/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          selected.locked ? "cursor-not-allowed opacity-60" : "cursor-crosshair",
+                        )}
+                      >
+                        <svg aria-hidden="true" className="absolute inset-2 size-[calc(100%-1rem)]" viewBox="0 0 100 100" preserveAspectRatio="none">
+                          {(freehandDraft ?? selectedCustomPoints).length >= 3 ? (
+                            <path
+                              d={smoothClosedPath(freehandDraft ?? selectedCustomPoints)}
+                              className="fill-info/15 stroke-info"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          ) : (
+                            <polyline
+                              points={(freehandDraft ?? []).map((point) => `${point.x},${point.y}`).join(" ")}
+                              fill="none"
+                              className="stroke-info"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                        </svg>
+                        {!freehandDraft ? (
+                          <span className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] font-medium text-info-text">
+                            Drag here to redraw
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Press and drag once around the object. Release to close and save the outline.</p>
+                        <p>Use width, height, and rotation above to place it precisely in the room.</p>
+                        <Pill tone="neutral">{selectedCustomPoints.length} sampled points</Pill>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap items-center gap-1">
+                      <Pill tone="neutral">{selectedCustomPoints.length} anchors</Pill>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={selected.locked || selectedCustomPoints.length >= 24}
+                        onClick={() => {
+                          const result = addRoomCorner(selectedCustomPoints);
+                          updateItem(selected.id, { points: result.points });
+                          setSelectedItemCorner(result.index);
+                        }}
+                      >
+                        <Plus className="mr-1 size-3.5" />
+                        Add anchor
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={selected.locked || selectedItemCorner === null || selectedCustomPoints.length <= 3}
+                        onClick={() => {
+                          if (selectedItemCorner === null) return;
+                          updateItem(selected.id, { points: selectedCustomPoints.filter((_, index) => index !== selectedItemCorner) });
+                          setSelectedItemCorner(null);
+                        }}
+                      >
+                        <Minus className="mr-1 size-3.5" />
+                        Remove anchor
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : null}
               <Pill tone={capacityTone}>{capacityNote}</Pill>

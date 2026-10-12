@@ -52,6 +52,28 @@ export function roomClipPath(room: FloorplanRoom): string {
   return `polygon(${room.points.map((point) => `${point.x}% ${point.y}%`).join(", ")})`;
 }
 
+/** Builds a closed, smooth SVG path through a set of custom-shape points. */
+export function smoothClosedPath(points: FloorplanPoint[]): string {
+  if (points.length < 3) return "";
+  const midpoint = (start: FloorplanPoint, end: FloorplanPoint) => ({
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  });
+  const last = points.at(-1)!;
+  const first = points[0]!;
+  const start = midpoint(last, first);
+  const commands = [`M ${start.x.toFixed(2)} ${start.y.toFixed(2)}`];
+
+  for (let index = 0; index < points.length; index += 1) {
+    const control = points[index]!;
+    const next = points[(index + 1) % points.length]!;
+    const end = midpoint(control, next);
+    commands.push(`Q ${control.x.toFixed(2)} ${control.y.toFixed(2)} ${end.x.toFixed(2)} ${end.y.toFixed(2)}`);
+  }
+  commands.push("Z");
+  return commands.join(" ");
+}
+
 function pointInPolygon(points: FloorplanPoint[], x: number, y: number): boolean {
   let inside = false;
   for (let index = 0, previous = points.length - 1; index < points.length; previous = index, index += 1) {

@@ -877,7 +877,7 @@ export function buildEventImportPlan(
       locked: truthy(valueFrom(row, floorplanTable!, ["locked", "fixed", "existing"])),
       rotation: bounded(valueFrom(row, floorplanTable!, ["rotation", "rotation degrees", "angle"]), 0, 359, 0),
       ...(rawShape === "custom-shape"
-        ? { points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
+        ? { customShapeMode: "polygon" as const, points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
         : {}),
     }];
   });

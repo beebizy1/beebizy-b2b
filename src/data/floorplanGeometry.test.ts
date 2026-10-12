@@ -6,6 +6,7 @@ import {
   pointIsInsideRoom,
   roomClipPath,
   roomPointsForShape,
+  smoothClosedPath,
 } from "./floorplanGeometry";
 
 describe("floorplan room geometry", () => {
@@ -36,6 +37,18 @@ describe("floorplan room geometry", () => {
     expect(result.points).toHaveLength(4);
     expect(result.points[result.index]).toEqual({ x: 50, y: 0 });
     expect(points).toHaveLength(3);
+  });
+
+  it("builds a closed smooth path for curved and freehand shapes", () => {
+    const path = smoothClosedPath([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 50, y: 100 },
+    ]);
+    expect(path).toMatch(/^M /);
+    expect(path.match(/ Q /g)).toHaveLength(3);
+    expect(path).toMatch(/ Z$/);
+    expect(smoothClosedPath([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toBe("");
   });
 
   it("places new objects inside an irregular room that excludes the canvas center", () => {

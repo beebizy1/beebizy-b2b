@@ -62,6 +62,7 @@ describe("parseFloorplanDraft", () => {
       width: 30,
       height: 18,
       rotation: 45,
+      customShapeMode: "curved" as const,
       points: [
         { x: 5, y: 10 },
         { x: 95, y: 5 },
@@ -118,5 +119,22 @@ describe("parseFloorplanDraft", () => {
   it("requires a polygon for custom objects", () => {
     const item = { id: "custom-1", shape: "custom-shape", label: "Wall", x: 42, y: 58, seats: null };
     expect(() => parseFloorplanDraft({ name: "Expo", items: [item] })).toThrow(/corner points/i);
+  });
+
+  it("allows detailed freehand outlines but keeps editable corner shapes manageable", () => {
+    const points = Array.from({ length: 100 }, (_, index) => ({
+      x: index % 100,
+      y: (index * 3) % 100,
+    }));
+    const item = { id: "custom-1", shape: "custom-shape", label: "Sketch", x: 42, y: 58, seats: null, points };
+
+    expect(() => parseFloorplanDraft({
+      name: "Expo",
+      items: [{ ...item, customShapeMode: "freehand" }],
+    })).not.toThrow();
+    expect(() => parseFloorplanDraft({
+      name: "Expo",
+      items: [{ ...item, customShapeMode: "curved" }],
+    })).toThrow(/24 editable corners/i);
   });
 });
