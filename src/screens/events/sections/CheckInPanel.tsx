@@ -72,7 +72,7 @@ import {
   type VolunteerShift,
 } from "@/data/entities";
 import { ALPHABETICAL_CHECK_IN_LANES, guestMatchesLane, parseAlphabeticalLane } from "@/data/checkInLanes";
-import { attendanceReportCsv, buildUniqueAttendanceReport } from "@/data/attendanceReport";
+import { attendanceNamesCsv, buildUniqueAttendanceReport } from "@/data/attendanceReport";
 
 const CHECK_IN_STARTER = [
   ["Assign check-in stations and leads", "Name a lead and backup for every entrance or desk."],
@@ -291,22 +291,18 @@ export function CheckInPanel({ event }: { event: Event }) {
   }, []);
   const displayed = visible.slice(0, visibleLimit);
 
-  const downloadAttendanceCsv = (emailOnly: boolean) => {
-    const attendees = emailOnly
-      ? attendanceReport.attendees.filter((row) => row.email)
-      : attendanceReport.attendees;
-    const url = URL.createObjectURL(new Blob([attendanceReportCsv(attendees)], { type: "text/csv;charset=utf-8" }));
+  const downloadAttendanceCsv = () => {
+    const attendees = attendanceReport.attendees;
+    const url = URL.createObjectURL(new Blob([attendanceNamesCsv(attendees)], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     const eventName = event.title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "event";
     anchor.href = url;
-    anchor.download = `beebizy-${eventName}-${emailOnly ? "post-event-email-list" : "unique-attendees"}.csv`;
+    anchor.download = `beebizy-${eventName}-unique-attendee-names.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
     toast({
-      title: emailOnly ? `${attendees.length} email-ready attendees exported` : `${attendees.length} unique attendees exported`,
-      description: emailOnly
-        ? "Every exported row has an email address."
-        : `${attendanceReport.summary.duplicateCheckedInRows} duplicate check-in row${attendanceReport.summary.duplicateCheckedInRows === 1 ? " was" : "s were"} consolidated.`,
+      title: `${attendees.length} unique attendee names exported`,
+      description: `${attendanceReport.summary.duplicateCheckedInRows} duplicate check-in row${attendanceReport.summary.duplicateCheckedInRows === 1 ? " was" : "s were"} consolidated. The file contains full names only.`,
     });
   };
 
@@ -649,14 +645,11 @@ export function CheckInPanel({ event }: { event: Event }) {
       <Panel className="overflow-hidden">
         <PanelHeader
           title="Guest arrivals"
-          description={`${attendanceReport.summary.checkedInRows} check-in records become ${attendanceReport.summary.uniqueCheckedIn} unique attendees. ${attendanceReport.summary.emailReady} have email addresses. Times use ${timeZoneLabel}.`}
+          description={`${attendanceReport.summary.checkedInRows} check-in records become ${attendanceReport.summary.uniqueCheckedIn} unique attendees. Times use ${timeZoneLabel}.`}
           actions={
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => downloadAttendanceCsv(false)} disabled={attendanceReport.attendees.length === 0}>
-                <Download className="mr-1.5 size-3.5" />Unique attendees CSV
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => downloadAttendanceCsv(true)} disabled={attendanceReport.summary.emailReady === 0}>
-                <Download className="mr-1.5 size-3.5" />Email-ready CSV
+              <Button type="button" variant="outline" size="sm" onClick={downloadAttendanceCsv} disabled={attendanceReport.attendees.length === 0}>
+                <Download className="mr-1.5 size-3.5" />Full names CSV
               </Button>
               <Button asChild variant="outline" size="sm">
                 <Link href={eventTabHref(event.id, "registrations")}>Manage registrations</Link>

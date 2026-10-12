@@ -101,26 +101,7 @@ function csvCell(value: string | number | null): string {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function attendanceReportCsv(attendees: UniqueAttendeeRecord[]): string {
-  const headings = [
-    "Full Name",
-    "Email",
-    "Organization",
-    "Guest Type",
-    "First Check-in Time",
-    "Check-in Station",
-    "Registration Source",
-    "Duplicate Records Consolidated",
-  ];
-  const lines = attendees.map((row) => [
-    row.name,
-    row.email,
-    row.organization,
-    row.guestType,
-    row.checkedInAt,
-    row.checkInStation,
-    row.registrationSource,
-    row.duplicateRecordsConsolidated,
-  ].map(csvCell).join(","));
-  return [headings.map(csvCell).join(","), ...lines].join("\r\n") + "\r\n";
+export function attendanceNamesCsv(attendees: UniqueAttendeeRecord[]): string {
+  const lines = attendees.map((row) => csvCell(row.name));
+  return ["Full Name", ...lines].join("\r\n") + "\r\n";
 }

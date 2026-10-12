@@ -33,7 +33,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePreferences } from "@/app/preferences";
 import { formatMoney, sumCents } from "@/data/money";
-import { attendanceReportCsv, buildUniqueAttendanceReport, type UniqueAttendeeRecord } from "@/data/attendanceReport";
+import { attendanceNamesCsv, buildUniqueAttendanceReport, type UniqueAttendeeRecord } from "@/data/attendanceReport";
 import {
   useBudget,
   useChecklist,
@@ -91,13 +91,13 @@ export default function PostEventSummary({ id }: { id: string }) {
   const maxGuestType = Math.max(1, ...guestTypes.map(([, count]) => count));
   const maxSource = Math.max(1, ...sources.map(([, count]) => count));
 
-  const downloadAttendanceCsv = (emailOnly: boolean) => {
-    const rows = emailOnly ? attendance.attendees.filter((row) => row.email) : attendance.attendees;
-    const url = URL.createObjectURL(new Blob([attendanceReportCsv(rows)], { type: "text/csv;charset=utf-8" }));
+  const downloadAttendanceCsv = () => {
+    const rows = attendance.attendees;
+    const url = URL.createObjectURL(new Blob([attendanceNamesCsv(rows)], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     const eventName = event.title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "event";
     anchor.href = url;
-    anchor.download = `beebizy-${eventName}-${emailOnly ? "post-event-email-list" : "unique-attendees"}.csv`;
+    anchor.download = `beebizy-${eventName}-unique-attendee-names.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -158,11 +158,8 @@ export default function PostEventSummary({ id }: { id: string }) {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => downloadAttendanceCsv(false)} disabled={attendance.attendees.length === 0}>
-              <Download className="mr-1.5 size-3.5" />Unique attendees CSV
-            </Button>
-            <Button type="button" size="sm" onClick={() => downloadAttendanceCsv(true)} disabled={attendanceSummary.emailReady === 0}>
-              <Download className="mr-1.5 size-3.5" />Email-ready CSV
+            <Button type="button" size="sm" onClick={downloadAttendanceCsv} disabled={attendance.attendees.length === 0}>
+              <Download className="mr-1.5 size-3.5" />Download full names
             </Button>
             <p className="basis-full text-right text-xs text-muted-foreground">Generated {formatDate(new Date(), "dayMonthYear")}</p>
           </div>
@@ -214,9 +211,9 @@ export default function PostEventSummary({ id }: { id: string }) {
             <p className="mt-1 text-xs text-muted-foreground">From {attendanceSummary.checkedInRows} check-in records</p>
           </div>
           <div className="bg-card px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email-ready</p>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{attendanceSummary.emailReady}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{attendanceSummary.missingEmail} attendees have no email</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">No-shows</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{noShows}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Registered but not checked in</p>
           </div>
           <div className="bg-card px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Duplicates consolidated</p>

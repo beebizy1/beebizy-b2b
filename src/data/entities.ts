@@ -890,6 +890,25 @@ export interface PublicCheckInStationPayload {
   guests: PublicCheckInGuest[];
 }
 
+/** Aggregate-only attendance data safe to show through an unguessable public link. */
+export interface PublicAttendanceDashboardPayload {
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  timeZone: string;
+  generatedAt: IsoDateTime;
+  summary: {
+    registrationRows: number;
+    uniqueRegistered: number;
+    checkedInRows: number;
+    uniqueCheckedIn: number;
+    duplicateCheckedInRows: number;
+    noShows: number;
+    attendanceRate: number;
+  };
+  guestTypes: Array<{ label: string; count: number }>;
+  registrationSources: Array<{ label: string; count: number }>;
+}
+
 export type EventHistoryChange = Pick<
   EventHistoryEntry,
   "eventId" | "resource" | "resourceId" | "action" | "before" | "after"

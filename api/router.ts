@@ -237,6 +237,12 @@ async function handlePublic(segments: string[], method: string, request: Request
     return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
   }
 
+  if (segments[0] === "public" && segments[1] === "attendance" && segments[2] && segments.length === 3) {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const dashboard = await repos.publicAttendanceDashboard(segments[2]);
+    return dashboard ? json(dashboard) : json({ error: "This attendance dashboard link is no longer active." }, 404);
+  }
+
   if (segments[0] === "public" && segments[1] === "assignments" && segments[2]) {
     if (method === "GET" && !segments[3]) {
       const assignment = await repos.publicAssignment(segments[2]);

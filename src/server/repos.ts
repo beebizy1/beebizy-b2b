@@ -72,6 +72,7 @@ import type {
   PublicAssignmentPayload,
   PublicCheckInGuest,
   PublicCheckInStationPayload,
+  PublicAttendanceDashboardPayload,
   PublicRegistrationDraft,
   PublicRegistrationResult,
   PublicVolunteerSignupDraft,
@@ -110,7 +111,7 @@ import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/re
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
 import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
-import { normalizeAttendeeName } from "../data/attendanceReport.ts";
+import { buildUniqueAttendanceReport, normalizeAttendeeName, type UniqueAttendeeRecord } from "../data/attendanceReport.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -1316,6 +1317,72 @@ export async function publicCheckInStation(token: string): Promise<PublicCheckIn
     volunteer: { name: shift.name },
     station: { id: station.id, name: station.name, lane: station.lane },
     guests,
+  };
+}
+
+/**
+ * Aggregate-only post-event attendance, shared by one unguessable dashboard link.
+ *
+ * The server reads names to consolidate repeated walk-ins, but the public contract never
+ * returns names, emails, guest ids, registration ids, notes or check-in timestamps.
+ */
+export async function publicAttendanceDashboard(token: string): Promise<PublicAttendanceDashboardPayload | null> {
+  const [link] = await db.select().from(s.eventHistory)
+    .where(and(
+      eq(s.eventHistory.resource, "attendance-dashboard-link"),
+      eq(s.eventHistory.resourceId, token),
+      eq(s.eventHistory.action, "created"),
+    ))
+    .limit(1);
+  if (!link) return null;
+
+  const [eventRow] = await db.select({ event: s.events, timeZone: s.workspaces.timeZone })
+    .from(s.events)
+    .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
+    .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId)))
+    .limit(1);
+  if (!eventRow) return null;
+
+  const rows = await db.select({ registration: s.registrations, guest: s.guests })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+    ));
+  const registrations: RegistrationWithGuest[] = rows.map(({ registration, guest }) => ({
+    ...map.toRegistration(registration, eventRow.event.title),
+    guest: map.toGuest(guest),
+  }));
+  const report = buildUniqueAttendanceReport(registrations);
+  const counts = (read: (row: UniqueAttendeeRecord) => string | null) =>
+    [...report.attendees.reduce((groups, attendee) => {
+      const label = read(attendee)?.trim() || "Not specified";
+      groups.set(label, (groups.get(label) ?? 0) + 1);
+      return groups;
+    }, new Map<string, number>())]
+      .map(([label, total]) => ({ label, count: total }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const displayTitle = typeof link.after?.displayTitle === "string" && link.after.displayTitle.trim()
+    ? link.after.displayTitle.trim()
+    : eventRow.event.title;
+
+  return {
+    eventTitle: displayTitle,
+    eventDate: eventRow.event.startsAt.toISOString(),
+    timeZone: eventRow.timeZone,
+    generatedAt: new Date().toISOString(),
+    summary: {
+      registrationRows: report.summary.registrationRows,
+      uniqueRegistered: report.summary.uniqueRegistered,
+      checkedInRows: report.summary.checkedInRows,
+      uniqueCheckedIn: report.summary.uniqueCheckedIn,
+      duplicateCheckedInRows: report.summary.duplicateCheckedInRows,
+      noShows: Math.max(0, report.summary.uniqueRegistered - report.summary.uniqueCheckedIn),
+      attendanceRate: report.summary.attendanceRate,
+    },
+    guestTypes: counts((row) => row.guestType),
+    registrationSources: counts((row) => row.registrationSource),
   };
 }
 

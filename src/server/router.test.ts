@@ -24,6 +24,7 @@ vi.mock("./repos", () => {
     publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
     publicCheckInStation: vi.fn(),
+    publicAttendanceDashboard: vi.fn(),
     setPublicCheckIn: vi.fn(),
     createPublicWalkIn: vi.fn(),
     removePublicWalkIn: vi.fn(),
@@ -69,7 +70,7 @@ vi.mock("./billing", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 
 describe("single-event collaborator routing", () => {
@@ -511,6 +512,44 @@ describe("public assignment endpoint", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ checkedIn: false }),
     }));
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("public attendance dashboard", () => {
+  it("returns aggregate attendance without authorizing or exposing attendee records", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicAttendanceDashboard).mockResolvedValue({
+      eventTitle: "SCU Demo Day 2026",
+      eventDate: "2026-10-10T01:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+      generatedAt: "2026-10-12T18:00:00.000Z",
+      summary: {
+        registrationRows: 912,
+        uniqueRegistered: 850,
+        checkedInRows: 550,
+        uniqueCheckedIn: 533,
+        duplicateCheckedInRows: 17,
+        noShows: 317,
+        attendanceRate: 62.7,
+      },
+      guestTypes: [{ label: "General", count: 300 }],
+      registrationSources: [{ label: "Imported registration", count: 148 }],
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/attendance/public-dashboard-token"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ summary: { uniqueCheckedIn: 533, duplicateCheckedInRows: 17 } });
+    expect(JSON.stringify(body)).not.toMatch(/email|guestId|registrationId|name/i);
+    expect(publicAttendanceDashboard).toHaveBeenCalledWith("public-dashboard-token");
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for an inactive attendance dashboard link", async () => {
+    vi.mocked(publicAttendanceDashboard).mockResolvedValue(null);
+    const response = await handleRequest(new Request("http://localhost/api/public/attendance/inactive"));
     expect(response.status).toBe(404);
   });
 });

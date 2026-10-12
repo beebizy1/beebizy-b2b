@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RegistrationWithGuest } from "./entities";
-import { attendanceReportCsv, buildUniqueAttendanceReport, normalizeAttendeeName } from "./attendanceReport";
+import { attendanceNamesCsv, buildUniqueAttendanceReport, normalizeAttendeeName } from "./attendanceReport";
 
 function registration(
   id: string,
@@ -78,9 +78,10 @@ describe("unique attendance reporting", () => {
       registration("one", "Ada Lovelace", { email: "ada@example.com", imported: true }),
       registration("two", "ada lovelace"),
     ]);
-    const csv = attendanceReportCsv(report.attendees);
-    expect(csv).toContain("Full Name,Email");
+    const csv = attendanceNamesCsv(report.attendees);
+    expect(csv).toContain("Full Name");
     expect(csv.match(/\r\n/g)).toHaveLength(2);
-    expect(csv).toContain("ada@example.com");
+    expect(csv).toContain("Ada Lovelace");
+    expect(csv).not.toContain("ada@example.com");
   });
 });

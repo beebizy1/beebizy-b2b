@@ -69,6 +69,7 @@ import PublicAssignment from "@/screens/public/PublicAssignment";
 import PublicCheckIn from "@/screens/public/PublicCheckIn";
 import PublicRfp from "@/screens/public/PublicRfp";
 import PublicVendorConversation from "@/screens/public/PublicVendorConversation";
+import PublicAttendanceDashboard from "@/screens/public/PublicAttendanceDashboard";
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
@@ -196,6 +197,7 @@ function Routes() {
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>
       <Route path="/assignment/:token">{(params) => <PublicAssignment token={params.token} />}</Route>
       <Route path="/check-in/:token">{(params) => <PublicCheckIn token={params.token} />}</Route>
+      <Route path="/attendance/:token">{(params) => <PublicAttendanceDashboard token={params.token} />}</Route>
       <Route path="/rfp/:token">{(params) => <PublicRfp token={params.token} />}</Route>
       <Route path="/vendor-conversation/:token">{(params) => <PublicVendorConversation token={params.token} />}</Route>
 
