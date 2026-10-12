@@ -132,6 +132,7 @@ import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
+import { normalizeAttendeeName } from "../attendanceReport";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -792,6 +793,15 @@ const registrations: RegistrationsRepository = {
     if (!contact) throw new DataError("invalid", "contact is required.");
     if (state.guests.some((candidate) => candidate.contact?.toLowerCase() === contact.toLowerCase())) {
       throw new DataError("conflict", "That email is already in the people list. Search for the guest and check them in instead.");
+    }
+    const normalizedName = normalizeAttendeeName(name);
+    const duplicateName = state.registrations.some((registration) => {
+      if (registration.eventId !== eventId || registration.status === "cancelled") return false;
+      const guest = state.guests.find((candidate) => candidate.id === registration.guestId);
+      return guest ? normalizeAttendeeName(guest.name) === normalizedName : false;
+    });
+    if (duplicateName) {
+      throw new DataError("conflict", "That name is already on this guest list. Search for the existing guest and check them in instead.");
     }
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);

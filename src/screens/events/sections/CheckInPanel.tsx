@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CircleUserRound,
   DoorOpen,
+  Download,
   Laptop,
   Pencil,
   Plus,
@@ -71,6 +72,7 @@ import {
   type VolunteerShift,
 } from "@/data/entities";
 import { ALPHABETICAL_CHECK_IN_LANES, guestMatchesLane, parseAlphabeticalLane } from "@/data/checkInLanes";
+import { attendanceReportCsv, buildUniqueAttendanceReport } from "@/data/attendanceReport";
 
 const CHECK_IN_STARTER = [
   ["Assign check-in stations and leads", "Name a lead and backup for every entrance or desk."],
@@ -245,11 +247,9 @@ export function CheckInPanel({ event }: { event: Event }) {
       .sort((a, b) => (a.guest?.name ?? "").localeCompare(b.guest?.name ?? "")),
     [data],
   );
-  const confirmedRows = rows.filter((row) => row.status === "confirmed");
-  const expected = confirmedRows.reduce((total, row) => total + row.quantity, 0);
-  const arrived = confirmedRows
-    .filter((row) => row.checkedInAt !== null)
-    .reduce((total, row) => total + row.quantity, 0);
+  const attendanceReport = useMemo(() => buildUniqueAttendanceReport(rows), [rows]);
+  const expected = attendanceReport.summary.uniqueRegistered;
+  const arrived = attendanceReport.summary.uniqueCheckedIn;
   const pending = rows
     .filter((row) => row.status === "pending")
     .reduce((total, row) => total + row.quantity, 0);
@@ -290,6 +290,25 @@ export function CheckInPanel({ event }: { event: Event }) {
     if (printer) void printer.close();
   }, []);
   const displayed = visible.slice(0, visibleLimit);
+
+  const downloadAttendanceCsv = (emailOnly: boolean) => {
+    const attendees = emailOnly
+      ? attendanceReport.attendees.filter((row) => row.email)
+      : attendanceReport.attendees;
+    const url = URL.createObjectURL(new Blob([attendanceReportCsv(attendees)], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    const eventName = event.title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "event";
+    anchor.href = url;
+    anchor.download = `beebizy-${eventName}-${emailOnly ? "post-event-email-list" : "unique-attendees"}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast({
+      title: emailOnly ? `${attendees.length} email-ready attendees exported` : `${attendees.length} unique attendees exported`,
+      description: emailOnly
+        ? "Every exported row has an email address."
+        : `${attendanceReport.summary.duplicateCheckedInRows} duplicate check-in row${attendanceReport.summary.duplicateCheckedInRows === 1 ? " was" : "s were"} consolidated.`,
+    });
+  };
 
   const existingTasks = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
   const missingTasks = CHECK_IN_STARTER.filter(([title]) => !existingTasks.has(title.toLowerCase()));
@@ -467,7 +486,7 @@ export function CheckInPanel({ event }: { event: Event }) {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Expected" value={expected} icon={UsersRound} sublabel={`${pending} awaiting RSVP`} loading={isLoading} />
-        <StatTile label="Checked in" value={arrived} icon={UserCheck} tone="success" loading={isLoading} />
+        <StatTile label="Unique checked in" value={arrived} icon={UserCheck} tone="success" sublabel={`${attendanceReport.summary.checkedInRows} check-in records`} loading={isLoading} />
         <StatTile label={eventFinished ? "No-shows" : "Still expected"} value={remaining} icon={DoorOpen} tone={remaining > 0 ? "warning" : "success"} loading={isLoading} />
         <StatTile label="Arrival rate" value={expected ? `${Math.round((arrived / expected) * 100)}%` : "0%"} loading={isLoading} />
       </div>
@@ -630,11 +649,19 @@ export function CheckInPanel({ event }: { event: Event }) {
       <Panel className="overflow-hidden">
         <PanelHeader
           title="Guest arrivals"
-          description={`Check-ins use the workspace time zone (${timeZoneLabel}). Cancelled registrations are excluded.`}
+          description={`${attendanceReport.summary.checkedInRows} check-in records become ${attendanceReport.summary.uniqueCheckedIn} unique attendees. ${attendanceReport.summary.emailReady} have email addresses. Times use ${timeZoneLabel}.`}
           actions={
-            <Button asChild variant="outline" size="sm">
-              <Link href={eventTabHref(event.id, "registrations")}>Manage registrations</Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => downloadAttendanceCsv(false)} disabled={attendanceReport.attendees.length === 0}>
+                <Download className="mr-1.5 size-3.5" />Unique attendees CSV
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => downloadAttendanceCsv(true)} disabled={attendanceReport.summary.emailReady === 0}>
+                <Download className="mr-1.5 size-3.5" />Email-ready CSV
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href={eventTabHref(event.id, "registrations")}>Manage registrations</Link>
+              </Button>
+            </div>
           }
         />
         <div className="flex flex-col gap-3 border-b border-hairline p-4 lg:flex-row lg:items-center">

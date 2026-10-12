@@ -16,6 +16,7 @@ import {
   ArrowUp,
   CalendarClock,
   Copy,
+  FileText,
   MailCheck,
   MapPin,
   Pencil,
@@ -504,6 +505,13 @@ function WorkspaceHeader({
                 </Link>
               </Button>
             ) : null}
+
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/app/events/${event.id}/summary`}>
+                <FileText className="mr-1.5 size-3.5" />
+                Attendance dashboard
+              </Link>
+            </Button>
 
             <EventSpreadsheetImportDialog event={event} />
 

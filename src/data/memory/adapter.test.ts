@@ -435,6 +435,19 @@ describe("registrations", () => {
     expect((await memoryAdapter.guests.list()).some((guest) => guest.contact === "capacity.walkin@example.com")).toBe(false);
   });
 
+  it("refuses a second walk-in record for the same normalized full name", async () => {
+    await memoryAdapter.registrations.createWalkIn("evt-atlas", {
+      name: "Toby Hsu",
+      contact: "toby.first@example.com",
+    });
+    await expect(
+      memoryAdapter.registrations.createWalkIn("evt-atlas", {
+        name: "  toby   HSU ",
+        contact: "toby.second@example.com",
+      }),
+    ).rejects.toThrow(/already.*guest list/i);
+  });
+
   it("refuses a duplicate registration", async () => {
     const existing = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "confirmed")!;
     await expect(

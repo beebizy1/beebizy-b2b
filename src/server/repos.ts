@@ -110,6 +110,7 @@ import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/re
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
 import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
+import { normalizeAttendeeName } from "../data/attendanceReport.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -1341,6 +1342,7 @@ export async function setPublicCheckIn(
 
   const checkedInAt = checkedIn ? new Date() : null;
   const before = toPublicCheckInGuest(current.registration, current.guest);
+  if (Boolean(current.registration.checkedInAt) === checkedIn) return before;
   const update = db.update(s.registrations)
     .set({
       checkedInAt,
@@ -1391,6 +1393,20 @@ export async function createPublicWalkIn(
   if (name.length > 120) throw new HttpError(400, "The guest name must be 120 characters or fewer.");
 
   const { link, shift, station } = access;
+  const normalizedName = normalizeAttendeeName(name);
+  const [existingName] = await db.select({ name: s.guests.name })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+      sql`${s.registrations.status} <> 'cancelled'`,
+      sql`lower(regexp_replace(trim(${s.guests.name}), '\\s+', ' ', 'g')) = ${normalizedName}`,
+    ))
+    .limit(1);
+  if (existingName) {
+    throw new HttpError(409, `${existingName.name} is already on the guest list. Search for the existing guest and check them in instead.`);
+  }
   const [eventRow] = await db.select({ capacity: s.events.capacity }).from(s.events).where(and(
     eq(s.events.id, link.eventId),
     eq(s.events.workspaceId, link.workspaceId),
@@ -1959,6 +1975,20 @@ export const registrations = {
       .limit(1);
     if (existingGuest) {
       throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
+    }
+    const normalizedName = normalizeAttendeeName(draft.name);
+    const [existingName] = await db.select({ name: s.guests.name })
+      .from(s.registrations)
+      .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+      .where(and(
+        eq(s.registrations.eventId, eventId),
+        eq(s.registrations.workspaceId, ctx.workspaceId),
+        sql`${s.registrations.status} <> 'cancelled'`,
+        sql`lower(regexp_replace(trim(${s.guests.name}), '\\s+', ' ', 'g')) = ${normalizedName}`,
+      ))
+      .limit(1);
+    if (existingName) {
+      throw new HttpError(409, `${existingName.name} is already on this guest list. Search for the existing guest and check them in instead.`);
     }
 
     const guestId = newId("att");
