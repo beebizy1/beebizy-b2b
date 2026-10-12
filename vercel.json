@@ -34,7 +34,7 @@
   "crons": [
     {
       "path": "/api/fundraising/maintenance",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 16 * * *"
     }
   ]
 }
