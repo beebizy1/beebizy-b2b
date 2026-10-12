@@ -463,6 +463,13 @@
       "when": 1791845449730,
       "tag": "0065_freeze_finalized_bill_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1791846336839,
+      "tag": "0066_allow_receipt_parent_cascade",
+      "breakpoints": true
     }
   ]
 }

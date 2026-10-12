@@ -79,6 +79,18 @@ try {
 
   const [{ duplicatePaddles } = { duplicatePaddles: 0 }] = await db.select({ duplicatePaddles: count() }).from(s.auctionBidders).where(and(eq(s.auctionBidders.eventId, eventId), sql`${s.auctionBidders.paddleNumber} is not null`));
   check("all verification bidders persisted", Number(duplicatePaddles) === allocations.length);
+
+  const receiptId = `receipt_verify_${suffix}`;
+  await db.insert(s.fundraisingReceipts).values({
+    id: receiptId, workspaceId, eventId, type: "contribution", receiptNumber: `VERIFY-${suffix}`,
+    publicToken: `receipt-token-${suffix}`, payerName: "Verification Donor", amountCents: 100,
+    fairMarketValueCents: 0, deductibleCents: 100, lineItems: [],
+  });
+  const directReceiptDeleteBlocked = await db.delete(s.fundraisingReceipts).where(eq(s.fundraisingReceipts.id, receiptId))
+    .then(() => false, (error) => `${error instanceof Error ? error.message : String(error)} ${(error as { cause?: { message?: string } })?.cause?.message ?? ""}`.includes("receipts are immutable"));
+  check("direct receipt deletion remains blocked", directReceiptDeleteBlocked);
 } finally {
   await db.delete(s.workspaces).where(eq(s.workspaces.id, workspaceId));
+  const [remainingWorkspace] = await db.select({ id: s.workspaces.id }).from(s.workspaces).where(eq(s.workspaces.id, workspaceId)).limit(1);
+  check("workspace cleanup may cascade immutable receipts", remainingWorkspace == null);
 }
