@@ -11,7 +11,8 @@ export const DEFAULT_AUCTION_PAGE_SETTINGS: AuctionPageSettings = {
   automaticBiddingEnabled: false,
   secondChanceEnabled: false,
   staggeredClosingEnabled: false,
-  autoExtendMinutes: 0,
+  autoExtendMinutes: 2,
+  bidHistoryPrivacy: "paddle",
 };
 
 export function normalizeAuctionPageSettings(value: unknown): AuctionPageSettings {
@@ -30,6 +31,7 @@ export function normalizeAuctionPageSettings(value: unknown): AuctionPageSetting
     staggeredClosingEnabled: input.staggeredClosingEnabled === true,
     autoExtendMinutes: Number.isInteger(input.autoExtendMinutes)
       ? Math.max(0, Math.min(60, input.autoExtendMinutes!))
-      : 0,
+      : 2,
+    bidHistoryPrivacy: input.bidHistoryPrivacy === "initials" ? "initials" : "paddle",
   };
 }

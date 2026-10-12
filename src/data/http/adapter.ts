@@ -24,6 +24,8 @@ import type {
   PublicAuctionPayload,
   PublicAuctionBidResult,
   PublicAuctionDonorPayload,
+  PublicBidderProfile,
+  FundraisingPledge,
   BudgetItem,
   Canvas,
   CanvasCard,
@@ -37,6 +39,18 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  FundraisingDashboard,
+  FundraisingOrganizationProfile,
+  ItemSubmission,
+  PublicItemIntakePayload,
+  AuctionCategory,
+  PublicBidderBill,
+  FundraisingReceipt,
+  DonationCampaign,
+  PublicDonationCampaign,
+  DonationCheckoutResult,
+  PublicDonationStatus,
+  FundraisingReports,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -230,6 +244,60 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       startConnectOnboarding: () => client.post<StripeConnectStatus>("/billing/connect/onboarding"),
     },
 
+    fundraising: {
+      getProfile: () => client.get<FundraisingOrganizationProfile>("/fundraising/profile"),
+      updateProfile: (profile) => client.patch<FundraisingOrganizationProfile>("/fundraising/profile", profile),
+      listCategories: () => client.get<AuctionCategory[]>("/fundraising/categories"),
+      createCategory: (name) => client.post<AuctionCategory>("/fundraising/categories", { name }),
+      listSubmissions: (eventId) => client.get<ItemSubmission[]>(`/events/${eventId}/item-submissions`),
+      updateSubmission: (eventId, submissionId, patch) => client.patch<ItemSubmission>(`/events/${eventId}/item-submissions/${submissionId}`, patch),
+      dashboard: (eventId) => client.get<FundraisingDashboard>(`/events/${eventId}/fundraising-dashboard`),
+      extendItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; extensionMinutes: number }>(`/events/${eventId}/auction/${itemId}/extend`, { minutes }),
+      reopenItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; status: "open" }>(`/events/${eventId}/auction/${itemId}/reopen`, { minutes }),
+      getPublicIntake: async (auctionToken) => {
+        try {
+          return await publicRequest<PublicItemIntakePayload>(`/public/auctions/${auctionToken}/intake`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      submitPublicItem: (auctionToken, draft) => publicRequest<PublicItemIntakePayload>(`/public/auctions/${auctionToken}/intake`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
+      uploadPublicItemImage: async (auctionToken, file) =>
+        (await publicUpload<{ url: string }>(`/public/auctions/${auctionToken}/intake/upload`, file)).url,
+      buildBills: (eventId) => client.post<{ created: number; bills: PublicBidderBill[] }>(`/events/${eventId}/bidder-bills/build`),
+      sendBills: (eventId) => client.post<{ sent: number; autoCharged: number; failed: number }>(`/events/${eventId}/bidder-bills/send`),
+      refundBill: (eventId, billId) => client.post<PublicBidderBill>(`/events/${eventId}/bidder-bills/${billId}/refund`),
+      getPublicBill: async (token) => {
+        try { return await publicRequest<PublicBidderBill>(`/public/bills/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      payPublicBill: (token, coverFees) => publicRequest<{ url: string }>(`/public/bills/${token}/checkout`, { method: "POST", body: JSON.stringify({ coverFees }) }),
+      getPublicReceipt: async (token) => {
+        try { return await publicRequest<{ receipt: FundraisingReceipt; organization: { legalName: string; ein: string; orgType: string }; eventTitle: string | null }>(`/public/receipts/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      listCampaigns: (eventId) => client.get<DonationCampaign[]>(`/fundraising/campaigns${eventId ? `?eventId=${encodeURIComponent(eventId)}` : ""}`),
+      createCampaign: (draft) => client.post<DonationCampaign>("/fundraising/campaigns", draft),
+      getPublicCampaign: async (token) => {
+        try { return await publicRequest<PublicDonationCampaign>(`/public/donations/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      createDonationCheckout: (token, draft) => publicRequest<DonationCheckoutResult>(`/public/donations/${token}/checkout`, { method: "POST", body: JSON.stringify(draft) }),
+      getDonationStatus: async (token, donationId) => {
+        try { return await publicRequest<PublicDonationStatus>(`/public/donations/${token}/status/${encodeURIComponent(donationId)}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      previewBroadcast: (eventId, draft) => client.post<{ recipients: number }>(`/events/${eventId}/fundraising-broadcasts/preview`, draft),
+      sendBroadcast: (eventId, draft) => client.post<{ recipients: number; sent: number; failed: number }>(`/events/${eventId}/fundraising-broadcasts/send`, draft),
+      recordLiveSale: (eventId, itemId, paddleNumbers, amountCents) => client.post<{ winners: number }>(`/events/${eventId}/auction/${itemId}/live-sale`, { paddleNumbers, amountCents }),
+      undoLiveSale: (eventId, itemId) => client.post<{ reopened: true }>(`/events/${eventId}/auction/${itemId}/undo-sale`),
+      reports: (eventId) => client.get<FundraisingReports>(`/events/${eventId}/fundraising-reports`),
+    },
+
     assistant: {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
       preview: (brief: PlanningPreviewBrief) => client.post<PlanningSuggestions>("/assistant/preview", brief),
@@ -408,6 +476,18 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       offerSecondChance: (eventId, itemId) => client.post<{ status: "winner-notified"; paymentUrl: string | null }>(`/events/${eventId}/auction/${itemId}/second-chance`),
       listOrders: (eventId) => client.get<AuctionOrder[]>(`/events/${eventId}/auction-orders`),
       refundOrder: (eventId, orderId) => client.post<AuctionOrder>(`/events/${eventId}/auction-orders/${orderId}/refund`),
+      getBidderProfile: async (token, bidderToken) => {
+        try {
+          return await publicRequest<PublicBidderProfile>(`/public/auctions/${token}/bidders/${bidderToken}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      setupBidderWallet: (token, bidderToken) => publicRequest<{ url: string }>(`/public/auctions/${token}/bidders/${bidderToken}/wallet`, { method: "POST" }),
+      setWatch: (token, bidderToken, itemId, watched) => publicRequest<{ watched: boolean }>(`/public/auctions/${token}/bidders/${bidderToken}/watches/${itemId}`, { method: "POST", body: JSON.stringify({ watched }) }),
+      createPledge: (token, bidderToken, amountCents, channel) => publicRequest<FundraisingPledge>(`/public/auctions/${token}/bidders/${bidderToken}/pledges`, { method: "POST", body: JSON.stringify({ amountCents, channel }) }),
+      buyNow: (token, bidderToken, itemId) => publicRequest<{ won: true; amountCents: number }>(`/public/auctions/${token}/bidders/${bidderToken}/items/${itemId}/buy-now`, { method: "POST" }),
     },
     sponsorships: eventScoped<Sponsorship, never, never>(client, "sponsorships") as DataAdapter["sponsorships"],
 
@@ -449,8 +529,13 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
             ticketTypeId,
             buyerName: buyer.name,
             buyerEmail: buyer.contact,
+            buyerPhone: buyer.phone,
+            gradeTags: buyer.grades ?? [],
             quantity: buyer.quantity,
             guestNames: buyer.guestNames ?? [],
+            donationAddOnCents: buyer.donationAddOnCents ?? 0,
+            benefitsDeclined: buyer.benefitsDeclined === true,
+            autoChargeOptIn: buyer.autoChargeOptIn === true,
           }),
         }),
       listOrders: (eventId) => client.get<TicketOrder[]>(`/events/${eventId}/ticket-orders`),

@@ -113,6 +113,7 @@ import {
   notifyWorkAssignment,
   notifyAuctionOutbid,
   notifyAuctionDonorThankYou,
+  notifyCombinedFundraisingReceipt,
 } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
@@ -124,6 +125,9 @@ import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes
 import { buildUniqueAttendanceReport, normalizeAttendeeName, type UniqueAttendeeRecord } from "../data/attendanceReport.ts";
 import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 import { auctionCatalogReadiness } from "../data/commerce.ts";
+import { bidIncrementCents } from "../data/fundraising.ts";
+import { allocateAuctionBidder } from "./auctionBidderAllocation.ts";
+import { errorMessages } from "./errorMessage.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -3401,16 +3405,30 @@ export const auction = eventScoped({
     title: str(body, "title"),
     description: optStr(body, "description"),
     imageUrl: optStr(body, "imageUrl"),
+    photoUrls: Array.isArray(body.photoUrls) ? body.photoUrls.filter((value): value is string => typeof value === "string").slice(0, 5) : [],
+    estimatedValueCents: optInt(body, "estimatedValueCents"),
     startingBidCents: optInt(body, "startingBidCents"),
     currentBidCents: optInt(body, "currentBidCents"),
     fairMarketValueCents: optInt(body, "fairMarketValueCents"),
     winnerName: optStr(body, "winnerName"),
     donorName: optStr(body, "donorName"),
     donorId: optStr(body, "donorId"),
+    itemSubmissionId: optStr(body, "itemSubmissionId"),
+    itemType: str(body, "itemType", str(body, "auctionType", "silent")),
     category: optStr(body, "category"),
     restrictions: optStr(body, "restrictions"),
     expiresAt: parseOptionalDate(body.expiresAt, "expiresAt"),
     deliveryDetails: optStr(body, "deliveryDetails"),
+    deliveryMethod: optStr(body, "deliveryMethod"),
+    creditText: optStr(body, "creditText"),
+    showFairMarketValue: optBool(body, "showFairMarketValue") ?? true,
+    buyNowCents: optInt(body, "buyNowCents"),
+    reserveCents: optInt(body, "reserveCents"),
+    incrementRule: str(body, "incrementRule", "tiered"),
+    closingWave: optStr(body, "closingWave"),
+    notesToSchool: optStr(body, "notesToSchool"),
+    isServiceOrUse: optBool(body, "isServiceOrUse") ?? false,
+    overFiveThousandFlag: (optInt(body, "fairMarketValueCents") ?? 0) > 500_000,
     bidIncrementCents: optInt(body, "bidIncrementCents"),
     readinessStatus: str(body, "readinessStatus", "draft"),
     isPublished: optBool(body, "isPublished") ?? false,
@@ -3429,16 +3447,31 @@ export const auction = eventScoped({
   patch: {
     title: (b) => str(b, "title"),
     description: (b) => optStr(b, "description"),
+    imageUrl: (b) => optStr(b, "imageUrl"),
+    photoUrls: (b) => Array.isArray(b.photoUrls) ? b.photoUrls.filter((value): value is string => typeof value === "string").slice(0, 5) : [],
+    estimatedValueCents: (b) => optInt(b, "estimatedValueCents"),
     startingBidCents: (b) => optInt(b, "startingBidCents"),
     currentBidCents: (b) => optInt(b, "currentBidCents"),
     fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
     winnerName: (b) => optStr(b, "winnerName"),
     donorName: (b) => optStr(b, "donorName"),
     donorId: (b) => optStr(b, "donorId"),
+    itemSubmissionId: (b) => optStr(b, "itemSubmissionId"),
+    itemType: (b) => str(b, "itemType", "silent"),
     category: (b) => optStr(b, "category"),
     restrictions: (b) => optStr(b, "restrictions"),
     expiresAt: (b) => parseOptionalDate(b.expiresAt, "expiresAt"),
     deliveryDetails: (b) => optStr(b, "deliveryDetails"),
+    deliveryMethod: (b) => optStr(b, "deliveryMethod"),
+    creditText: (b) => optStr(b, "creditText"),
+    showFairMarketValue: (b) => b.showFairMarketValue !== false,
+    buyNowCents: (b) => optInt(b, "buyNowCents"),
+    reserveCents: (b) => optInt(b, "reserveCents"),
+    incrementRule: (b) => str(b, "incrementRule", "tiered"),
+    closingWave: (b) => optStr(b, "closingWave"),
+    notesToSchool: (b) => optStr(b, "notesToSchool"),
+    isServiceOrUse: (b) => Boolean(b.isServiceOrUse),
+    overFiveThousandFlag: (b) => Boolean(b.overFiveThousandFlag),
     bidIncrementCents: (b) => optInt(b, "bidIncrementCents"),
     readinessStatus: (b) => str(b, "readinessStatus", "draft"),
     isPublished: (b) => Boolean(b.isPublished),
@@ -3466,6 +3499,10 @@ function toAuctionDonor(row: typeof s.auctionDonors.$inferSelect): AuctionDonor 
     contactName: row.contactName,
     email: row.email,
     phone: row.phone,
+    donorKind: row.donorKind === "business" ? "business" : "family",
+    website: row.website,
+    logoUrl: row.logoUrl,
+    gradeTags: row.gradeTags,
     publicToken: row.publicToken,
     solicitedBy: row.solicitedBy,
     solicitationStatus: row.solicitationStatus,
@@ -3501,6 +3538,10 @@ export const auctionDonors = {
       contactName: optStr(body, "contactName"),
       email: optStr(body, "email")?.toLowerCase() ?? null,
       phone: optStr(body, "phone"),
+      donorKind: str(body, "donorKind", "family"),
+      website: optStr(body, "website"),
+      logoUrl: optStr(body, "logoUrl"),
+      gradeTags: Array.isArray(body.gradeTags) ? body.gradeTags.filter((value): value is string => typeof value === "string") : [],
       publicToken: crypto.randomUUID(),
       solicitedBy: optStr(body, "solicitedBy"),
       solicitationStatus: str(body, "solicitationStatus", "prospect") as "prospect",
@@ -3519,6 +3560,10 @@ export const auctionDonors = {
       contactName: (b) => optStr(b, "contactName"),
       email: (b) => optStr(b, "email")?.toLowerCase() ?? null,
       phone: (b) => optStr(b, "phone"),
+      donorKind: (b) => str(b, "donorKind", "family"),
+      website: (b) => optStr(b, "website"),
+      logoUrl: (b) => optStr(b, "logoUrl"),
+      gradeTags: (b) => Array.isArray(b.gradeTags) ? b.gradeTags.filter((value): value is string => typeof value === "string") : [],
       solicitedBy: (b) => optStr(b, "solicitedBy"),
       solicitationStatus: (b) => str(b, "solicitationStatus", "prospect"),
       previousDonations: (b) => optStr(b, "previousDonations"),
@@ -3618,6 +3663,13 @@ function toAuctionBidder(row: typeof s.auctionBidders.$inferSelect): AuctionBidd
     name: row.name,
     email: row.email,
     phone: row.phone,
+    householdId: row.householdId,
+    attendeeId: row.attendeeId,
+    paddleNumber: row.paddleNumber,
+    hasPaymentMethod: Boolean(row.paymentMethodId),
+    autoChargeOptIn: row.autoChargeOptIn,
+    checkedInAt: row.checkedInAt?.toISOString() ?? null,
+    phoneVerifiedAt: row.phoneVerifiedAt?.toISOString() ?? null,
     participantType: row.participantType,
     publicToken: row.publicToken,
     status: row.status === "blocked" ? "blocked" : "active",
@@ -3716,6 +3768,7 @@ export const auctionManagement = {
       amountCents: bid.amountCents,
       maximumAmountCents: bid.maximumAmountCents,
       isAutomatic: bid.isAutomatic,
+      channel: bid.channel === "in_room" ? "in_room" : "remote",
       createdAt: bid.createdAt.toISOString(),
     }));
   },
@@ -3755,26 +3808,38 @@ export const auctionManagement = {
 function toPublicAuctionItem(
   item: typeof s.auctionItems.$inferSelect,
   bidCount: number,
+  bidHistory: Array<{ amountCents: number; bidderLabel: string; placedAt: string }> = [],
 ): PublicAuctionItem {
   return {
     id: item.id,
     title: item.title,
     description: item.description,
     imageUrl: item.imageUrl,
+    photoUrls: item.photoUrls,
+    estimatedValueCents: item.estimatedValueCents,
     category: item.category,
     restrictions: item.restrictions,
     expiresAt: item.expiresAt?.toISOString() ?? null,
     deliveryDetails: item.deliveryDetails,
-    fairMarketValueCents: item.fairMarketValueCents,
+    fairMarketValueCents: item.showFairMarketValue ? item.fairMarketValueCents : null,
+    showFairMarketValue: item.showFairMarketValue,
+    creditText: item.creditText,
     startingBidCents: item.startingBidCents ?? 0,
     currentBidCents: item.currentBidCents,
     bidIncrementCents: item.bidIncrementCents ?? 100,
     opensAt: item.opensAt?.toISOString() ?? null,
     closesAt: item.closesAt?.toISOString() ?? null,
     status: item.status,
+    itemType: item.itemType,
+    buyNowCents: item.buyNowCents,
+    reserveCents: item.reserveCents,
+    quantityAvailable: item.quantityAvailable,
+    closingWave: item.closingWave,
+    extensionMinutes: item.extensionMinutes,
     lotNumber: item.lotNumber,
     bidCount,
     hasBid: bidCount > 0,
+    bidHistory,
   };
 }
 
@@ -3805,7 +3870,25 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
       .groupBy(s.auctionItems.id)
       .orderBy(asc(s.auctionItems.lotNumber), asc(s.auctionItems.title))
     : [];
-  const items = rows.map((row) => toPublicAuctionItem(row.item, Number(row.bidCount)));
+  const publicBidRows = rows.length > 0 ? await db.select({ itemId: s.auctionBids.itemId, amountCents: s.auctionBids.amountCents, createdAt: s.auctionBids.createdAt, paddleNumber: s.auctionBidders.paddleNumber, bidderName: s.auctionBidders.name })
+    .from(s.auctionBids)
+    .innerJoin(s.auctionBidders, eq(s.auctionBids.bidderId, s.auctionBidders.id))
+    .where(inArray(s.auctionBids.itemId, rows.map((row) => row.item.id)))
+    .orderBy(desc(s.auctionBids.createdAt)) : [];
+  const items = rows.map((row) => toPublicAuctionItem(row.item, Number(row.bidCount), publicBidRows.filter((bid) => bid.itemId === row.item.id).slice(0, 20).map((bid) => ({
+    amountCents: bid.amountCents,
+    bidderLabel: settings.bidHistoryPrivacy === "initials"
+      ? bid.bidderName.split(/\s+/).filter(Boolean).map((part) => `${part[0]!.toUpperCase()}.`).join(" ")
+      : `Paddle ${bid.paddleNumber ?? "-"}`,
+    placedAt: bid.createdAt.toISOString(),
+  }))));
+  const announcements = await db.select({ id: s.fundraisingBroadcasts.id, message: s.fundraisingBroadcasts.message, sentAt: s.fundraisingBroadcasts.sentAt })
+    .from(s.fundraisingBroadcasts)
+    .where(and(eq(s.fundraisingBroadcasts.eventId, eventRow.event.id), sql`${s.fundraisingBroadcasts.channels} @> array['in_app']::text[]`))
+    .orderBy(desc(s.fundraisingBroadcasts.sentAt)).limit(3);
+  const [campaign] = await db.select({ token: s.donationCampaigns.publicToken }).from(s.donationCampaigns)
+    .where(and(eq(s.donationCampaigns.eventId, eventRow.event.id), eq(s.donationCampaigns.isActive, true)))
+    .orderBy(asc(s.donationCampaigns.createdAt)).limit(1);
   return {
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
@@ -3813,6 +3896,8 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
     settings,
     categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))].sort(),
     items,
+    announcements: announcements.map((announcement) => ({ ...announcement, sentAt: announcement.sentAt.toISOString() })),
+    donationToken: campaign?.token ?? null,
   };
 }
 
@@ -3823,23 +3908,44 @@ export async function registerPublicAuctionBidder(token: string, body: Body): Pr
   if (!settings.registrationOpen) throw new HttpError(409, "Bidder registration is closed.");
   const email = str(body, "email").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid email address.");
+  const phone = str(body, "phone").trim();
+  if (phone.replace(/\D/g, "").length < 10) throw new HttpError(400, "Enter a valid mobile phone number.");
+  const grades = Array.isArray(body.grades) ? body.grades.filter((value): value is string => typeof value === "string").slice(0, 5) : [];
   const participantType = str(body, "participantType", "gala") as "gala" | "remote";
   if (participantType === "remote" && !settings.allowRemoteBidders) throw new HttpError(409, "Remote bidding is not open for this auction.");
-  const [bidder] = await db.insert(s.auctionBidders).values({
-    id: newId("abidder"),
+  const householdId = newId("hh");
+  const [household] = await db.insert(s.households).values({
+    id: householdId,
+    workspaceId: event.workspaceId,
+    displayName: str(body, "name"),
+    primaryEmail: email,
+    phone,
+    creditName: str(body, "name"),
+  }).onConflictDoNothing({ target: [s.households.workspaceId, s.households.primaryEmail] }).returning({ id: s.households.id });
+  const bidder = await allocateAuctionBidder({
     workspaceId: event.workspaceId,
     eventId: event.id,
     name: str(body, "name"),
     email,
-    phone: optStr(body, "phone"),
+    phone,
+    householdId: household?.id ?? null,
+    attendeeId: null,
+    paymentMethodId: null,
+    stripeCustomerId: null,
+    autoChargeOptIn: body.autoChargeOptIn === true,
+    checkedInAt: null,
     participantType,
     publicToken: crypto.randomUUID(),
-    sortOrder: 0,
-  }).onConflictDoNothing({ target: [s.auctionBidders.eventId, s.auctionBidders.email] }).returning();
-  if (!bidder) {
-    throw new HttpError(409, "This email is already registered. Continue on the original device or ask the organizer for help.");
+    updateExisting: false,
+  });
+  if (household && grades.length > 0) {
+    const schoolYear = String(new Date(event.startsAt).getUTCFullYear());
+    await db.insert(s.householdGrades).values(grades.map((grade) => ({
+      id: newId("hhg"), householdId: household.id, workspaceId: event.workspaceId, grade, schoolYear,
+    }))).onConflictDoNothing();
   }
-  return toAuctionBidder(bidder);
+  const [bidderRow] = await db.select().from(s.auctionBidders).where(eq(s.auctionBidders.id, bidder.id)).limit(1);
+  return { ...toAuctionBidder(bidderRow!), grades };
 }
 
 export async function placePublicAuctionBid(
@@ -3849,17 +3955,34 @@ export async function placePublicAuctionBid(
   maximumAmountCents: number,
 ): Promise<PublicAuctionBidResult> {
   if (!Number.isInteger(maximumAmountCents) || maximumAmountCents <= 0) throw new HttpError(400, "Enter a valid bid amount.");
+  const [bidder] = await db.select({
+    id: s.auctionBidders.id,
+    name: s.auctionBidders.name,
+    email: s.auctionBidders.email,
+    paymentMethodId: s.auctionBidders.paymentMethodId,
+  }).from(s.auctionBidders).where(eq(s.auctionBidders.publicToken, bidderToken)).limit(1);
+  if (!bidder) throw new HttpError(404, "This bidder registration is not available.");
+  if (!bidder.paymentMethodId) throw new HttpError(409, "Add a card or wallet before placing a bid.");
   const [before] = await db.select({
     bidderId: s.auctionItems.winningBidderId,
     bidderName: s.auctionBidders.name,
     bidderEmail: s.auctionBidders.email,
     itemTitle: s.auctionItems.title,
     eventTitle: s.events.title,
+    incrementRule: s.auctionItems.incrementRule,
+    currentBidCents: s.auctionItems.currentBidCents,
+    startingBidCents: s.auctionItems.startingBidCents,
   }).from(s.auctionItems)
     .innerJoin(s.events, eq(s.auctionItems.eventId, s.events.id))
     .leftJoin(s.auctionBidders, eq(s.auctionItems.winningBidderId, s.auctionBidders.id))
     .where(and(eq(s.events.auctionPublicToken, auctionToken), eq(s.auctionItems.id, itemId)))
     .limit(1);
+  if (before?.incrementRule === "tiered") {
+    await db.update(s.auctionItems).set({
+      bidIncrementCents: bidIncrementCents(before.currentBidCents ?? before.startingBidCents),
+      updatedAt: new Date(),
+    }).where(eq(s.auctionItems.id, itemId));
+  }
   let result: { leader_bidder_id: string; current_bid_cents: number; minimum_next_bid_cents: number } | undefined;
   try {
     const rows = await db.execute<{ leader_bidder_id: string; current_bid_cents: number; minimum_next_bid_cents: number }>(sql`
@@ -3867,14 +3990,12 @@ export async function placePublicAuctionBid(
     `);
     result = rows.rows[0];
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("closed") || message.includes("not open") || message.includes("minimum") || message.includes("not available")) {
+    const message = errorMessages(error).join(" ");
+    if (message.includes("closed") || message.includes("not open") || message.includes("minimum") || message.includes("not available") || message.includes("finalized bidder bill")) {
       throw new HttpError(409, message.replace(/^.*error:\s*/i, ""));
     }
     throw error;
   }
-  const [bidder] = await db.select({ id: s.auctionBidders.id, name: s.auctionBidders.name, email: s.auctionBidders.email }).from(s.auctionBidders)
-    .where(eq(s.auctionBidders.publicToken, bidderToken)).limit(1);
   const item = await publicAuctionItem(itemId);
   if (!result || !bidder || !item) throw new HttpError(404, "This auction item is not available.");
   const [latestBid] = await db.select({ id: s.auctionBids.id }).from(s.auctionBids)
@@ -4076,6 +4197,8 @@ export const tickets = {
       name: str(body, "name"),
       description: optStr(body, "description"),
       priceCents: optInt(body, "priceCents") ?? 0,
+      fairMarketValueCents: optInt(body, "fairMarketValueCents"),
+      benefitsDescription: optStr(body, "benefitsDescription"),
       quantityTotal: optInt(body, "quantityTotal") ?? 0,
       isActive: optBool(body, "isActive") ?? true,
       sortOrder: Number(maxOrder) + 1,
@@ -4101,6 +4224,8 @@ export const tickets = {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
       priceCents: (b) => optInt(b, "priceCents") ?? 0,
+      fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
+      benefitsDescription: (b) => optStr(b, "benefitsDescription"),
       quantityTotal: (b) => optInt(b, "quantityTotal") ?? 0,
       isActive: (b) => Boolean(b.isActive),
     });
@@ -4121,6 +4246,14 @@ export const tickets = {
 
 /* ------------------------------------------------------------------ raffle */
 
+async function requireRaffleEnabled(ctx: RequestContext): Promise<void> {
+  const [workspace] = await db.select({ enabled: s.workspaces.raffleEnabled, confirmed: s.workspaces.raffleRegistrationConfirmed })
+    .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+  if (!workspace?.enabled || !workspace.confirmed) {
+    throw new HttpError(409, "Raffle tools are off. Confirm the organization's California raffle registration in Fundraising settings before creating or selling raffle tickets.");
+  }
+}
+
 export const raffle = {
   async list(ctx: RequestContext, eventId: string) {
     const rows = await db
@@ -4131,6 +4264,7 @@ export const raffle = {
     return rows.map(map.toRaffleItem);
   },
   async create(ctx: RequestContext, eventId: string, body: Body) {
+    await requireRaffleEnabled(ctx);
     const id = newId("raf");
     await db.insert(s.raffleItems).values({
       id,
@@ -4146,6 +4280,7 @@ export const raffle = {
     return map.toRaffleItem(row!);
   },
   async update(ctx: RequestContext, eventId: string, id: string, body: Body) {
+    await requireRaffleEnabled(ctx);
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
@@ -4176,6 +4311,7 @@ export const raffle = {
   },
 
   async sellTickets(ctx: RequestContext, eventId: string, raffleItemId: string, body: Body) {
+    await requireRaffleEnabled(ctx);
     const quantity = optInt(body, "quantity") ?? 1;
     const id = newId("rt");
 
@@ -4215,10 +4351,48 @@ export const raffle = {
       quantity,
     });
     const [row] = await db.select().from(s.raffleTickets).where(eq(s.raffleTickets.id, id)).limit(1);
+    const [receiptContext] = await db.select({ workspace: s.workspaces, event: s.events }).from(s.events)
+      .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
+      .where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))).limit(1);
+    if (row && receiptContext?.workspace.legalName && receiptContext.workspace.ein && receiptContext.workspace.fundraisingOrgType) {
+      const amountCents = updated.ticketPriceCents * quantity;
+      const [sequence] = await db.update(s.workspaces).set({ receiptSequence: sql`${s.workspaces.receiptSequence} + 1`, updatedAt: new Date() })
+        .where(eq(s.workspaces.id, ctx.workspaceId)).returning({ value: s.workspaces.receiptSequence });
+      const receiptNumber = `${receiptContext.workspace.receiptPrefix}-${new Date().getUTCFullYear()}-${String(sequence!.value).padStart(6, "0")}`;
+      const receiptId = newId("receipt");
+      const publicToken = crypto.randomUUID();
+      await db.insert(s.fundraisingReceipts).values({
+        id: receiptId,
+        workspaceId: ctx.workspaceId,
+        eventId,
+        type: "raffle",
+        receiptNumber,
+        publicToken,
+        payerName: row.buyerName,
+        payerEmail: row.buyerEmail,
+        amountCents,
+        fairMarketValueCents: amountCents,
+        deductibleCents: 0,
+        lineItems: [{ kind: "raffle", description: `${updated.name} raffle ticket × ${quantity} - not tax-deductible`, amountCents, fairMarketValueCents: amountCents, deductibleCents: 0 }],
+      });
+      await notifyCombinedFundraisingReceipt({
+        receiptId,
+        to: row.buyerEmail,
+        payerName: row.buyerName,
+        organizationName: receiptContext.workspace.legalName,
+        eventTitle: receiptContext.event.title,
+        receiptNumber,
+        amountCents,
+        deductibleCents: 0,
+        receiptUrl: `${appOrigin().replace(/\/$/, "")}/receipt/${publicToken}`,
+        corrected: false,
+      });
+    }
     return map.toRaffleTicket(row!);
   },
 
   async draw(ctx: RequestContext, eventId: string, raffleItemId: string) {
+    await requireRaffleEnabled(ctx);
     const entries = await db
       .select()
       .from(s.raffleTickets)

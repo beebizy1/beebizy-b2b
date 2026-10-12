@@ -365,6 +365,104 @@
       "when": 1791838503984,
       "tag": "0051_unified_event_capacity_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791840278024,
+      "tag": "0052_fundraising_ux_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791842755856,
+      "tag": "0053_fundraising_receipt_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791842761795,
+      "tag": "0054_fundraising_integrity_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791843698169,
+      "tag": "0055_ticket_bidder_continuity",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791843706806,
+      "tag": "0056_live_bid_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1791843796639,
+      "tag": "0057_donation_receipt_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1791843876350,
+      "tag": "0058_bidder_bill_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1791844194024,
+      "tag": "0059_bidder_bill_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1791844644998,
+      "tag": "0060_atomic_bidder_allocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1791844724350,
+      "tag": "0061_bill_receipt_and_ticket_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1791844728600,
+      "tag": "0062_bill_receipt_foreign_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1791845303383,
+      "tag": "0063_fundraising_review_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1791845388388,
+      "tag": "0064_final_bill_activity_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1791845449730,
+      "tag": "0065_freeze_finalized_bill_activity",
+      "breakpoints": true
     }
   ]
 }

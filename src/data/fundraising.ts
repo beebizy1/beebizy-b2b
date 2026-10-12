@@ -34,8 +34,32 @@ export function taxDeductibleCents(item: {
  */
 export function bidIncrementCents(currentCents: Cents | null | undefined): Cents {
   const current = currentCents ?? 0;
-  if (current >= 1_000_000) return 50_000;
-  if (current >= 100_000) return 10_000;
-  if (current >= 10_000) return 2_500;
-  return 1_000;
+  if (current >= 500_000) return 10_000;
+  if (current >= 100_000) return 5_000;
+  if (current >= 50_000) return 2_500;
+  if (current >= 10_000) return 1_000;
+  return 500;
+}
+
+export function suggestedStartingBidCents(estimatedValueCents: Cents | null): Cents | null {
+  return estimatedValueCents == null ? null : Math.round(estimatedValueCents * 0.4);
+}
+
+export type DeductibleTransactionKind = "auction" | "ticket" | "donation" | "fund-a-need" | "sponsorship" | "raffle";
+
+export function deductibleAmountCents(input: {
+  kind: DeductibleTransactionKind;
+  amountCents: Cents;
+  fairMarketValueCents: Cents | null;
+  benefitsDeclined?: boolean;
+}): Cents {
+  if (input.kind === "raffle") return 0;
+  if (input.kind === "donation" || input.kind === "fund-a-need" || input.benefitsDeclined) return input.amountCents;
+  return Math.max(0, input.amountCents - (input.fairMarketValueCents ?? 0));
+}
+
+/** Gross-up so the organization nets the intended gift after 2.9% + 30¢ and Beebizy 2%. */
+export function coveredFeesCents(baseAmountCents: Cents): Cents {
+  if (baseAmountCents <= 0) return 0;
+  return Math.ceil((baseAmountCents + 30) / (1 - 0.049)) - baseAmountCents;
 }

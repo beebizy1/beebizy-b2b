@@ -65,6 +65,10 @@ export const auctionReadinessStatus = pgEnum("auction_readiness_status", ["draft
 export const auctionParticipantType = pgEnum("auction_participant_type", ["gala", "remote"]);
 export const auctionFulfillmentStatus = pgEnum("auction_fulfillment_status", ["pending", "ready", "picked-up", "delivered"]);
 export const invitationDeliveryStatus = pgEnum("invitation_delivery_status", ["pending", "sent", "opened", "registered", "failed"]);
+export const fundraisingOrgType = pgEnum("fundraising_org_type", ["nonprofit_501c3", "government"]);
+export const itemSubmissionStatus = pgEnum("item_submission_status", ["submitted", "needs_info", "approved", "rejected", "in_catalog", "sold", "delivered"]);
+export const bidderBillStatus = pgEnum("bidder_bill_status", ["draft", "pending", "paid", "failed", "refunding", "refunded"]);
+export const receiptType = pgEnum("receipt_type", ["contribution", "quid_pro_quo", "in_kind", "raffle"]);
 
 /* ------------------------------------------------------------------ workspaces */
 
@@ -79,6 +83,14 @@ export const workspaces = pgTable("workspaces", {
   clerkOrgId: text("clerk_org_id").unique(),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   timeZone: text("time_zone").notNull().default("America/Los_Angeles"),
+  legalName: text("legal_name"),
+  ein: text("ein"),
+  fundraisingOrgType: fundraisingOrgType("fundraising_org_type"),
+  receiptPrefix: text("receipt_prefix").notNull().default("BEE"),
+  receiptSequence: integer("receipt_sequence").notNull().default(0),
+  raffleEnabled: boolean("raffle_enabled").notNull().default(false),
+  raffleRegistrationConfirmed: boolean("raffle_registration_confirmed").notNull().default(false),
+  defaultCoverFees: boolean("default_cover_fees").notNull().default(false),
   subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("beta"),
   /*
    * Pilot workspaces predate the published Solo limits and are not held to them.
@@ -316,6 +328,42 @@ export const guests = pgTable(
     index("guests_workspace_idx").on(table.workspaceId),
     // One person per email per workspace, so checkout can upsert instead of duplicating.
     uniqueIndex("guests_workspace_contact_idx").on(table.workspaceId, table.contact),
+  ],
+);
+
+export const households = pgTable(
+  "households",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    displayName: text("display_name").notNull(),
+    primaryEmail: text("primary_email").notNull(),
+    phone: text("phone"),
+    creditName: text("credit_name"),
+    stripeCustomerId: text("stripe_customer_id"),
+    isAnonymous: boolean("is_anonymous").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("households_workspace_email_idx").on(table.workspaceId, table.primaryEmail),
+    index("households_workspace_idx").on(table.workspaceId),
+  ],
+);
+
+export const householdGrades = pgTable(
+  "household_grades",
+  {
+    id: id(),
+    householdId: text("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    grade: text("grade").notNull(),
+    schoolYear: text("school_year").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("household_grades_unique_idx").on(table.householdId, table.grade, table.schoolYear),
+    index("household_grades_workspace_idx").on(table.workspaceId, table.schoolYear),
   ],
 );
 
@@ -758,6 +806,8 @@ export const ticketTypes = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     priceCents: bigint("price_cents", { mode: "number" }).notNull().default(0),
+    fairMarketValueCents: bigint("fair_market_value_cents", { mode: "number" }),
+    benefitsDescription: text("benefits_description"),
     /** 0 means unlimited. */
     quantityTotal: integer("quantity_total").notNull().default(0),
     /** Maintained by the checkout transaction, never by the client. */
@@ -789,9 +839,14 @@ export const ticketOrders = pgTable(
       .references(() => ticketTypes.id, { onDelete: "cascade" }),
     buyerName: text("buyer_name").notNull(),
     buyerEmail: text("buyer_email").notNull(),
+    buyerPhone: text("buyer_phone"),
+    gradeTags: text("grade_tags").array().notNull().default([]),
     quantity: integer("quantity").notNull().default(1),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     applicationFeeCents: bigint("application_fee_cents", { mode: "number" }).notNull().default(0),
+    donationAddOnCents: bigint("donation_add_on_cents", { mode: "number" }).notNull().default(0),
+    benefitsDeclined: boolean("benefits_declined").notNull().default(false),
+    autoChargeOptIn: boolean("auto_charge_opt_in").notNull().default(false),
     currency: varchar("currency", { length: 3 }).notNull().default("USD"),
     status: paymentStatus("status").notNull().default("pending"),
     stripeSessionId: text("stripe_session_id").unique(),
@@ -851,6 +906,10 @@ export const auctionDonors = pgTable(
     contactName: text("contact_name"),
     email: text("email"),
     phone: text("phone"),
+    donorKind: text("donor_kind").notNull().default("family"),
+    website: text("website"),
+    logoUrl: text("logo_url"),
+    gradeTags: text("grade_tags").array().notNull().default([]),
     publicToken: text("public_token").notNull().unique(),
     solicitedBy: text("solicited_by"),
     solicitationStatus: auctionDonorStatus("solicitation_status").notNull().default("prospect"),
@@ -869,16 +928,30 @@ export const auctionItems = pgTable(
     title: text("title").notNull(),
     description: text("description"),
     imageUrl: text("image_url"),
+    photoUrls: text("photo_urls").array().notNull().default([]),
+    estimatedValueCents: bigint("estimated_value_cents", { mode: "number" }),
     startingBidCents: bigint("starting_bid_cents", { mode: "number" }),
     currentBidCents: bigint("current_bid_cents", { mode: "number" }),
     fairMarketValueCents: bigint("fair_market_value_cents", { mode: "number" }),
     winnerName: text("winner_name"),
     donorName: text("donor_name"),
     donorId: text("donor_id").references(() => auctionDonors.id, { onDelete: "set null" }),
+    itemSubmissionId: text("item_submission_id"),
+    itemType: text("item_type").notNull().default("silent"),
     category: text("category"),
     restrictions: text("restrictions"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     deliveryDetails: text("delivery_details"),
+    deliveryMethod: text("delivery_method"),
+    creditText: text("credit_text"),
+    showFairMarketValue: boolean("show_fair_market_value").notNull().default(true),
+    buyNowCents: bigint("buy_now_cents", { mode: "number" }),
+    reserveCents: bigint("reserve_cents", { mode: "number" }),
+    incrementRule: text("increment_rule").notNull().default("tiered"),
+    closingWave: text("closing_wave"),
+    notesToSchool: text("notes_to_school"),
+    isServiceOrUse: boolean("is_service_or_use").notNull().default(false),
+    overFiveThousandFlag: boolean("over_five_thousand_flag").notNull().default(false),
     bidIncrementCents: bigint("bid_increment_cents", { mode: "number" }),
     readinessStatus: auctionReadinessStatus("readiness_status").notNull().default("draft"),
     isPublished: boolean("is_published").notNull().default(false),
@@ -906,6 +979,14 @@ export const auctionBidders = pgTable(
     name: text("name").notNull(),
     email: text("email").notNull(),
     phone: text("phone"),
+    householdId: text("household_id").references(() => households.id, { onDelete: "set null" }),
+    attendeeId: text("attendee_id").references(() => guests.id, { onDelete: "set null" }),
+    paddleNumber: integer("paddle_number"),
+    paymentMethodId: text("payment_method_id"),
+    stripeCustomerId: text("stripe_customer_id"),
+    autoChargeOptIn: boolean("auto_charge_opt_in").notNull().default(false),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+    phoneVerifiedAt: timestamp("phone_verified_at", { withTimezone: true }),
     participantType: auctionParticipantType("participant_type").notNull().default("gala"),
     publicToken: text("public_token").notNull().unique(),
     status: text("status").notNull().default("active"),
@@ -927,6 +1008,7 @@ export const auctionBids = pgTable(
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     maximumAmountCents: bigint("maximum_amount_cents", { mode: "number" }).notNull(),
     isAutomatic: boolean("is_automatic").notNull().default(false),
+    channel: text("channel").notNull().default("remote"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -957,6 +1039,257 @@ export const auctionOrders = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [uniqueIndex("auction_orders_item_bidder_idx").on(table.itemId, table.bidderId)],
+);
+
+export const auctionCategories = pgTable(
+  "auction_categories",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex("auction_categories_workspace_name_idx").on(table.workspaceId, table.name)],
+);
+
+export const itemSubmissions = pgTable(
+  "item_submissions",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    donorId: text("donor_id").references(() => auctionDonors.id, { onDelete: "set null" }),
+    submittedBy: text("submitted_by").notNull(),
+    publicToken: text("public_token").notNull().unique(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    status: itemSubmissionStatus("status").notNull().default("submitted"),
+    auctionItemId: text("auction_item_id").references(() => auctionItems.id, { onDelete: "set null" }),
+    requestedChanges: text("requested_changes"),
+    submittedAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index("item_submissions_event_status_idx").on(table.eventId, table.status)],
+);
+
+export const auctionWatches = pgTable(
+  "auction_watches",
+  {
+    itemId: text("item_id").notNull().references(() => auctionItems.id, { onDelete: "cascade" }),
+    bidderId: text("bidder_id").notNull().references(() => auctionBidders.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [primaryKey({ columns: [table.itemId, table.bidderId] })],
+);
+
+export const auctionItemWinners = pgTable(
+  "auction_item_winners",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    itemId: text("item_id").notNull().references(() => auctionItems.id, { onDelete: "cascade" }),
+    bidderId: text("bidder_id").notNull().references(() => auctionBidders.id, { onDelete: "cascade" }),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    awardedAt: createdAt(),
+    awardedBy: text("awarded_by").notNull(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+  },
+  (table) => [uniqueIndex("auction_item_winners_item_bidder_idx").on(table.itemId, table.bidderId)],
+);
+
+export const fundraisingPledges = pgTable(
+  "fundraising_pledges",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    bidderId: text("bidder_id").references(() => auctionBidders.id, { onDelete: "set null" }),
+    householdId: text("household_id").references(() => households.id, { onDelete: "set null" }),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    appeal: text("appeal").notNull().default("fund-a-need"),
+    designation: text("designation"),
+    channel: text("channel").notNull().default("remote"),
+    anonymous: boolean("anonymous").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (table) => [index("fundraising_pledges_event_idx").on(table.eventId, table.createdAt)],
+);
+
+export const bidderBills = pgTable(
+  "bidder_bills",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    bidderId: text("bidder_id").notNull().references(() => auctionBidders.id, { onDelete: "cascade" }),
+    publicToken: text("public_token").notNull().unique(),
+    itemsTotalCents: bigint("items_total_cents", { mode: "number" }).notNull().default(0),
+    pledgesTotalCents: bigint("pledges_total_cents", { mode: "number" }).notNull().default(0),
+    feesCoveredCents: bigint("fees_covered_cents", { mode: "number" }).notNull().default(0),
+    totalCents: bigint("total_cents", { mode: "number" }).notNull().default(0),
+    applicationFeeCents: bigint("application_fee_cents", { mode: "number" }).notNull().default(0),
+    status: bidderBillStatus("status").notNull().default("draft"),
+    stripeSessionId: text("stripe_session_id").unique(),
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
+    stripeConnectedAccountId: text("stripe_connected_account_id"),
+    receiptId: text("receipt_id"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    stripeRefundId: text("stripe_refund_id"),
+    reminder24SentAt: timestamp("reminder_24_sent_at", { withTimezone: true }),
+    reminder72SentAt: timestamp("reminder_72_sent_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    checkoutGeneration: integer("checkout_generation").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex("bidder_bills_event_bidder_idx").on(table.eventId, table.bidderId)],
+);
+
+export const fundraisingReceipts = pgTable(
+  "fundraising_receipts",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").references(() => events.id, { onDelete: "set null" }),
+    householdId: text("household_id").references(() => households.id, { onDelete: "set null" }),
+    type: receiptType("type").notNull(),
+    receiptNumber: text("receipt_number").notNull(),
+    publicToken: text("public_token").notNull().unique(),
+    payerName: text("payer_name").notNull(),
+    payerEmail: text("payer_email"),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    fairMarketValueCents: bigint("fair_market_value_cents", { mode: "number" }).notNull().default(0),
+    deductibleCents: bigint("deductible_cents", { mode: "number" }).notNull().default(0),
+    lineItems: jsonb("line_items").$type<Array<Record<string, unknown>>>().notNull().default([]),
+    supersedesReceiptId: text("supersedes_receipt_id"),
+    issuedAt: createdAt(),
+    pdfUrl: text("pdf_url"),
+  },
+  (table) => [
+    uniqueIndex("fundraising_receipts_number_idx").on(table.workspaceId, table.receiptNumber),
+    index("fundraising_receipts_household_idx").on(table.householdId, table.issuedAt),
+  ],
+);
+
+export const inKindAcknowledgments = pgTable(
+  "in_kind_acknowledgments",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    itemSubmissionId: text("item_submission_id").references(() => itemSubmissions.id, { onDelete: "set null" }),
+    donorId: text("donor_id").references(() => auctionDonors.id, { onDelete: "set null" }),
+    donorName: text("donor_name").notNull(),
+    donorEmail: text("donor_email"),
+    description: text("description").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("in_kind_acknowledgments_event_idx").on(table.eventId, table.createdAt)],
+);
+
+export const fundraisingBroadcasts = pgTable(
+  "fundraising_broadcasts",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    sentBy: text("sent_by").notNull(),
+    audienceFilter: jsonb("audience_filter").$type<Record<string, unknown>>().notNull().default({}),
+    itemIds: text("item_ids").array().notNull().default([]),
+    channels: text("channels").array().notNull().default([]),
+    message: text("message").notNull(),
+    recipientCount: integer("recipient_count").notNull().default(0),
+    sentAt: createdAt(),
+  },
+  (table) => [index("fundraising_broadcasts_event_idx").on(table.eventId, table.sentAt)],
+);
+
+export const auctionCloseChanges = pgTable(
+  "auction_close_changes",
+  {
+    id: id(),
+    itemId: text("item_id").notNull().references(() => auctionItems.id, { onDelete: "cascade" }),
+    previousClosesAt: timestamp("previous_closes_at", { withTimezone: true }),
+    newClosesAt: timestamp("new_closes_at", { withTimezone: true }).notNull(),
+    reason: text("reason").notNull(),
+    changedBy: text("changed_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("auction_close_changes_item_idx").on(table.itemId, table.createdAt)],
+);
+
+export const bidderOtpChallenges = pgTable(
+  "bidder_otp_challenges",
+  {
+    id: id(),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    phone: text("phone").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("bidder_otp_event_phone_idx").on(table.eventId, table.phone, table.createdAt)],
+);
+
+export const donationCampaigns = pgTable(
+  "donation_campaigns",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").references(() => events.id, { onDelete: "set null" }),
+    publicToken: text("public_token").notNull().unique(),
+    title: text("title").notNull(),
+    description: text("description"),
+    goalCents: bigint("goal_cents", { mode: "number" }),
+    suggestedAmountsCents: bigint("suggested_amounts_cents", { mode: "number" }).array().notNull().default([]),
+    designations: text("designations").array().notNull().default([]),
+    defaultDesignation: text("default_designation"),
+    monthlyEnabled: boolean("monthly_enabled").notNull().default(true),
+    coverFeesEnabled: boolean("cover_fees_enabled").notNull().default(true),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index("donation_campaigns_workspace_idx").on(table.workspaceId, table.createdAt)],
+);
+
+export const donations = pgTable(
+  "donations",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id").notNull().references(() => donationCampaigns.id, { onDelete: "cascade" }),
+    eventId: text("event_id").references(() => events.id, { onDelete: "set null" }),
+    householdId: text("household_id").references(() => households.id, { onDelete: "set null" }),
+    donorName: text("donor_name").notNull(),
+    donorEmail: text("donor_email").notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    frequency: text("frequency").notNull().default("one-time"),
+    designation: text("designation"),
+    tributeType: text("tribute_type"),
+    tributeName: text("tribute_name"),
+    tributeNotifyEmail: text("tribute_notify_email"),
+    anonymous: boolean("anonymous").notNull().default(false),
+    employer: text("employer"),
+    gradeTags: text("grade_tags").array().notNull().default([]),
+    feesCoveredCents: bigint("fees_covered_cents", { mode: "number" }).notNull().default(0),
+    status: paymentStatus("status").notNull().default("pending"),
+    stripeSessionId: text("stripe_session_id").unique(),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    subscriptionEndedAt: timestamp("subscription_ended_at", { withTimezone: true }),
+    receiptId: text("receipt_id").references(() => fundraisingReceipts.id, { onDelete: "set null" }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index("donations_campaign_idx").on(table.campaignId, table.createdAt)],
 );
 
 export const raffleItems = pgTable(

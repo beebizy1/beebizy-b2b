@@ -78,6 +78,7 @@ vi.mock("./billing", () => ({
 }));
 vi.mock("./commercePayments", () => ({
   createPublicTicketCheckout: vi.fn(),
+  createBidderWalletSetup: vi.fn(),
   createStripeConnectOnboarding: vi.fn(),
   getStripeConnectStatus: vi.fn(),
   listTicketOrders: vi.fn(),
@@ -88,11 +89,47 @@ vi.mock("./commercePayments", () => ({
   listAuctionOrders: vi.fn(),
   refundAuctionOrder: vi.fn(),
   getPublicTicketOrderStatus: vi.fn(),
+  buildBidderBills: vi.fn(),
+  sendBidderBills: vi.fn(),
+  publicBidderBill: vi.fn(),
+  createBidderBillCheckout: vi.fn(),
+  publicFundraisingReceipt: vi.fn(),
+  createDonationCheckout: vi.fn(),
+  publicDonationStatus: vi.fn(),
+  refundBidderBill: vi.fn(),
+  sendDueBidderBillReminders: vi.fn(),
 }));
 vi.mock("./ticketInvitations", () => ({
   listTicketInvitations: vi.fn(),
   openTicketInvitation: vi.fn(),
   sendTicketInvitations: vi.fn(),
+}));
+vi.mock("./fundraisingUx", () => ({
+  createAuctionCategory: vi.fn(),
+  extendAuctionItem: vi.fn(),
+  reopenAuctionItem: vi.fn(),
+  fundraisingDashboard: vi.fn(),
+  getFundraisingOrganizationProfile: vi.fn(),
+  listAuctionCategories: vi.fn(),
+  listItemSubmissions: vi.fn(),
+  publicItemIntake: vi.fn(),
+  submitPublicItem: vi.fn(),
+  updateFundraisingOrganizationProfile: vi.fn(),
+  updateItemSubmission: vi.fn(),
+  publicBidderProfile: vi.fn(),
+  toggleAuctionWatch: vi.fn(),
+  createPublicPledge: vi.fn(),
+  createDonationCampaign: vi.fn(),
+  listDonationCampaigns: vi.fn(),
+  publicDonationCampaign: vi.fn(),
+  fundraisingReports: vi.fn(),
+  previewFundraisingBroadcast: vi.fn(),
+  sendFundraisingBroadcast: vi.fn(),
+  sendDueClosingAlerts: vi.fn(),
+  sendAllDueClosingAlerts: vi.fn(),
+  recordLiveAuctionSale: vi.fn(),
+  undoLiveAuctionSale: vi.fn(),
+  buyNowAuctionItem: vi.fn(),
 }));
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
@@ -101,6 +138,31 @@ const { deposits, feedback, events, registrations, eventByShareToken, publicAgen
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation } = await import("./ticketInvitations");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
+const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
+const { sendAllDueClosingAlerts } = await import("./fundraisingUx");
+
+describe("fundraising maintenance", () => {
+  it("requires the cron secret and runs both due-job families", async () => {
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/fundraising/maintenance"))).status).toBe(401);
+    vi.mocked(sendAllDueClosingAlerts).mockResolvedValue(3);
+    vi.mocked(sendDueBidderBillReminders).mockResolvedValue({ sent: 2, failed: 0 });
+    const response = await handleRequest(new Request("http://localhost/api/fundraising/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, eventsChecked: 3, reminders: { sent: 2, failed: 0 } });
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("public donation completion", () => {
+  it("returns only the token-scoped payment status and receipt link", async () => {
+    vi.mocked(publicDonationStatus).mockResolvedValue({ donationId: "donation-1", status: "paid", receiptToken: "receipt-token" });
+    const response = await handleRequest(new Request("http://localhost/api/public/donations/campaign-token/status/donation-1"));
+    expect(response.status).toBe(200);
+    expect(publicDonationStatus).toHaveBeenCalledWith("campaign-token", "donation-1");
+    expect(await response.json()).toEqual({ donationId: "donation-1", status: "paid", receiptToken: "receipt-token" });
+  });
+});
 
 describe("single-event collaborator routing", () => {
   const context = {

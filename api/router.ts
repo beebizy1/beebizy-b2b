@@ -25,6 +25,7 @@ import { effectivePlan, planHasCapability, type PlanCapability } from "../src/da
 import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
 import {
   createPublicTicketCheckout,
+  createBidderWalletSetup,
   createStripeConnectOnboarding,
   getStripeConnectStatus,
   listTicketOrders,
@@ -35,11 +36,47 @@ import {
   listAuctionOrders,
   refundAuctionOrder,
   getPublicTicketOrderStatus,
+  buildBidderBills,
+  sendBidderBills,
+  publicBidderBill,
+  createBidderBillCheckout,
+  refundBidderBill,
+  publicFundraisingReceipt,
+  createDonationCheckout,
+  publicDonationStatus,
+  sendDueBidderBillReminders,
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
+import {
+  createAuctionCategory,
+  extendAuctionItem,
+  reopenAuctionItem,
+  fundraisingDashboard,
+  getFundraisingOrganizationProfile,
+  listAuctionCategories,
+  listItemSubmissions,
+  publicItemIntake,
+  submitPublicItem,
+  updateFundraisingOrganizationProfile,
+  updateItemSubmission,
+  publicBidderProfile,
+  toggleAuctionWatch,
+  createPublicPledge,
+  createDonationCampaign,
+  listDonationCampaigns,
+  publicDonationCampaign,
+  fundraisingReports,
+  previewFundraisingBroadcast,
+  sendFundraisingBroadcast,
+  sendDueClosingAlerts,
+  sendAllDueClosingAlerts,
+  recordLiveAuctionSale,
+  undoLiveAuctionSale,
+  buyNowAuctionItem,
+} from "../src/server/fundraisingUx.ts";
 
 export const config = { runtime: "nodejs", api: { bodyParser: false } };
 
@@ -226,6 +263,15 @@ async function handlePublic(segments: string[], method: string, request: Request
     return handleLead(request);
   }
 
+  if (segments[0] === "fundraising" && segments[1] === "maintenance") {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) return json({ error: "Fundraising maintenance is not configured." }, 503);
+    if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+    const [eventsChecked, reminders] = await Promise.all([sendAllDueClosingAlerts(), sendDueBidderBillReminders()]);
+    return json({ ok: true, eventsChecked, reminders });
+  }
+
   if (segments[0] === "billing" && segments[1] === "webhook") {
     if (method !== "POST") return json({ error: "Method not allowed" }, 405);
     return json(await handleStripeWebhook(request));
@@ -240,8 +286,13 @@ async function handlePublic(segments: string[], method: string, request: Request
         ticketTypeId: z.string().min(1).max(100),
         buyerName: z.string().trim().min(1).max(160),
         buyerEmail: z.string().trim().email().max(320),
+        buyerPhone: z.string().trim().min(10).max(40),
+        gradeTags: z.array(z.enum(["TK", "K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "Alumni", "Faculty/Staff", "Friend of school"])).max(5).default([]),
         quantity: z.number().int().min(1).max(100),
         guestNames: z.array(z.string().trim().min(1).max(160)).max(100),
+        donationAddOnCents: z.number().int().min(0).max(10_000_000).default(0),
+        benefitsDeclined: z.boolean().default(false),
+        autoChargeOptIn: z.boolean().default(false),
       }).parse(await readBody(request));
       return json(await createPublicTicketCheckout(segments[2], input, request), 201);
     }
@@ -276,13 +327,50 @@ async function handlePublic(segments: string[], method: string, request: Request
   }
 
   if (segments[0] === "public" && segments[1] === "auctions" && segments[2]) {
+    if (segments[3] === "intake" && segments.length === 4 && method === "GET") {
+      const intake = await publicItemIntake(segments[2]);
+      return intake ? json(intake) : json({ error: "This donation link is no longer active." }, 404);
+    }
+    if (segments[3] === "intake" && segments.length === 4 && method === "POST") {
+      return json(await submitPublicItem(segments[2], await readBody(request) as never), 201);
+    }
+    if (segments[3] === "intake" && segments[4] === "upload" && segments.length === 5 && method === "POST") {
+      if (!await publicItemIntake(segments[2])) return json({ error: "This donation link is no longer active." }, 404);
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Auction image storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
+      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB each.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
+      const blob = await put(`auction/intake/${segments[2]}/${safeName}`, file, { access: "public", addRandomSuffix: true, contentType: file.type });
+      return json({ url: blob.url });
+    }
     if (method === "GET" && segments.length === 3) {
+      await sendDueClosingAlerts(segments[2]);
       await settleDueAuctionItems(segments[2], request);
       const auction = await repos.publicAuction(segments[2]);
       return auction ? json(auction) : json({ error: "This auction link is no longer active." }, 404);
     }
     if (method === "POST" && segments[3] === "bidders" && segments.length === 4) {
       return json(await repos.registerPublicAuctionBidder(segments[2], await readBody(request)), 201);
+    }
+    if (segments[3] === "bidders" && segments[4] && segments.length === 5 && method === "GET") {
+      const bidder = await publicBidderProfile(segments[2], segments[4]);
+      return bidder ? json(bidder) : json({ error: "This bidder registration is not available." }, 404);
+    }
+    if (segments[3] === "bidders" && segments[4] && segments[5] === "wallet" && segments.length === 6 && method === "POST") {
+      return json(await createBidderWalletSetup(segments[2], segments[4], request), 201);
+    }
+    if (segments[3] === "bidders" && segments[4] && segments[5] === "watches" && segments[6] && segments.length === 7 && method === "POST") {
+      const body = await readBody(request);
+      return json(await toggleAuctionWatch(segments[2], segments[4], segments[6], body.watched !== false));
+    }
+    if (segments[3] === "bidders" && segments[4] && segments[5] === "pledges" && segments.length === 6 && method === "POST") {
+      const body = await readBody(request);
+      return json(await createPublicPledge(
+        segments[2], segments[4], Number(body.amountCents ?? 0), body.channel === "in_room" ? "in_room" : "remote",
+      ), 201);
     }
     if (
       method === "POST" && segments[3] === "bidders" && segments[4] &&
@@ -296,6 +384,9 @@ async function handlePublic(segments: string[], method: string, request: Request
         segments[6],
         body.maximumAmountCents,
       ), 201);
+    }
+    if (method === "POST" && segments[3] === "bidders" && segments[4] && segments[5] === "items" && segments[6] && segments[7] === "buy-now" && segments.length === 8) {
+      return json(await buyNowAuctionItem(segments[2], segments[4], segments[6]), 201);
     }
     return json({ error: "Method not allowed" }, 405);
   }
@@ -331,6 +422,34 @@ async function handlePublic(segments: string[], method: string, request: Request
     return location
       ? Response.redirect(new URL(location, request.url), 302)
       : json({ error: "This invitation link is no longer active." }, 404);
+  }
+
+  if (segments[0] === "public" && segments[1] === "bills" && segments[2]) {
+    if (method === "GET" && segments.length === 3) {
+      const bill = await publicBidderBill(segments[2]);
+      return bill ? json(bill) : json({ error: "This bidder bill is not available." }, 404);
+    }
+    if (method === "POST" && segments[3] === "checkout" && segments.length === 4) {
+      const body = await readBody(request);
+      return json(await createBidderBillCheckout(segments[2], body.coverFees === true, request), 201);
+    }
+  }
+  if (segments[0] === "public" && segments[1] === "receipts" && segments[2] && segments.length === 3 && method === "GET") {
+    const receipt = await publicFundraisingReceipt(segments[2]);
+    return receipt ? json(receipt) : json({ error: "This receipt is not available." }, 404);
+  }
+  if (segments[0] === "public" && segments[1] === "donations" && segments[2]) {
+    if (method === "GET" && segments.length === 3) {
+      const campaign = await publicDonationCampaign(segments[2]);
+      return campaign ? json(campaign) : json({ error: "This donation campaign is not active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "checkout" && segments.length === 4) {
+      return json(await createDonationCheckout(segments[2], await readBody(request) as never, request), 201);
+    }
+    if (method === "GET" && segments[3] === "status" && segments[4] && segments.length === 5) {
+      const status = await publicDonationStatus(segments[2], segments[4]);
+      return status ? json(status) : json({ error: "This donation is not available." }, 404);
+    }
   }
 
   if (segments[0] === "public" && segments[1] === "assignments" && segments[2]) {
@@ -533,6 +652,16 @@ async function handleAuthed(
       return notFound();
     }
 
+    case "fundraising": {
+      if (a === "profile" && method === "GET") return json(await getFundraisingOrganizationProfile(ctx));
+      if (a === "profile" && method === "PATCH") return json(await updateFundraisingOrganizationProfile(ctx, body as never));
+      if (a === "categories" && method === "GET") return json(await listAuctionCategories(ctx.workspaceId));
+      if (a === "categories" && method === "POST") return json(await createAuctionCategory(ctx, String(body.name ?? "")), 201);
+      if (a === "campaigns" && method === "GET") return json(await listDonationCampaigns(ctx, typeof url.searchParams.get("eventId") === "string" ? url.searchParams.get("eventId")! : undefined));
+      if (a === "campaigns" && method === "POST") return json(await createDonationCampaign(ctx, body as never), 201);
+      return notFound();
+    }
+
     /* -------------------------------------------------------------- assistant */
     case "assistant": {
       if (a === "chat" && method === "POST") {
@@ -684,6 +813,42 @@ async function handleAuthed(
           }
           return notFound();
         }
+        if (b === "item-submissions") {
+          if (!c && method === "GET") return json(await listItemSubmissions(ctx, a));
+          if (c && method === "PATCH") {
+            return json(await updateItemSubmission(ctx, a, c, {
+              status: String(body.status ?? "submitted") as never,
+              requestedChanges: typeof body.requestedChanges === "string" ? body.requestedChanges : null,
+            }));
+          }
+          return notFound();
+        }
+        if (b === "fundraising-dashboard" && !c && method === "GET") {
+          return json(await fundraisingDashboard(ctx, a));
+        }
+        if (b === "fundraising-reports" && !c && method === "GET") {
+          return json(await fundraisingReports(ctx, a));
+        }
+        if (b === "fundraising-broadcasts") {
+          if (c === "preview" && method === "POST") return json(await previewFundraisingBroadcast(ctx, a, {
+            audience: String(body.audience ?? "all"),
+            itemIds: Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [],
+          }));
+          if (c === "send" && method === "POST") return json(await sendFundraisingBroadcast(ctx, a, {
+            audience: String(body.audience ?? "all"),
+            itemIds: Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [],
+            channels: Array.isArray(body.channels) ? body.channels.filter((value): value is string => typeof value === "string") : ["email"],
+            message: String(body.message ?? ""),
+          }));
+          return notFound();
+        }
+        if (b === "bidder-bills") {
+          if (!c && method === "GET") return json(await buildBidderBills(ctx, a));
+          if (c === "build" && method === "POST") return json(await buildBidderBills(ctx, a));
+          if (c === "send" && method === "POST") return json(await sendBidderBills(ctx, a));
+          if (c && segments[4] === "refund" && method === "POST") return json(await refundBidderBill(ctx, a, c));
+          return notFound();
+        }
         if (b === "auction" && c && segments[4] === "publish" && method === "POST") {
           return json(await repos.auctionManagement.publishItem(ctx, a, c, body.published !== false));
         }
@@ -692,6 +857,24 @@ async function handleAuthed(
         }
         if (b === "auction" && c && segments[4] === "second-chance" && method === "POST") {
           return json(await offerAuctionSecondChance(ctx, a, c, request));
+        }
+        if (b === "auction" && c && segments[4] === "extend" && method === "POST") {
+          return json(await extendAuctionItem(ctx, a, c, Number(body.minutes ?? 0)));
+        }
+        if (b === "auction" && c && segments[4] === "reopen" && method === "POST") {
+          return json(await reopenAuctionItem(ctx, a, c, Number(body.minutes ?? 5)));
+        }
+        if (b === "auction" && c && segments[4] === "live-sale" && method === "POST") {
+          return json(await recordLiveAuctionSale(
+            ctx,
+            a,
+            c,
+            Array.isArray(body.paddleNumbers) ? body.paddleNumbers.map(Number) : [],
+            Number(body.amountCents ?? 0),
+          ));
+        }
+        if (b === "auction" && c && segments[4] === "undo-sale" && method === "POST") {
+          return json(await undoLiveAuctionSale(ctx, a, c));
         }
         if (b === "ticket-orders") {
           if (!c && method === "GET") return json(await listTicketOrders(ctx, a));

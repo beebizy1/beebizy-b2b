@@ -1,0 +1,2 @@
+ALTER TABLE "fundraising_receipts" ADD COLUMN "public_token" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "fundraising_receipts" ADD CONSTRAINT "fundraising_receipts_public_token_unique" UNIQUE("public_token");

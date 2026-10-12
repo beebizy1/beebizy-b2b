@@ -238,7 +238,7 @@ export async function notifyAuctionWinner(input: {
   eventTitle: string;
   itemTitle: string;
   amountCents: number;
-  paymentUrl: string;
+  paymentUrl: string | null;
 }): Promise<EmailOutcome> {
   const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
   return sendEmail({
@@ -248,14 +248,14 @@ export async function notifyAuctionWinner(input: {
     subject: `You won ${emailSubjectPart(input.itemTitle)}`,
     text: [
       `Hi ${input.bidderName},`, "", `You won ${input.itemTitle} for ${amount} at ${input.eventTitle}.`,
-      `Complete payment securely: ${input.paymentUrl}`,
+      input.paymentUrl ? `Complete payment securely: ${input.paymentUrl}` : "This item was added to your single end-of-night event bill.",
     ].join("\n"),
     html: brandedEmail({
       title: "You won!",
       greeting: `Hi ${input.bidderName},`,
       paragraphs: [`You won ${input.itemTitle} at ${input.eventTitle}.`],
       details: [["Winning item", input.itemTitle], ["Winning bid", amount]],
-      action: { label: "Complete secure payment", url: input.paymentUrl },
+      action: input.paymentUrl ? { label: "Complete secure payment", url: input.paymentUrl } : undefined,
     }),
   });
 }
@@ -325,6 +325,64 @@ export async function notifyAuctionDonorThankYou(input: {
         "Your contribution helps make this event possible.",
       ],
       details: [["Event", input.eventTitle], ["Property received", itemSummary], ["Date received", input.receivedDate]],
+    }),
+  });
+}
+
+export async function notifyBidderBill(input: {
+  billId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  totalCents: number;
+  billUrl: string;
+}): Promise<EmailOutcome> {
+  const total = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.totalCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `bidder-bill-${input.billId}`,
+    subject: `Your event bill - ${emailSubjectPart(input.eventTitle)}`,
+    text: [`Hi ${input.bidderName},`, "", `Your combined bill for ${input.eventTitle} is ${total}.`, `Review and pay: ${input.billUrl}`].join("\n"),
+    html: brandedEmail({
+      title: "Your combined event bill",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [`Your auction items and Fund-a-Need gifts for ${input.eventTitle} are together in one bill.`],
+      details: [["Total", total]],
+      action: { label: "Review and pay", url: input.billUrl },
+    }),
+  });
+}
+
+export async function notifyCombinedFundraisingReceipt(input: {
+  receiptId: string;
+  to: string;
+  payerName: string;
+  organizationName: string;
+  eventTitle: string;
+  receiptNumber: string;
+  amountCents: number;
+  deductibleCents: number;
+  receiptUrl: string;
+  corrected: boolean;
+}): Promise<EmailOutcome> {
+  const money = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `fundraising-receipt-${input.receiptId}`,
+    subject: `${input.corrected ? "Corrected receipt" : "Receipt"} ${input.receiptNumber} - ${emailSubjectPart(input.eventTitle)}`,
+    text: [
+      `Hi ${input.payerName},`, "", `${input.organizationName} issued ${input.corrected ? "a corrected" : "your"} receipt for ${input.eventTitle}.`,
+      `Amount paid: ${money(input.amountCents)}`, `Tax-deductible amount: ${money(input.deductibleCents)}`,
+      `View and download: ${input.receiptUrl}`,
+    ].join("\n"),
+    html: brandedEmail({
+      title: input.corrected ? "Corrected fundraising receipt" : "Your fundraising receipt",
+      greeting: `Hi ${input.payerName},`,
+      paragraphs: [`${input.organizationName} issued this receipt for ${input.eventTitle}.`],
+      details: [["Receipt", input.receiptNumber], ["Amount paid", money(input.amountCents)], ["Tax-deductible amount", money(input.deductibleCents)]],
+      action: { label: "View and download receipt", url: input.receiptUrl },
     }),
   });
 }

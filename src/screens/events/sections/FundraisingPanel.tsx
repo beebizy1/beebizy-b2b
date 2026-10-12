@@ -21,6 +21,7 @@ import {
   Pencil,
   Plus,
   Receipt,
+  RotateCcw,
   Trash2,
   TrendingUp,
   Trophy,
@@ -62,8 +63,12 @@ import {
   useAddSponsorship,
   useAuctionItems,
   useEventRegistrations,
+  useExtendAuctionItem,
   useRemoveAuctionItem,
   useRemoveSponsorship,
+  useReopenAuctionItem,
+  usePreviewFundraisingBroadcast,
+  useSendFundraisingBroadcast,
   useSponsorships,
   useUpdateAuctionItem,
   useUpdateSponsorship,
@@ -79,6 +84,7 @@ import {
   type Sponsorship,
   type SponsorshipTier,
 } from "@/data/entities";
+import FundraisingOperationsPanel from "./FundraisingOperationsPanel";
 
 const PAYMENT_METHODS = ["Check", "Credit Card", "Cash", "Venmo", "Zelle", "Wire Transfer", "PayPal", "Other"];
 
@@ -594,7 +600,11 @@ function MessageBlastDialog({
   onClose: () => void;
 }) {
   const { data: registrations, isLoading } = useEventRegistrations(eventId);
+  const previewBroadcast = usePreviewFundraisingBroadcast();
+  const sendBroadcast = useSendFundraisingBroadcast();
   const [message, setMessage] = useState("");
+  const [audience, setAudience] = useState("all");
+  const [channels, setChannels] = useState<string[]>(["email"]);
 
   const recipients = (registrations ?? []).filter((r) => r.status !== "cancelled" && r.guest?.contact);
 
@@ -638,6 +648,11 @@ function MessageBlastDialog({
             </p>
           </div>
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5"><Label htmlFor="blast-audience">Audience</Label><select id="blast-audience" value={audience} onChange={(event) => setAudience(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="all">All bidders</option><option value="in_room">In room</option><option value="remote">Remote</option><option value="bidders">Bidders on this item</option><option value="watchers">Watchers</option><option value="outbid">Outbid bidders</option></select></div>
+            <div className="space-y-1.5"><Label>Channels</Label><div className="flex flex-wrap gap-3 pt-2 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={channels.includes("email")} onChange={(event) => setChannels((current) => event.target.checked ? [...new Set([...current, "email"])] : current.filter((item) => item !== "email"))} />Email</label><label className="flex items-center gap-2"><input type="checkbox" checked={channels.includes("in_app")} onChange={(event) => setChannels((current) => event.target.checked ? [...new Set([...current, "in_app"])] : current.filter((item) => item !== "in_app"))} />In-app banner</label><label className="flex items-center gap-2 text-muted-foreground"><input type="checkbox" disabled />SMS (awaiting provider)</label></div></div>
+          </div>
+
           <div className="overflow-hidden rounded-lg border border-hairline">
             <div className="flex items-center justify-between border-b border-hairline bg-surface-sunken px-3 py-2 text-xs font-semibold text-muted-foreground">
               <span>Recipients with a contact on file</span>
@@ -667,18 +682,17 @@ function MessageBlastDialog({
             )}
           </div>
 
-          <p className="rounded-lg border border-warning/30 bg-warning-tint px-3 py-2 text-xs text-warning-text">
-            No messaging provider is connected, so nothing is sent. Connect one to enable delivery.
-          </p>
+          <p className="rounded-lg border border-hairline bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">Every blast is logged. Email delivery is live; SMS remains disabled until the approved provider account is connected.</p>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button disabled title="Connect a messaging provider to enable delivery">
+          <Button variant="outline" disabled={previewBroadcast.isPending} onClick={() => previewBroadcast.mutate({ eventId, audience, itemIds: item ? [item.id] : [] }, { onSuccess: (result) => toast({ title: `${result.recipients} recipients match this audience` }) })}>Preview count</Button>
+          <Button disabled={!message.trim() || channels.length === 0 || sendBroadcast.isPending} onClick={() => sendBroadcast.mutate({ eventId, audience, itemIds: item ? [item.id] : [], channels, message: message.trim() }, { onSuccess: (result) => { toast({ title: `Broadcast sent to ${result.sent} people`, description: result.failed ? `${result.failed} failed.` : undefined }); onClose(); }, onError: (error) => toast({ title: "Couldn't send broadcast", description: error.message }) })}>
             <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
-            Send to {recipients.length} {recipients.length === 1 ? "attendee" : "attendees"}
+            Send broadcast
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -702,6 +716,9 @@ function AuctionCard({
   onDelete: () => void;
 }) {
   const { date: formatDate } = usePreferences();
+  const extendItem = useExtendAuctionItem();
+  const reopenItem = useReopenAuctionItem();
+  const fulfillItem = useUpdateAuctionItem();
   const deductible = taxDeductibleCents(item);
   const isPaid = item.paymentReceivedAt != null;
   const showReceipt = item.status === "won" && (item.currentBidCents ?? 0) > 0;
@@ -784,6 +801,8 @@ function AuctionCard({
           ) : null}
         </div>
 
+        {item.status === "open" ? <div className="flex flex-wrap items-center gap-2 border-t border-hairline pt-3"><span className="mr-1 text-xs font-medium text-muted-foreground">Extend:</span>{[1, 2, 5].map((minutes) => <Button key={minutes} size="sm" variant="outline" disabled={extendItem.isPending} onClick={() => extendItem.mutate({ eventId, itemId: item.id, minutes }, { onSuccess: () => toast({ title: `${item.title} extended ${minutes} minute${minutes === 1 ? "" : "s"}` }), onError: (error) => toast({ title: "Couldn't extend item", description: error.message }) })}>+{minutes}m</Button>)}</div> : item.status === "closed" ? <div className="border-t border-hairline pt-3"><Button size="sm" variant="outline" disabled={reopenItem.isPending} onClick={() => { if (!window.confirm(`Reopen ${item.title} for 5 minutes? The previous leader will be notified.`)) return; reopenItem.mutate({ eventId, itemId: item.id, minutes: 5 }, { onSuccess: () => toast({ title: `${item.title} reopened for 5 minutes` }), onError: (error) => toast({ title: "Couldn't reopen item", description: error.message }) }); }}><RotateCcw className="mr-1.5 size-3.5" />Reopen 5 minutes</Button></div> : null}
+
         {item.donorName || item.paymentMethod || item.paymentLink ? (
           <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-2 text-xs text-muted-foreground">
             {item.donorName ? (
@@ -860,6 +879,7 @@ function AuctionCard({
             ) : null}
           </div>
         ) : null}
+        {item.status === "won" ? <div className="flex items-center justify-between gap-3 border-t border-hairline pt-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pickup</p><p className="text-sm font-medium">{item.fulfillmentStatus?.replaceAll("-", " ") ?? "pending"}</p></div>{item.fulfillmentStatus !== "picked-up" && item.fulfillmentStatus !== "delivered" ? <Button size="sm" variant="outline" disabled={fulfillItem.isPending} onClick={() => fulfillItem.mutate({ eventId, id: item.id, patch: { fulfillmentStatus: "picked-up", fulfilledAt: new Date().toISOString() } }, { onSuccess: () => toast({ title: `${item.title} marked picked up` }), onError: (error) => toast({ title: "Couldn't update pickup", description: error.message }) })}>Mark picked up</Button> : <Pill tone="success">Complete</Pill>}</div> : null}
       </div>
     </div>
   );
@@ -897,6 +917,7 @@ export default function FundraisingPanel({ event }: { event: Event }) {
 
   return (
     <div className="space-y-10">
+      <FundraisingOperationsPanel event={event} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           label="Auction raised"

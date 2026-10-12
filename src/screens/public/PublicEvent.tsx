@@ -19,7 +19,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { useEventByShareToken, usePublicRegistration, usePublicTicketOrderStatus, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
-import type { Event, PublicRegistrationResult } from "@/data/entities";
+import { SCHOOL_GRADES, type Event, type PublicRegistrationResult, type SchoolGrade } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
@@ -337,7 +337,12 @@ export function PublicTicketsPage({ token }: { token: string }) {
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
+  const [grades, setGrades] = useState<SchoolGrade[]>([]);
   const [guestNames, setGuestNames] = useState<string[]>([""]);
+  const [donationAddOn, setDonationAddOn] = useState("");
+  const [benefitsDeclined, setBenefitsDeclined] = useState(false);
+  const [autoChargeOptIn, setAutoChargeOptIn] = useState(false);
   const [done, setDone] = useState(false);
   const checkoutOrderId = typeof window === "undefined"
     ? null
@@ -378,6 +383,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
           <Button asChild variant="outline" size="sm" className="mt-4">
             <Link href={`/e/${token}`}>Back to the event</Link>
           </Button>
+          {checkoutOrder?.auctionAccessUrl ? <Button className="ml-2 mt-4" onClick={() => window.location.assign(checkoutOrder.auctionAccessUrl!)}>Open auction and view paddle</Button> : null}
         </Panel>
       </PublicFrame>
     );
@@ -424,7 +430,10 @@ export function PublicTicketsPage({ token }: { token: string }) {
             className="space-y-6"
             onSubmit={(formEvent) => {
               formEvent.preventDefault();
-              if (!chosen || !name.trim() || !contact.trim()) return;
+              if (!chosen || !name.trim() || !contact.trim() || phone.replace(/\D/g, "").length < 10) {
+                toast({ title: "Add your mobile number", description: "A mobile number is required for auction access and event updates." });
+                return;
+              }
               const names = chosen.collectGuestNames
                 ? Array.from({ length: quantity }, (_, index) => (guestNames[index] || (index === 0 ? name : "")).trim())
                 : [name.trim()];
@@ -432,14 +441,20 @@ export function PublicTicketsPage({ token }: { token: string }) {
                 toast({ title: "Add every ticket holder", description: `Enter a full name for all ${quantity} tickets.` });
                 return;
               }
+              const donationAddOnCents = donationAddOn.trim() ? Math.max(0, Math.round(Number(donationAddOn) * 100)) : 0;
               purchase.mutate(
                 {
                   shareToken: token,
                   ticketTypeId: chosen.id,
                   name: name.trim(),
                   contact: contact.trim(),
+                  phone: phone.trim(),
+                  grades,
                   quantity,
                   guestNames: names,
+                  donationAddOnCents,
+                  benefitsDeclined,
+                  autoChargeOptIn,
                 },
                 {
                   onSuccess: (result) => {
@@ -535,6 +550,18 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   />
                 </div>
                 <div className="space-y-1.5">
+                  <Label htmlFor="buyer-phone">Mobile phone</Label>
+                  <Input id="buyer-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required autoComplete="tel" placeholder="(408) 555-0123" />
+                  <p className="text-xs text-muted-foreground">Used for auction access and important event updates.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="buyer-grades">School connection (optional)</Label>
+                  <select id="buyer-grades" multiple value={grades} onChange={(event) => setGrades(Array.from(event.currentTarget.selectedOptions, (option) => option.value as SchoolGrade).slice(0, 5))} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {SCHOOL_GRADES.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Choose up to five grades or community groups.</p>
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="buyer-quantity">How many</Label>
                   <Input
                     id="buyer-quantity"
@@ -585,12 +612,25 @@ export function PublicTicketsPage({ token }: { token: string }) {
                     </div>
                   </div>
                 ) : null}
+                {chosen ? (
+                  <div className="space-y-3 sm:col-span-2">
+                    {chosen.priceCents > 0 ? (
+                      <div className="rounded-lg bg-surface-sunken p-3 text-sm text-muted-foreground">
+                        <p><strong>Value of benefits:</strong> {formatMoney((chosen.fairMarketValueCents ?? 0) * quantity)}{chosen.benefitsDescription ? ` - ${chosen.benefitsDescription}` : ""}</p>
+                        <p><strong>Estimated deductible ticket portion:</strong> {formatMoney(benefitsDeclined ? chosen.priceCents * quantity : Math.max(0, (chosen.priceCents - (chosen.fairMarketValueCents ?? 0)) * quantity))}</p>
+                      </div>
+                    ) : null}
+                    <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={benefitsDeclined} onChange={(event) => setBenefitsDeclined(event.target.checked)} className="mt-1" /><span>I decline the meal, entertainment, or other ticket benefits. The organizer will treat the ticket payment as fully deductible where allowed.</span></label>
+                    <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={autoChargeOptIn} onChange={(event) => setAutoChargeOptIn(event.target.checked)} className="mt-1" /><span>If I bid or give, I authorize the organizer to charge this saved payment method for my combined event bill. My card will not be charged unless I win or give.</span></label>
+                    <div className="space-y-1.5"><Label htmlFor="ticket-donation-add-on">Add a fully deductible donation (optional)</Label><Input id="ticket-donation-add-on" inputMode="decimal" value={donationAddOn} onChange={(event) => setDonationAddOn(event.target.value)} placeholder="0.00" /></div>
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-5 py-4">
                 <p className="text-sm text-muted-foreground">
                   Total{" "}
                   <span data-numeric className="text-base font-semibold text-foreground">
-                    {chosen ? formatMoney(chosen.priceCents * quantity) : formatMoney(0)}
+                    {chosen ? formatMoney(chosen.priceCents * quantity + (Math.round(Number(donationAddOn || 0) * 100) || 0)) : formatMoney(0)}
                   </span>
                 </p>
                 <Button type="submit" disabled={!chosen || !name.trim() || !contact.trim() || purchase.isPending}>

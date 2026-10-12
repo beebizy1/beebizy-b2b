@@ -67,6 +67,11 @@ import FeedbackInbox from "@/screens/FeedbackInbox";
 import { PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
 import PublicAuctionPage from "@/screens/public/PublicAuction";
 import PublicAuctionDonationPage from "@/screens/public/PublicAuctionDonation";
+import PublicItemIntakePage from "@/screens/public/PublicItemIntake";
+import PublicBidderBillPage from "@/screens/public/PublicBidderBill";
+import PublicFundraisingReceiptPage from "@/screens/public/PublicFundraisingReceipt";
+import PublicDonationCampaignPage from "@/screens/public/PublicDonationCampaign";
+import PublicAuctionDisplayPage from "@/screens/public/PublicAuctionDisplay";
 import PublicAssignment from "@/screens/public/PublicAssignment";
 import PublicCheckIn from "@/screens/public/PublicCheckIn";
 import PublicRfp from "@/screens/public/PublicRfp";
@@ -194,8 +199,13 @@ function Routes() {
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>
+      <Route path="/auction/:token/display">{(params) => <PublicAuctionDisplayPage token={params.token} />}</Route>
       <Route path="/auction/:token">{(params) => <PublicAuctionPage token={params.token} />}</Route>
       <Route path="/donate/:token">{(params) => <PublicAuctionDonationPage token={params.token} />}</Route>
+      <Route path="/donate/event/:token">{(params) => <PublicItemIntakePage token={params.token} />}</Route>
+      <Route path="/bill/:token">{(params) => <PublicBidderBillPage token={params.token} />}</Route>
+      <Route path="/receipt/:token">{(params) => <PublicFundraisingReceiptPage token={params.token} />}</Route>
+      <Route path="/give/:token">{(params) => <PublicDonationCampaignPage token={params.token} />}</Route>
       <Route path="/e/:token/register/:segment">{(params) => <PublicRegistrationPage token={params.token} segment={params.segment} />}</Route>
       <Route path="/e/:token/volunteer">{(params) => <PublicVolunteerSignupPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>

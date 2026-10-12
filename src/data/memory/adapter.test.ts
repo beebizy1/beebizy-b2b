@@ -615,6 +615,7 @@ describe("tickets", () => {
     await memoryAdapter.tickets.purchase(shareToken, ticket!.id, {
       name: "Sam Buyer",
       contact: "sam.buyer@example.com",
+      phone: "408-555-0101",
       quantity: 2,
     });
 
@@ -633,6 +634,7 @@ describe("tickets", () => {
     await memoryAdapter.tickets.purchase(shareToken, ticket!.id, {
       name: known.name,
       contact: known.contact!.toUpperCase(),
+      phone: "408-555-0102",
       quantity: 1,
     });
     expect((await memoryAdapter.guests.list()).length).toBe(countBefore);
@@ -647,6 +649,7 @@ describe("tickets", () => {
       memoryAdapter.tickets.purchase(shareToken, table.id, {
         name: "Greedy",
         contact: "greedy@example.com",
+        phone: "408-555-0103",
         quantity: remaining + 1,
       }),
     ).rejects.toThrow(new RegExp(`Only ${remaining} left`));
@@ -655,7 +658,7 @@ describe("tickets", () => {
   it("refuses an unknown or revoked share token", async () => {
     const [ticket] = await memoryAdapter.tickets.list("evt-gala");
     await expect(
-      memoryAdapter.tickets.purchase("not-a-token", ticket!.id, { name: "A", contact: "a@b.c", quantity: 1 }),
+      memoryAdapter.tickets.purchase("not-a-token", ticket!.id, { name: "A", contact: "a@b.c", phone: "408-555-0104", quantity: 1 }),
     ).rejects.toThrow(/no longer active/i);
   });
 

@@ -63,6 +63,7 @@ import {
   useAuctionBidders,
   useAuctionBids,
   useRefundAuctionOrder,
+  useExtendAuctionItem,
   useUpdateBudgetItem,
   useUpdateSponsorship,
   useUpdateTicketType,
@@ -82,6 +83,8 @@ import {
 } from "@/data/entities";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
+import { csvCell } from "@/data/spreadsheet";
+import { fromDateTimeLocalInput, toDateTimeLocalInput } from "@/lib/datetime";
 import { readSpreadsheetFile } from "@/data/import";
 
 /** Inline money field that only writes on blur, so every keystroke isn't a mutation. */
@@ -602,6 +605,8 @@ export function TicketsPanel({ event }: { event: Event }) {
   const sendInvitations = useSendTicketInvitations();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [ticketFmv, setTicketFmv] = useState("");
+  const [ticketBenefits, setTicketBenefits] = useState("");
   const [allocation, setAllocation] = useState("");
   const [invitationRows, setInvitationRows] = useState("");
   const [invitationConsent, setInvitationConsent] = useState(false);
@@ -676,13 +681,16 @@ export function TicketsPanel({ event }: { event: Event }) {
           const trimmed = name.trim();
           const cents = centsFromInput(price);
           const total = allocation.trim() === "" ? 0 : Number.parseInt(allocation, 10);
-          if (!trimmed || cents === null || !Number.isFinite(total)) return;
+          const fmvCents = centsFromInput(ticketFmv);
+          if (!trimmed || cents === null || !Number.isFinite(total) || (cents > 0 && fmvCents === null)) return;
           add.mutate(
-            { eventId: event.id, draft: { name: trimmed, priceCents: cents, quantityTotal: total } },
+            { eventId: event.id, draft: { name: trimmed, priceCents: cents, fairMarketValueCents: fmvCents, benefitsDescription: ticketBenefits.trim() || null, quantityTotal: total } },
             {
               onSuccess: () => {
                 setName("");
                 setPrice("");
+                setTicketFmv("");
+                setTicketBenefits("");
                 setAllocation("");
               },
               onError: (mutationError) => toast({ title: "Couldn't add ticket type", description: mutationError.message }),
@@ -697,6 +705,8 @@ export function TicketsPanel({ event }: { event: Event }) {
           aria-label="Ticket name"
           className="min-w-[9rem] flex-1"
         />
+        <Input value={ticketFmv} onChange={(inputEvent) => setTicketFmv(inputEvent.target.value)} placeholder="FMV per ticket" inputMode="decimal" aria-label="Fair market value per ticket" className="w-32 text-right" />
+        <Input value={ticketBenefits} onChange={(inputEvent) => setTicketBenefits(inputEvent.target.value)} placeholder="Benefits, meal, entertainment" aria-label="Ticket benefits description" className="min-w-[12rem] flex-1" />
         <Input
           value={price}
           onChange={(inputEvent) => setPrice(inputEvent.target.value)}
@@ -713,7 +723,7 @@ export function TicketsPanel({ event }: { event: Event }) {
           aria-label="Allocation, zero for unlimited"
           className="w-28 text-right"
         />
-        <Button type="submit" size="sm" disabled={!name.trim() || centsFromInput(price) === null || add.isPending}>
+        <Button type="submit" size="sm" disabled={!name.trim() || centsFromInput(price) === null || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === null) || add.isPending}>
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
@@ -768,6 +778,8 @@ export function TicketsPanel({ event }: { event: Event }) {
                   </button>
                 </div>
                 {ticket.description ? <p className="text-xs text-muted-foreground">{ticket.description}</p> : null}
+                {ticket.priceCents > 0 ? <p className="text-xs text-muted-foreground">FMV {ticket.fairMarketValueCents == null ? "missing" : formatMoney(ticket.fairMarketValueCents)}{ticket.benefitsDescription ? ` · ${ticket.benefitsDescription}` : ""}</p> : null}
+                {ticket.priceCents > 0 ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>FMV</span><MoneyCell value={ticket.fairMarketValueCents ?? null} label={`FMV for ${ticket.name}`} onCommit={(next) => update.mutate({ eventId: event.id, id: ticket.id, patch: { fairMarketValueCents: next } })} /><Input defaultValue={ticket.benefitsDescription ?? ""} placeholder="Benefits description" className="h-8 max-w-xs" onBlur={(inputEvent) => { const next = inputEvent.target.value.trim() || null; if (next !== ticket.benefitsDescription) update.mutate({ eventId: event.id, id: ticket.id, patch: { benefitsDescription: next } }); }} /></div> : null}
                 {unlimited ? (
                   <p data-numeric className="text-xs text-muted-foreground">
                     {ticket.quantitySold} sold · unlimited allocation
@@ -903,13 +915,13 @@ export function TicketsPanel({ event }: { event: Event }) {
                   size="sm"
                   variant="outline"
                   disabled={refund.isPending}
-                  onClick={() => refund.mutate(
+                  onClick={() => { if (!window.confirm(`Refund ${formatMoney(order.amountCents)} to ${order.buyerName}? Their registrations will be cancelled and a corrected receipt will be issued.`)) return; refund.mutate(
                     { eventId: event.id, orderId: order.id },
                     {
                       onSuccess: () => toast({ title: "Ticket order refunded" }),
                       onError: (error) => toast({ title: "Couldn't refund order", description: error.message }),
                     },
-                  )}
+                  ); }}
                 >
                   Refund
                 </Button>
@@ -945,6 +957,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
   const { data: auctionBidders } = useAuctionBidders(event.id);
   const { data: auctionBidHistory } = useAuctionBids(event.id);
   const refundAuction = useRefundAuctionOrder();
+  const extendAuctionItem = useExtendAuctionItem();
   const { data: donors } = useAuctionDonors(event.id);
   const addDonor = useAddAuctionDonor();
   const updateDonor = useUpdateAuctionDonor();
@@ -1022,8 +1035,9 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           <Button type="button" size="sm" variant={settings.automaticBiddingEnabled ? "default" : "outline"} onClick={() => saveSetting({ automaticBiddingEnabled: !settings.automaticBiddingEnabled })}>Automatic bidding {settings.automaticBiddingEnabled ? "on" : "off"}</Button>
           <Button type="button" size="sm" variant={settings.secondChanceEnabled ? "default" : "outline"} onClick={() => saveSetting({ secondChanceEnabled: !settings.secondChanceEnabled })}>Second chance {settings.secondChanceEnabled ? "on" : "off"}</Button>
           <Button type="button" size="sm" variant={settings.staggeredClosingEnabled ? "default" : "outline"} onClick={() => saveSetting({ staggeredClosingEnabled: !settings.staggeredClosingEnabled })}>Staggered closing {settings.staggeredClosingEnabled ? "on" : "off"}</Button>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">Auction close<Input type="datetime-local" value={settings.closesAt?.slice(0, 16) ?? ""} onChange={(inputEvent) => saveSetting({ closesAt: inputEvent.target.value ? new Date(inputEvent.target.value).toISOString() : null })} className="w-52" /></label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">Auction close<Input type="datetime-local" value={toDateTimeLocalInput(settings.closesAt)} onChange={(inputEvent) => saveSetting({ closesAt: fromDateTimeLocalInput(inputEvent.target.value) })} className="w-52" /></label>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">Auto-extend minutes<Input type="number" min={0} max={60} value={settings.autoExtendMinutes} onChange={(inputEvent) => saveSetting({ autoExtendMinutes: Math.max(0, Math.min(60, Number(inputEvent.target.value) || 0)) })} className="w-20" /></label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">Bid history<select value={settings.bidHistoryPrivacy} onChange={(event) => saveSetting({ bidHistoryPrivacy: event.target.value as "paddle" | "initials" })} className="h-9 rounded-md border border-input bg-background px-2 text-sm"><option value="paddle">Paddle number</option><option value="initials">Initials</option></select></label>
         </div>
       </div>
 
@@ -1046,7 +1060,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 startingBidCents: centsFromInput(opening),
                 fairMarketValueCents: centsFromInput(fairMarketValue),
                 bidIncrementCents: centsFromInput(increment),
-                closesAt: closesAt ? new Date(closesAt).toISOString() : null,
+                closesAt: fromDateTimeLocalInput(closesAt),
                 lotNumber: nextLot,
               },
             },
@@ -1154,8 +1168,13 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                     <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Starting bid</span><MoneyCell value={lot.startingBidCents} label={`Starting bid for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { startingBidCents: next } })} /></label>
                     <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Fair market value</span><MoneyCell value={lot.fairMarketValueCents} label={`Fair market value for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { fairMarketValueCents: next } })} /></label>
                     <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Bid increment</span><MoneyCell value={lot.bidIncrementCents ?? null} label={`Bid increment for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { bidIncrementCents: next } })} /></label>
-                    <Input type="datetime-local" defaultValue={lot.closesAt?.slice(0, 16) ?? ""} aria-label={`Closing time for ${lot.title}`} onBlur={(inputEvent) => {
-                      const next = inputEvent.target.value ? new Date(inputEvent.target.value).toISOString() : null;
+                    <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Buy now</span><MoneyCell value={lot.buyNowCents ?? null} label={`Buy now price for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { buyNowCents: next } })} /></label>
+                    <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Reserve</span><MoneyCell value={lot.reserveCents ?? null} label={`Reserve for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { reserveCents: next } })} /></label>
+                    <Input type="number" min={1} defaultValue={lot.quantityAvailable ?? 1} aria-label={`Quantity available for ${lot.title}`} onBlur={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { quantityAvailable: Math.max(1, Number(inputEvent.target.value) || 1) } })} />
+                    <select defaultValue={lot.incrementRule ?? "tiered"} onChange={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { incrementRule: inputEvent.target.value as "tiered" | "fixed" } })} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="tiered">Tiered bid increment</option><option value="fixed">Fixed bid increment</option></select>
+                    <label className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2"><input type="checkbox" defaultChecked={lot.showFairMarketValue !== false} onChange={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { showFairMarketValue: inputEvent.target.checked } })} />Show estimated value to bidders</label>
+                    <Input type="datetime-local" defaultValue={toDateTimeLocalInput(lot.closesAt)} aria-label={`Closing time for ${lot.title}`} onBlur={(inputEvent) => {
+                      const next = fromDateTimeLocalInput(inputEvent.target.value);
                       if (next !== lot.closesAt) update.mutate({ eventId: event.id, id: lot.id, patch: { closesAt: next } });
                     }} />
                   </div>
@@ -1226,6 +1245,9 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                   Close item
                 </Button>
               ) : null}
+              {lot.status === "open" ? [1, 2, 5].map((minutes) => (
+                <Button key={minutes} type="button" size="sm" variant="outline" disabled={extendAuctionItem.isPending} onClick={() => extendAuctionItem.mutate({ eventId: event.id, itemId: lot.id, minutes }, { onSuccess: () => toast({ title: `${lot.title} extended ${minutes} minute${minutes === 1 ? "" : "s"}` }), onError: (error) => toast({ title: "Couldn't extend item", description: error.message }) })}>+{minutes} min</Button>
+              )) : null}
               {lot.status === "won" && settings.secondChanceEnabled ? (
                 <Button type="button" size="sm" variant="outline" disabled={secondChance.isPending} onClick={() => secondChance.mutate(
                   { eventId: event.id, itemId: lot.id },
@@ -1340,7 +1362,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 order?.status === "paid" ? order.applicationFeeCents : 0,
               ];
             });
-            const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
+            const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
             const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
             const link = document.createElement("a");
             link.href = url;
@@ -1404,10 +1426,10 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 <option value="pending">Pending</option><option value="ready">Ready</option><option value="picked-up">Picked up</option><option value="delivered">Delivered</option>
               </select>
               {order.status === "paid" ? (
-                <Button size="sm" variant="outline" disabled={refundAuction.isPending} onClick={() => refundAuction.mutate(
+                <Button size="sm" variant="outline" disabled={refundAuction.isPending} onClick={() => { if (!window.confirm(`Refund ${formatMoney(order.amountCents)} to ${order.bidderName}? A corrected receipt will be issued.`)) return; refundAuction.mutate(
                   { eventId: event.id, orderId: order.id },
                   { onSuccess: () => toast({ title: "Auction payment refunded" }), onError: (error) => toast({ title: "Couldn't refund", description: error.message }) },
-                )}>Refund</Button>
+                ); }}>Refund</Button>
               ) : null}
             </li>
           ))}

@@ -29,6 +29,8 @@ import type {
   PublicAuctionPayload,
   PublicAuctionBidResult,
   PublicAuctionDonorPayload,
+  PublicBidderProfile,
+  FundraisingPledge,
   BudgetItem,
   BudgetItemDraft,
   BudgetItemPatch,
@@ -54,6 +56,20 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  FundraisingDashboard,
+  FundraisingOrganizationProfile,
+  ItemSubmission,
+  PublicItemIntakePayload,
+  PublicItemSubmissionDraft,
+  AuctionCategory,
+  PublicBidderBill,
+  FundraisingReceipt,
+  DonationCampaign,
+  PublicDonationCampaign,
+  DonationCheckoutResult,
+  PublicDonationStatus,
+  FundraisingReports,
+  SchoolGrade,
   GuestRegistrationImportDraft,
   MoodBoardImage,
   EventPatch,
@@ -228,7 +244,7 @@ export interface TicketsRepository extends EventScopedRepository<TicketType, Tic
   purchase(
     shareToken: string,
     ticketTypeId: string,
-    buyer: { name: string; contact: string; quantity: number; guestNames?: string[] },
+    buyer: { name: string; contact: string; phone: string; grades?: SchoolGrade[]; quantity: number; guestNames?: string[]; donationAddOnCents?: number; benefitsDeclined?: boolean; autoChargeOptIn?: boolean },
   ): Promise<TicketCheckoutResult>;
   listOrders(eventId: string): Promise<TicketOrder[]>;
   refundOrder(eventId: string, orderId: string): Promise<TicketOrder>;
@@ -255,7 +271,7 @@ export interface AuctionRepository extends EventScopedRepository<AuctionItem, Au
   getPublic(token: string): Promise<PublicAuctionPayload | null>;
   registerPublic(
     token: string,
-    draft: { name: string; email: string; phone?: string | null; participantType: "gala" | "remote" },
+    draft: { name: string; email: string; phone: string; participantType: "gala" | "remote"; grades?: string[]; autoChargeOptIn?: boolean },
   ): Promise<AuctionBidder>;
   placePublicBid(
     token: string,
@@ -281,6 +297,11 @@ export interface AuctionRepository extends EventScopedRepository<AuctionItem, Au
   offerSecondChance(eventId: string, itemId: string): Promise<{ status: "winner-notified"; paymentUrl: string | null }>;
   listOrders(eventId: string): Promise<AuctionOrder[]>;
   refundOrder(eventId: string, orderId: string): Promise<AuctionOrder>;
+  getBidderProfile(token: string, bidderToken: string): Promise<PublicBidderProfile | null>;
+  setupBidderWallet(token: string, bidderToken: string): Promise<{ url: string }>;
+  setWatch(token: string, bidderToken: string, itemId: string, watched: boolean): Promise<{ watched: boolean }>;
+  createPledge(token: string, bidderToken: string, amountCents: number, channel: "in_room" | "remote"): Promise<FundraisingPledge>;
+  buyNow(token: string, bidderToken: string, itemId: string): Promise<{ won: true; amountCents: number }>;
 }
 
 /**
@@ -414,6 +435,50 @@ export interface BillingRepository {
   startConnectOnboarding(): Promise<StripeConnectStatus>;
 }
 
+export interface FundraisingRepository {
+  getProfile(): Promise<FundraisingOrganizationProfile>;
+  updateProfile(profile: FundraisingOrganizationProfile): Promise<FundraisingOrganizationProfile>;
+  listCategories(): Promise<AuctionCategory[]>;
+  createCategory(name: string): Promise<AuctionCategory>;
+  listSubmissions(eventId: string): Promise<ItemSubmission[]>;
+  updateSubmission(eventId: string, submissionId: string, patch: { status: ItemSubmission["status"]; requestedChanges?: string | null }): Promise<ItemSubmission>;
+  dashboard(eventId: string): Promise<FundraisingDashboard>;
+  extendItem(eventId: string, itemId: string, minutes: number): Promise<{ closesAt: string; extensionMinutes: number }>;
+  reopenItem(eventId: string, itemId: string, minutes: number): Promise<{ closesAt: string; status: "open" }>;
+  getPublicIntake(auctionToken: string): Promise<PublicItemIntakePayload | null>;
+  submitPublicItem(auctionToken: string, draft: PublicItemSubmissionDraft): Promise<PublicItemIntakePayload>;
+  uploadPublicItemImage(auctionToken: string, file: File): Promise<string>;
+  buildBills(eventId: string): Promise<{ created: number; bills: PublicBidderBill[] }>;
+  sendBills(eventId: string): Promise<{ sent: number; autoCharged: number; failed: number }>;
+  refundBill(eventId: string, billId: string): Promise<PublicBidderBill>;
+  getPublicBill(token: string): Promise<PublicBidderBill | null>;
+  payPublicBill(token: string, coverFees: boolean): Promise<{ url: string }>;
+  getPublicReceipt(token: string): Promise<{ receipt: FundraisingReceipt; organization: { legalName: string; ein: string; orgType: string }; eventTitle: string | null } | null>;
+  listCampaigns(eventId?: string): Promise<DonationCampaign[]>;
+  createCampaign(draft: { eventId?: string | null; title: string; description?: string | null; goalCents?: number | null; suggestedAmountsCents?: number[]; designations?: string[]; defaultDesignation?: string | null }): Promise<DonationCampaign>;
+  getPublicCampaign(token: string): Promise<PublicDonationCampaign | null>;
+  createDonationCheckout(token: string, draft: {
+    donorName: string;
+    donorEmail: string;
+    amountCents: number;
+    frequency: "one-time" | "monthly";
+    designation?: string | null;
+    tributeType?: "honor" | "memory" | null;
+    tributeName?: string | null;
+    tributeNotifyEmail?: string | null;
+    anonymous?: boolean;
+    employer?: string | null;
+    coverFees?: boolean;
+    grades?: SchoolGrade[];
+  }): Promise<DonationCheckoutResult>;
+  getDonationStatus(token: string, donationId: string): Promise<PublicDonationStatus | null>;
+  previewBroadcast(eventId: string, draft: { audience: string; itemIds: string[] }): Promise<{ recipients: number }>;
+  sendBroadcast(eventId: string, draft: { audience: string; itemIds: string[]; channels: string[]; message: string }): Promise<{ recipients: number; sent: number; failed: number }>;
+  recordLiveSale(eventId: string, itemId: string, paddleNumbers: number[], amountCents: number): Promise<{ winners: number }>;
+  undoLiveSale(eventId: string, itemId: string): Promise<{ reopened: true }>;
+  reports(eventId: string): Promise<FundraisingReports>;
+}
+
 /** Identity and authorization as the server sees them. */
 export interface Identity {
   userId: string;
@@ -472,6 +537,7 @@ export interface DataAdapter {
   members: MembersRepository;
   feedback: FeedbackRepository;
   billing: BillingRepository;
+  fundraising: FundraisingRepository;
   history: EventHistoryRepository;
   teamUpdates: TeamUpdatesRepository;
   roi: RoiRepository;

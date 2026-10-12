@@ -1474,6 +1474,33 @@ const auction: AuctionRepository = {
   async refundOrder() {
     throw new DataError("not-found", "That auction order no longer exists.");
   },
+  async getBidderProfile(token, bidderToken) {
+    const event = store().events.find((row) => row.auctionPublicToken === token);
+    const bidder = memoryAuctionBidders.find((row) => row.publicToken === bidderToken && row.eventId === event?.id);
+    if (!event || !bidder) return null;
+    const winningItemIds = store().auction.filter((item) => item.winningBidderId === bidder.id).map((item) => item.id);
+    const bidItemIds = [...new Set(memoryAuctionBids.filter((bid) => bid.bidderId === bidder.id).map((bid) => bid.itemId))];
+    return { ...copy(bidder), paddleNumber: bidder.paddleNumber ?? 100, hasPaymentMethod: bidder.hasPaymentMethod ?? true, grades: bidder.grades ?? [], watchedItemIds: [], winningItemIds, outbidItemIds: bidItemIds.filter((itemId) => !winningItemIds.includes(itemId)), totalDueCents: 0 };
+  },
+  async setupBidderWallet() {
+    return { url: "/?wallet=demo" };
+  },
+  async setWatch(_token, _bidderToken, _itemId, watched) {
+    return { watched };
+  },
+  async createPledge(token, bidderToken, amountCents, channel) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder = required(memoryAuctionBidders.find((row) => row.publicToken === bidderToken), "This bidder registration is not available.");
+    return { id: newId("pledge"), eventId: event.id, bidderId: bidder.id, householdId: bidder.householdId ?? null, amountCents, appeal: "fund-a-need", designation: null, channel, anonymous: false, createdAt: nowIso() };
+  },
+  async buyNow(token, bidderToken, itemId) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder = required(memoryAuctionBidders.find((row) => row.publicToken === bidderToken), "This bidder registration is not available.");
+    const item = required(store().auction.find((row) => row.eventId === event.id && row.id === itemId), "This item is not available.");
+    if (!item.buyNowCents) throw new DataError("conflict", "This buy-it-now item is no longer available.");
+    item.status = "won"; item.winningBidderId = bidder.id; item.winnerName = bidder.name; item.currentBidCents = item.buyNowCents;
+    return { won: true, amountCents: item.buyNowCents };
+  },
 };
 
 const sponsorships = eventScoped<Sponsorship, SponsorshipDraft, SponsorshipPatch>(
@@ -1592,7 +1619,7 @@ const tickets: TicketsRepository = {
       orderId: newId("tord"),
       kind: "free-confirmed",
       checkoutUrl: null,
-      applicationFeeCents: platformFeeCents(ticket.priceCents * buyer.quantity),
+      applicationFeeCents: platformFeeCents(ticket.priceCents * buyer.quantity + (buyer.donationAddOnCents ?? 0)),
     };
   },
   async listOrders() {
@@ -2476,6 +2503,55 @@ export const memoryAdapter: DataAdapter = {
       ready: true,
       onboardingUrl: "/app/tickets?stripe=demo",
     }),
+  },
+  fundraising: {
+    getProfile: async () => ({ legalName: "Beebizy Demo School", ein: null, orgType: "nonprofit_501c3", receiptPrefix: "BEE", raffleEnabled: false, raffleRegistrationConfirmed: false, defaultCoverFees: false }),
+    updateProfile: async (profile) => copy(profile),
+    listCategories: async () => ["Experiences", "Travel & Stays", "Dining", "Entertainment", "Sports", "Kids & Family", "Class Projects", "Wine & Spirits", "Gift Cards", "Live Auction"].map((name, index) => ({ id: `acat-demo-${index}`, name, sortOrder: index + 1 })),
+    createCategory: async (name) => ({ id: newId("acat"), name, sortOrder: 99 }),
+    listSubmissions: async () => [],
+    updateSubmission: async () => { throw new DataError("not-found", "That item submission no longer exists."); },
+    dashboard: async () => ({ totals: { silentCents: 0, liveCents: 0, pledgesCents: 0, ticketsCents: 0, donationsCents: 0, totalCents: 0 }, bidders: { registered: 0, checkedIn: 0, remote: 0 }, items: { total: 0, noBids: 0, sold: 0, sellThroughRate: 0 }, byGrade: [] }),
+    extendItem: async (eventId, itemId, minutes) => {
+      const item = required(store().auction.find((row) => row.eventId === eventId && row.id === itemId), "That auction item no longer exists.");
+      const closesAt = new Date((item.closesAt ? new Date(item.closesAt).getTime() : Date.now()) + minutes * 60_000).toISOString();
+      item.closesAt = closesAt;
+      item.extensionMinutes = (item.extensionMinutes ?? 0) + minutes;
+      return { closesAt, extensionMinutes: item.extensionMinutes };
+    },
+    reopenItem: async (eventId, itemId, minutes) => {
+      const item = required(store().auction.find((row) => row.eventId === eventId && row.id === itemId), "That auction item no longer exists.");
+      const closesAt = new Date(Date.now() + minutes * 60_000).toISOString();
+      item.status = "open";
+      item.closesAt = closesAt;
+      return { closesAt, status: "open" };
+    },
+    getPublicIntake: async (auctionToken) => {
+      const event = store().events.find((row) => row.auctionPublicToken === auctionToken);
+      return event ? { eventTitle: event.title, organizationName: "Beebizy Demo School", categories: ["Experiences", "Dining"], grades: ["K", "1", "2", "3"] } : null;
+    },
+    submitPublicItem: async (auctionToken, draft) => {
+      const event = required(store().events.find((row) => row.auctionPublicToken === auctionToken), "This donation link is no longer active.");
+      const item = await auction.create(event.id, { title: draft.itemTitle, description: draft.description, imageUrl: draft.photoUrls[0], photoUrls: draft.photoUrls, estimatedValueCents: draft.estimatedValueCents, fairMarketValueCents: draft.fairMarketValueCents, category: draft.category, restrictions: draft.restrictions, expiresAt: draft.expirationDate, deliveryMethod: draft.deliveryMethod, creditText: draft.creditText, notesToSchool: draft.notesToSchool, isServiceOrUse: draft.isServiceOrUse, startingBidCents: draft.suggestedStartingBidCents });
+      return { eventTitle: event.title, organizationName: "Beebizy Demo School", categories: ["Experiences", "Dining"], grades: ["K", "1", "2", "3"], submission: { id: newId("isub"), eventId: event.id, donorId: null, submittedBy: draft.donorName, publicToken: newId("submission"), payload: draft as unknown as Record<string, unknown>, status: "submitted", auctionItemId: item.id, requestedChanges: null, submittedAt: nowIso(), updatedAt: null } };
+    },
+    uploadPublicItemImage: async (_auctionToken, file) => URL.createObjectURL(file),
+    buildBills: async () => ({ created: 0, bills: [] }),
+    sendBills: async () => ({ sent: 0, autoCharged: 0, failed: 0 }),
+    refundBill: async (_eventId, billId) => ({ id: billId, eventId: "evt-gala", bidderId: "bidder-1", bidderName: "Demo Bidder", bidderEmail: "demo@example.com", publicToken: "demo-bill", itemsTotalCents: 0, pledgesTotalCents: 0, feesCoveredCents: 0, totalCents: 0, applicationFeeCents: 0, status: "refunded", paidAt: null, eventTitle: "Demo Gala", lineItems: [], coverFeesAvailable: false, receiptToken: null }),
+    getPublicBill: async () => null,
+    payPublicBill: async (token) => ({ url: `/bill/${token}?payment=success` }),
+    getPublicReceipt: async () => null,
+    listCampaigns: async () => [],
+    createCampaign: async (draft) => ({ id: newId("campaign"), eventId: draft.eventId ?? null, publicToken: newId("give"), title: draft.title, description: draft.description ?? null, goalCents: draft.goalCents ?? null, suggestedAmountsCents: draft.suggestedAmountsCents ?? [5_000, 10_000, 25_000, 50_000, 100_000], designations: draft.designations ?? [], defaultDesignation: draft.defaultDesignation ?? null, monthlyEnabled: true, coverFeesEnabled: true, isActive: true }),
+    getPublicCampaign: async () => null,
+    createDonationCheckout: async (token) => ({ donationId: newId("donation"), checkoutUrl: `/give/${token}?donation=success` }),
+    getDonationStatus: async (_token, donationId) => ({ donationId, status: "paid", receiptToken: null }),
+    previewBroadcast: async () => ({ recipients: 0 }),
+    sendBroadcast: async () => ({ recipients: 0, sent: 0, failed: 0 }),
+    recordLiveSale: async (_eventId, _itemId, paddleNumbers) => ({ winners: paddleNumbers.length }),
+    undoLiveSale: async () => ({ reopened: true }),
+    reports: async () => ({ bidders: [], bids: [], items: [], attendance: [], grades: [], payments: [], acknowledgments: [], historical: [], familyHistory: [], itemIntelligence: [] }),
   },
   assistant: {
     chat: async ({ messages }) => {

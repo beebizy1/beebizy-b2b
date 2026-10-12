@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { bidIncrementCents, taxDeductibleCents } from "./fundraising";
+import {
+  bidIncrementCents,
+  deductibleAmountCents,
+  coveredFeesCents,
+  suggestedStartingBidCents,
+  taxDeductibleCents,
+} from "./fundraising";
 
 describe("taxDeductibleCents", () => {
   it("is the excess of the winning bid over fair market value", () => {
@@ -25,24 +31,62 @@ describe("taxDeductibleCents", () => {
 
 describe("bidIncrementCents", () => {
   it("scales the step with the size of the bid", () => {
-    expect(bidIncrementCents(0)).toBe(1_000); // $0 → $10
-    expect(bidIncrementCents(5_000)).toBe(1_000); // $50 → $10
+    expect(bidIncrementCents(0)).toBe(500);
+    expect(bidIncrementCents(5_000)).toBe(500);
     expect(bidIncrementCents(50_000)).toBe(2_500); // $500 → $25
     expect(bidIncrementCents(500_000)).toBe(10_000); // $5,000 → $100
-    expect(bidIncrementCents(5_000_000)).toBe(50_000); // $50,000 → $500
+    expect(bidIncrementCents(5_000_000)).toBe(10_000);
   });
 
   it("steps up exactly at each band boundary", () => {
-    expect(bidIncrementCents(9_999)).toBe(1_000);
-    expect(bidIncrementCents(10_000)).toBe(2_500);
+    expect(bidIncrementCents(9_999)).toBe(500);
+    expect(bidIncrementCents(10_000)).toBe(1_000);
+    expect(bidIncrementCents(49_999)).toBe(1_000);
+    expect(bidIncrementCents(50_000)).toBe(2_500);
     expect(bidIncrementCents(99_999)).toBe(2_500);
-    expect(bidIncrementCents(100_000)).toBe(10_000);
-    expect(bidIncrementCents(999_999)).toBe(10_000);
-    expect(bidIncrementCents(1_000_000)).toBe(50_000);
+    expect(bidIncrementCents(100_000)).toBe(5_000);
+    expect(bidIncrementCents(499_999)).toBe(5_000);
+    expect(bidIncrementCents(500_000)).toBe(10_000);
   });
 
   it("treats a lot with no bid yet as the lowest band", () => {
-    expect(bidIncrementCents(null)).toBe(1_000);
-    expect(bidIncrementCents(undefined)).toBe(1_000);
+    expect(bidIncrementCents(null)).toBe(500);
+    expect(bidIncrementCents(undefined)).toBe(500);
+  });
+});
+
+describe("auction UX spec arithmetic", () => {
+  it("uses Laila's tiered bid increments", () => {
+    expect(bidIncrementCents(9_999)).toBe(500);
+    expect(bidIncrementCents(10_000)).toBe(1_000);
+    expect(bidIncrementCents(49_999)).toBe(1_000);
+    expect(bidIncrementCents(50_000)).toBe(2_500);
+    expect(bidIncrementCents(99_999)).toBe(2_500);
+    expect(bidIncrementCents(100_000)).toBe(5_000);
+    expect(bidIncrementCents(499_999)).toBe(5_000);
+    expect(bidIncrementCents(500_000)).toBe(10_000);
+  });
+
+  it("suggests forty percent of estimated value without inventing FMV", () => {
+    expect(suggestedStartingBidCents(125_00)).toBe(50_00);
+    expect(suggestedStartingBidCents(null)).toBeNull();
+  });
+
+  it("calculates deductible amounts by transaction type", () => {
+    expect(deductibleAmountCents({ kind: "auction", amountCents: 1_500_00, fairMarketValueCents: 1_200_00 })).toBe(300_00);
+    expect(deductibleAmountCents({ kind: "auction", amountCents: 900_00, fairMarketValueCents: 1_200_00 })).toBe(0);
+    expect(deductibleAmountCents({ kind: "ticket", amountCents: 250_00, fairMarketValueCents: 100_00 })).toBe(150_00);
+    expect(deductibleAmountCents({ kind: "ticket", amountCents: 250_00, fairMarketValueCents: 100_00, benefitsDeclined: true })).toBe(250_00);
+    expect(deductibleAmountCents({ kind: "donation", amountCents: 250_00, fairMarketValueCents: null })).toBe(250_00);
+    expect(deductibleAmountCents({ kind: "raffle", amountCents: 250_00, fairMarketValueCents: null })).toBe(0);
+  });
+
+  it("grosses up covered fees so the school nets the original amount", () => {
+    const fee = coveredFeesCents(10_000);
+    const gross = 10_000 + fee;
+    const processing = Math.round(gross * 0.029) + 30;
+    const platform = Math.round(gross * 0.02);
+    expect(gross - processing - platform).toBeGreaterThanOrEqual(10_000);
+    expect(gross - processing - platform).toBeLessThanOrEqual(10_001);
   });
 });

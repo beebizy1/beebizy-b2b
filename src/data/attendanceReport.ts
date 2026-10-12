@@ -96,12 +96,8 @@ export function buildUniqueAttendanceReport(rows: RegistrationWithGuest[]): Uniq
   };
 }
 
-function csvCell(value: string | number | null): string {
-  const text = String(value ?? "");
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
 export function attendanceNamesCsv(attendees: UniqueAttendeeRecord[]): string {
   const lines = attendees.map((row) => csvCell(row.name));
   return ["Full Name", ...lines].join("\r\n") + "\r\n";
 }
+import { csvCell } from "./spreadsheet";

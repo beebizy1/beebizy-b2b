@@ -1,0 +1,2 @@
+ALTER TABLE "donations" ADD COLUMN "receipt_id" text;--> statement-breakpoint
+ALTER TABLE "donations" ADD CONSTRAINT "donations_receipt_id_fundraising_receipts_id_fk" FOREIGN KEY ("receipt_id") REFERENCES "public"."fundraising_receipts"("id") ON DELETE set null ON UPDATE no action;
