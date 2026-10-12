@@ -112,6 +112,7 @@ import {
   notifyVolunteerAssignment,
   notifyWorkAssignment,
   notifyAuctionOutbid,
+  notifyAuctionDonorThankYou,
 } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
@@ -3646,6 +3647,22 @@ export const auctionManagement = {
       eq(s.events.workspaceId, ctx.workspaceId),
     )).returning({ settings: s.events.auctionPage });
     if (!row) throw new HttpError(404, "That event no longer exists.");
+    if (normalized.closesAt) {
+      const baseClose = new Date(normalized.closesAt);
+      const intervalMinutes = normalized.staggeredClosingEnabled ? 5 : 0;
+      await db.execute(sql`
+        with ranked as (
+          select id, row_number() over (order by lot_number nulls last, sort_order, id) - 1 as position
+          from ${s.auctionItems}
+          where event_id = ${eventId} and workspace_id = ${ctx.workspaceId}
+        )
+        update ${s.auctionItems} as item
+        set closes_at = ${baseClose} + make_interval(mins => (ranked.position * ${intervalMinutes})::integer),
+            updated_at = now()
+        from ranked
+        where item.id = ranked.id
+      `);
+    }
     return normalizeAuctionPageSettings(row.settings);
   },
   async publishItem(ctx: RequestContext, eventId: string, itemId: string, published: boolean) {
@@ -3702,38 +3719,67 @@ export const auctionManagement = {
       createdAt: bid.createdAt.toISOString(),
     }));
   },
+  async sendDonorThankYou(ctx: RequestContext, eventId: string, donorId: string): Promise<AuctionDonor> {
+    const [row] = await db.select({ donor: s.auctionDonors, event: s.events }).from(s.auctionDonors)
+      .innerJoin(s.events, eq(s.auctionDonors.eventId, s.events.id))
+      .where(and(
+        eq(s.auctionDonors.id, donorId),
+        eq(s.auctionDonors.eventId, eventId),
+        eq(s.auctionDonors.workspaceId, ctx.workspaceId),
+      )).limit(1);
+    if (!row) throw new HttpError(404, "That donor no longer exists.");
+    if (!row.donor.email) throw new HttpError(409, "Add the donor's email before sending a thank-you.");
+    const items = await db.select({ title: s.auctionItems.title }).from(s.auctionItems)
+      .where(eq(s.auctionItems.donorId, donorId)).orderBy(asc(s.auctionItems.title));
+    const outcome = await notifyAuctionDonorThankYou({
+      donorId,
+      to: row.donor.email,
+      contactName: row.donor.contactName || row.donor.businessName,
+      donorName: row.donor.businessName,
+      eventTitle: row.event.title,
+      itemTitles: items.map((item) => item.title),
+    });
+    if (outcome.status !== "sent") throw new HttpError(502, "The thank-you email could not be delivered.");
+    const [updated] = await db.update(s.auctionDonors).set({ thankYouStatus: "sent", updatedAt: new Date() })
+      .where(eq(s.auctionDonors.id, donorId)).returning();
+    return toAuctionDonor(updated!);
+  },
 };
 
+function toPublicAuctionItem(
+  item: typeof s.auctionItems.$inferSelect,
+  bidCount: number,
+): PublicAuctionItem {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    imageUrl: item.imageUrl,
+    category: item.category,
+    restrictions: item.restrictions,
+    expiresAt: item.expiresAt?.toISOString() ?? null,
+    deliveryDetails: item.deliveryDetails,
+    fairMarketValueCents: item.fairMarketValueCents,
+    startingBidCents: item.startingBidCents ?? 0,
+    currentBidCents: item.currentBidCents,
+    bidIncrementCents: item.bidIncrementCents ?? 100,
+    opensAt: item.opensAt?.toISOString() ?? null,
+    closesAt: item.closesAt?.toISOString() ?? null,
+    status: item.status,
+    lotNumber: item.lotNumber,
+    bidCount,
+    hasBid: bidCount > 0,
+  };
+}
+
 async function publicAuctionItem(itemId: string): Promise<PublicAuctionItem | null> {
-  const [row] = await db.select({
-    item: s.auctionItems,
-    bidCount: count(s.auctionBids.id),
-  }).from(s.auctionItems)
+  const [row] = await db.select({ item: s.auctionItems, bidCount: count(s.auctionBids.id) })
+    .from(s.auctionItems)
     .leftJoin(s.auctionBids, eq(s.auctionItems.id, s.auctionBids.itemId))
     .where(eq(s.auctionItems.id, itemId))
     .groupBy(s.auctionItems.id)
     .limit(1);
-  if (!row) return null;
-  return {
-    id: row.item.id,
-    title: row.item.title,
-    description: row.item.description,
-    imageUrl: row.item.imageUrl,
-    category: row.item.category,
-    restrictions: row.item.restrictions,
-    expiresAt: row.item.expiresAt?.toISOString() ?? null,
-    deliveryDetails: row.item.deliveryDetails,
-    fairMarketValueCents: row.item.fairMarketValueCents,
-    startingBidCents: row.item.startingBidCents ?? 0,
-    currentBidCents: row.item.currentBidCents,
-    bidIncrementCents: row.item.bidIncrementCents ?? 100,
-    opensAt: row.item.opensAt?.toISOString() ?? null,
-    closesAt: row.item.closesAt?.toISOString() ?? null,
-    status: row.item.status,
-    lotNumber: row.item.lotNumber,
-    bidCount: Number(row.bidCount),
-    hasBid: Number(row.bidCount) > 0,
-  };
+  return row ? toPublicAuctionItem(row.item, Number(row.bidCount)) : null;
 }
 
 export async function publicAuction(token: string): Promise<PublicAuctionPayload | null> {
@@ -3743,13 +3789,17 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
   if (!eventRow || eventRow.event.status === "cancelled") return null;
   const settings = normalizeAuctionPageSettings(eventRow.event.auctionPage);
   const rows = settings.catalogPublished
-    ? await db.select({ id: s.auctionItems.id }).from(s.auctionItems).where(and(
+    ? await db.select({ item: s.auctionItems, bidCount: count(s.auctionBids.id) })
+      .from(s.auctionItems)
+      .leftJoin(s.auctionBids, eq(s.auctionItems.id, s.auctionBids.itemId))
+      .where(and(
         eq(s.auctionItems.eventId, eventRow.event.id),
         eq(s.auctionItems.isPublished, true),
-      )).orderBy(asc(s.auctionItems.lotNumber), asc(s.auctionItems.title))
+      ))
+      .groupBy(s.auctionItems.id)
+      .orderBy(asc(s.auctionItems.lotNumber), asc(s.auctionItems.title))
     : [];
-  const items = (await Promise.all(rows.map((row) => publicAuctionItem(row.id))))
-    .filter((item): item is PublicAuctionItem => item !== null);
+  const items = rows.map((row) => toPublicAuctionItem(row.item, Number(row.bidCount)));
   return {
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
@@ -3769,7 +3819,7 @@ export async function registerPublicAuctionBidder(token: string, body: Body): Pr
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid email address.");
   const participantType = str(body, "participantType", "gala") as "gala" | "remote";
   if (participantType === "remote" && !settings.allowRemoteBidders) throw new HttpError(409, "Remote bidding is not open for this auction.");
-  await db.insert(s.auctionBidders).values({
+  const [bidder] = await db.insert(s.auctionBidders).values({
     id: newId("abidder"),
     workspaceId: event.workspaceId,
     eventId: event.id,
@@ -3779,12 +3829,10 @@ export async function registerPublicAuctionBidder(token: string, body: Body): Pr
     participantType,
     publicToken: crypto.randomUUID(),
     sortOrder: 0,
-  }).onConflictDoNothing({ target: [s.auctionBidders.eventId, s.auctionBidders.email] });
-  const [bidder] = await db.select().from(s.auctionBidders).where(and(
-    eq(s.auctionBidders.eventId, event.id),
-    eq(s.auctionBidders.email, email),
-  )).limit(1);
-  if (!bidder) throw new Error("The bidder could not be registered.");
+  }).onConflictDoNothing({ target: [s.auctionBidders.eventId, s.auctionBidders.email] }).returning();
+  if (!bidder) {
+    throw new HttpError(409, "This email is already registered. Continue on the original device or ask the organizer for help.");
+  }
   return toAuctionBidder(bidder);
 }
 
@@ -3819,17 +3867,22 @@ export async function placePublicAuctionBid(
     }
     throw error;
   }
-  const [bidder] = await db.select({ id: s.auctionBidders.id }).from(s.auctionBidders)
+  const [bidder] = await db.select({ id: s.auctionBidders.id, name: s.auctionBidders.name, email: s.auctionBidders.email }).from(s.auctionBidders)
     .where(eq(s.auctionBidders.publicToken, bidderToken)).limit(1);
   const item = await publicAuctionItem(itemId);
   if (!result || !bidder || !item) throw new HttpError(404, "This auction item is not available.");
-  if (before?.bidderId && before.bidderId !== result.leader_bidder_id && before.bidderEmail) {
-    const [latestBid] = await db.select({ id: s.auctionBids.id }).from(s.auctionBids)
-      .where(eq(s.auctionBids.itemId, itemId)).orderBy(desc(s.auctionBids.createdAt)).limit(1);
+  const [latestBid] = await db.select({ id: s.auctionBids.id }).from(s.auctionBids)
+    .where(eq(s.auctionBids.itemId, itemId)).orderBy(desc(s.auctionBids.createdAt)).limit(1);
+  const outbid = result.leader_bidder_id !== bidder.id
+    ? { email: bidder.email, name: bidder.name }
+    : before?.bidderId && before.bidderId !== result.leader_bidder_id && before.bidderEmail
+      ? { email: before.bidderEmail, name: before.bidderName ?? "bidder" }
+      : null;
+  if (outbid && before) {
     await notifyAuctionOutbid({
       bidId: latestBid?.id ?? `${itemId}-${item.bidCount}`,
-      to: before.bidderEmail,
-      bidderName: before.bidderName ?? "bidder",
+      to: outbid.email,
+      bidderName: outbid.name,
       eventTitle: before.eventTitle,
       itemTitle: before.itemTitle,
       currentBidCents: item.currentBidCents ?? item.startingBidCents,

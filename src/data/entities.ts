@@ -971,7 +971,7 @@ export interface TicketTypeWithEvent extends TicketType {
   eventCategory: string;
 }
 
-export type PaymentStatus = "pending" | "paid" | "refunded" | "failed";
+export type PaymentStatus = "pending" | "paid" | "refunding" | "refunded" | "failed";
 
 export interface TicketOrderGuest {
   id: string;

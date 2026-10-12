@@ -244,6 +244,7 @@ export interface AuctionRepository extends EventScopedRepository<AuctionItem, Au
   createDonor(eventId: string, draft: AuctionDonorDraft): Promise<AuctionDonor>;
   updateDonor(eventId: string, donorId: string, patch: Partial<AuctionDonorDraft>): Promise<AuctionDonor>;
   removeDonor(eventId: string, donorId: string): Promise<void>;
+  sendDonorThankYou(eventId: string, donorId: string): Promise<AuctionDonor>;
   share(eventId: string): Promise<{ auctionPublicToken: string }>;
   updateSettings(eventId: string, settings: AuctionPageSettings): Promise<AuctionPageSettings>;
   publishItem(eventId: string, itemId: string, published: boolean): Promise<AuctionItem>;
@@ -275,6 +276,7 @@ export interface AuctionRepository extends EventScopedRepository<AuctionItem, Au
     recognitionPreference?: string | null;
   }): Promise<PublicAuctionDonorPayload>;
   closeItem(eventId: string, itemId: string): Promise<{ status: "closed-no-bids" | "winner-notified"; paymentUrl: string | null }>;
+  offerSecondChance(eventId: string, itemId: string): Promise<{ status: "winner-notified"; paymentUrl: string | null }>;
   listOrders(eventId: string): Promise<AuctionOrder[]>;
   refundOrder(eventId: string, orderId: string): Promise<AuctionOrder>;
 }

@@ -1343,6 +1343,12 @@ const auction: AuctionRepository = {
     const index = memoryAuctionDonors.findIndex((row) => row.id === donorId && row.eventId === eventId);
     if (index >= 0) memoryAuctionDonors.splice(index, 1);
   },
+  async sendDonorThankYou(eventId, donorId) {
+    const donor = required(memoryAuctionDonors.find((row) => row.id === donorId && row.eventId === eventId), "That donor no longer exists.");
+    donor.thankYouStatus = "sent";
+    donor.updatedAt = nowIso();
+    return copy(donor);
+  },
   async share(eventId) {
     const event = requireEvent(eventId);
     event.auctionPublicToken ??= newId("auction");
@@ -1451,6 +1457,16 @@ const auction: AuctionRepository = {
     const item = required(store().auction.find((row) => row.id === itemId && row.eventId === eventId), "That auction item no longer exists.");
     item.status = item.winningBidderId ? "won" : "closed";
     return { status: item.winningBidderId ? "winner-notified" : "closed-no-bids", paymentUrl: null };
+  },
+  async offerSecondChance(eventId, itemId) {
+    const item = required(store().auction.find((row) => row.id === itemId && row.eventId === eventId), "That auction item no longer exists.");
+    const runner = memoryAuctionBids.filter((bid) => bid.itemId === itemId && bid.bidderId !== item.winningBidderId)
+      .sort((left, right) => right.maximumAmountCents - left.maximumAmountCents)[0];
+    if (!runner) throw new DataError("conflict", "There is no runner-up bidder for this item.");
+    item.winningBidderId = runner.bidderId;
+    item.currentBidCents = runner.maximumAmountCents;
+    item.status = "won";
+    return { status: "winner-notified", paymentUrl: null };
   },
   async listOrders() {
     return [];

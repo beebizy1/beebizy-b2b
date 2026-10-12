@@ -943,6 +943,13 @@ export function useRemoveAuctionDonor() {
   );
 }
 
+export function useSendAuctionDonorThankYou() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; donorId: string }) => a.auction.sendDonorThankYou(vars.eventId, vars.donorId),
+    (vars) => [qk.auctionDonors(vars.eventId)],
+  );
+}
+
 export function useShareAuction() {
   return useAdapterMutation(
     (a, eventId: string) => a.auction.share(eventId),
@@ -976,6 +983,13 @@ export function useUploadAuctionImage() {
 export function useCloseAuctionItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; itemId: string }) => a.auction.closeItem(vars.eventId, vars.itemId),
+    (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.auctionBids(vars.eventId)],
+  );
+}
+
+export function useOfferAuctionSecondChance() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string }) => a.auction.offerSecondChance(vars.eventId, vars.itemId),
     (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.auctionBids(vars.eventId)],
   );
 }

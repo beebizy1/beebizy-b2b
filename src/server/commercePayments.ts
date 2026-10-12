@@ -1,12 +1,14 @@
 import Stripe from "stripe";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { platformFeeCents } from "../data/commerce.ts";
+import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 import type { AuctionOrder, StripeConnectStatus, TicketCheckoutResult, TicketOrder } from "../data/entities.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
 import { notifyAuctionPaymentConfirmation, notifyAuctionWinner, notifyTicketOrderConfirmation } from "./notify.ts";
 import {
   auctionBidders,
+  auctionBids,
   auctionItems,
   auctionOrders,
   events,
@@ -167,6 +169,7 @@ export function ticketCheckoutSessionParams(input: {
   };
   return {
     mode: "payment",
+    payment_method_types: ["card"],
     client_reference_id: input.orderId,
     customer_email: input.buyerEmail,
     line_items: [
@@ -420,11 +423,17 @@ export async function createPublicTicketCheckout(
   const orderId = newId("tord");
   const expiresAt = new Date(Date.now() + CHECKOUT_MINUTES * 60_000);
   const connectedAccountId = amountCents > 0 ? row.workspace.stripeConnectedAccountId : null;
+  let paymentStripe: Stripe | null = null;
   if (amountCents > 0 && !connectedAccountId) {
     throw new HttpError(409, "The organizer has not connected ticket payouts yet. Ask them to finish payment setup.");
   }
-  if (amountCents > 0 && (!row.workspace.stripeConnectedChargesEnabled || !row.workspace.stripeConnectedPayoutsEnabled)) {
-    throw new HttpError(409, "The organizer's payout setup is not complete yet.");
+  if (amountCents > 0) {
+    paymentStripe = stripeClient();
+    const account = await paymentStripe.accounts.retrieve(connectedAccountId!);
+    await syncConnectedAccount(row.workspace.id, account);
+    if (!account.details_submitted || !account.charges_enabled || !account.payouts_enabled) {
+      throw new HttpError(409, "The organizer's payout setup is not complete yet.");
+    }
   }
 
   await reserveOrder({
@@ -452,7 +461,7 @@ export async function createPublicTicketCheckout(
       return { orderId, kind: "free-confirmed", checkoutUrl: null, applicationFeeCents };
     }
 
-    const stripe = stripeClient();
+    const stripe = paymentStripe!;
     const params = ticketCheckoutSessionParams({
       orderId,
       eventTitle: row.event.title,
@@ -535,31 +544,51 @@ export async function refundTicketOrder(ctx: RequestContext, eventId: string, or
     .limit(1);
   if (!order) throw new HttpError(404, "That ticket order no longer exists.");
   if (order.status === "refunded") return (await listTicketOrders(ctx, eventId)).find((item) => item.id === orderId)!;
-  if (order.status !== "paid") throw new HttpError(409, "Only a paid ticket order can be refunded.");
+  if (order.status === "refunding" && (!order.updatedAt || order.updatedAt > new Date(Date.now() - 5 * 60_000))) {
+    throw new HttpError(409, "This refund is already processing.");
+  }
+  if (order.status !== "paid" && order.status !== "refunding") {
+    throw new HttpError(409, "Only a paid ticket order can be refunded.");
+  }
+  if (order.status === "paid") {
+    const [claimed] = await db.update(ticketOrders).set({ status: "refunding", updatedAt: new Date() })
+      .where(and(eq(ticketOrders.id, order.id), eq(ticketOrders.status, "paid"))).returning({ id: ticketOrders.id });
+    if (!claimed) throw new HttpError(409, "This refund is already processing.");
+  }
 
   let refundId: string | null = null;
-  if (order.amountCents > 0) {
-    if (!order.stripePaymentIntentId || !order.stripeConnectedAccountId) {
-      throw new HttpError(409, "This paid order is missing its Stripe payment reference. Contact Beebizy support.");
+  try {
+    if (order.amountCents > 0) {
+      if (!order.stripePaymentIntentId || !order.stripeConnectedAccountId) {
+        throw new HttpError(409, "This paid order is missing its Stripe payment reference. Contact Beebizy support.");
+      }
+      const refund = await stripeClient().refunds.create(
+        { payment_intent: order.stripePaymentIntentId, refund_application_fee: true },
+        { stripeAccount: order.stripeConnectedAccountId, idempotencyKey: `beebizy_ticket_refund_${order.id}` },
+      );
+      refundId = refund.id;
     }
-    const refund = await stripeClient().refunds.create(
-      { payment_intent: order.stripePaymentIntentId, refund_application_fee: true },
-      { stripeAccount: order.stripeConnectedAccountId, idempotencyKey: `beebizy_ticket_refund_${order.id}` },
-    );
-    refundId = refund.id;
+  } catch (error) {
+    await db.update(ticketOrders).set({ status: "paid", updatedAt: new Date() })
+      .where(and(eq(ticketOrders.id, order.id), eq(ticketOrders.status, "refunding")));
+    throw error;
   }
 
   const refundedAt = new Date();
-  await db.batch([
-    db.update(ticketOrders).set({ status: "refunded", refundedAt, stripeRefundId: refundId, updatedAt: refundedAt })
-      .where(and(eq(ticketOrders.id, order.id), eq(ticketOrders.status, "paid"))),
-    db.update(ticketTypes).set({
-      quantitySold: sql`greatest(0, ${ticketTypes.quantitySold} - ${order.quantity})`,
-      updatedAt: refundedAt,
-    }).where(eq(ticketTypes.id, order.ticketTypeId)),
-    db.update(registrations).set({ status: "cancelled", updatedAt: refundedAt })
-      .where(eq(registrations.ticketOrderId, order.id)),
-  ]);
+  await db.execute(sql`
+    with finalized as (
+      update ${ticketOrders}
+      set status = 'refunded', refunded_at = ${refundedAt}, stripe_refund_id = ${refundId}, updated_at = ${refundedAt}
+      where id = ${order.id} and status = 'refunding'
+      returning ticket_type_id, quantity
+    )
+    update ${ticketTypes} as ticket
+    set quantity_sold = greatest(0, ticket.quantity_sold - finalized.quantity), updated_at = ${refundedAt}
+    from finalized
+    where ticket.id = finalized.ticket_type_id
+  `);
+  await db.update(registrations).set({ status: "cancelled", updatedAt: refundedAt })
+    .where(eq(registrations.ticketOrderId, order.id));
   return (await listTicketOrders(ctx, eventId)).find((item) => item.id === orderId)!;
 }
 
@@ -577,6 +606,7 @@ function auctionCheckoutSessionParams(input: {
   const metadata = { kind: "auction-order", orderId: input.orderId };
   return {
     mode: "payment",
+    payment_method_types: ["card"],
     client_reference_id: input.orderId,
     customer_email: input.bidderEmail,
     line_items: [{
@@ -623,7 +653,14 @@ export async function closeAuctionItem(
     return { status: "closed-no-bids", paymentUrl: null };
   }
   if (!row.event.auctionPublicToken) throw new HttpError(409, "Create the public auction link before closing items.");
-  if (!row.workspace.stripeConnectedAccountId || !row.workspace.stripeConnectedChargesEnabled || !row.workspace.stripeConnectedPayoutsEnabled) {
+  if (!row.workspace.stripeConnectedAccountId) {
+    throw new HttpError(409, "Connect and finish Stripe payout setup before collecting a winning bid.");
+  }
+
+  const stripe = stripeClient();
+  const connectedAccount = await stripe.accounts.retrieve(row.workspace.stripeConnectedAccountId);
+  await syncConnectedAccount(row.workspace.id, connectedAccount);
+  if (!connectedAccount.details_submitted || !connectedAccount.charges_enabled || !connectedAccount.payouts_enabled) {
     throw new HttpError(409, "Connect and finish Stripe payout setup before collecting a winning bid.");
   }
 
@@ -651,7 +688,6 @@ export async function closeAuctionItem(
     return { status: "winner-notified", paymentUrl: row.item.paymentLink };
   }
 
-  const stripe = stripeClient();
   const session = await stripe.checkout.sessions.create(auctionCheckoutSessionParams({
     orderId: order.id,
     itemTitle: row.item.title,
@@ -664,7 +700,7 @@ export async function closeAuctionItem(
     origin: appOrigin(request),
   }), {
     stripeAccount: row.workspace.stripeConnectedAccountId,
-    idempotencyKey: `beebizy_auction_checkout_${order.id}`,
+    idempotencyKey: `beebizy_auction_checkout_${order.id}_${order.stripeSessionId ?? "initial"}`,
   });
   if (!session.url) throw new Error("Stripe did not return an auction payment URL.");
   await db.batch([
@@ -685,6 +721,63 @@ export async function closeAuctionItem(
     paymentUrl: session.url,
   });
   return { status: "winner-notified", paymentUrl: session.url };
+}
+
+export async function offerAuctionSecondChance(
+  ctx: RequestContext,
+  eventId: string,
+  itemId: string,
+  request: Request,
+): Promise<{ status: "winner-notified"; paymentUrl: string | null }> {
+  const [row] = await db.select({ item: auctionItems, event: events }).from(auctionItems)
+    .innerJoin(events, eq(auctionItems.eventId, events.id))
+    .where(and(
+      eq(auctionItems.id, itemId),
+      eq(auctionItems.eventId, eventId),
+      eq(auctionItems.workspaceId, ctx.workspaceId),
+    )).limit(1);
+  if (!row) throw new HttpError(404, "That auction item no longer exists.");
+  if (!normalizeAuctionPageSettings(row.event.auctionPage).secondChanceEnabled) {
+    throw new HttpError(409, "Turn on second-chance offers in auction settings first.");
+  }
+  if (!row.item.winningBidderId) throw new HttpError(409, "This item does not have a current winner.");
+  const [paidOrder] = await db.select({ status: auctionOrders.status }).from(auctionOrders).where(and(
+    eq(auctionOrders.itemId, itemId),
+    eq(auctionOrders.bidderId, row.item.winningBidderId),
+  )).limit(1);
+  if (paidOrder?.status === "paid" || paidOrder?.status === "refunding") {
+    throw new HttpError(409, "Refund the current winner before making a second-chance offer.");
+  }
+  const [runnerUp] = await db.select({
+    bidderId: auctionBidders.id,
+    maximum: sql<number>`max(${auctionBids.maximumAmountCents})`,
+    firstBidAt: sql<Date>`min(${auctionBids.createdAt})`,
+  }).from(auctionBidders)
+    .innerJoin(auctionBids, eq(auctionBids.bidderId, auctionBidders.id))
+    .where(and(
+      eq(auctionBids.itemId, itemId),
+      sql`${auctionBidders.id} <> ${row.item.winningBidderId}`,
+    ))
+    .groupBy(auctionBidders.id)
+    .orderBy(desc(sql`max(${auctionBids.maximumAmountCents})`), asc(sql`min(${auctionBids.createdAt})`))
+    .limit(1);
+  if (!runnerUp) throw new HttpError(409, "There is no runner-up bidder for this item.");
+  await db.batch([
+    db.update(auctionOrders).set({ status: "failed", updatedAt: new Date() }).where(and(
+      eq(auctionOrders.itemId, itemId),
+      eq(auctionOrders.bidderId, row.item.winningBidderId),
+      eq(auctionOrders.status, "pending"),
+    )),
+    db.update(auctionItems).set({
+      winningBidderId: runnerUp.bidderId,
+      currentBidCents: Number(runnerUp.maximum),
+      winnerName: null,
+      paymentLink: null,
+      status: "open",
+      updatedAt: new Date(),
+    }).where(eq(auctionItems.id, itemId)),
+  ]);
+  return closeAuctionItem(ctx, eventId, itemId, request) as Promise<{ status: "winner-notified"; paymentUrl: string | null }>;
 }
 
 export async function completeAuctionCheckoutSession(session: Stripe.Checkout.Session): Promise<void> {
@@ -763,18 +856,36 @@ export async function refundAuctionOrder(ctx: RequestContext, eventId: string, o
     eq(auctionOrders.id, orderId), eq(auctionOrders.eventId, eventId), eq(auctionOrders.workspaceId, ctx.workspaceId),
   )).limit(1);
   if (!order) throw new HttpError(404, "That auction order no longer exists.");
-  if (order.status !== "paid") throw new HttpError(409, "Only a paid auction order can be refunded.");
+  if (order.status === "refunded") return (await listAuctionOrders(ctx, eventId)).find((item) => item.id === orderId)!;
+  if (order.status === "refunding" && (!order.updatedAt || order.updatedAt > new Date(Date.now() - 5 * 60_000))) {
+    throw new HttpError(409, "This refund is already processing.");
+  }
+  if (order.status !== "paid" && order.status !== "refunding") {
+    throw new HttpError(409, "Only a paid auction order can be refunded.");
+  }
   if (!order.stripePaymentIntentId || !order.stripeConnectedAccountId) {
     throw new HttpError(409, "This order is missing its Stripe payment reference. Contact Beebizy support.");
   }
-  const refund = await stripeClient().refunds.create(
-    { payment_intent: order.stripePaymentIntentId, refund_application_fee: true },
-    { stripeAccount: order.stripeConnectedAccountId, idempotencyKey: `beebizy_auction_refund_${order.id}` },
-  );
+  if (order.status === "paid") {
+    const [claimed] = await db.update(auctionOrders).set({ status: "refunding", updatedAt: new Date() })
+      .where(and(eq(auctionOrders.id, order.id), eq(auctionOrders.status, "paid"))).returning({ id: auctionOrders.id });
+    if (!claimed) throw new HttpError(409, "This refund is already processing.");
+  }
+  let refund: Stripe.Refund;
+  try {
+    refund = await stripeClient().refunds.create(
+      { payment_intent: order.stripePaymentIntentId, refund_application_fee: true },
+      { stripeAccount: order.stripeConnectedAccountId, idempotencyKey: `beebizy_auction_refund_${order.id}` },
+    );
+  } catch (error) {
+    await db.update(auctionOrders).set({ status: "paid", updatedAt: new Date() })
+      .where(and(eq(auctionOrders.id, order.id), eq(auctionOrders.status, "refunding")));
+    throw error;
+  }
   const refundedAt = new Date();
   await db.batch([
     db.update(auctionOrders).set({ status: "refunded", refundedAt, stripeRefundId: refund.id, updatedAt: refundedAt })
-      .where(eq(auctionOrders.id, order.id)),
+      .where(and(eq(auctionOrders.id, order.id), eq(auctionOrders.status, "refunding"))),
     db.update(auctionItems).set({ paymentReceivedAt: null, fulfillmentStatus: "pending", updatedAt: refundedAt })
       .where(eq(auctionItems.id, order.itemId)),
   ]);

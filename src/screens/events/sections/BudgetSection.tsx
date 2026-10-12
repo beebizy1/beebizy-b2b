@@ -33,6 +33,8 @@ import {
   useAuctionItems,
   useAuctionDonors,
   useAddAuctionDonor,
+  useUpdateAuctionDonor,
+  useSendAuctionDonorThankYou,
   useBudget,
   useDrawRaffle,
   useEventRoi,
@@ -56,7 +58,10 @@ import {
   usePublishAuctionItem,
   useUploadAuctionImage,
   useCloseAuctionItem,
+  useOfferAuctionSecondChance,
   useAuctionOrders,
+  useAuctionBidders,
+  useAuctionBids,
   useRefundAuctionOrder,
   useUpdateBudgetItem,
   useUpdateSponsorship,
@@ -77,6 +82,8 @@ import {
 } from "@/data/entities";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
+import { platformFeeCents } from "@/data/commerce";
+import { readSpreadsheetFile } from "@/data/import";
 
 /** Inline money field that only writes on blur, so every keystroke isn't a mutation. */
 function MoneyCell({
@@ -811,6 +818,35 @@ export function TicketsPanel({ event }: { event: Event }) {
           <textarea id="ticket-invitees" value={invitationRows} onChange={(event) => setInvitationRows(event.target.value)} placeholder={"Poorvi Shukla, poorvi@example.com\nTarang Goyal, tarang@example.com"} className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
           <p className="text-xs text-muted-foreground">Paste rows from a spreadsheet as Full name, email. Duplicate emails are sent once.</p>
         </div>
+        <label className="inline-flex cursor-pointer items-center text-sm font-medium text-primary hover:underline">
+          Upload a CSV or Excel guest list
+          <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            void readSpreadsheetFile(file).then((tables) => {
+              const table = tables[0];
+              if (!table) throw new Error("The spreadsheet is empty.");
+              const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+              const emailHeader = table.headers.find((header) => normalized(header).includes("email"));
+              const fullNameHeader = table.headers.find((header) => ["name", "fullname", "guestname", "attendeename"].includes(normalized(header)));
+              const firstNameHeader = table.headers.find((header) => normalized(header) === "firstname");
+              const lastNameHeader = table.headers.find((header) => normalized(header) === "lastname");
+              if (!emailHeader || (!fullNameHeader && !firstNameHeader && !lastNameHeader)) {
+                throw new Error("The file needs an email column and either full name or first/last name columns.");
+              }
+              const lines = table.rows.flatMap((row) => {
+                const email = String(row[emailHeader] ?? "").trim();
+                const name = fullNameHeader
+                  ? String(row[fullNameHeader] ?? "").trim()
+                  : [firstNameHeader ? row[firstNameHeader] : null, lastNameHeader ? row[lastNameHeader] : null].filter(Boolean).join(" ").trim();
+                return name && email ? [`${name}, ${email}`] : [];
+              });
+              if (lines.length === 0) throw new Error("No valid name and email rows were found.");
+              setInvitationRows(lines.join("\n"));
+              toast({ title: `${lines.length} invitees loaded` });
+            }).catch((error: unknown) => toast({ title: "Couldn't read guest list", description: error instanceof Error ? error.message : String(error) }));
+          }} />
+        </label>
         <label className="flex items-start gap-2 text-sm text-muted-foreground">
           <input type="checkbox" checked={invitationConsent} onChange={(event) => setInvitationConsent(event.target.checked)} className="mt-1 size-4 accent-[hsl(var(--primary))]" />
           <span>I confirm these recipients expect communication about this event.</span>
@@ -818,6 +854,23 @@ export function TicketsPanel({ event }: { event: Event }) {
         <Button type="submit" disabled={!invitationRows.trim() || !invitationConsent || sendInvitations.isPending}>
           {sendInvitations.isPending ? "Sending…" : "Send invitations"}
         </Button>
+        {(invitations ?? []).length > 0 ? (
+          <div className="border-t border-hairline pt-4">
+            <p className="mb-2 text-sm font-semibold text-foreground">Individual invitation links</p>
+            <ul className="max-h-56 divide-y divide-hairline overflow-auto rounded-lg border border-hairline">
+              {(invitations ?? []).map((invitation) => {
+                const invitationUrl = `${window.location.origin}/api/public/ticket-invitations/${invitation.publicToken}`;
+                return (
+                  <li key={invitation.id} className="flex items-center gap-2 px-3 py-2">
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invitation.recipientName}</p><p className="truncate text-xs text-muted-foreground">{invitation.recipientEmail}</p></div>
+                    <Pill tone={invitation.status === "registered" ? "success" : invitation.status === "failed" ? "warning" : undefined}>{invitation.status}</Pill>
+                    <Button type="button" size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(invitationUrl); toast({ title: `Link copied for ${invitation.recipientName}` }); }}><Copy className="mr-1.5 size-3.5" />Copy</Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
       </form>
     </Panel>
     <Panel>
@@ -888,10 +941,15 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
   const publish = usePublishAuctionItem();
   const uploadImage = useUploadAuctionImage();
   const closeAuction = useCloseAuctionItem();
+  const secondChance = useOfferAuctionSecondChance();
   const { data: auctionOrders } = useAuctionOrders(event.id);
+  const { data: auctionBidders } = useAuctionBidders(event.id);
+  const { data: auctionBidHistory } = useAuctionBids(event.id);
   const refundAuction = useRefundAuctionOrder();
   const { data: donors } = useAuctionDonors(event.id);
   const addDonor = useAddAuctionDonor();
+  const updateDonor = useUpdateAuctionDonor();
+  const sendDonorThankYou = useSendAuctionDonorThankYou();
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<AuctionKind>(only ?? "silent");
   const [opening, setOpening] = useState("");
@@ -902,19 +960,27 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
   const [closesAt, setClosesAt] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [auctionToken, setAuctionToken] = useState(event.auctionPublicToken ?? null);
+  const [auctionSettings, setAuctionSettings] = useState(() => normalizeAuctionPageSettings(event.auctionPage));
   const [donorBusiness, setDonorBusiness] = useState("");
   const [donorContact, setDonorContact] = useState("");
   const [donorEmail, setDonorEmail] = useState("");
 
   const lots = only ? allLots?.filter((lot) => lot.auctionType === only) : allLots;
   const bids = sumCents((lots ?? []).map((lot) => lot.currentBidCents));
-  const settings = normalizeAuctionPageSettings(event.auctionPage);
+  useEffect(() => setAuctionSettings(normalizeAuctionPageSettings(event.auctionPage)), [event.auctionPage]);
+  const settings = auctionSettings;
   const auctionUrl = auctionToken ? `${window.location.origin}/auction/${auctionToken}` : null;
 
-  const saveSetting = (patch: Partial<typeof settings>) => updateSettings.mutate(
-    { eventId: event.id, settings: { ...settings, ...patch } },
-    { onError: (error) => toast({ title: "Couldn't update auction settings", description: error.message }) },
-  );
+  const saveSetting = (patch: Partial<typeof settings>) => {
+    const next = { ...auctionSettings, ...patch };
+    updateSettings.mutate(
+      { eventId: event.id, settings: next },
+      {
+        onSuccess: setAuctionSettings,
+        onError: (error) => toast({ title: "Couldn't update auction settings", description: error.message }),
+      },
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -955,6 +1021,10 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           <Button type="button" size="sm" variant={settings.catalogPublished ? "default" : "outline"} onClick={() => saveSetting({ catalogPublished: !settings.catalogPublished })}>Catalog {settings.catalogPublished ? "published" : "hidden"}</Button>
           <Button type="button" size="sm" variant={settings.allowRemoteBidders ? "default" : "outline"} onClick={() => saveSetting({ allowRemoteBidders: !settings.allowRemoteBidders })}>Remote bidding {settings.allowRemoteBidders ? "on" : "off"}</Button>
           <Button type="button" size="sm" variant={settings.automaticBiddingEnabled ? "default" : "outline"} onClick={() => saveSetting({ automaticBiddingEnabled: !settings.automaticBiddingEnabled })}>Automatic bidding {settings.automaticBiddingEnabled ? "on" : "off"}</Button>
+          <Button type="button" size="sm" variant={settings.secondChanceEnabled ? "default" : "outline"} onClick={() => saveSetting({ secondChanceEnabled: !settings.secondChanceEnabled })}>Second chance {settings.secondChanceEnabled ? "on" : "off"}</Button>
+          <Button type="button" size="sm" variant={settings.staggeredClosingEnabled ? "default" : "outline"} onClick={() => saveSetting({ staggeredClosingEnabled: !settings.staggeredClosingEnabled })}>Staggered closing {settings.staggeredClosingEnabled ? "on" : "off"}</Button>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">Auction close<Input type="datetime-local" value={settings.closesAt?.slice(0, 16) ?? ""} onChange={(inputEvent) => saveSetting({ closesAt: inputEvent.target.value ? new Date(inputEvent.target.value).toISOString() : null })} className="w-52" /></label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">Auto-extend minutes<Input type="number" min={0} max={60} value={settings.autoExtendMinutes} onChange={(inputEvent) => saveSetting({ autoExtendMinutes: Math.max(0, Math.min(60, Number(inputEvent.target.value) || 0)) })} className="w-20" /></label>
         </div>
       </div>
 
@@ -1071,6 +1141,26 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                     Opens at {formatMoney(lot.startingBidCents)}
                   </p>
                 ) : null}
+                <details className="mt-2 text-xs">
+                  <summary className="cursor-pointer font-medium text-primary">Review catalog details</summary>
+                  <div className="mt-3 grid gap-2 rounded-lg border border-hairline bg-surface-sunken p-3 sm:grid-cols-2">
+                    <Input defaultValue={lot.category ?? ""} placeholder="Category" aria-label={`Category for ${lot.title}`} onBlur={(inputEvent) => {
+                      const next = inputEvent.target.value.trim() || null;
+                      if (next !== (lot.category ?? null)) update.mutate({ eventId: event.id, id: lot.id, patch: { category: next } });
+                    }} />
+                    <Input defaultValue={lot.description ?? ""} placeholder="Description" aria-label={`Description for ${lot.title}`} onBlur={(inputEvent) => {
+                      const next = inputEvent.target.value.trim() || null;
+                      if (next !== lot.description) update.mutate({ eventId: event.id, id: lot.id, patch: { description: next } });
+                    }} />
+                    <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Starting bid</span><MoneyCell value={lot.startingBidCents} label={`Starting bid for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { startingBidCents: next } })} /></label>
+                    <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Fair market value</span><MoneyCell value={lot.fairMarketValueCents} label={`Fair market value for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { fairMarketValueCents: next } })} /></label>
+                    <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Bid increment</span><MoneyCell value={lot.bidIncrementCents ?? null} label={`Bid increment for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { bidIncrementCents: next } })} /></label>
+                    <Input type="datetime-local" defaultValue={lot.closesAt?.slice(0, 16) ?? ""} aria-label={`Closing time for ${lot.title}`} onBlur={(inputEvent) => {
+                      const next = inputEvent.target.value ? new Date(inputEvent.target.value).toISOString() : null;
+                      if (next !== lot.closesAt) update.mutate({ eventId: event.id, id: lot.id, patch: { closesAt: next } });
+                    }} />
+                  </div>
+                </details>
               </div>
 
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -1137,6 +1227,15 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                   Close item
                 </Button>
               ) : null}
+              {lot.status === "won" && settings.secondChanceEnabled ? (
+                <Button type="button" size="sm" variant="outline" disabled={secondChance.isPending} onClick={() => secondChance.mutate(
+                  { eventId: event.id, itemId: lot.id },
+                  {
+                    onSuccess: () => toast({ title: "Second-chance offer sent", description: "The runner-up received a secure payment link." }),
+                    onError: (error) => toast({ title: "Couldn't send second-chance offer", description: error.message }),
+                  },
+                )}>Offer to runner-up</Button>
+              ) : null}
 
               <button
                 type="button"
@@ -1193,14 +1292,79 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">{donor.businessName}</p>
                   <p className="truncate text-xs text-muted-foreground">{donor.contactName || donor.email || "Contact not added"}</p>
+                  <details className="mt-1 text-xs"><summary className="cursor-pointer text-primary">Donor history and notes</summary><div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <Input defaultValue={donor.solicitedBy ?? ""} placeholder="Solicited by" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { solicitedBy: inputEvent.target.value.trim() || null } })} />
+                    <Input defaultValue={donor.previousDonations ?? ""} placeholder="Previous donations" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { previousDonations: inputEvent.target.value.trim() || null } })} />
+                    <Input defaultValue={donor.notes ?? ""} placeholder="Internal notes" className="h-8" onBlur={(inputEvent) => updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { notes: inputEvent.target.value.trim() || null } })} />
+                  </div></details>
                 </div>
-                <Pill>{donor.solicitationStatus}</Pill>
+                <select value={donor.solicitationStatus} onChange={(inputEvent) => updateDonor.mutate({
+                  eventId: event.id,
+                  donorId: donor.id,
+                  patch: { solicitationStatus: inputEvent.target.value as "prospect" | "contacted" | "committed" | "received" | "declined" },
+                })} className="h-8 rounded-md border border-input bg-background px-2 text-xs" aria-label={`Solicitation status for ${donor.businessName}`}>
+                  <option value="prospect">Prospect</option><option value="contacted">Contacted</option><option value="committed">Committed</option><option value="received">Received</option><option value="declined">Declined</option>
+                </select>
+                <Input defaultValue={donor.recognitionPreference ?? ""} placeholder="Recognition preference" className="h-8 w-44" onBlur={(inputEvent) => {
+                  const next = inputEvent.target.value.trim() || null;
+                  if (next !== donor.recognitionPreference) updateDonor.mutate({ eventId: event.id, donorId: donor.id, patch: { recognitionPreference: next } });
+                }} />
                 <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(donorLink); toast({ title: "Donor link copied" }); }}><Copy className="mr-1.5 size-3.5" />Copy intake link</Button>
+                <Button variant="outline" size="sm" disabled={donor.thankYouStatus === "sent" || sendDonorThankYou.isPending} onClick={() => sendDonorThankYou.mutate(
+                  { eventId: event.id, donorId: donor.id },
+                  { onSuccess: () => toast({ title: "Donor thank-you sent" }), onError: (error) => toast({ title: "Couldn't send thank-you", description: error.message }) },
+                )}>{donor.thankYouStatus === "sent" ? "Thanked" : "Send thank-you"}</Button>
               </li>
             );
           })}
         </ul>
       )}
+    </Panel>
+    <Panel>
+      <PanelHeader
+        title="Auction report"
+        description="Final prices, market value, bidder activity, no-bid items, and fees."
+        actions={
+          <Button type="button" size="sm" variant="outline" onClick={() => {
+            const headers = ["Lot", "Item", "Status", "Fair market value", "Current or final bid", "Bid count", "Distinct bidders", "Winner", "Payment", "Fulfillment", "Beebizy fee"];
+            const rows = (allLots ?? []).map((lot) => {
+              const itemBids = (auctionBidHistory ?? []).filter((bidRow) => bidRow.itemId === lot.id);
+              const order = (auctionOrders ?? []).find((orderRow) => orderRow.itemId === lot.id);
+              return [
+                lot.lotNumber ?? "", lot.title, lot.status, lot.fairMarketValueCents ?? "", lot.currentBidCents ?? "",
+                itemBids.length, new Set(itemBids.map((bidRow) => bidRow.bidderId)).size, lot.winnerName ?? "",
+                order?.status ?? "no order", order?.fulfillmentStatus ?? lot.fulfillmentStatus ?? "pending",
+                platformFeeCents(order?.amountCents ?? lot.currentBidCents ?? 0),
+              ];
+            });
+            const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
+            const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${event.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-auction-report.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+          }}>Export CSV</Button>
+        }
+      />
+      <div className="grid grid-cols-2 gap-3 border-b border-hairline p-5 lg:grid-cols-4">
+        <StatTile label="Registered bidders" value={String(auctionBidders?.length ?? 0)} />
+        <StatTile label="Bids placed" value={String(auctionBidHistory?.length ?? 0)} />
+        <StatTile label="Items with no bids" value={String((allLots ?? []).filter((lot) => !(auctionBidHistory ?? []).some((bidRow) => bidRow.itemId === lot.id)).length)} />
+        <StatTile label="Current proceeds" value={formatMoney(sumCents((allLots ?? []).map((lot) => lot.currentBidCents)))} tone="success" />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-hairline text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-5 py-3">Item</th><th className="px-3 py-3 text-right">FMV</th><th className="px-3 py-3 text-right">Bid</th><th className="px-3 py-3 text-right">Bids</th><th className="px-3 py-3 text-right">Bidders</th><th className="px-5 py-3">Result</th></tr></thead>
+          <tbody className="divide-y divide-hairline">{(allLots ?? []).map((lot) => {
+            const itemBids = (auctionBidHistory ?? []).filter((bidRow) => bidRow.itemId === lot.id);
+            return <tr key={lot.id}><td className="px-5 py-3 font-medium">{lot.title}</td><td className="px-3 py-3 text-right">{lot.fairMarketValueCents == null ? "—" : formatMoney(lot.fairMarketValueCents)}</td><td className="px-3 py-3 text-right">{lot.currentBidCents == null ? "—" : formatMoney(lot.currentBidCents)}</td><td className="px-3 py-3 text-right">{itemBids.length}</td><td className="px-3 py-3 text-right">{new Set(itemBids.map((bidRow) => bidRow.bidderId)).size}</td><td className="px-5 py-3">{lot.winnerName || (itemBids.length ? lot.status : "No bids")}</td></tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {(auctionBidHistory ?? []).length > 0 ? (
+        <div className="border-t border-hairline p-5"><p className="mb-2 text-sm font-semibold">Recent bid history</p><ul className="space-y-1 text-xs text-muted-foreground">{(auctionBidHistory ?? []).slice(0, 20).map((bidRow) => <li key={bidRow.id}>{bidRow.bidderName} bid {formatMoney(bidRow.amountCents)} on {(allLots ?? []).find((lot) => lot.id === bidRow.itemId)?.title ?? "an item"}</li>)}</ul></div>
+      ) : null}
     </Panel>
     <Panel>
       <PanelHeader title="Auction payments and fulfillment" description="Winning bids, Beebizy fees, payment status, and handoff in one report." />
@@ -1219,7 +1383,21 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                 <p>Beebizy 2%: {formatMoney(order.applicationFeeCents)}</p>
               </div>
               <Pill tone={order.status === "paid" ? "success" : order.status === "refunded" ? "warning" : undefined}>{order.status}</Pill>
-              <Pill>{order.fulfillmentStatus}</Pill>
+              <select
+                value={order.fulfillmentStatus}
+                onChange={(inputEvent) => update.mutate({
+                  eventId: event.id,
+                  id: order.itemId,
+                  patch: {
+                    fulfillmentStatus: inputEvent.target.value as "pending" | "ready" | "picked-up" | "delivered",
+                    fulfilledAt: ["picked-up", "delivered"].includes(inputEvent.target.value) ? new Date().toISOString() : null,
+                  },
+                }, { onError: (error) => toast({ title: "Couldn't update fulfillment", description: error.message }) })}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                aria-label={`Fulfillment status for ${order.itemTitle}`}
+              >
+                <option value="pending">Pending</option><option value="ready">Ready</option><option value="picked-up">Picked up</option><option value="delivered">Delivered</option>
+              </select>
               {order.status === "paid" ? (
                 <Button size="sm" variant="outline" disabled={refundAuction.isPending} onClick={() => refundAuction.mutate(
                   { eventId: event.id, orderId: order.id },

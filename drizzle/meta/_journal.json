@@ -337,6 +337,20 @@
       "when": 1791836572045,
       "tag": "0047_auction_order_payment_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791837347486,
+      "tag": "0048_payment_refund_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791837353439,
+      "tag": "0049_durable_ticket_reservations",
+      "breakpoints": true
     }
   ]
 }

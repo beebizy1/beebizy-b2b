@@ -51,7 +51,7 @@ vi.mock("./repos", () => {
     raffle: child,
     auctionDonors: child,
     auctionManagement: {
-      share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(),
+      share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(), sendDonorThankYou: vi.fn(),
     },
     events: {
       get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
@@ -83,6 +83,7 @@ vi.mock("./commercePayments", () => ({
   listTicketOrders: vi.fn(),
   refundTicketOrder: vi.fn(),
   closeAuctionItem: vi.fn(),
+  offerAuctionSecondChance: vi.fn(),
   listAuctionOrders: vi.fn(),
   refundAuctionOrder: vi.fn(),
 }));

@@ -291,6 +291,36 @@ export async function notifyAuctionPaymentConfirmation(input: {
   });
 }
 
+export async function notifyAuctionDonorThankYou(input: {
+  donorId: string;
+  to: string;
+  contactName: string;
+  donorName: string;
+  eventTitle: string;
+  itemTitles: string[];
+}): Promise<EmailOutcome> {
+  const itemSummary = input.itemTitles.length > 0 ? input.itemTitles.join(", ") : "your auction donation";
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-donor-thank-you-${input.donorId}`,
+    subject: `Thank you for supporting ${emailSubjectPart(input.eventTitle)}`,
+    text: [
+      `Hi ${input.contactName},`, "", `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
+      `Donation: ${itemSummary}`, "", "Your contribution helps make this event possible.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Thank you for your auction donation",
+      greeting: `Hi ${input.contactName},`,
+      paragraphs: [
+        `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
+        "Your contribution helps make this event possible.",
+      ],
+      details: [["Event", input.eventTitle], ["Donation", itemSummary]],
+    }),
+  });
+}
+
 const FEEDBACK_NOTIFICATION_EMAIL = "hello@beebizy.com";
 
 function emailSubjectPart(value: string): string {

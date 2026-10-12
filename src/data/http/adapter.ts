@@ -360,6 +360,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       removeDonor: async (eventId, donorId) => {
         await client.del(`/events/${eventId}/auction-donors/${donorId}`);
       },
+      sendDonorThankYou: (eventId, donorId) => client.post<AuctionDonor>(`/events/${eventId}/auction-donors/${donorId}/thank-you`),
       share: (eventId) => client.post<{ auctionPublicToken: string }>(`/events/${eventId}/auction-share`),
       updateSettings: (eventId, settings) => client.patch<AuctionPageSettings>(`/events/${eventId}/auction-settings`, settings),
       publishItem: (eventId, itemId, published) => client.post<AuctionItem>(`/events/${eventId}/auction/${itemId}/publish`, { published }),
@@ -403,6 +404,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
           body: JSON.stringify(draft),
         }),
       closeItem: (eventId, itemId) => client.post<{ status: "closed-no-bids" | "winner-notified"; paymentUrl: string | null }>(`/events/${eventId}/auction/${itemId}/close`),
+      offerSecondChance: (eventId, itemId) => client.post<{ status: "winner-notified"; paymentUrl: string | null }>(`/events/${eventId}/auction/${itemId}/second-chance`),
       listOrders: (eventId) => client.get<AuctionOrder[]>(`/events/${eventId}/auction-orders`),
       refundOrder: (eventId, orderId) => client.post<AuctionOrder>(`/events/${eventId}/auction-orders/${orderId}/refund`),
     },

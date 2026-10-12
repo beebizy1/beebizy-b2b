@@ -30,6 +30,7 @@ import {
   listTicketOrders,
   refundTicketOrder,
   closeAuctionItem,
+  offerAuctionSecondChance,
   listAuctionOrders,
   refundAuctionOrder,
 } from "../src/server/commercePayments.ts";
@@ -644,6 +645,9 @@ async function handleAuthed(
         if (b === "auction-donors") {
           if (!c && method === "GET") return json(await repos.auctionDonors.list(ctx, a));
           if (!c && method === "POST") return json(await repos.auctionDonors.create(ctx, a, body), 201);
+          if (c && segments[4] === "thank-you" && method === "POST") {
+            return json(await repos.auctionManagement.sendDonorThankYou(ctx, a, c));
+          }
           if (c && method === "PATCH") return json(await repos.auctionDonors.update(ctx, a, c, body));
           if (c && method === "DELETE") {
             await repos.auctionDonors.remove(ctx, a, c);
@@ -675,6 +679,9 @@ async function handleAuthed(
         }
         if (b === "auction" && c && segments[4] === "close" && method === "POST") {
           return json(await closeAuctionItem(ctx, a, c, request));
+        }
+        if (b === "auction" && c && segments[4] === "second-chance" && method === "POST") {
+          return json(await offerAuctionSecondChance(ctx, a, c, request));
         }
         if (b === "ticket-orders") {
           if (!c && method === "GET") return json(await listTicketOrders(ctx, a));

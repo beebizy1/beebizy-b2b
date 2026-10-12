@@ -101,7 +101,7 @@ export async function sendTicketInvitations(
       const sent = outcome.status === "sent";
       const now = new Date();
       const [updated] = await db.update(ticketInvitations).set({
-        status: sent ? "sent" : "failed",
+        status: stored.status === "registered" ? "registered" : sent ? "sent" : "failed",
         sentAt: sent ? now : stored.sentAt,
         updatedAt: now,
       }).where(eq(ticketInvitations.id, stored.id)).returning();

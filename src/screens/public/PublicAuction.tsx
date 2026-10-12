@@ -110,6 +110,10 @@ export default function PublicAuctionPage({ token }: { token: string }) {
           <div className="grid gap-5 sm:grid-cols-2">
             {items.map((item) => {
               const minimum = item.currentBidCents === null ? item.startingBidCents : item.currentBidCents + item.bidIncrementCents;
+              const now = Date.now();
+              const opensAt = item.opensAt ? new Date(item.opensAt).getTime() : null;
+              const closesAt = item.closesAt ? new Date(item.closesAt).getTime() : null;
+              const biddingOpen = item.status === "open" && (opensAt === null || now >= opensAt) && (closesAt === null || now < closesAt);
               return (
                 <article key={item.id} className="overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
                   {item.imageUrl ? <img src={item.imageUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" /> : <div className="grid aspect-[4/3] place-items-center bg-surface-sunken"><Gavel className="size-10 text-muted-foreground" /></div>}
@@ -126,7 +130,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
                       <div><dt className="text-xs text-muted-foreground">Bids</dt><dd className="font-semibold">{item.bidCount}</dd></div>
                       <div><dt className="text-xs text-muted-foreground">Minimum next bid</dt><dd className="font-semibold">{formatMoney(minimum)}</dd></div>
                     </dl>
-                    {item.status === "open" && bidderToken ? (
+                    {biddingOpen && bidderToken ? (
                       <form
                         className="flex gap-2"
                         onSubmit={(formEvent) => {
@@ -149,7 +153,9 @@ export default function PublicAuctionPage({ token }: { token: string }) {
                         <Input type="number" min={minimum / 100} step="0.01" value={amounts[item.id] ?? ""} onChange={(event) => setAmounts((current) => ({ ...current, [item.id]: event.target.value }))} placeholder={`$${(minimum / 100).toFixed(2)}`} aria-label={`Bid on ${item.title}`} />
                         <Button type="submit" disabled={bid.isPending}>Place bid</Button>
                       </form>
-                    ) : item.status !== "open" ? <Pill tone="warning">Bidding closed</Pill> : null}
+                    ) : !biddingOpen ? (
+                      <Pill tone="warning">{opensAt !== null && now < opensAt ? "Bidding has not opened" : "Bidding closed"}</Pill>
+                    ) : null}
                   </div>
                 </article>
               );
