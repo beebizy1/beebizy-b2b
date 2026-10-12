@@ -253,12 +253,13 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       listSubmissions: (eventId) => client.get<ItemSubmission[]>(`/events/${eventId}/item-submissions`),
       updateSubmission: (eventId, submissionId, patch) => client.patch<ItemSubmission>(`/events/${eventId}/item-submissions/${submissionId}`, patch),
       dashboard: (eventId) => client.get<FundraisingDashboard>(`/events/${eventId}/fundraising-dashboard`),
-      extendItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; extensionMinutes: number }>(`/events/${eventId}/auction/${itemId}/extend`, { minutes }),
-      extendItems: (eventId, itemIds, minutes) => client.post<{ extended: number }>(`/events/${eventId}/auction/extend-many`, { itemIds, minutes }),
+      extendItem: (eventId, itemId, minutes, notify = true) => client.post<{ closesAt: string; extensionMinutes: number }>(`/events/${eventId}/auction/${itemId}/extend`, { minutes, notify }),
+      extendItems: (eventId, itemIds, minutes, notify = true) => client.post<{ extended: number }>(`/events/${eventId}/auction/extend-many`, { itemIds, minutes, notify }),
       reopenItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; status: "open" }>(`/events/${eventId}/auction/${itemId}/reopen`, { minutes }),
-      getPublicIntake: async (auctionToken) => {
+      getPublicIntake: async (auctionToken, priorDonorToken) => {
         try {
-          return await publicRequest<PublicItemIntakePayload>(`/public/auctions/${auctionToken}/intake`);
+          const query = priorDonorToken ? `?prior=${encodeURIComponent(priorDonorToken)}` : "";
+          return await publicRequest<PublicItemIntakePayload>(`/public/auctions/${auctionToken}/intake${query}`);
         } catch (error) {
           if (error instanceof DataError && error.code === "not-found") return null;
           throw error;

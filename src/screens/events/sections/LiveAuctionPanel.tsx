@@ -140,10 +140,10 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
             {active.description ? (
               <p className="mt-1 text-sm text-muted-foreground">{active.description}</p>
             ) : null}
-            <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{active.fairMarketValueCents != null ? <span>Value {formatMoney(active.fairMarketValueCents)}</span> : null}{active.restrictions ? <span>Restrictions: {active.restrictions}</span> : null}{active.donorName ? <span>Donated by {active.donorName}</span> : null}</div>
+            <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{active.fairMarketValueCents != null ? <span data-numeric>Value {formatMoney(active.fairMarketValueCents)}</span> : null}{active.restrictions ? <span>Restrictions: {active.restrictions}</span> : null}{active.donorName ? <span>Donated by {active.donorName}</span> : null}</div>
           </div>
 
-          {activeRemoteBids.length > 0 ? <div className="rounded-xl border border-primary/20 bg-background p-3"><p className="text-xs font-bold uppercase tracking-wide text-primary-text">Remote bids</p><ul className="mt-2 space-y-2">{activeRemoteBids.map((remoteBid) => { const remoteBidder = (bidders ?? []).find((candidate) => candidate.id === remoteBid.bidderId); return <li key={remoteBid.id} className="flex items-center justify-between text-sm"><span>Remote: Paddle {remoteBidder?.paddleNumber ?? "-"} · {remoteBidder?.name ?? "Bidder"}</span><strong>{formatMoney(remoteBid.amountCents)}</strong></li>; })}</ul></div> : null}
+          {activeRemoteBids.length > 0 ? <div className="rounded-xl border border-primary/20 bg-background p-3"><p className="text-xs font-bold uppercase tracking-wide text-primary-text">Remote bids</p><ul className="mt-2 space-y-2">{activeRemoteBids.map((remoteBid) => { const remoteBidder = (bidders ?? []).find((candidate) => candidate.id === remoteBid.bidderId); return <li key={remoteBid.id} className="flex items-center justify-between text-sm"><span data-numeric>Remote: Paddle {remoteBidder?.paddleNumber ?? "-"} · {remoteBidder?.name ?? "Bidder"}</span><strong data-numeric>{formatMoney(remoteBid.amountCents)}</strong></li>; })}</ul></div> : null}
 
           <div className="flex flex-wrap items-center gap-3">
             <div>

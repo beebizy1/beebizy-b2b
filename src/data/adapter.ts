@@ -57,6 +57,7 @@ import type {
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
   FundraisingDashboard,
+  FundraisingBroadcastAudience,
   FundraisingOrganizationProfile,
   ItemSubmission,
   PublicItemIntakePayload,
@@ -444,10 +445,10 @@ export interface FundraisingRepository {
   listSubmissions(eventId: string): Promise<ItemSubmission[]>;
   updateSubmission(eventId: string, submissionId: string, patch: { status: ItemSubmission["status"]; requestedChanges?: string | null }): Promise<ItemSubmission>;
   dashboard(eventId: string): Promise<FundraisingDashboard>;
-  extendItem(eventId: string, itemId: string, minutes: number): Promise<{ closesAt: string; extensionMinutes: number }>;
-  extendItems(eventId: string, itemIds: string[], minutes: number): Promise<{ extended: number }>;
+  extendItem(eventId: string, itemId: string, minutes: number, notify?: boolean): Promise<{ closesAt: string; extensionMinutes: number }>;
+  extendItems(eventId: string, itemIds: string[], minutes: number, notify?: boolean): Promise<{ extended: number }>;
   reopenItem(eventId: string, itemId: string, minutes: number): Promise<{ closesAt: string; status: "open" }>;
-  getPublicIntake(auctionToken: string): Promise<PublicItemIntakePayload | null>;
+  getPublicIntake(auctionToken: string, priorDonorToken?: string | null): Promise<PublicItemIntakePayload | null>;
   submitPublicItem(auctionToken: string, draft: PublicItemSubmissionDraft): Promise<PublicItemIntakePayload>;
   uploadPublicItemImage(auctionToken: string, file: File): Promise<string>;
   reinvitePastDonors(eventId: string): Promise<{ sent: number; failed: number }>;
@@ -477,8 +478,8 @@ export interface FundraisingRepository {
   }): Promise<DonationCheckoutResult>;
   getDonationStatus(token: string, donationId: string): Promise<PublicDonationStatus | null>;
   getPublicCertificate(token: string): Promise<PublicExperienceCertificate | null>;
-  previewBroadcast(eventId: string, draft: { audience: string; itemIds: string[] }): Promise<{ recipients: number }>;
-  sendBroadcast(eventId: string, draft: { audience: string; itemIds: string[]; channels: string[]; message: string }): Promise<{ recipients: number; sent: number; failed: number }>;
+  previewBroadcast(eventId: string, draft: { audience: FundraisingBroadcastAudience; itemIds: string[] }): Promise<{ recipients: number }>;
+  sendBroadcast(eventId: string, draft: { audience: FundraisingBroadcastAudience; itemIds: string[]; channels: string[]; message: string }): Promise<{ recipients: number; sent: number; failed: number }>;
   recordLiveSale(eventId: string, itemId: string, paddleNumbers: number[], amountCents: number): Promise<{ winners: number }>;
   undoLiveSale(eventId: string, itemId: string): Promise<{ reopened: true }>;
   reports(eventId: string): Promise<FundraisingReports>;

@@ -1106,14 +1106,14 @@ export function useFundraisingDashboard(eventId: string) {
 
 export function useExtendAuctionItem() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; itemId: string; minutes: number }) => a.fundraising.extendItem(vars.eventId, vars.itemId, vars.minutes),
+    (a, vars: { eventId: string; itemId: string; minutes: number; notify?: boolean }) => a.fundraising.extendItem(vars.eventId, vars.itemId, vars.minutes, vars.notify),
     (vars) => [qk.auction(vars.eventId), qk.publicAuction(vars.eventId)],
   );
 }
 
 export function useExtendAuctionItems() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; itemIds: string[]; minutes: number }) => a.fundraising.extendItems(vars.eventId, vars.itemIds, vars.minutes),
+    (a, vars: { eventId: string; itemIds: string[]; minutes: number; notify?: boolean }) => a.fundraising.extendItems(vars.eventId, vars.itemIds, vars.minutes, vars.notify),
     (vars) => [qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
   );
 }
@@ -1126,7 +1126,8 @@ export function useReopenAuctionItem() {
 }
 
 export function usePublicItemIntake(token: string) {
-  return useAdapterQuery(qk.publicItemIntake(token), (a) => a.fundraising.getPublicIntake(token), { enabled: !!token });
+  const priorDonorToken = new URLSearchParams(window.location.search).get("prior");
+  return useAdapterQuery([...qk.publicItemIntake(token), priorDonorToken ?? "new"], (a) => a.fundraising.getPublicIntake(token, priorDonorToken), { enabled: !!token });
 }
 
 export function useSubmitPublicItem() {
@@ -1265,14 +1266,14 @@ export function usePublicExperienceCertificate(token: string) {
 
 export function usePreviewFundraisingBroadcast() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; audience: string; itemIds: string[] }) => a.fundraising.previewBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds }),
+    (a, vars: { eventId: string; audience: import("./entities").FundraisingBroadcastAudience; itemIds: string[] }) => a.fundraising.previewBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds }),
     () => [],
   );
 }
 
 export function useSendFundraisingBroadcast() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; audience: string; itemIds: string[]; channels: string[]; message: string }) => a.fundraising.sendBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds, channels: vars.channels, message: vars.message }),
+    (a, vars: { eventId: string; audience: import("./entities").FundraisingBroadcastAudience; itemIds: string[]; channels: string[]; message: string }) => a.fundraising.sendBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds, channels: vars.channels, message: vars.message }),
     (vars) => [qk.fundraisingDashboard(vars.eventId)],
   );
 }

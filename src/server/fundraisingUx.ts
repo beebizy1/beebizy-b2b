@@ -1,7 +1,8 @@
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { SCHOOL_GRADES, type DonationCampaign, type FundraisingDashboard, type FundraisingOrganizationProfile, type FundraisingPledge, type FundraisingReports, type ItemSubmission, type PublicBidderProfile, type PublicDonationCampaign, type PublicItemIntakePayload, type PublicItemSubmissionDraft } from "../data/entities.ts";
-import { suggestedStartingBidCents } from "../data/fundraising.ts";
+import { SCHOOL_GRADES, type DonationCampaign, type FundraisingBroadcastAudience, type FundraisingDashboard, type FundraisingOrganizationProfile, type FundraisingPledge, type FundraisingReports, type ItemSubmission, type PublicBidderProfile, type PublicDonationCampaign, type PublicItemIntakePayload, type PublicItemSubmissionDraft } from "../data/entities.ts";
+import { isFundraisingBroadcastAudience, suggestedStartingBidCents } from "../data/fundraising.ts";
+import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
 import { notifyAuctionDonorThankYou, sendEmail } from "./notify.ts";
@@ -22,6 +23,10 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export function parseFundraisingBroadcastAudience(value: string): FundraisingBroadcastAudience {
+  if (isFundraisingBroadcastAudience(value)) return value;
+  throw new HttpError(400, "Choose a valid fundraising audience.");
+}
 
 function mapSubmission(row: typeof s.itemSubmissions.$inferSelect): ItemSubmission {
   return {
@@ -37,6 +42,61 @@ function mapSubmission(row: typeof s.itemSubmissions.$inferSelect): ItemSubmissi
     submittedAt: row.submittedAt.toISOString(),
     updatedAt: row.updatedAt?.toISOString() ?? null,
   };
+}
+
+async function deliverFundraisingBroadcast(input: {
+  workspaceId: string;
+  eventId: string;
+  sentBy: string;
+  audienceFilter: Record<string, unknown>;
+  itemIds: string[];
+  channels: string[];
+  message: string;
+  messageForRecipient?: (recipient: typeof s.auctionBidders.$inferSelect) => string;
+  subject: string;
+  recipients: Array<typeof s.auctionBidders.$inferSelect>;
+}): Promise<{ recipients: number; sent: number; failed: number }> {
+  const broadcastId = newId("broadcast");
+  await db.insert(s.fundraisingBroadcasts).values({
+    id: broadcastId,
+    workspaceId: input.workspaceId,
+    eventId: input.eventId,
+    sentBy: input.sentBy,
+    audienceFilter: input.audienceFilter,
+    itemIds: input.itemIds,
+    channels: input.channels,
+    message: input.message,
+    recipientCount: 0,
+  });
+  if (input.recipients.length === 0) return { recipients: 0, sent: 0, failed: 0 };
+  const channel = input.channels.join(",") || "in_app";
+  const claims = await db.execute<{ bidder_id: string }>(sql`
+    select bidder_id from claim_fundraising_broadcast_recipients(
+      ${input.workspaceId}, ${input.eventId}, ${broadcastId},
+      string_to_array(${input.recipients.map((recipient) => recipient.id).join(",")}, ',')::text[],
+      ${channel}
+    )
+  `);
+  const claimedIds = new Set(claims.rows.map((row) => row.bidder_id));
+  const eligible = input.recipients.filter((recipient) => claimedIds.has(recipient.id));
+  let sent = 0;
+  let failed = 0;
+  if (input.channels.includes("email")) {
+    for (let start = 0; start < eligible.length; start += 10) {
+      const batch = eligible.slice(start, start + 10);
+      const outcomes = await Promise.all(batch.map((recipient) => sendEmail({
+        to: recipient.email,
+        replyTo: "hello@beebizy.com",
+        idempotencyKey: `fundraising-broadcast-${broadcastId}-${recipient.id}`,
+        subject: input.subject,
+        text: input.messageForRecipient?.(recipient) ?? input.message,
+      })));
+      sent += outcomes.filter((outcome) => outcome.status === "sent").length;
+      failed += outcomes.filter((outcome) => outcome.status !== "sent").length;
+    }
+  }
+  await db.update(s.fundraisingBroadcasts).set({ recipientCount: eligible.length }).where(eq(s.fundraisingBroadcasts.id, broadcastId));
+  return { recipients: eligible.length, sent, failed };
 }
 
 export async function getFundraisingOrganizationProfile(ctx: RequestContext): Promise<FundraisingOrganizationProfile> {
@@ -101,24 +161,59 @@ export async function createAuctionCategory(ctx: RequestContext, name: string) {
   return { id: row!.id, name: row!.name, sortOrder: row!.sortOrder };
 }
 
-export async function publicItemIntake(auctionToken: string): Promise<PublicItemIntakePayload | null> {
+export async function publicItemIntake(auctionToken: string, priorDonorToken?: string | null): Promise<PublicItemIntakePayload | null> {
   const [row] = await db.select({ event: s.events, workspace: s.workspaces }).from(s.events)
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(eq(s.events.auctionPublicToken, auctionToken)).limit(1);
   if (!row || row.event.status === "cancelled") return null;
   const categories = await listAuctionCategories(row.workspace.id);
+  let prefill: Partial<PublicItemSubmissionDraft> | undefined;
+  if (priorDonorToken) {
+    const [prior] = await db.select({ donor: s.auctionDonors, item: s.auctionItems }).from(s.auctionDonors)
+      .leftJoin(s.auctionItems, eq(s.auctionItems.donorId, s.auctionDonors.id))
+      .where(and(eq(s.auctionDonors.workspaceId, row.workspace.id), eq(s.auctionDonors.publicToken, priorDonorToken)))
+      .orderBy(desc(s.auctionItems.createdAt)).limit(1);
+    if (prior) {
+      const anonymous = prior.donor.recognitionPreference === "Anonymous";
+      prefill = {
+        donorName: prior.donor.contactName || prior.donor.businessName,
+        donorEmail: prior.donor.email ?? "",
+        donorPhone: prior.donor.phone,
+        grades: prior.donor.gradeTags,
+        creditText: anonymous ? "" : prior.donor.recognitionPreference || prior.donor.businessName,
+        anonymous,
+        donorKind: prior.donor.donorKind === "business" ? "business" : "family",
+        companyName: prior.donor.donorKind === "business" ? prior.donor.businessName : null,
+        website: prior.donor.website,
+        logoUrl: prior.donor.logoUrl,
+        itemTitle: prior.item?.title ?? "",
+        description: prior.item?.description ?? "",
+        photoUrls: prior.item?.photoUrls ?? [],
+        category: prior.item?.category ?? "",
+        estimatedValueCents: prior.item?.estimatedValueCents ?? 0,
+        fairMarketValueCents: prior.item?.fairMarketValueCents ?? 0,
+        restrictions: prior.item?.restrictions,
+        expirationDate: prior.item?.expiresAt?.toISOString() ?? null,
+        deliveryMethod: prior.item?.deliveryMethod ?? "",
+        suggestedStartingBidCents: prior.item?.startingBidCents,
+        notesToSchool: null,
+        isServiceOrUse: prior.item?.isServiceOrUse ?? false,
+      };
+    }
+  }
   return {
     eventTitle: row.event.title,
     organizationName: row.workspace.legalName || row.workspace.name,
     categories: categories.map((category) => category.name),
     grades: SCHOOL_GRADES,
+    prefill,
   };
 }
 
 export async function reinvitePastItemDonors(ctx: RequestContext, eventId: string): Promise<{ sent: number; failed: number }> {
   const [event] = await db.select({ title: s.events.title, token: s.events.auctionPublicToken }).from(s.events).where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))).limit(1);
   if (!event?.token) throw new HttpError(409, "Create the public auction link before inviting prior donors.");
-  const rows = await db.select({ email: s.auctionDonors.email, name: s.auctionDonors.contactName, businessName: s.auctionDonors.businessName }).from(s.auctionDonors).where(and(
+  const rows = await db.select({ email: s.auctionDonors.email, name: s.auctionDonors.contactName, businessName: s.auctionDonors.businessName, publicToken: s.auctionDonors.publicToken }).from(s.auctionDonors).where(and(
     eq(s.auctionDonors.workspaceId, ctx.workspaceId), sql`${s.auctionDonors.eventId} <> ${eventId}`, sql`${s.auctionDonors.email} is not null`,
   ));
   const recipients = [...new Map(rows.map((row) => [row.email!.toLowerCase(), row])).values()];
@@ -126,7 +221,8 @@ export async function reinvitePastItemDonors(ctx: RequestContext, eventId: strin
   let sent = 0;
   let failed = 0;
   for (const recipient of recipients) {
-    const outcome = await sendEmail({ to: recipient.email!, subject: `Donate an auction item to ${event.title}`, text: `Hi ${recipient.name || recipient.businessName},\n\nThank you for supporting a past fundraiser. We would love to invite you to donate an item to ${event.title}.\n\nSubmit your item: ${intakeUrl}`, idempotencyKey: `auction-donor-reinvite-${eventId}-${createHash("sha256").update(recipient.email!.toLowerCase()).digest("hex").slice(0, 12)}` });
+    const personalizedUrl = `${intakeUrl}?prior=${encodeURIComponent(recipient.publicToken)}`;
+    const outcome = await sendEmail({ to: recipient.email!, subject: `Donate an auction item to ${event.title}`, text: `Hi ${recipient.name || recipient.businessName},\n\nThank you for supporting a past fundraiser. We would love to invite you to donate an item to ${event.title}. Your prior donor and item details are prefilled so you can review and update them.\n\nSubmit your item: ${personalizedUrl}`, idempotencyKey: `auction-donor-reinvite-${eventId}-${createHash("sha256").update(recipient.email!.toLowerCase()).digest("hex").slice(0, 12)}` });
     if (outcome.status === "sent") sent += 1; else failed += 1;
   }
   return { sent, failed };
@@ -362,12 +458,8 @@ export async function extendAuctionItem(
     const recipients = [...new Map([...(await broadcastRecipientRows(eventId, "bidders", [itemId])), ...(await broadcastRecipientRows(eventId, "watchers", [itemId]))].map((recipient) => [recipient.id, recipient])).values()];
     const message = `Bidding on ${item.title} was extended ${minutes} minute${minutes === 1 ? "" : "s"}. Current bid: ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((item.currentBidCents ?? item.startingBidCents ?? 0) / 100)}.`;
     const auctionUrl = event?.token ? `${(process.env.APP_ORIGIN || "https://beebizy-studio-preview.vercel.app").replace(/\/$/, "")}/auction/${event.token}#item-${itemId}` : null;
-    let sent = 0;
-    for (const recipient of recipients) {
-      const outcome = await sendEmail({ to: recipient.email, subject: `Auction extended - ${item.title}`, text: `${message}${auctionUrl ? ` Bid now: ${auctionUrl}` : ""}`, idempotencyKey: `auction-extension-${itemId}-${next.toISOString()}-${recipient.id}` });
-      if (outcome.status === "sent") sent += 1;
-    }
-    await db.insert(s.fundraisingBroadcasts).values({ id: newId("broadcast"), workspaceId: ctx.workspaceId, eventId, sentBy: ctx.userId, audienceFilter: { audience: "bidders_and_watchers", reason: "extension" }, itemIds: [itemId], channels: ["email", "in_app"], message, recipientCount: sent });
+    const fullMessage = `${message}${auctionUrl ? ` Bid now: ${auctionUrl}` : ""}`;
+    await deliverFundraisingBroadcast({ workspaceId: ctx.workspaceId, eventId, sentBy: ctx.userId, audienceFilter: { audience: "bidders_and_watchers", reason: "extension" }, itemIds: [itemId], channels: ["email", "in_app"], message: fullMessage, messageForRecipient: (recipient) => recipient.id === item.winningBidderId ? `${fullMessage} Extended - you're still winning.` : fullMessage, subject: `Auction extended - ${item.title}`, recipients });
   }
   return { closesAt: next.toISOString(), extensionMinutes: item.extensionMinutes + minutes };
 }
@@ -377,6 +469,7 @@ export async function extendAuctionItems(
   eventId: string,
   itemIds: string[],
   minutes: number,
+  notify = true,
 ): Promise<{ extended: number }> {
   const uniqueIds = [...new Set(itemIds)].slice(0, 100);
   if (uniqueIds.length === 0) throw new HttpError(400, "Choose at least one auction item.");
@@ -392,16 +485,12 @@ export async function extendAuctionItems(
   }
   const extended = extendedIds.length;
   if (extended === 0) throw new HttpError(409, "None of the selected items are open for extension.");
-  const items = await db.select({ id: s.auctionItems.id, title: s.auctionItems.title }).from(s.auctionItems).where(inArray(s.auctionItems.id, extendedIds));
-  const recipients = [...new Map([...(await broadcastRecipientRows(eventId, "bidders", extendedIds)), ...(await broadcastRecipientRows(eventId, "watchers", extendedIds))].map((recipient) => [recipient.id, recipient])).values()];
-  const message = `${extended} auction item${extended === 1 ? "" : "s"} extended ${minutes} minute${minutes === 1 ? "" : "s"}: ${items.map((item) => item.title).join(", ")}.`;
-  const broadcastId = newId("broadcast");
-  let sent = 0;
-  for (const recipient of recipients) {
-    const outcome = await sendEmail({ to: recipient.email, subject: "Auction items extended", text: message, idempotencyKey: `auction-bulk-extension-${broadcastId}-${recipient.id}` });
-    if (outcome.status === "sent") sent += 1;
+  if (notify) {
+    const items = await db.select({ id: s.auctionItems.id, title: s.auctionItems.title, winningBidderId: s.auctionItems.winningBidderId }).from(s.auctionItems).where(inArray(s.auctionItems.id, extendedIds));
+    const recipients = [...new Map([...(await broadcastRecipientRows(eventId, "bidders", extendedIds)), ...(await broadcastRecipientRows(eventId, "watchers", extendedIds))].map((recipient) => [recipient.id, recipient])).values()];
+    const message = `${extended} auction item${extended === 1 ? "" : "s"} extended ${minutes} minute${minutes === 1 ? "" : "s"}: ${items.map((item) => item.title).join(", ")}.`;
+    await deliverFundraisingBroadcast({ workspaceId: ctx.workspaceId, eventId, sentBy: ctx.userId, audienceFilter: { audience: "bidders_and_watchers", reason: "bulk_extension" }, itemIds: extendedIds, channels: ["email", "in_app"], message, messageForRecipient: (recipient) => { const leading = items.filter((item) => item.winningBidderId === recipient.id).map((item) => item.title); return leading.length ? `${message} Extended - you're still winning on ${leading.join(", ")}.` : message; }, subject: "Auction items extended", recipients });
   }
-  await db.insert(s.fundraisingBroadcasts).values({ id: broadcastId, workspaceId: ctx.workspaceId, eventId, sentBy: ctx.userId, audienceFilter: { audience: "bidders_and_watchers", reason: "bulk_extension" }, itemIds: extendedIds, channels: ["email", "in_app"], message, recipientCount: sent });
   return { extended };
 }
 
@@ -635,6 +724,50 @@ export async function publicDonationCampaign(token: string): Promise<PublicDonat
   return { ...mapCampaign(row.campaign), organizationName: row.workspace.legalName || row.workspace.name, raisedCents: Number(raised), donorCount: Number(donors) };
 }
 
+type YearEndStatementSummary = {
+  workspaceId: string;
+  householdId: string | null;
+  taxYear: number;
+  payerName: string;
+  payerEmail: string;
+  amountCents: number;
+  deductibleCents: number;
+  receiptCount: number;
+};
+
+function summarizeYearEndReceipts(
+  receipts: Array<typeof s.fundraisingReceipts.$inferSelect>,
+  householdRows: Array<typeof s.households.$inferSelect>,
+): YearEndStatementSummary[] {
+  const householdsById = new Map(householdRows.map((household) => [household.id, household]));
+  const supersededReceiptIds = new Set(receipts.map((receipt) => receipt.supersedesReceiptId).filter((id): id is string => Boolean(id)));
+  const summaries = new Map<string, YearEndStatementSummary>();
+  for (const receipt of receipts) {
+    if (supersededReceiptIds.has(receipt.id)) continue;
+    const household = receipt.householdId ? householdsById.get(receipt.householdId) : null;
+    const payerEmail = (household?.primaryEmail || receipt.payerEmail)?.trim().toLowerCase();
+    if (!payerEmail) continue;
+    const taxYear = receipt.issuedAt.getUTCFullYear();
+    const identity = household ? `household:${household.id}` : `email:${payerEmail}`;
+    const key = `${receipt.workspaceId}:${taxYear}:${identity}`;
+    const current = summaries.get(key) ?? {
+      workspaceId: receipt.workspaceId,
+      householdId: household?.id ?? null,
+      taxYear,
+      payerName: household?.displayName || receipt.payerName,
+      payerEmail,
+      amountCents: 0,
+      deductibleCents: 0,
+      receiptCount: 0,
+    };
+    current.amountCents += receipt.amountCents;
+    current.deductibleCents += receipt.deductibleCents;
+    current.receiptCount += 1;
+    summaries.set(key, current);
+  }
+  return [...summaries.values()];
+}
+
 export async function fundraisingReports(ctx: RequestContext, eventId: string): Promise<FundraisingReports> {
   const [bidders, bidRows, itemRows, winners, pledges, bills, registrations, donors, acknowledgments, grades] = await Promise.all([
     db.select().from(s.auctionBidders).where(and(eq(s.auctionBidders.workspaceId, ctx.workspaceId), eq(s.auctionBidders.eventId, eventId))),
@@ -659,25 +792,28 @@ export async function fundraisingReports(ctx: RequestContext, eventId: string): 
     const bidderGrades = bidder.householdId ? grades.filter((grade) => grade.householdId === bidder.householdId).map((grade) => grade.grade).join(", ") : "";
     return { name: bidder.name, email: bidder.email, paddle: bidder.paddleNumber, grade: bidderGrades, location: bidder.checkedInAt ? "In room" : "Remote", itemsBidOn: new Set(bidderBids.map((row) => row.bid.itemId)).size, itemsWon: bidderWins.length, highestBidCents: bidderBids.reduce((max, row) => Math.max(max, row.bid.amountCents), 0), totalWonCents: bidderWins.reduce((sum, winner) => sum + winner.amountCents, 0), fundANeedCents: bidderPledges.reduce((sum, pledge) => sum + pledge.amountCents, 0), totalGivenCents: bill?.totalCents ?? 0, paidStatus: bill?.status ?? "not billed" };
   });
-  const bids = bidRows.map(({ bid, bidder, item }) => ({ item: item.title, bidder: bidder.name, paddle: bidder.paddleNumber, amountCents: bid.amountCents, maxBidCents: bid.maximumAmountCents, time: bid.createdAt.toISOString(), channel: bid.channel, outcome: item.winningBidderId === bidder.id ? "Winning" : "Outbid" }));
+  const bidderGrade = (bidder: typeof s.auctionBidders.$inferSelect) => bidder.householdId ? grades.filter((grade) => grade.householdId === bidder.householdId).map((grade) => grade.grade).join(", ") : "";
+  const bidderLocation = (bidder: typeof s.auctionBidders.$inferSelect) => bidder.checkedInAt ? "In room" : "Remote";
+  const uniqueValues = (values: Array<string | null | undefined>) => [...new Set(values.flatMap((value) => value?.split(",").map((entry) => entry.trim()).filter(Boolean) ?? []))].join(", ");
+  const bids = bidRows.map(({ bid, bidder, item }) => ({ item: item.title, bidder: bidder.name, paddle: bidder.paddleNumber, grade: bidderGrade(bidder), location: bidderLocation(bidder), amountCents: bid.amountCents, maxBidCents: bid.maximumAmountCents, time: bid.createdAt.toISOString(), channel: bid.channel, outcome: item.winningBidderId === bidder.id ? "Winning" : "Outbid" }));
   const items = itemRows.map((item) => {
     const itemBids = bidRows.filter((row) => row.bid.itemId === item.id);
     const itemWinners = winners.filter((winner) => winner.itemId === item.id);
     const donor = donors.find((candidate) => candidate.id === item.donorId);
     const winningBidders = itemWinners.map((winner) => bidders.find((bidder) => bidder.id === winner.bidderId)).filter(Boolean);
-    return { item: item.title, category: item.category, donor: donor?.businessName ?? item.donorName, estimatedValueCents: item.estimatedValueCents, fairMarketValueCents: item.fairMarketValueCents, startingBidCents: item.startingBidCents, winningBidCents: item.currentBidCents, percentOfValue: item.fairMarketValueCents ? Math.round(((item.currentBidCents ?? 0) / item.fairMarketValueCents) * 1000) / 10 : null, bidCount: itemBids.length, winners: itemWinners.length, winnerNames: winningBidders.map((bidder) => bidder!.name).join(", "), winnerPaddles: winningBidders.map((bidder) => bidder!.paddleNumber).filter(Boolean).join(", "), paid: Boolean(item.paymentReceivedAt), fulfillment: item.fulfillmentStatus };
+    return { item: item.title, category: item.category, donor: donor?.businessName ?? item.donorName, grade: uniqueValues(winningBidders.map((bidder) => bidderGrade(bidder!))), location: uniqueValues(winningBidders.map((bidder) => bidderLocation(bidder!))), estimatedValueCents: item.estimatedValueCents, fairMarketValueCents: item.fairMarketValueCents, startingBidCents: item.startingBidCents, winningBidCents: item.currentBidCents, percentOfValue: item.fairMarketValueCents ? Math.round(((item.currentBidCents ?? 0) / item.fairMarketValueCents) * 1000) / 10 : null, bidCount: itemBids.length, winners: itemWinners.length, winnerNames: winningBidders.map((bidder) => bidder!.name).join(", "), winnerPaddles: winningBidders.map((bidder) => bidder!.paddleNumber).filter(Boolean).join(", "), paid: Boolean(item.paymentReceivedAt), fulfillment: item.fulfillmentStatus };
   });
   const attendance = registrations.map(({ registration, guest }) => {
     const bidder = bidders.find((candidate) => candidate.attendeeId === guest.id || candidate.email === guest.contact);
     const bill = bidder ? bills.find((candidate) => candidate.bidderId === bidder.id) : null;
-    return { name: guest.name, ticketTypeId: registration.ticketTypeId, checkedInAt: registration.checkedInAt?.toISOString() ?? null, bidRemotely: bidder ? !bidder.checkedInAt : false, totalGivenCents: bill?.totalCents ?? 0 };
+    return { name: guest.name, ticketTypeId: registration.ticketTypeId, grade: bidder ? bidderGrade(bidder) : "", location: bidder ? bidderLocation(bidder) : registration.checkedInAt ? "In room" : "", checkedInAt: registration.checkedInAt?.toISOString() ?? null, bidRemotely: bidder ? !bidder.checkedInAt : false, totalGivenCents: bill?.totalCents ?? 0 };
   });
   const dashboard = await fundraisingDashboard(ctx, eventId);
   const payments = bills.map((bill) => {
     const bidder = bidders.find((candidate) => candidate.id === bill.bidderId);
-    return { bidder: bidder?.name ?? bill.bidderId, billTotalCents: bill.totalCents, status: bill.status, feesCoveredCents: bill.feesCoveredCents, paidAt: bill.paidAt?.toISOString() ?? null };
+    return { bidder: bidder?.name ?? bill.bidderId, grade: bidder ? bidderGrade(bidder) : "", location: bidder ? bidderLocation(bidder) : "", billTotalCents: bill.totalCents, status: bill.status, paymentMethod: bill.paymentMethod, feesCoveredCents: bill.feesCoveredCents, paidAt: bill.paidAt?.toISOString() ?? null, payoutDate: bill.payoutAvailableAt?.toISOString() ?? null };
   });
-  const acknowledgmentRows = donors.map((donor) => ({ donor: donor.businessName, contact: donor.contactName, email: donor.email, items: itemRows.filter((item) => item.donorId === donor.id).length, acknowledgmentSent: acknowledgments.some((acknowledgment) => acknowledgment.donorId === donor.id && acknowledgment.sentAt != null), thankYouStatus: donor.thankYouStatus }));
+  const acknowledgmentRows = donors.map((donor) => ({ donor: donor.businessName, contact: donor.contactName, email: donor.email, grade: donor.gradeTags.join(", "), location: "", items: itemRows.filter((item) => item.donorId === donor.id).length, acknowledgmentSent: acknowledgments.some((acknowledgment) => acknowledgment.donorId === donor.id && acknowledgment.sentAt != null), thankYouStatus: donor.thankYouStatus }));
   const [portfolioEvents, portfolioItems, portfolioBidders, portfolioBills, portfolioPledges, portfolioHouseholds, portfolioReceipts, statementDeliveries] = await Promise.all([
     db.select().from(s.events).where(eq(s.events.workspaceId, ctx.workspaceId)).orderBy(desc(s.events.startsAt)),
     db.select().from(s.auctionItems).where(eq(s.auctionItems.workspaceId, ctx.workspaceId)),
@@ -699,6 +835,8 @@ export async function fundraisingReports(ctx: RequestContext, eventId: string): 
       totalRaisedCents,
       bidderCount: eventBidders.length,
       averageGiftCents: eventBills.length ? Math.round(totalRaisedCents / eventBills.length) : 0,
+      grade: uniqueValues(eventBidders.map(bidderGrade)),
+      location: uniqueValues(eventBidders.map(bidderLocation)),
       remoteSharePercent: eventBidders.length ? Math.round((eventBidders.filter((bidder) => !bidder.checkedInAt).length / eventBidders.length) * 1000) / 10 : 0,
       sellThroughPercent: eventItems.length ? Math.round((eventItems.filter((item) => item.status === "won").length / eventItems.length) * 1000) / 10 : 0,
     };
@@ -711,6 +849,8 @@ export async function fundraisingReports(ctx: RequestContext, eventId: string): 
     return {
       household: household.displayName,
       email: household.primaryEmail,
+      grade: uniqueValues(grades.filter((grade) => grade.householdId === household.id).map((grade) => grade.grade)),
+      location: uniqueValues(householdBidders.map(bidderLocation)),
       events: new Set(householdBidders.map((bidder) => bidder.eventId)).size,
       auctionAndBillTotalCents: householdBills.reduce((sum, bill) => sum + bill.totalCents, 0),
       fundANeedCents: householdPledges.reduce((sum, pledge) => sum + pledge.amountCents, 0),
@@ -722,22 +862,22 @@ export async function fundraisingReports(ctx: RequestContext, eventId: string): 
     const soldItems = categoryItems.filter((item) => item.status === "won");
     const totalRaisedCents = soldItems.reduce((sum, item) => sum + (item.currentBidCents ?? 0), 0);
     const totalFmvCents = soldItems.reduce((sum, item) => sum + (item.fairMarketValueCents ?? 0), 0);
-    return { category, items: categoryItems.length, sold: soldItems.length, sellThroughPercent: categoryItems.length ? Math.round((soldItems.length / categoryItems.length) * 1000) / 10 : 0, totalRaisedCents, percentOfFmv: totalFmvCents ? Math.round((totalRaisedCents / totalFmvCents) * 1000) / 10 : null };
+    const categoryWinnerIds = new Set(winners.filter((winner) => soldItems.some((item) => item.id === winner.itemId)).map((winner) => winner.bidderId));
+    const categoryBidders = portfolioBidders.filter((bidder) => categoryWinnerIds.has(bidder.id));
+    return { category, grade: uniqueValues(categoryBidders.map(bidderGrade)), location: uniqueValues(categoryBidders.map(bidderLocation)), items: categoryItems.length, sold: soldItems.length, sellThroughPercent: categoryItems.length ? Math.round((soldItems.length / categoryItems.length) * 1000) / 10 : 0, totalRaisedCents, percentOfFmv: totalFmvCents ? Math.round((totalRaisedCents / totalFmvCents) * 1000) / 10 : null };
   });
-  const supersededReceiptIds = new Set(portfolioReceipts.map((receipt) => receipt.supersedesReceiptId).filter((id): id is string => Boolean(id)));
-  const statementMap = new Map<string, { taxYear: number; payerName: string; payerEmail: string; amountCents: number; deductibleCents: number; receiptCount: number }>();
-  for (const receipt of portfolioReceipts) {
-    if (!receipt.payerEmail || supersededReceiptIds.has(receipt.id)) continue;
-    const taxYear = receipt.issuedAt.getUTCFullYear();
-    const key = `${taxYear}:${receipt.payerEmail.toLowerCase()}`;
-    const current = statementMap.get(key) ?? { taxYear, payerName: receipt.payerName, payerEmail: receipt.payerEmail.toLowerCase(), amountCents: 0, deductibleCents: 0, receiptCount: 0 };
-    current.amountCents += receipt.amountCents;
-    current.deductibleCents += receipt.deductibleCents;
-    current.receiptCount += 1;
-    statementMap.set(key, current);
-  }
-  const yearEndStatements = [...statementMap.values()].map((statement) => ({ ...statement, deliveryStatus: statementDeliveries.find((delivery) => delivery.taxYear === statement.taxYear && delivery.payerEmail === statement.payerEmail)?.status ?? "not sent" })).sort((left, right) => right.taxYear - left.taxYear || left.payerName.localeCompare(right.payerName));
-  return { bidders: bidderReport, bids, items, attendance, grades: dashboard.byGrade, payments, acknowledgments: acknowledgmentRows, historical, familyHistory, itemIntelligence, yearEndStatements };
+  const yearEndStatements = summarizeYearEndReceipts(portfolioReceipts, portfolioHouseholds).map((statement) => ({
+    household: statement.householdId ? portfolioHouseholds.find((household) => household.id === statement.householdId)?.displayName ?? statement.payerName : statement.payerName,
+    ...statement,
+    grade: statement.householdId ? uniqueValues(grades.filter((grade) => grade.householdId === statement.householdId).map((grade) => grade.grade)) : "",
+    location: statement.householdId ? uniqueValues(portfolioBidders.filter((bidder) => bidder.householdId === statement.householdId).map(bidderLocation)) : "",
+    deliveryStatus: statementDeliveries.find((delivery) => delivery.taxYear === statement.taxYear && (statement.householdId ? delivery.householdId === statement.householdId : delivery.householdId == null && delivery.payerEmail === statement.payerEmail))?.status ?? "not sent",
+  })).sort((left, right) => right.taxYear - left.taxYear || left.payerName.localeCompare(right.payerName));
+  const gradeReport = dashboard.byGrade.map((row) => {
+    const householdIds = new Set(grades.filter((grade) => grade.grade === row.grade).map((grade) => grade.householdId));
+    return { ...row, location: uniqueValues(bidders.filter((bidder) => bidder.householdId != null && householdIds.has(bidder.householdId)).map(bidderLocation)) };
+  });
+  return { bidders: bidderReport, bids, items, attendance, grades: gradeReport, payments, acknowledgments: acknowledgmentRows, historical, familyHistory, itemIntelligence, yearEndStatements };
 }
 
 export async function sendYearEndStatements(taxYear: number, workspaceId?: string): Promise<{ sent: number; failed: number }> {
@@ -745,32 +885,26 @@ export async function sendYearEndStatements(taxYear: number, workspaceId?: strin
   const receiptRows = await db.select({ receipt: s.fundraisingReceipts, workspace: s.workspaces }).from(s.fundraisingReceipts)
     .innerJoin(s.workspaces, eq(s.fundraisingReceipts.workspaceId, s.workspaces.id))
     .where(and(workspaceId ? eq(s.fundraisingReceipts.workspaceId, workspaceId) : sql`true`, sql`extract(year from ${s.fundraisingReceipts.issuedAt}) = ${taxYear}`));
-  const superseded = new Set(receiptRows.map((row) => row.receipt.supersedesReceiptId).filter((id): id is string => Boolean(id)));
-  const groups = new Map<string, { workspace: typeof s.workspaces.$inferSelect; payerName: string; payerEmail: string; amountCents: number; deductibleCents: number; receiptCount: number }>();
-  for (const { receipt, workspace } of receiptRows) {
-    if (!receipt.payerEmail || superseded.has(receipt.id)) continue;
-    const payerEmail = receipt.payerEmail.toLowerCase();
-    const key = `${workspace.id}:${payerEmail}`;
-    const current = groups.get(key) ?? { workspace, payerName: receipt.payerName, payerEmail, amountCents: 0, deductibleCents: 0, receiptCount: 0 };
-    current.amountCents += receipt.amountCents;
-    current.deductibleCents += receipt.deductibleCents;
-    current.receiptCount += 1;
-    groups.set(key, current);
-  }
+  const householdRows = await db.select().from(s.households).where(workspaceId ? eq(s.households.workspaceId, workspaceId) : sql`true`);
+  const groups = summarizeYearEndReceipts(receiptRows.map((row) => row.receipt), householdRows).filter((statement) => statement.taxYear === taxYear);
+  const workspacesById = new Map(receiptRows.map((row) => [row.workspace.id, row.workspace]));
   let sent = 0;
   let failed = 0;
-  for (const statement of groups.values()) {
+  for (const statement of groups) {
+    const workspace = workspacesById.get(statement.workspaceId);
+    if (!workspace) continue;
     const [existing] = await db.select({ id: s.yearEndStatementDeliveries.id, status: s.yearEndStatementDeliveries.status })
       .from(s.yearEndStatementDeliveries)
       .where(and(
-        eq(s.yearEndStatementDeliveries.workspaceId, statement.workspace.id),
-        eq(s.yearEndStatementDeliveries.payerEmail, statement.payerEmail),
+        eq(s.yearEndStatementDeliveries.workspaceId, statement.workspaceId),
+        statement.householdId ? eq(s.yearEndStatementDeliveries.householdId, statement.householdId) : and(sql`${s.yearEndStatementDeliveries.householdId} is null`, eq(s.yearEndStatementDeliveries.payerEmail, statement.payerEmail)),
         eq(s.yearEndStatementDeliveries.taxYear, taxYear),
       )).limit(1);
     let deliveryId: string | null = null;
     if (existing?.status === "failed") {
       const [retryClaim] = await db.update(s.yearEndStatementDeliveries).set({
         payerName: statement.payerName,
+        payerEmail: statement.payerEmail,
         amountCents: statement.amountCents,
         deductibleCents: statement.deductibleCents,
         receiptCount: statement.receiptCount,
@@ -782,13 +916,13 @@ export async function sendYearEndStatements(taxYear: number, workspaceId?: strin
       deliveryId = retryClaim?.id ?? null;
     } else if (!existing) {
       const id = newId("yes");
-      const [claim] = await db.insert(s.yearEndStatementDeliveries).values({ id, workspaceId: statement.workspace.id, payerEmail: statement.payerEmail, payerName: statement.payerName, taxYear, amountCents: statement.amountCents, deductibleCents: statement.deductibleCents, receiptCount: statement.receiptCount })
-        .onConflictDoNothing({ target: [s.yearEndStatementDeliveries.workspaceId, s.yearEndStatementDeliveries.payerEmail, s.yearEndStatementDeliveries.taxYear] }).returning({ id: s.yearEndStatementDeliveries.id });
+      const [claim] = await db.insert(s.yearEndStatementDeliveries).values({ id, workspaceId: statement.workspaceId, householdId: statement.householdId, payerEmail: statement.payerEmail, payerName: statement.payerName, taxYear, amountCents: statement.amountCents, deductibleCents: statement.deductibleCents, receiptCount: statement.receiptCount })
+        .onConflictDoNothing().returning({ id: s.yearEndStatementDeliveries.id });
       deliveryId = claim?.id ?? null;
     }
     if (!deliveryId) continue;
     const money = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
-    const outcome = await sendEmail({ to: statement.payerEmail, subject: `${taxYear} giving statement - ${statement.workspace.legalName || statement.workspace.name}`, text: [`Hi ${statement.payerName},`, "", `${statement.workspace.legalName || statement.workspace.name} recorded ${statement.receiptCount} receipt${statement.receiptCount === 1 ? "" : "s"} for ${taxYear}.`, `Total paid: ${money(statement.amountCents)}`, `Total shown as tax-deductible: ${money(statement.deductibleCents)}`, statement.workspace.ein ? `EIN: ${statement.workspace.ein}` : "", "Keep this statement and the individual receipts for your tax records."].filter(Boolean).join("\n"), idempotencyKey: `year-end-statement-${statement.workspace.id}-${taxYear}-${createHash("sha256").update(statement.payerEmail).digest("hex").slice(0, 12)}` });
+    const outcome = await sendEmail({ to: statement.payerEmail, subject: `${taxYear} giving statement - ${workspace.legalName || workspace.name}`, text: [`Hi ${statement.payerName},`, "", `${workspace.legalName || workspace.name} recorded ${statement.receiptCount} receipt${statement.receiptCount === 1 ? "" : "s"} for ${taxYear}.`, `Total paid: ${money(statement.amountCents)}`, `Total shown as tax-deductible: ${money(statement.deductibleCents)}`, workspace.ein ? `EIN: ${workspace.ein}` : "", "Keep this statement and the individual receipts for your tax records."].filter(Boolean).join("\n"), idempotencyKey: `year-end-statement-${statement.workspaceId}-${taxYear}-${statement.householdId ?? createHash("sha256").update(statement.payerEmail).digest("hex").slice(0, 12)}` });
     await db.update(s.yearEndStatementDeliveries).set({ status: outcome.status === "sent" ? "sent" : "failed", sentAt: outcome.status === "sent" ? new Date() : null, updatedAt: new Date() }).where(eq(s.yearEndStatementDeliveries.id, deliveryId));
     if (outcome.status === "sent") sent += 1; else failed += 1;
   }
@@ -800,7 +934,7 @@ export async function sendDueYearEndStatements(now = new Date()): Promise<{ sent
   return sendYearEndStatements(now.getUTCFullYear() - 1);
 }
 
-async function broadcastRecipientRows(eventId: string, audience: string, itemIds: string[]) {
+async function broadcastRecipientRows(eventId: string, audience: FundraisingBroadcastAudience, itemIds: string[]) {
   const bidders = await db.select().from(s.auctionBidders).where(and(eq(s.auctionBidders.eventId, eventId), eq(s.auctionBidders.status, "active")));
   if (audience === "remote") return bidders.filter((bidder) => !bidder.checkedInAt);
   if (audience === "in_room") return bidders.filter((bidder) => Boolean(bidder.checkedInAt));
@@ -828,7 +962,7 @@ async function broadcastRecipientRows(eventId: string, audience: string, itemIds
 export async function previewFundraisingBroadcast(
   ctx: RequestContext,
   eventId: string,
-  input: { audience: string; itemIds: string[] },
+  input: { audience: FundraisingBroadcastAudience; itemIds: string[] },
 ): Promise<{ recipients: number }> {
   const [event] = await db.select({ id: s.events.id }).from(s.events).where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))).limit(1);
   if (!event) throw new HttpError(404, "That event no longer exists.");
@@ -838,58 +972,33 @@ export async function previewFundraisingBroadcast(
 export async function sendFundraisingBroadcast(
   ctx: RequestContext,
   eventId: string,
-  input: { audience: string; itemIds: string[]; channels: string[]; message: string },
+  input: { audience: FundraisingBroadcastAudience; itemIds: string[]; channels: string[]; message: string },
 ): Promise<{ recipients: number; sent: number; failed: number }> {
   if (!input.message.trim()) throw new HttpError(400, "Enter a broadcast message.");
   if (input.channels.includes("sms")) {
     throw new HttpError(503, "SMS is not connected yet. Connect the approved SMS provider before enabling text delivery.");
   }
-  const [recent] = await db.select({ id: s.fundraisingBroadcasts.id }).from(s.fundraisingBroadcasts).where(and(
-    eq(s.fundraisingBroadcasts.eventId, eventId), sql`${s.fundraisingBroadcasts.sentAt} > now() - interval '3 minutes'`,
-  )).limit(1);
-  if (recent) throw new HttpError(429, "Wait three minutes between bidder blasts so families are not over-messaged.");
   const recipients = await broadcastRecipientRows(eventId, input.audience, input.itemIds);
   const [event] = await db.select().from(s.events).where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))).limit(1);
   if (!event) throw new HttpError(404, "That event no longer exists.");
-  let sent = 0;
-  let failed = 0;
-  if (input.channels.includes("email")) {
-    for (let start = 0; start < recipients.length; start += 10) {
-      const batch = recipients.slice(start, start + 10);
-      const outcomes = await Promise.all(batch.map((recipient) => sendEmail({
-        to: recipient.email,
-        replyTo: "hello@beebizy.com",
-        idempotencyKey: `fundraising-broadcast-${eventId}-${recipient.id}-${createHash("sha256").update(input.message).digest("hex").slice(0, 12)}`,
-        subject: `Auction update - ${event.title}`,
-        text: input.message.trim(),
-      })));
-      sent += outcomes.filter((outcome) => outcome.status === "sent").length;
-      failed += outcomes.filter((outcome) => outcome.status !== "sent").length;
-    }
-  }
-  await db.insert(s.fundraisingBroadcasts).values({
-    id: newId("broadcast"), workspaceId: ctx.workspaceId, eventId, sentBy: ctx.userId,
-    audienceFilter: { audience: input.audience }, itemIds: input.itemIds,
-    channels: input.channels, message: input.message.trim(), recipientCount: recipients.length,
-  });
-  return { recipients: recipients.length, sent, failed };
+  return deliverFundraisingBroadcast({ workspaceId: ctx.workspaceId, eventId, sentBy: ctx.userId, audienceFilter: { audience: input.audience }, itemIds: input.itemIds, channels: input.channels, message: input.message.trim(), subject: `Auction update - ${event.title}`, recipients });
 }
 
 export async function sendDueClosingAlerts(auctionToken: string): Promise<void> {
   const [event] = await db.select().from(s.events).where(eq(s.events.auctionPublicToken, auctionToken)).limit(1);
   if (!event) return;
-  const [recent] = await db.select({ id: s.fundraisingBroadcasts.id }).from(s.fundraisingBroadcasts).where(and(
-    eq(s.fundraisingBroadcasts.eventId, event.id), sql`${s.fundraisingBroadcasts.sentAt} > now() - interval '3 minutes'`,
-  )).limit(1);
-  if (recent) return;
+  const settings = normalizeAuctionPageSettings(event.auctionPage);
+  if (!settings.automaticClosingAlertsEnabled || settings.closingAlertMinutes.length === 0) return;
+  const largestThreshold = Math.max(...settings.closingAlertMinutes);
   const items = await db.select().from(s.auctionItems).where(and(
     eq(s.auctionItems.eventId, event.id),
     eq(s.auctionItems.status, "open"),
-    sql`${s.auctionItems.closesAt} is not null and ${s.auctionItems.closesAt} > now() and ${s.auctionItems.closesAt} <= now() + interval '15 minutes'`,
+    sql`${s.auctionItems.closesAt} is not null and ${s.auctionItems.closesAt} > now() and ${s.auctionItems.closesAt} <= now() + (${largestThreshold} * interval '1 minute')`,
   ));
   for (const item of items) {
     const minutes = Math.max(1, Math.ceil((item.closesAt!.getTime() - Date.now()) / 60_000));
-    const threshold = minutes <= 5 ? 5 : 15;
+    const threshold = [...settings.closingAlertMinutes].sort((left, right) => left - right).find((candidate) => minutes <= candidate);
+    if (!threshold) continue;
     const message = `${threshold} min left: ${item.title}, current bid ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((item.currentBidCents ?? item.startingBidCents ?? 0) / 100)}. Bid now: ${(process.env.APP_ORIGIN || "https://beebizy-studio-preview.vercel.app").replace(/\/$/, "")}/auction/${auctionToken}`;
     const [existing] = await db.select({ id: s.fundraisingBroadcasts.id }).from(s.fundraisingBroadcasts).where(and(
       eq(s.fundraisingBroadcasts.eventId, event.id), eq(s.fundraisingBroadcasts.message, message),
@@ -898,22 +1007,7 @@ export async function sendDueClosingAlerts(auctionToken: string): Promise<void> 
     const bidders = await broadcastRecipientRows(event.id, "bidders", [item.id]);
     const watchers = await broadcastRecipientRows(event.id, "watchers", [item.id]);
     const recipients = [...new Map([...bidders, ...watchers].map((bidder) => [bidder.id, bidder])).values()];
-    let sent = 0;
-    for (const recipient of recipients) {
-      const outcome = await sendEmail({
-        to: recipient.email,
-        replyTo: "hello@beebizy.com",
-        idempotencyKey: `auction-closing-${item.id}-${threshold}-${recipient.id}`,
-        subject: `${threshold} minutes left - ${item.title}`,
-        text: message,
-      });
-      if (outcome.status === "sent") sent += 1;
-    }
-    await db.insert(s.fundraisingBroadcasts).values({
-      id: newId("broadcast"), workspaceId: event.workspaceId, eventId: event.id,
-      sentBy: "automatic-closing-alert", audienceFilter: { audience: "bidders_and_watchers", threshold },
-      itemIds: [item.id], channels: ["email", "in_app"], message, recipientCount: sent,
-    });
+    await deliverFundraisingBroadcast({ workspaceId: event.workspaceId, eventId: event.id, sentBy: "automatic-closing-alert", audienceFilter: { audience: "bidders_and_watchers", threshold }, itemIds: [item.id], channels: ["email", "in_app"], message, messageForRecipient: (recipient) => `${message} ${recipient.id === item.winningBidderId ? "You're winning." : "You're outbid or watching - bid now to lead."}`, subject: `${threshold} minutes left - ${item.title}`, recipients });
   }
 }
 

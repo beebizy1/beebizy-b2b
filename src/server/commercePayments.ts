@@ -1295,6 +1295,8 @@ async function mapPublicBill(row: typeof bidderBills.$inferSelect): Promise<Publ
     totalCents: row.totalCents,
     applicationFeeCents: row.applicationFeeCents,
     status: row.status,
+    paymentMethod: row.paymentMethod,
+    payoutAvailableAt: row.payoutAvailableAt?.toISOString() ?? null,
     paidAt: row.paidAt?.toISOString() ?? null,
     refundedAt: row.refundedAt?.toISOString() ?? null,
     eventTitle: eventRow.title,
@@ -1592,10 +1594,24 @@ export async function completeBidderBillPayment(billId: string, paymentIntentId:
   const [bill] = transitioned ? [transitioned] : await db.select().from(bidderBills).where(and(eq(bidderBills.id, billId), eq(bidderBills.status, "paid"))).limit(1);
   if (!bill) return;
   if (transitioned) {
-    const orders = await db.select({ order: auctionOrders, item: auctionItems, bidder: auctionBidders, event: events }).from(auctionOrders)
+    if (bill.stripeConnectedAccountId) {
+      try {
+        const intent = await stripeClient().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge.balance_transaction"] }, { stripeAccount: bill.stripeConnectedAccountId });
+        const charge = typeof intent.latest_charge === "object" ? intent.latest_charge : null;
+        const transaction = charge && typeof charge.balance_transaction === "object" ? charge.balance_transaction : null;
+        const walletType = charge?.payment_method_details?.card?.wallet?.type;
+        const methodType = walletType ?? charge?.payment_method_details?.type ?? intent.payment_method_types[0] ?? "card";
+        const paymentMethod = methodType === "apple_pay" ? "Apple Pay" : methodType === "google_pay" ? "Google Pay" : methodType === "card" ? "Card" : methodType.replaceAll("_", " ");
+        await db.update(bidderBills).set({ paymentMethod, payoutAvailableAt: transaction?.available_on ? new Date(transaction.available_on * 1000) : null, updatedAt: new Date() }).where(eq(bidderBills.id, bill.id));
+      } catch (error) {
+        console.warn("BIDDER_BILL_RECONCILIATION_DETAILS_UNAVAILABLE", bill.id, error instanceof Error ? error.message : String(error));
+      }
+    }
+    const orders = await db.select({ order: auctionOrders, item: auctionItems, bidder: auctionBidders, event: events, workspace: workspaces }).from(auctionOrders)
       .innerJoin(auctionItems, eq(auctionOrders.itemId, auctionItems.id))
       .innerJoin(auctionBidders, eq(auctionOrders.bidderId, auctionBidders.id))
       .innerJoin(events, eq(auctionOrders.eventId, events.id))
+      .innerJoin(workspaces, eq(auctionOrders.workspaceId, workspaces.id))
       .where(and(eq(auctionOrders.eventId, bill.eventId), eq(auctionOrders.bidderId, bill.bidderId)));
     await db.batch([
       db.update(auctionOrders).set({ status: "paid", paidAt, stripePaymentIntentId: paymentIntentId, updatedAt: paidAt })
@@ -1606,10 +1622,10 @@ export async function completeBidderBillPayment(billId: string, paymentIntentId:
         : db.update(events).set({ updatedAt: paidAt }).where(eq(events.id, bill.eventId)),
     ]);
     const origin = (process.env.APP_ORIGIN || process.env.PUBLIC_APP_URL || "https://beebizy-studio-preview.vercel.app").replace(/\/$/, "");
-    for (const { order, item, bidder, event } of orders.filter(({ order, item }) => ["pending", "paid"].includes(order.status) && item.deliveryMethod === "Certificate emailed")) {
+    for (const { order, item, bidder, event, workspace } of orders.filter(({ order, item }) => ["pending", "paid"].includes(order.status) && item.deliveryMethod === "Certificate emailed")) {
       const certificateToken = order.certificateToken ?? crypto.randomUUID();
       if (!order.certificateToken) await db.update(auctionOrders).set({ certificateToken, updatedAt: new Date() }).where(and(eq(auctionOrders.id, order.id), sql`${auctionOrders.certificateToken} is null`));
-      await notifyExperienceCertificate({ orderId: order.id, to: bidder.email, winnerName: bidder.name, eventTitle: event.title, itemTitle: item.title, certificateUrl: `${origin}/certificate/${certificateToken}` });
+      await notifyExperienceCertificate({ orderId: order.id, to: bidder.email, winnerName: bidder.name, eventTitle: event.title, itemTitle: item.title, organizationName: workspace.legalName || workspace.name, deliveryDetails: item.deliveryDetails, restrictions: item.restrictions, expiresAt: item.expiresAt?.toISOString() ?? null, certificateUrl: `${origin}/certificate/${certificateToken}` });
     }
   }
   await issueBillReceipt(billId);

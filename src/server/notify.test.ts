@@ -7,6 +7,7 @@ import {
   notifyTicketInvitation,
   notifyAuctionOutbid,
   notifyAuctionDonorThankYou,
+  notifyExperienceCertificate,
   notifyTeamUpdate,
   notifyVolunteerAssignment,
   notifyWorkAssignment,
@@ -158,6 +159,25 @@ describe("ticket order confirmation email", () => {
 });
 
 describe("ticket and auction action emails", () => {
+  it("attaches a generated PDF to an experience certificate email", async () => {
+    const fetch = configureDelivery();
+    await notifyExperienceCertificate({
+      orderId: "order-certificate-1",
+      to: "winner@example.com",
+      winnerName: "Diego Rivera",
+      eventTitle: "School Gala",
+      itemTitle: "Tahoe Weekend",
+      organizationName: "Cedar Grove School",
+      certificateUrl: "https://beebizy.test/certificate/one",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("attached as a PDF");
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments[0]).toMatchObject({ filename: "Tahoe-Weekend-certificate.pdf" });
+    expect(body.attachments[0].content).toMatch(/^JVBER/);
+  });
+
   it("sends an accessible ticket invitation with a descriptive action", async () => {
     const fetch = configureDelivery();
     await notifyTicketInvitation({

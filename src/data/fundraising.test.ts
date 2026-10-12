@@ -3,6 +3,7 @@ import {
   bidIncrementCents,
   deductibleAmountCents,
   coveredFeesCents,
+  isFundraisingBroadcastAudience,
   suggestedStartingBidCents,
   taxDeductibleCents,
 } from "./fundraising";
@@ -56,6 +57,13 @@ describe("bidIncrementCents", () => {
 });
 
 describe("auction UX spec arithmetic", () => {
+  it("accepts only supported fundraising broadcast audiences", () => {
+    expect(isFundraisingBroadcastAudience("watchers")).toBe(true);
+    expect(isFundraisingBroadcastAudience("grade:5")).toBe(true);
+    expect(isFundraisingBroadcastAudience("watcehrs")).toBe(false);
+    expect(isFundraisingBroadcastAudience("grade:College")).toBe(false);
+  });
+
   it("uses Laila's tiered bid increments", () => {
     expect(bidIncrementCents(9_999)).toBe(500);
     expect(bidIncrementCents(10_000)).toBe(1_000);

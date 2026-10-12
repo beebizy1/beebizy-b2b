@@ -43,8 +43,8 @@ export default function FundraisingReportsPanel({ event }: { event: Event }) {
       if (term && !Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(term))) return false;
       if (gradeFilter !== "all" && !String(row.grade ?? "").split(",").map((value) => value.trim()).includes(gradeFilter)) return false;
       if (locationFilter !== "all") {
-        const location = String(row.location ?? (row.bidRemotely === true ? "Remote" : row.checkedInAt ? "In room" : "")).toLowerCase().replace(" ", "_");
-        if (location !== locationFilter) return false;
+        const locations = String(row.location ?? (row.bidRemotely === true ? "Remote" : row.checkedInAt ? "In room" : "")).split(",").map((value) => value.trim().toLowerCase().replace(" ", "_"));
+        if (!locations.includes(locationFilter)) return false;
       }
       return true;
     });

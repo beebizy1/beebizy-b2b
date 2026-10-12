@@ -4303,6 +4303,8 @@ export const raffle = {
   },
   async update(ctx: RequestContext, eventId: string, id: string, body: Body) {
     await requireRaffleEnabled(ctx);
+    const collectionStatus = "taxpayerIdCollectionStatus" in body ? str(body, "taxpayerIdCollectionStatus", "not_required") : null;
+    if (collectionStatus && !["not_required", "required", "collected"].includes(collectionStatus)) throw new HttpError(400, "Choose a valid taxpayer-ID collection status.");
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
@@ -4312,6 +4314,13 @@ export const raffle = {
       status: (b) => str(b, "status", "open"),
       taxpayerIdCollectionStatus: (b) => str(b, "taxpayerIdCollectionStatus", "not_required"),
     });
+    if (collectionStatus === "collected") {
+      patch.taxpayerIdCollectedAt = new Date();
+      patch.taxpayerIdCollectedBy = ctx.userId;
+    } else if (collectionStatus) {
+      patch.taxpayerIdCollectedAt = null;
+      patch.taxpayerIdCollectedBy = null;
+    }
     const updated = await db
       .update(s.raffleItems)
       .set({ ...patch, updatedAt: new Date() })

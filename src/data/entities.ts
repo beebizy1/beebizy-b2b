@@ -1080,6 +1080,9 @@ export interface AuctionPageSettings {
   secondChanceEnabled: boolean;
   staggeredClosingEnabled: boolean;
   autoExtendMinutes: number;
+  automaticClosingAlertsEnabled: boolean;
+  closingAlertMinutes: number[];
+  broadcastCooldownMinutes: number;
   bidHistoryPrivacy: "paddle" | "initials";
 }
 
@@ -1364,6 +1367,8 @@ export interface BidderBill {
   totalCents: Cents;
   applicationFeeCents: Cents;
   status: BidderBillStatus;
+  paymentMethod?: string | null;
+  payoutAvailableAt?: IsoDateTime | null;
   paidAt: IsoDateTime | null;
   refundedAt?: IsoDateTime | null;
 }
@@ -1420,6 +1425,8 @@ export interface FundraisingBroadcast {
   recipientCount: number;
   sentAt: IsoDateTime;
 }
+
+export type FundraisingBroadcastAudience = "all" | "remote" | "in_room" | "bidders" | "outbid" | "watchers" | `grade:${SchoolGrade}`;
 
 export interface DonationCampaign {
   id: string;
@@ -1491,6 +1498,7 @@ export interface PublicItemIntakePayload {
   organizationName: string;
   categories: string[];
   grades: readonly string[];
+  prefill?: Partial<PublicItemSubmissionDraft>;
   submission?: ItemSubmission;
 }
 
@@ -1597,6 +1605,8 @@ export interface RaffleItem {
   drawnAt: IsoDateTime | null;
   w2gReviewRequired?: boolean;
   taxpayerIdCollectionStatus?: "not_required" | "required" | "collected";
+  taxpayerIdCollectedAt?: IsoDateTime | null;
+  taxpayerIdCollectedBy?: string | null;
   status: RaffleStatus;
   createdAt: IsoDateTime;
   updatedAt?: IsoDateTime;

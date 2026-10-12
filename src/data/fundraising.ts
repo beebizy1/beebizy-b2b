@@ -6,6 +6,13 @@
  */
 
 import type { Cents } from "./money";
+import { SCHOOL_GRADES, type FundraisingBroadcastAudience } from "./entities";
+
+const STATIC_BROADCAST_AUDIENCES = new Set(["all", "remote", "in_room", "bidders", "outbid", "watchers"]);
+
+export function isFundraisingBroadcastAudience(value: string): value is FundraisingBroadcastAudience {
+  return STATIC_BROADCAST_AUDIENCES.has(value) || (value.startsWith("grade:") && SCHOOL_GRADES.includes(value.slice("grade:".length) as (typeof SCHOOL_GRADES)[number]));
+}
 
 /**
  * The tax-deductible portion of a winning auction bid.

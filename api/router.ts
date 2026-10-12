@@ -61,6 +61,7 @@ import {
   listAuctionCategories,
   listItemSubmissions,
   mergeAuctionItems,
+  parseFundraisingBroadcastAudience,
   publicItemIntake,
   reinvitePastItemDonors,
   submitPublicItem,
@@ -334,7 +335,7 @@ async function handlePublic(segments: string[], method: string, request: Request
 
   if (segments[0] === "public" && segments[1] === "auctions" && segments[2]) {
     if (segments[3] === "intake" && segments.length === 4 && method === "GET") {
-      const intake = await publicItemIntake(segments[2]);
+      const intake = await publicItemIntake(segments[2], new URL(request.url).searchParams.get("prior"));
       return intake ? json(intake) : json({ error: "This donation link is no longer active." }, 404);
     }
     if (segments[3] === "intake" && segments.length === 4 && method === "POST") {
@@ -844,11 +845,11 @@ async function handleAuthed(
         }
         if (b === "fundraising-broadcasts") {
           if (c === "preview" && method === "POST") return json(await previewFundraisingBroadcast(ctx, a, {
-            audience: String(body.audience ?? "all"),
+            audience: parseFundraisingBroadcastAudience(String(body.audience ?? "all")),
             itemIds: Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [],
           }));
           if (c === "send" && method === "POST") return json(await sendFundraisingBroadcast(ctx, a, {
-            audience: String(body.audience ?? "all"),
+            audience: parseFundraisingBroadcastAudience(String(body.audience ?? "all")),
             itemIds: Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [],
             channels: Array.isArray(body.channels) ? body.channels.filter((value): value is string => typeof value === "string") : ["email"],
             message: String(body.message ?? ""),
@@ -872,10 +873,10 @@ async function handleAuthed(
           return json(await offerAuctionSecondChance(ctx, a, c, request));
         }
         if (b === "auction" && c && segments[4] === "extend" && method === "POST") {
-          return json(await extendAuctionItem(ctx, a, c, Number(body.minutes ?? 0)));
+          return json(await extendAuctionItem(ctx, a, c, Number(body.minutes ?? 0), body.notify !== false));
         }
         if (b === "auction" && c === "extend-many" && method === "POST") {
-          return json(await extendAuctionItems(ctx, a, Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [], Number(body.minutes ?? 0)));
+          return json(await extendAuctionItems(ctx, a, Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [], Number(body.minutes ?? 0), body.notify !== false));
         }
         if (b === "auction" && c && segments[4] === "reopen" && method === "POST") {
           return json(await reopenAuctionItem(ctx, a, c, Number(body.minutes ?? 5)));

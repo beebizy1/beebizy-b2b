@@ -1,5 +1,6 @@
 import type { TeamUpdateKind } from "../data/entities.ts";
 import { formatInZone, timeZoneLabel } from "../lib/datetime.ts";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 /**
  * Outbound email.
@@ -27,6 +28,7 @@ export interface EmailMessage {
   replyTo?: string | null;
   /** Stable business-event key. Resend uses it to collapse uncertain retries. */
   idempotencyKey?: string;
+  attachments?: Array<{ filename: string; content: string; content_type?: string }>;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
@@ -51,6 +53,7 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
         text: message.text,
         ...(message.html ? { html: message.html } : {}),
         ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -61,6 +64,50 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
   } catch (error) {
     return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function pdfSafeText(value: string): string {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "?");
+}
+
+function drawCenteredPdfText(page: PDFPage, font: PDFFont, text: string, y: number, size: number, color = rgb(0.09, 0.08, 0.04)): void {
+  const safe = pdfSafeText(text);
+  page.drawText(safe, { x: Math.max(36, (page.getWidth() - font.widthOfTextAtSize(safe, size)) / 2), y, size, font, color });
+}
+
+function drawCenteredWrappedPdfText(page: PDFPage, font: PDFFont, text: string, startY: number, size: number, maxWidth: number): number {
+  const words = pdfSafeText(text).split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  for (const word of words) {
+    const next = lines.length ? `${lines[lines.length - 1]} ${word}` : word;
+    if (lines.length && font.widthOfTextAtSize(next, size) > maxWidth) lines.push(word);
+    else if (lines.length) lines[lines.length - 1] = next;
+    else lines.push(word);
+  }
+  lines.slice(0, 3).forEach((line, index) => drawCenteredPdfText(page, font, line, startY - index * (size + 4), size, rgb(0.28, 0.28, 0.28)));
+  return startY - Math.min(lines.length, 3) * (size + 4);
+}
+
+async function experienceCertificatePdf(input: { organizationName: string; winnerName: string; eventTitle: string; itemTitle: string; deliveryDetails?: string | null; restrictions?: string | null; expiresAt?: string | null }): Promise<string> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([792, 612]);
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  page.drawRectangle({ x: 22, y: 22, width: 748, height: 568, borderColor: rgb(0.95, 0.75, 0), borderWidth: 5 });
+  drawCenteredPdfText(page, bold, input.organizationName, 535, 16, rgb(0.55, 0.42, 0));
+  drawCenteredPdfText(page, bold, "AUCTION EXPERIENCE CERTIFICATE", 475, 20);
+  drawCenteredPdfText(page, regular, "Presented to", 415, 16, rgb(0.35, 0.35, 0.35));
+  drawCenteredPdfText(page, bold, input.winnerName, 365, 34);
+  drawCenteredPdfText(page, regular, "for", 320, 16, rgb(0.35, 0.35, 0.35));
+  const itemSize = bold.widthOfTextAtSize(pdfSafeText(input.itemTitle), 28) > 700 ? 20 : 28;
+  drawCenteredPdfText(page, bold, input.itemTitle, 270, itemSize);
+  drawCenteredPdfText(page, regular, `Won at ${input.eventTitle}`, 220, 15, rgb(0.35, 0.35, 0.35));
+  let detailY = 185;
+  if (input.deliveryDetails) detailY = drawCenteredWrappedPdfText(page, regular, `Redemption: ${input.deliveryDetails}`, detailY, 11, 660);
+  if (input.restrictions) detailY = drawCenteredWrappedPdfText(page, regular, `Restrictions: ${input.restrictions}`, detailY - 2, 11, 660);
+  if (input.expiresAt) drawCenteredPdfText(page, bold, `Expires: ${new Date(input.expiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}`, Math.max(105, detailY - 2), 11, rgb(0.28, 0.28, 0.28));
+  drawCenteredPdfText(page, regular, `Issued by ${input.organizationName} - Powered by Beebizy`, 75, 11, rgb(0.4, 0.4, 0.4));
+  return Buffer.from(await document.save()).toString("base64");
 }
 
 function escapeHtml(value: string): string {
@@ -393,15 +440,21 @@ export async function notifyExperienceCertificate(input: {
   winnerName: string;
   eventTitle: string;
   itemTitle: string;
+  organizationName: string;
+  deliveryDetails?: string | null;
+  restrictions?: string | null;
+  expiresAt?: string | null;
   certificateUrl: string;
 }): Promise<EmailOutcome> {
+  const pdf = await experienceCertificatePdf(input);
   return sendEmail({
     to: input.to,
     replyTo: "hello@beebizy.com",
     idempotencyKey: `auction-certificate-${input.orderId}`,
     subject: `Your certificate - ${emailSubjectPart(input.itemTitle)}`,
-    text: `Hi ${input.winnerName},\n\nYour experience certificate for ${input.itemTitle} at ${input.eventTitle} is ready.\n\nView or save it as a PDF: ${input.certificateUrl}`,
+    text: `Hi ${input.winnerName},\n\nYour experience certificate for ${input.itemTitle} at ${input.eventTitle} is attached as a PDF.\n\nYou can also view it online: ${input.certificateUrl}`,
     html: brandedEmail({ title: "Your auction certificate", greeting: `Hi ${input.winnerName},`, paragraphs: [`Your experience certificate for ${input.itemTitle} at ${input.eventTitle} is ready.`], details: [["Experience", input.itemTitle], ["Event", input.eventTitle]], action: { label: "View certificate", url: input.certificateUrl } }),
+    attachments: [{ filename: `${pdfSafeText(input.itemTitle).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 80) || "auction-experience"}-certificate.pdf`, content: pdf, content_type: "application/pdf" }],
   });
 }
 

@@ -1136,6 +1136,8 @@ export const bidderBills = pgTable(
     stripeSessionId: text("stripe_session_id").unique(),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
     stripeConnectedAccountId: text("stripe_connected_account_id"),
+    paymentMethod: text("payment_method"),
+    payoutAvailableAt: timestamp("payout_available_at", { withTimezone: true }),
     receiptId: text("receipt_id"),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     refundedAt: timestamp("refunded_at", { withTimezone: true }),
@@ -1181,6 +1183,7 @@ export const yearEndStatementDeliveries = pgTable(
   {
     id: id(),
     workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    householdId: text("household_id").references(() => households.id, { onDelete: "cascade" }),
     payerEmail: text("payer_email").notNull(),
     payerName: text("payer_name").notNull(),
     taxYear: integer("tax_year").notNull(),
@@ -1192,7 +1195,10 @@ export const yearEndStatementDeliveries = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [uniqueIndex("year_end_statement_workspace_email_year_idx").on(table.workspaceId, table.payerEmail, table.taxYear)],
+  (table) => [
+    uniqueIndex("year_end_statement_household_year_idx").on(table.workspaceId, table.householdId, table.taxYear).where(sql`${table.householdId} is not null`),
+    uniqueIndex("year_end_statement_email_year_idx").on(table.workspaceId, table.payerEmail, table.taxYear).where(sql`${table.householdId} is null`),
+  ],
 );
 
 export const inKindAcknowledgments = pgTable(
@@ -1228,6 +1234,20 @@ export const fundraisingBroadcasts = pgTable(
     sentAt: createdAt(),
   },
   (table) => [index("fundraising_broadcasts_event_idx").on(table.eventId, table.sentAt)],
+);
+
+export const fundraisingBroadcastRecipients = pgTable(
+  "fundraising_broadcast_recipients",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    broadcastId: text("broadcast_id").notNull().references(() => fundraisingBroadcasts.id, { onDelete: "cascade" }),
+    bidderId: text("bidder_id").notNull().references(() => auctionBidders.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    sentAt: createdAt(),
+  },
+  (table) => [index("fundraising_broadcast_recipient_cooldown_idx").on(table.eventId, table.bidderId, table.sentAt)],
 );
 
 export const auctionCloseChanges = pgTable(
@@ -1330,6 +1350,8 @@ export const raffleItems = pgTable(
     drawnAt: timestamp("drawn_at", { withTimezone: true }),
     w2gReviewRequired: boolean("w2g_review_required").notNull().default(false),
     taxpayerIdCollectionStatus: text("taxpayer_id_collection_status").notNull().default("not_required"),
+    taxpayerIdCollectedAt: timestamp("taxpayer_id_collected_at", { withTimezone: true }),
+    taxpayerIdCollectedBy: text("taxpayer_id_collected_by"),
     status: raffleStatus("status").notNull().default("open"),
   },
   (table) => [index("raffle_event_idx").on(table.eventId)],

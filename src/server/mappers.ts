@@ -506,6 +506,8 @@ export function toRaffleItem(row: InferSelectModel<typeof s.raffleItems>): Raffl
     drawnAt: iso(row.drawnAt),
     w2gReviewRequired: row.w2gReviewRequired,
     taxpayerIdCollectionStatus: row.taxpayerIdCollectionStatus as RaffleItem["taxpayerIdCollectionStatus"],
+    taxpayerIdCollectedAt: iso(row.taxpayerIdCollectedAt),
+    taxpayerIdCollectedBy: row.taxpayerIdCollectedBy,
     status: row.status,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,

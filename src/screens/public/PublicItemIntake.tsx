@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, CheckCircle2, Gift, ImagePlus, Users } from "lucide-react";
 import { PublicFrame } from "./PublicEvent";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EmptyState, LoadingRows, Panel, PanelHeader } from "@/components/primitives";
 import { usePublicItemIntake, useSubmitPublicItem, useUploadPublicItemImage } from "@/data/hooks";
-import { centsFromInput } from "@/data/money";
+import { centsFromInput, centsToInput } from "@/data/money";
 import { toast } from "@/hooks/use-toast";
 
 const DELIVERY_OPTIONS = ["Drop off at school", "Certificate emailed", "Donor contacts winner", "Pick up from donor"];
@@ -40,6 +40,34 @@ export default function PublicItemIntakePage({ token }: { token: string }) {
   const [startingBid, setStartingBid] = useState("");
   const [notes, setNotes] = useState("");
   const [isServiceOrUse, setIsServiceOrUse] = useState(false);
+  const [prefillApplied, setPrefillApplied] = useState(false);
+
+  useEffect(() => {
+    if (!data?.prefill || prefillApplied) return;
+    const prior = data.prefill;
+    setDonorKind(prior.donorKind ?? "family");
+    setDonorName(prior.donorName ?? "");
+    setDonorEmail(prior.donorEmail ?? "");
+    setDonorPhone(prior.donorPhone ?? "");
+    setGrades(prior.grades ?? []);
+    setCreditText(prior.creditText ?? "");
+    setAnonymous(prior.anonymous ?? false);
+    setCompanyName(prior.companyName ?? "");
+    setWebsite(prior.website ?? "");
+    setLogoUrl(prior.logoUrl ?? "");
+    setTitle(prior.itemTitle ?? "");
+    setDescription(prior.description ?? "");
+    setPhotos(prior.photoUrls ?? []);
+    setCategory(prior.category ?? "");
+    setEstimatedValue(prior.estimatedValueCents == null ? "" : centsToInput(prior.estimatedValueCents));
+    setFairMarketValue(prior.fairMarketValueCents == null ? "" : centsToInput(prior.fairMarketValueCents));
+    setRestrictions(prior.restrictions ?? "");
+    setExpiresAt(prior.expirationDate?.slice(0, 10) ?? "");
+    setDeliveryMethod(prior.deliveryMethod ?? "");
+    setStartingBid(prior.suggestedStartingBidCents == null ? "" : centsToInput(prior.suggestedStartingBidCents));
+    setIsServiceOrUse(prior.isServiceOrUse ?? false);
+    setPrefillApplied(true);
+  }, [data?.prefill, prefillApplied]);
 
   if (isLoading) return <PublicFrame><LoadingRows rows={6} /></PublicFrame>;
   if (!data) return <PublicFrame><Panel><EmptyState icon={Gift} title="This donation link is not active" description="Ask the event organizer for the current family donation link." /></Panel></PublicFrame>;
