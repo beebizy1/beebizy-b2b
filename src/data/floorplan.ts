@@ -18,6 +18,19 @@ const floorplanItemSchema = z.object({
   locked: z.boolean().optional(),
   width: z.number().finite().min(1).max(100).optional(),
   height: z.number().finite().min(1).max(100).optional(),
+  rotation: z.number().finite().min(0).max(359).optional(),
+  points: z.array(z.object({
+    x: z.number().finite().min(0).max(100),
+    y: z.number().finite().min(0).max(100),
+  })).min(3).max(24).optional(),
+}).superRefine((item, context) => {
+  if (item.shape === "custom-shape" && !item.points) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Custom floorplan shapes need at least three corner points.",
+      path: ["points"],
+    });
+  }
 });
 
 const floorplanPointSchema = z.object({

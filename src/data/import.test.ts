@@ -372,6 +372,19 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
     expect(asGoogleSheet("Staff Member,Role,Hours\nAlex,Producer,").teamHours).toHaveLength(0);
   });
 
+  it("imports rotatable custom floorplan objects with an editable outline", () => {
+    const floorplan = asGoogleSheet(
+      "Item,Shape,X,Y,Rotation\nCurved wall,custom-shape,35,40,75",
+    ).floorplans[0]!;
+    expect(floorplan.items[0]).toMatchObject({
+      label: "Curved wall",
+      shape: "custom-shape",
+      rotation: 75,
+      points: expect.arrayContaining([expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) })]),
+    });
+    expect(() => parseFloorplanDraft(floorplan)).not.toThrow();
+  });
+
   it("caps floorplan imports at the persisted schema limit", () => {
     const rows = Array.from({ length: 501 }, (_, index) => `Chair ${index + 1},chair,10,10`);
     const plan = asGoogleSheet(["Item,Shape,X,Y", ...rows].join("\n"));

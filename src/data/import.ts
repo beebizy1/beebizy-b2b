@@ -22,6 +22,7 @@ import type {
 } from "./entities.ts";
 import { RFP_EVENT_TYPES } from "./entities.ts";
 import { parseFloorplanDraft } from "./floorplan.ts";
+import { DEFAULT_CUSTOM_OBJECT_POINTS } from "./floorplanGeometry.ts";
 import { rfpDraftSchema } from "./rfp.ts";
 
 export type SpreadsheetValue = string | number | boolean | Date | null;
@@ -854,7 +855,7 @@ export function buildEventImportPlan(
   if (allFloorplanRows.length > floorplanRows.length) {
     warnings.push(`Only the first 500 floorplan objects were imported. ${allFloorplanRows.length - floorplanRows.length} extra rows were skipped.`);
   }
-  const floorplanShapes = new Set(["round-table", "long-table", "stage", "bar", "entrance", "dancefloor", "booth", "av", "tree", "chair", "chair-row"]);
+  const floorplanShapes = new Set(["round-table", "long-table", "stage", "bar", "entrance", "dancefloor", "booth", "av", "tree", "chair", "chair-row", "custom-shape"]);
   const floorplanName = floorplanTable && floorplanRows.length > 0
     ? stringFrom(floorplanRows[0]!, floorplanTable, ["floorplan", "floorplan name", "room", "room name", "plan name"])
     : "";
@@ -874,6 +875,10 @@ export function buildEventImportPlan(
       y: bounded(valueFrom(row, floorplanTable!, ["y", "y position", "top percent"]), 0, 100, 10 + (Math.floor(index / 6) % 6) * 14),
       seats: Math.min(10_000, Math.max(0, integer(valueFrom(row, floorplanTable!, ["seats", "seat count", "capacity"])) ?? 0)),
       locked: truthy(valueFrom(row, floorplanTable!, ["locked", "fixed", "existing"])),
+      rotation: bounded(valueFrom(row, floorplanTable!, ["rotation", "rotation degrees", "angle"]), 0, 359, 0),
+      ...(rawShape === "custom-shape"
+        ? { points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
+        : {}),
     }];
   });
   if (skippedFloorplanRows > 0) {

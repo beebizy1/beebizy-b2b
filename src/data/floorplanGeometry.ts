@@ -25,6 +25,15 @@ const CUSTOM_POINTS: FloorplanPoint[] = [
   { x: 4, y: 55 },
 ];
 
+/** A deliberately irregular starter polygon so a custom object reads as editable. */
+export const DEFAULT_CUSTOM_OBJECT_POINTS: FloorplanPoint[] = [
+  { x: 8, y: 18 },
+  { x: 72, y: 6 },
+  { x: 94, y: 42 },
+  { x: 78, y: 92 },
+  { x: 18, y: 84 },
+];
+
 export const DEFAULT_FLOORPLAN_ROOM: FloorplanRoom = {
   shape: "rectangle",
   widthFeet: 80,

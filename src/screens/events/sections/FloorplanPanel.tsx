@@ -22,6 +22,7 @@ import {
   Plus,
   RectangleHorizontal,
   RotateCcw,
+  RotateCw,
   Save,
   Shapes,
   Trash2,
@@ -51,6 +52,7 @@ import {
 import { floorplanRoomSquareFeet } from "@/data/floorplan";
 import {
   DEFAULT_FLOORPLAN_ROOM,
+  DEFAULT_CUSTOM_OBJECT_POINTS,
   addRoomCorner,
   nearestPointInsideRoom,
   pointIsInsideRoom,
@@ -81,6 +83,7 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
   chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
   "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
+  "custom-shape": { label: "Custom shape", width: 18, height: 14, seats: null, round: false, className: "border-transparent bg-transparent text-info-text shadow-none" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
@@ -112,9 +115,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const [room, setRoom] = useState<FloorplanRoom | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
+  const [selectedItemCorner, setSelectedItemCorner] = useState<number | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const cornerDragState = useRef<{ index: number } | null>(null);
+  const itemCornerDragState = useRef<{ id: string; index: number } | null>(null);
   const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
   const suppressPaletteClick = useRef(false);
 
@@ -129,6 +134,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const dirty = items !== null || name !== null || room !== null;
 
   const selected = workingItems.find((item) => item.id === selectedId) ?? null;
+  const selectedCustomPoints = selected?.shape === "custom-shape"
+    ? selected.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
+    : null;
 
   const seatTotal = useMemo(
     () => workingItems.reduce((total, item) => total + (item.seats ?? 0), 0),
@@ -137,6 +145,17 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   const updateItem = (id: string, patch: Partial<FloorplanItem>) => {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const updateItemPoint = (id: string, index: number, point: FloorplanPoint) => {
+    setItems(workingItems.map((item) => {
+      if (item.id !== id) return item;
+      const points = item.points ?? DEFAULT_CUSTOM_OBJECT_POINTS;
+      return {
+        ...item,
+        points: points.map((current, currentIndex) => currentIndex === index ? point : current),
+      };
+    }));
   };
 
   const updateRoom = (patch: Partial<FloorplanRoom>) => {
@@ -181,9 +200,14 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       // Every object starts movable. Teams can lock true fixed features after they
       // have placed them, using the same control available for furniture.
       locked: false,
+      rotation: 0,
+      ...(shape === "custom-shape"
+        ? { points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
+        : {}),
     };
     setItems([...workingItems, item]);
     setSelectedId(item.id);
+    setSelectedItemCorner(null);
   };
 
   const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
@@ -226,11 +250,13 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     if (!selected || selected.locked) return;
     setItems(workingItems.filter((item) => item.id !== selected.id));
     setSelectedId(null);
+    setSelectedItemCorner(null);
   };
 
   /* --------------------------------------------------------------- dragging */
 
   const onPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>, item: FloorplanItem) => {
+    if (item.id !== selectedId) setSelectedItemCorner(null);
     setSelectedId(item.id);
     if (item.locked) return;
     const room = roomRef.current;
@@ -255,6 +281,27 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       return;
     }
 
+    const itemCornerDrag = itemCornerDragState.current;
+    if (itemCornerDrag) {
+      const item = workingItems.find((current) => current.id === itemCornerDrag.id);
+      if (!item) return;
+      const spec = SHAPES[item.shape];
+      const itemWidth = rect.width * ((item.width ?? spec.width) / 100);
+      const itemHeight = rect.height * ((item.height ?? spec.height) / 100);
+      const centerX = rect.left + rect.width * (item.x / 100);
+      const centerY = rect.top + rect.height * (item.y / 100);
+      const radians = -((item.rotation ?? 0) * Math.PI) / 180;
+      const deltaX = pointerEvent.clientX - centerX;
+      const deltaY = pointerEvent.clientY - centerY;
+      const localX = deltaX * Math.cos(radians) - deltaY * Math.sin(radians);
+      const localY = deltaX * Math.sin(radians) + deltaY * Math.cos(radians);
+      updateItemPoint(item.id, itemCornerDrag.index, {
+        x: Math.max(0, Math.min(100, 50 + (localX / itemWidth) * 100)),
+        y: Math.max(0, Math.min(100, 50 + (localY / itemHeight) * 100)),
+      });
+      return;
+    }
+
     const drag = dragState.current;
     if (!drag) return;
     const x = clamp(((pointerEvent.clientX - rect.left) / rect.width) * 100 - drag.offsetX);
@@ -265,6 +312,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const endDrag = () => {
     dragState.current = null;
     cornerDragState.current = null;
+    itemCornerDragState.current = null;
   };
 
   /* ------------------------------------------------------------- keyboard */
@@ -277,6 +325,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
+      const eventTarget = keyEvent.target as HTMLElement | null;
+      if (eventTarget?.closest("input, textarea, select, button, [contenteditable='true']")) return;
       const { selected: target, workingItems: current, workingRoom: currentRoom } = latest.current;
       if (!target) return;
 
@@ -355,6 +405,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   setRoom(null);
                   setSelectedId(null);
                   setSelectedCorner(null);
+                  setSelectedItemCorner(null);
                 }}
               >
                 <RotateCcw className="mr-1.5 size-3.5" />
@@ -589,12 +640,15 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 const isSelected = item.id === selectedId;
                 const width = item.width ?? spec.width;
                 const height = item.height ?? spec.height;
+                const customPoints = item.shape === "custom-shape"
+                  ? item.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
+                  : null;
                 return (
                   <div
                     key={item.id}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}${item.locked ? ", fixed in place" : ""}`}
+                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}, ${item.rotation ?? 0} degrees${item.locked ? ", fixed in place" : ""}`}
                     aria-pressed={isSelected}
                     onPointerDown={(pointerEvent) => onPointerDown(pointerEvent, item)}
                     onFocus={() => setSelectedId(item.id)}
@@ -611,10 +665,62 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       width: `${width}%`,
                       height: spec.round ? undefined : `${height}%`,
                       aspectRatio: spec.round ? "1 / 1" : undefined,
-                      transform: "translate(-50%, -50%)",
+                      transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)`,
                     }}
                   >
-                    <span className="px-1">{item.label}</span>
+                    {customPoints ? (
+                      <>
+                        <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                          <polygon
+                            points={customPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                            className="fill-info-tint stroke-info/60"
+                            strokeWidth="2"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        </svg>
+                        <span className="relative z-10 px-2">{item.label}</span>
+                        {isSelected && !item.locked
+                          ? customPoints.map((point, index) => (
+                              <button
+                                key={`${item.id}-corner-${index}`}
+                                type="button"
+                                aria-label={`Custom shape corner ${index + 1}`}
+                                aria-pressed={selectedItemCorner === index}
+                                onPointerDown={(pointerEvent) => {
+                                  pointerEvent.stopPropagation();
+                                  setSelectedItemCorner(index);
+                                  itemCornerDragState.current = { id: item.id, index };
+                                  pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+                                }}
+                                onKeyDown={(keyEvent) => {
+                                  const movement: Record<string, [number, number]> = {
+                                    ArrowUp: [0, -1],
+                                    ArrowDown: [0, 1],
+                                    ArrowLeft: [-1, 0],
+                                    ArrowRight: [1, 0],
+                                  };
+                                  const delta = movement[keyEvent.key];
+                                  if (!delta) return;
+                                  keyEvent.preventDefault();
+                                  keyEvent.stopPropagation();
+                                  const step = keyEvent.shiftKey ? 5 : 1;
+                                  updateItemPoint(item.id, index, {
+                                    x: Math.max(0, Math.min(100, point.x + delta[0] * step)),
+                                    y: Math.max(0, Math.min(100, point.y + delta[1] * step)),
+                                  });
+                                }}
+                                className={cn(
+                                  "absolute z-20 size-3 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-surface bg-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  selectedItemCorner === index && "scale-125 ring-2 ring-ring",
+                                )}
+                                style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                              />
+                            ))
+                          : null}
+                      </>
+                    ) : (
+                      <span className="px-1">{item.label}</span>
+                    )}
                     {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>
                 );
@@ -630,6 +736,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       onPointerDown={(pointerEvent) => {
                         pointerEvent.stopPropagation();
                         setSelectedId(null);
+                        setSelectedItemCorner(null);
                         setSelectedCorner(index);
                         cornerDragState.current = { index };
                         pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
@@ -661,8 +768,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag objects from the toolbar to place them inside the room outline. Select any object to lock or unlock
-              its position, then use drag or the arrow keys to move it.
+              Drag objects from the toolbar to place them inside the room outline. Select one to move, resize, rotate,
+              or lock it. Custom shapes also have draggable corner points.
             </p>
           </div>
 
@@ -729,6 +836,84 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     className="h-8 w-20 text-right"
                   />
                 </label>
+              ) : null}
+              <div className="space-y-1">
+                <span className="block text-xs font-medium text-muted-foreground">Rotation</span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="size-8"
+                    aria-label="Rotate object left 15 degrees"
+                    disabled={selected.locked}
+                    onClick={() => updateItem(selected.id, { rotation: ((selected.rotation ?? 0) + 345) % 360 })}
+                  >
+                    <RotateCcw className="size-3.5" />
+                  </Button>
+                  <Input
+                    value={String(selected.rotation ?? 0)}
+                    onChange={(inputEvent) => {
+                      const parsed = Number(inputEvent.target.value);
+                      updateItem(selected.id, {
+                        rotation: Number.isFinite(parsed) ? Math.max(0, Math.min(359, Math.round(parsed))) : 0,
+                      });
+                    }}
+                    type="number"
+                    min="0"
+                    max="359"
+                    aria-label="Object rotation in degrees"
+                    disabled={selected.locked}
+                    className="h-8 w-20 text-right tabular-nums"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="size-8"
+                    aria-label="Rotate object right 15 degrees"
+                    disabled={selected.locked}
+                    onClick={() => updateItem(selected.id, { rotation: ((selected.rotation ?? 0) + 15) % 360 })}
+                  >
+                    <RotateCw className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+              {selectedCustomPoints ? (
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-muted-foreground">Shape corners</span>
+                  <div className="flex items-center gap-1">
+                    <Pill tone="neutral">{selectedCustomPoints.length}</Pill>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={selected.locked || selectedCustomPoints.length >= 24}
+                      onClick={() => {
+                        const result = addRoomCorner(selectedCustomPoints);
+                        updateItem(selected.id, { points: result.points });
+                        setSelectedItemCorner(result.index);
+                      }}
+                    >
+                      <Plus className="mr-1 size-3.5" />
+                      Add corner
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={selected.locked || selectedItemCorner === null || selectedCustomPoints.length <= 3}
+                      onClick={() => {
+                        if (selectedItemCorner === null) return;
+                        updateItem(selected.id, { points: selectedCustomPoints.filter((_, index) => index !== selectedItemCorner) });
+                        setSelectedItemCorner(null);
+                      }}
+                    >
+                      <Minus className="mr-1 size-3.5" />
+                      Remove corner
+                    </Button>
+                  </div>
+                </div>
               ) : null}
               <Pill tone={capacityTone}>{capacityNote}</Pill>
               <Button

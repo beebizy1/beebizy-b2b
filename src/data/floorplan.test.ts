@@ -51,6 +51,27 @@ describe("parseFloorplanDraft", () => {
     expect(parseFloorplanDraft({ name: "Main room", items: [item] }).items[0]).toEqual(item);
   });
 
+  it("preserves rotation and editable corners for custom objects", () => {
+    const item = {
+      id: "custom-1",
+      shape: "custom-shape" as const,
+      label: "Curved exhibit wall",
+      x: 50,
+      y: 50,
+      seats: null,
+      width: 30,
+      height: 18,
+      rotation: 45,
+      points: [
+        { x: 5, y: 10 },
+        { x: 95, y: 5 },
+        { x: 80, y: 90 },
+        { x: 15, y: 80 },
+      ],
+    };
+    expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
   it("validates and preserves physical room dimensions and a custom outline", () => {
     const room = {
       shape: "custom" as const,
@@ -86,10 +107,16 @@ describe("parseFloorplanDraft", () => {
     { field: "seats", value: 1.5 },
     { field: "width", value: 101 },
     { field: "height", value: 0 },
+    { field: "rotation", value: 360 },
   ])("rejects an invalid $field", ({ field, value }) => {
     const item = { id: "table-1", shape: "round-table", label: "Table 1", x: 42, y: 58, seats: 10 };
     expect(() =>
       parseFloorplanDraft({ name: "Ballroom", items: [{ ...item, [field]: value }] }),
     ).toThrow();
+  });
+
+  it("requires a polygon for custom objects", () => {
+    const item = { id: "custom-1", shape: "custom-shape", label: "Wall", x: 42, y: 58, seats: null };
+    expect(() => parseFloorplanDraft({ name: "Expo", items: [item] })).toThrow(/corner points/i);
   });
 });

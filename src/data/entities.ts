@@ -702,6 +702,7 @@ export const FLOORPLAN_SHAPES = [
   "tree",
   "chair",
   "chair-row",
+  "custom-shape",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
@@ -740,6 +741,10 @@ export interface FloorplanItem {
   /** Optional object dimensions as percentages of the room canvas. */
   width?: number;
   height?: number;
+  /** Clockwise rotation around the object's center, in degrees. */
+  rotation?: number;
+  /** Normalized vertices for a custom object. Other object types ignore this. */
+  points?: FloorplanPoint[];
 }
 
 /**
