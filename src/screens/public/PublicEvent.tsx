@@ -344,12 +344,13 @@ export function PublicTicketsPage({ token }: { token: string }) {
   const [benefitsDeclined, setBenefitsDeclined] = useState(false);
   const [autoChargeOptIn, setAutoChargeOptIn] = useState(false);
   const [done, setDone] = useState(false);
+  const [freeOrderId, setFreeOrderId] = useState<string | null>(null);
   const checkoutOrderId = typeof window === "undefined"
     ? null
     : new URLSearchParams(window.location.search).get("checkout") === "success"
       ? new URLSearchParams(window.location.search).get("order")
       : null;
-  const { data: checkoutOrder, isLoading: checkoutOrderLoading } = usePublicTicketOrderStatus(token, checkoutOrderId);
+  const { data: checkoutOrder, isLoading: checkoutOrderLoading } = usePublicTicketOrderStatus(token, checkoutOrderId ?? freeOrderId);
 
   const onSale = useMemo(
     () => (tickets ?? []).filter((ticket) => ticket.isActive),
@@ -459,7 +460,10 @@ export function PublicTicketsPage({ token }: { token: string }) {
                 {
                   onSuccess: (result) => {
                     if (result.checkoutUrl) window.location.assign(result.checkoutUrl);
-                    else setDone(true);
+                    else {
+                      setFreeOrderId(result.orderId);
+                      setDone(true);
+                    }
                   },
                   onError: (error) => toast({ title: "Couldn't complete", description: error.message }),
                 },

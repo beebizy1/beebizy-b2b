@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
 import { HttpError } from "./auth.ts";
+import { databaseErrorMessage } from "./errorMessage.ts";
 
 export interface AuctionBidderAllocationInput {
   workspaceId: string;
@@ -33,7 +34,7 @@ export async function allocateAuctionBidder(input: AuctionBidderAllocationInput)
     if (!row) throw new Error("The bidder allocation returned no row.");
     return { id: row.id, paddleNumber: Number(row.paddle_number), publicToken: row.public_token };
   } catch (error) {
-    if (error instanceof Error && error.message.includes("already registered")) {
+    if (/already registered/i.test(databaseErrorMessage(error))) {
       throw new HttpError(409, "This email is already registered. Use the private access link in the original email or ask the organizer for help.");
     }
     throw error;
