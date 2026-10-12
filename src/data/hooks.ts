@@ -157,6 +157,7 @@ export const qk = {
   donationCampaigns: (eventId?: string) => ["fundraising", "campaigns", eventId ?? "all"] as const,
   publicDonationCampaign: (token: string) => ["fundraising", "campaign", token] as const,
   publicDonationStatus: (token: string, donationId: string | null) => ["fundraising", "donation", token, donationId] as const,
+  publicCertificate: (token: string) => ["fundraising", "certificate", token] as const,
   fundraisingReports: (eventId: string) => ["fundraising", eventId, "reports"] as const,
   raffle: (eventId: string) => ["raffle", eventId] as const,
   raffleTickets: (eventId: string, raffleItemId: string) => ["raffle", eventId, raffleItemId, "tickets"] as const,
@@ -1110,6 +1111,13 @@ export function useExtendAuctionItem() {
   );
 }
 
+export function useExtendAuctionItems() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemIds: string[]; minutes: number }) => a.fundraising.extendItems(vars.eventId, vars.itemIds, vars.minutes),
+    (vars) => [qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
 export function useReopenAuctionItem() {
   return useAdapterMutation(
     (a, vars: { eventId: string; itemId: string; minutes: number }) => a.fundraising.reopenItem(vars.eventId, vars.itemId, vars.minutes),
@@ -1132,6 +1140,20 @@ export function useUploadPublicItemImage() {
   return useAdapterMutation(
     (a, vars: { token: string; file: File }) => a.fundraising.uploadPublicItemImage(vars.token, vars.file),
     () => [],
+  );
+}
+
+export function useReinvitePastItemDonors() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.fundraising.reinvitePastDonors(eventId),
+    () => [],
+  );
+}
+
+export function useMergeAuctionItems() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemIds: string[]; title: string }) => a.fundraising.mergeItems(vars.eventId, vars.itemIds, vars.title),
+    (vars) => [qk.itemSubmissions(vars.eventId), qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
   );
 }
 
@@ -1237,6 +1259,10 @@ export function usePublicDonationStatus(token: string, donationId: string | null
   );
 }
 
+export function usePublicExperienceCertificate(token: string) {
+  return useAdapterQuery(qk.publicCertificate(token), (a) => a.fundraising.getPublicCertificate(token), { enabled: !!token });
+}
+
 export function usePreviewFundraisingBroadcast() {
   return useAdapterMutation(
     (a, vars: { eventId: string; audience: string; itemIds: string[] }) => a.fundraising.previewBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds }),
@@ -1267,6 +1293,13 @@ export function useUndoLiveAuctionSale() {
 
 export function useFundraisingReports(eventId: string) {
   return useAdapterQuery(qk.fundraisingReports(eventId), (a) => a.fundraising.reports(eventId), { enabled: !!eventId, refetchInterval: 15_000 });
+}
+
+export function useSendYearEndStatements() {
+  return useAdapterMutation(
+    (a, taxYear: number) => a.fundraising.sendYearEndStatements(taxYear),
+    () => [],
+  );
 }
 
 export function useAddAuctionItem() {

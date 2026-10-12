@@ -807,6 +807,7 @@ export const ticketTypes = pgTable(
     description: text("description"),
     priceCents: bigint("price_cents", { mode: "number" }).notNull().default(0),
     fairMarketValueCents: bigint("fair_market_value_cents", { mode: "number" }),
+    fmvZeroConfirmed: boolean("fmv_zero_confirmed").notNull().default(false),
     benefitsDescription: text("benefits_description"),
     /** 0 means unlimited. */
     quantityTotal: integer("quantity_total").notNull().default(0),
@@ -1033,6 +1034,7 @@ export const auctionOrders = pgTable(
     stripePaymentIntentId: text("stripe_payment_intent_id"),
     stripeConnectedAccountId: text("stripe_connected_account_id"),
     stripeRefundId: text("stripe_refund_id"),
+    certificateToken: text("certificate_token").unique(),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     refundedAt: timestamp("refunded_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -1174,6 +1176,25 @@ export const fundraisingReceipts = pgTable(
   ],
 );
 
+export const yearEndStatementDeliveries = pgTable(
+  "year_end_statement_deliveries",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    payerEmail: text("payer_email").notNull(),
+    payerName: text("payer_name").notNull(),
+    taxYear: integer("tax_year").notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    deductibleCents: bigint("deductible_cents", { mode: "number" }).notNull().default(0),
+    receiptCount: integer("receipt_count").notNull().default(0),
+    status: invitationDeliveryStatus("status").notNull().default("pending"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex("year_end_statement_workspace_email_year_idx").on(table.workspaceId, table.payerEmail, table.taxYear)],
+);
+
 export const inKindAcknowledgments = pgTable(
   "in_kind_acknowledgments",
   {
@@ -1300,12 +1321,15 @@ export const raffleItems = pgTable(
     description: text("description"),
     imageUrl: text("image_url"),
     ticketPriceCents: bigint("ticket_price_cents", { mode: "number" }).notNull().default(0),
+    fairMarketValueCents: bigint("fair_market_value_cents", { mode: "number" }),
     totalTickets: integer("total_tickets").notNull().default(0),
     soldTickets: integer("sold_tickets").notNull().default(0),
     winnerName: text("winner_name"),
     winnerEmail: text("winner_email"),
     winnerTicketId: text("winner_ticket_id"),
     drawnAt: timestamp("drawn_at", { withTimezone: true }),
+    w2gReviewRequired: boolean("w2g_review_required").notNull().default(false),
+    taxpayerIdCollectionStatus: text("taxpayer_id_collection_status").notNull().default("not_required"),
     status: raffleStatus("status").notNull().default("open"),
   },
   (table) => [index("raffle_event_idx").on(table.eventId)],

@@ -81,6 +81,7 @@ import {
   type AuctionItemStatus,
   type BookingStatus,
   type Event,
+  SCHOOL_GRADES,
   type Sponsorship,
   type SponsorshipTier,
 } from "@/data/entities";
@@ -649,7 +650,7 @@ function MessageBlastDialog({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label htmlFor="blast-audience">Audience</Label><select id="blast-audience" value={audience} onChange={(event) => setAudience(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="all">All bidders</option><option value="in_room">In room</option><option value="remote">Remote</option><option value="bidders">Bidders on this item</option><option value="watchers">Watchers</option><option value="outbid">Outbid bidders</option></select></div>
+            <div className="space-y-1.5"><Label htmlFor="blast-audience">Audience</Label><select id="blast-audience" value={audience} onChange={(event) => setAudience(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="all">All bidders</option><option value="in_room">In room</option><option value="remote">Remote</option><option value="bidders">Bidders on this item</option><option value="watchers">Watchers</option><option value="outbid">Outbid bidders</option><optgroup label="Family grade">{SCHOOL_GRADES.map((grade) => <option key={grade} value={`grade:${grade}`}>{grade}</option>)}</optgroup></select></div>
             <div className="space-y-1.5"><Label>Channels</Label><div className="flex flex-wrap gap-3 pt-2 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={channels.includes("email")} onChange={(event) => setChannels((current) => event.target.checked ? [...new Set([...current, "email"])] : current.filter((item) => item !== "email"))} />Email</label><label className="flex items-center gap-2"><input type="checkbox" checked={channels.includes("in_app")} onChange={(event) => setChannels((current) => event.target.checked ? [...new Set([...current, "in_app"])] : current.filter((item) => item !== "in_app"))} />In-app banner</label><label className="flex items-center gap-2 text-muted-foreground"><input type="checkbox" disabled />SMS (awaiting provider)</label></div></div>
           </div>
 

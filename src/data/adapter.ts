@@ -68,6 +68,7 @@ import type {
   PublicDonationCampaign,
   DonationCheckoutResult,
   PublicDonationStatus,
+  PublicExperienceCertificate,
   FundraisingReports,
   SchoolGrade,
   GuestRegistrationImportDraft,
@@ -444,10 +445,13 @@ export interface FundraisingRepository {
   updateSubmission(eventId: string, submissionId: string, patch: { status: ItemSubmission["status"]; requestedChanges?: string | null }): Promise<ItemSubmission>;
   dashboard(eventId: string): Promise<FundraisingDashboard>;
   extendItem(eventId: string, itemId: string, minutes: number): Promise<{ closesAt: string; extensionMinutes: number }>;
+  extendItems(eventId: string, itemIds: string[], minutes: number): Promise<{ extended: number }>;
   reopenItem(eventId: string, itemId: string, minutes: number): Promise<{ closesAt: string; status: "open" }>;
   getPublicIntake(auctionToken: string): Promise<PublicItemIntakePayload | null>;
   submitPublicItem(auctionToken: string, draft: PublicItemSubmissionDraft): Promise<PublicItemIntakePayload>;
   uploadPublicItemImage(auctionToken: string, file: File): Promise<string>;
+  reinvitePastDonors(eventId: string): Promise<{ sent: number; failed: number }>;
+  mergeItems(eventId: string, itemIds: string[], title: string): Promise<{ packageItemId: string }>;
   buildBills(eventId: string): Promise<{ created: number; bills: PublicBidderBill[] }>;
   sendBills(eventId: string): Promise<{ sent: number; autoCharged: number; failed: number }>;
   refundBill(eventId: string, billId: string): Promise<PublicBidderBill>;
@@ -472,11 +476,13 @@ export interface FundraisingRepository {
     grades?: SchoolGrade[];
   }): Promise<DonationCheckoutResult>;
   getDonationStatus(token: string, donationId: string): Promise<PublicDonationStatus | null>;
+  getPublicCertificate(token: string): Promise<PublicExperienceCertificate | null>;
   previewBroadcast(eventId: string, draft: { audience: string; itemIds: string[] }): Promise<{ recipients: number }>;
   sendBroadcast(eventId: string, draft: { audience: string; itemIds: string[]; channels: string[]; message: string }): Promise<{ recipients: number; sent: number; failed: number }>;
   recordLiveSale(eventId: string, itemId: string, paddleNumbers: number[], amountCents: number): Promise<{ winners: number }>;
   undoLiveSale(eventId: string, itemId: string): Promise<{ reopened: true }>;
   reports(eventId: string): Promise<FundraisingReports>;
+  sendYearEndStatements(taxYear: number): Promise<{ sent: number; failed: number }>;
 }
 
 /** Identity and authorization as the server sees them. */

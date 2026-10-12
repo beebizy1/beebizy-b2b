@@ -29,7 +29,7 @@ import { EmptyState, ErrorNotice, Panel, Pill, StatTile } from "@/components/pri
 import { usePreferences } from "@/app/preferences";
 import { centsFromInput, formatMoney, sumCents } from "@/data/money";
 import { bidIncrementCents } from "@/data/fundraising";
-import { useAddAuctionItem, useAuctionBidders, useAuctionItems, useRecordLiveAuctionSale, useUndoLiveAuctionSale, useUpdateAuctionItem } from "@/data/hooks";
+import { useAddAuctionItem, useAuctionBidders, useAuctionBids, useAuctionItems, useRecordLiveAuctionSale, useUndoLiveAuctionSale, useUpdateAuctionItem } from "@/data/hooks";
 import type { AuctionItem, Event } from "@/data/entities";
 
 /** Lot order is the running order; unnumbered lots go last, oldest first. */
@@ -46,6 +46,7 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
   const add = useAddAuctionItem();
   const update = useUpdateAuctionItem();
   const { data: bidders } = useAuctionBidders(event.id);
+  const { data: bidHistory } = useAuctionBids(event.id);
   const recordSale = useRecordLiveAuctionSale();
   const undoSale = useUndoLiveAuctionSale();
 
@@ -69,6 +70,7 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
 
   const currentAsk = active ? (ask[active.id] ?? active.currentBidCents ?? active.startingBidCents ?? 0) : 0;
   const step = bidIncrementCents(currentAsk);
+  const activeRemoteBids = active ? (bidHistory ?? []).filter((bid) => bid.itemId === active.id && bid.channel !== "in_room").sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 6) : [];
 
   const bump = (delta: number) => {
     if (!active) return;
@@ -138,7 +140,10 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
             {active.description ? (
               <p className="mt-1 text-sm text-muted-foreground">{active.description}</p>
             ) : null}
+            <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{active.fairMarketValueCents != null ? <span>Value {formatMoney(active.fairMarketValueCents)}</span> : null}{active.restrictions ? <span>Restrictions: {active.restrictions}</span> : null}{active.donorName ? <span>Donated by {active.donorName}</span> : null}</div>
           </div>
+
+          {activeRemoteBids.length > 0 ? <div className="rounded-xl border border-primary/20 bg-background p-3"><p className="text-xs font-bold uppercase tracking-wide text-primary-text">Remote bids</p><ul className="mt-2 space-y-2">{activeRemoteBids.map((remoteBid) => { const remoteBidder = (bidders ?? []).find((candidate) => candidate.id === remoteBid.bidderId); return <li key={remoteBid.id} className="flex items-center justify-between text-sm"><span>Remote: Paddle {remoteBidder?.paddleNumber ?? "-"} · {remoteBidder?.name ?? "Bidder"}</span><strong>{formatMoney(remoteBid.amountCents)}</strong></li>; })}</ul></div> : null}
 
           <div className="flex flex-wrap items-center gap-3">
             <div>

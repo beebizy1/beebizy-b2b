@@ -44,6 +44,7 @@ import {
   publicFundraisingReceipt,
   createDonationCheckout,
   publicDonationStatus,
+  publicExperienceCertificate,
   sendDueBidderBillReminders,
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
@@ -53,12 +54,15 @@ import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalS
 import {
   createAuctionCategory,
   extendAuctionItem,
+  extendAuctionItems,
   reopenAuctionItem,
   fundraisingDashboard,
   getFundraisingOrganizationProfile,
   listAuctionCategories,
   listItemSubmissions,
+  mergeAuctionItems,
   publicItemIntake,
+  reinvitePastItemDonors,
   submitPublicItem,
   updateFundraisingOrganizationProfile,
   updateItemSubmission,
@@ -73,6 +77,8 @@ import {
   sendFundraisingBroadcast,
   sendDueClosingAlerts,
   sendAllDueClosingAlerts,
+  sendDueYearEndStatements,
+  sendYearEndStatements,
   recordLiveAuctionSale,
   undoLiveAuctionSale,
   buyNowAuctionItem,
@@ -268,8 +274,8 @@ async function handlePublic(segments: string[], method: string, request: Request
     const secret = process.env.CRON_SECRET?.trim();
     if (!secret) return json({ error: "Fundraising maintenance is not configured." }, 503);
     if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
-    const [eventsChecked, reminders] = await Promise.all([sendAllDueClosingAlerts(), sendDueBidderBillReminders()]);
-    return json({ ok: true, eventsChecked, reminders });
+    const [eventsChecked, reminders, yearEndStatements] = await Promise.all([sendAllDueClosingAlerts(), sendDueBidderBillReminders(), sendDueYearEndStatements()]);
+    return json({ ok: true, eventsChecked, reminders, yearEndStatements });
   }
 
   if (segments[0] === "billing" && segments[1] === "webhook") {
@@ -437,6 +443,10 @@ async function handlePublic(segments: string[], method: string, request: Request
   if (segments[0] === "public" && segments[1] === "receipts" && segments[2] && segments.length === 3 && method === "GET") {
     const receipt = await publicFundraisingReceipt(segments[2]);
     return receipt ? json(receipt) : json({ error: "This receipt is not available." }, 404);
+  }
+  if (segments[0] === "public" && segments[1] === "certificates" && segments[2] && segments.length === 3 && method === "GET") {
+    const certificate = await publicExperienceCertificate(segments[2]);
+    return certificate ? json(certificate) : json({ error: "This certificate is not available." }, 404);
   }
   if (segments[0] === "public" && segments[1] === "donations" && segments[2]) {
     if (method === "GET" && segments.length === 3) {
@@ -659,6 +669,7 @@ async function handleAuthed(
       if (a === "categories" && method === "POST") return json(await createAuctionCategory(ctx, String(body.name ?? "")), 201);
       if (a === "campaigns" && method === "GET") return json(await listDonationCampaigns(ctx, typeof url.searchParams.get("eventId") === "string" ? url.searchParams.get("eventId")! : undefined));
       if (a === "campaigns" && method === "POST") return json(await createDonationCampaign(ctx, body as never), 201);
+      if (a === "year-end-statements" && b === "send" && method === "POST") return json(await sendYearEndStatements(Number(body.taxYear), ctx.workspaceId));
       return notFound();
     }
 
@@ -823,6 +834,8 @@ async function handleAuthed(
           }
           return notFound();
         }
+        if (b === "item-donor-reinvites" && !c && method === "POST") return json(await reinvitePastItemDonors(ctx, a));
+        if (b === "auction-packages" && !c && method === "POST") return json(await mergeAuctionItems(ctx, a, Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [], String(body.title ?? "")), 201);
         if (b === "fundraising-dashboard" && !c && method === "GET") {
           return json(await fundraisingDashboard(ctx, a));
         }
@@ -860,6 +873,9 @@ async function handleAuthed(
         }
         if (b === "auction" && c && segments[4] === "extend" && method === "POST") {
           return json(await extendAuctionItem(ctx, a, c, Number(body.minutes ?? 0)));
+        }
+        if (b === "auction" && c === "extend-many" && method === "POST") {
+          return json(await extendAuctionItems(ctx, a, Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [], Number(body.minutes ?? 0)));
         }
         if (b === "auction" && c && segments[4] === "reopen" && method === "POST") {
           return json(await reopenAuctionItem(ctx, a, c, Number(body.minutes ?? 5)));

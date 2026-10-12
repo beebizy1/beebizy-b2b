@@ -11,10 +11,15 @@ import {
   useCreateDonationCampaign,
   useDonationCampaigns,
   useFundraisingDashboard,
+  useExtendAuctionItem,
+  useSendFundraisingBroadcast,
   useFundraisingOrganizationProfile,
   useItemSubmissions,
+  useMergeAuctionItems,
   useRefundBidderBill,
+  useReinvitePastItemDonors,
   useSendBidderBills,
+  useSendYearEndStatements,
   useUpdateFundraisingOrganizationProfile,
   useUpdateItemSubmission,
 } from "@/data/hooks";
@@ -27,6 +32,8 @@ const STATUS_FLOW: ItemSubmissionStatus[] = ["submitted", "needs_info", "approve
 
 export default function FundraisingOperationsPanel({ event }: { event: Event }) {
   const { data: dashboard, isLoading: dashboardLoading } = useFundraisingDashboard(event.id);
+  const extendHotItem = useExtendAuctionItem();
+  const sendPromotionBlast = useSendFundraisingBroadcast();
   const { data: profile } = useFundraisingOrganizationProfile();
   const updateProfile = useUpdateFundraisingOrganizationProfile();
   const { data: categories } = useAuctionCategories();
@@ -35,15 +42,20 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
   const createCampaign = useCreateDonationCampaign();
   const { data: submissions, isLoading: submissionsLoading } = useItemSubmissions(event.id);
   const updateSubmission = useUpdateItemSubmission();
+  const mergeItems = useMergeAuctionItems();
   const buildBills = useBuildBidderBills();
   const sendBills = useSendBidderBills();
   const refundBill = useRefundBidderBill();
+  const sendYearEndStatements = useSendYearEndStatements();
+  const reinvitePastDonors = useReinvitePastItemDonors();
   const [profileForm, setProfileForm] = useState<FundraisingOrganizationProfile | null>(null);
   const [newCategory, setNewCategory] = useState("");
   const [changeRequests, setChangeRequests] = useState<Record<string, string>>({});
   const [campaignTitle, setCampaignTitle] = useState("");
   const [campaignGoal, setCampaignGoal] = useState("");
   const [billReview, setBillReview] = useState<PublicBidderBill[]>([]);
+  const [packageItemIds, setPackageItemIds] = useState<string[]>([]);
+  const [packageTitle, setPackageTitle] = useState("");
 
   useEffect(() => { if (profile) setProfileForm(profile); }, [profile]);
 
@@ -69,12 +81,13 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
           <StatTile label="No-bid items" value={String(dashboard.items.noBids)} sublabel={`${dashboard.items.sellThroughRate}% sell-through`} />
         </div>
       ) : null}
+      {dashboard && (dashboard.hotItems.length > 0 || dashboard.noBidClosingSoon.length > 0) ? <Panel><PanelHeader title="Closing opportunities" description="Act on hot bidding and no-bid items before the window closes." /><div className="grid gap-3 p-5 lg:grid-cols-2">{dashboard.hotItems.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-success/30 bg-success-tint p-3"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.title}</p><p className="text-xs text-success-text">{item.bidCountLastFiveMinutes} bids in the last 5 minutes</p></div><Button size="sm" variant="outline" disabled={extendHotItem.isPending} onClick={() => extendHotItem.mutate({ eventId: event.id, itemId: item.id, minutes: 2 }, { onSuccess: () => toast({ title: `${item.title} extended 2 minutes` }) })}>Extend +2m</Button></div>)}{dashboard.noBidClosingSoon.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning-tint p-3"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.title}</p><p className="text-xs text-warning-text">No bids and closing soon</p></div><Button size="sm" variant="outline" disabled={sendPromotionBlast.isPending} onClick={() => sendPromotionBlast.mutate({ eventId: event.id, audience: "all", itemIds: [item.id], channels: ["email", "in_app"], message: `${item.title} has no bids yet and is closing soon. Open the auction now to bid.` }, { onSuccess: (result) => toast({ title: `Promotion sent to ${result.sent} bidders` }), onError: (error) => toast({ title: "Couldn't send promotion", description: error.message }) })}>Send blast</Button></div>)}</div></Panel> : null}
 
       <Panel>
         <PanelHeader title="Family donation link" description="One link for every family and business donor. Each submission lands in the review queue below." />
         <div className="flex flex-wrap items-center gap-3 p-5">
           <div className="min-w-0 flex-1"><p className="truncate font-mono text-xs text-muted-foreground">{intakeUrl ?? "Create the public auction link first."}</p></div>
-          {intakeUrl ? <><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(intakeUrl); toast({ title: "Family donation link copied" }); }}><Copy className="mr-1.5 size-4" />Copy</Button><Button variant="outline" size="sm" asChild><a href={intakeUrl} target="_blank" rel="noreferrer">Open form</a></Button></> : null}
+          {intakeUrl ? <><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(intakeUrl); toast({ title: "Family donation link copied" }); }}><Copy className="mr-1.5 size-4" />Copy</Button><Button variant="outline" size="sm" asChild><a href={intakeUrl} target="_blank" rel="noreferrer">Open form</a></Button><Button variant="outline" size="sm" disabled={reinvitePastDonors.isPending} onClick={() => { if (!window.confirm("Email this intake link to prior auction item donors in this workspace?")) return; reinvitePastDonors.mutate(event.id, { onSuccess: (result) => toast({ title: `${result.sent} prior donors invited`, description: result.failed ? `${result.failed} could not be delivered.` : undefined }), onError: (error) => toast({ title: "Couldn't invite prior donors", description: error.message }) }); }}><Send className="mr-1.5 size-4" />Re-invite prior donors</Button></> : null}
         </div>
       </Panel>
 
@@ -101,11 +114,12 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
             return (
               <article key={submission.id} className="rounded-xl border border-hairline bg-background p-4">
                 <div className="flex gap-3">{photos[0] ? <img src={photos[0]} alt="" className="size-20 rounded-lg object-cover" /> : null}<div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h3 className="truncate font-semibold">{title}</h3><Pill tone={submission.status === "in_catalog" ? "success" : submission.status === "needs_info" ? "warning" : undefined}>{submission.status.replaceAll("_", " ")}</Pill></div><p className="text-xs text-muted-foreground">{donor}</p><p className="mt-1 text-xs text-muted-foreground">{String(payload.category ?? "Uncategorized")} · {Array.isArray(payload.grades) ? payload.grades.join(", ") : "No grade"}</p></div></div>
+                {submission.auctionItemId ? <label className="mt-3 flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={packageItemIds.includes(submission.auctionItemId)} onChange={(event) => setPackageItemIds((current) => event.target.checked ? [...new Set([...current, submission.auctionItemId!])] : current.filter((id) => id !== submission.auctionItemId))} />Include in package</label> : null}
                 <div className="mt-4 flex flex-wrap gap-2">{STATUS_FLOW.map((status) => <Button key={status} size="sm" variant={submission.status === status ? "default" : "outline"} disabled={updateSubmission.isPending} onClick={() => updateSubmission.mutate({ eventId: event.id, submissionId: submission.id, patch: { status } }, { onError: (error) => toast({ title: "Couldn't update submission", description: error.message }) })}>{status.replaceAll("_", " ")}</Button>)}</div>
                 <div className="mt-3 flex gap-2"><Input value={changeRequests[submission.id] ?? submission.requestedChanges ?? ""} onChange={(event) => setChangeRequests((current) => ({ ...current, [submission.id]: event.target.value }))} placeholder="Request a change from the donor" /><Button size="sm" variant="outline" disabled={!String(changeRequests[submission.id] ?? "").trim()} onClick={() => updateSubmission.mutate({ eventId: event.id, submissionId: submission.id, patch: { status: "needs_info", requestedChanges: changeRequests[submission.id] } }, { onSuccess: () => toast({ title: "Change request sent" }) })}><Send className="mr-1.5 size-4" />Send</Button></div>
               </article>
             );
-          })}</div>
+          })}<form className="flex flex-wrap gap-2 rounded-xl border border-dashed border-hairline p-4 lg:col-span-2" onSubmit={(formEvent) => { formEvent.preventDefault(); mergeItems.mutate({ eventId: event.id, itemIds: packageItemIds, title: packageTitle.trim() }, { onSuccess: () => { setPackageItemIds([]); setPackageTitle(""); toast({ title: "Auction package created", description: "The source items were hidden and the new package is ready for review." }); }, onError: (error) => toast({ title: "Couldn't create package", description: error.message }) }); }}><Input className="min-w-56 flex-1" value={packageTitle} onChange={(inputEvent) => setPackageTitle(inputEvent.target.value)} placeholder="Package title, e.g. Tahoe Escape" /><Button type="submit" disabled={packageItemIds.length < 2 || !packageTitle.trim() || mergeItems.isPending}>Merge {packageItemIds.length} items</Button></form></div>
         )}
       </Panel>
 
@@ -132,6 +146,7 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
       ) : null}
 
       {dashboard?.byGrade.length ? <Panel><PanelHeader title="Participation by grade" description="Households and fundraising participation across the school." /><div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">{dashboard.byGrade.map((grade) => <div key={grade.grade} className="rounded-lg border border-hairline p-3"><p className="font-semibold">{grade.grade}</p><p className="text-xs text-muted-foreground"><Users className="mr-1 inline size-3" />{grade.households} households</p></div>)}</div></Panel> : null}
+      <Panel><PanelHeader title="Year-end giving statements" description="Each January, Beebizy automatically emails one annual summary per donor email. You can also send a prior year manually." /><div className="flex flex-wrap items-center gap-3 p-5"><Input id="statement-year" className="w-28" type="number" min={2000} max={new Date().getFullYear()} defaultValue={new Date().getFullYear() - 1} /><Button variant="outline" disabled={sendYearEndStatements.isPending} onClick={() => { const input = document.getElementById("statement-year") as HTMLInputElement | null; const taxYear = Number(input?.value); if (!Number.isInteger(taxYear)) return; if (!window.confirm(`Email ${taxYear} giving statements to every donor with receipts in this workspace?`)) return; sendYearEndStatements.mutate(taxYear, { onSuccess: (result) => toast({ title: `${result.sent} statements sent`, description: result.failed ? `${result.failed} could not be delivered.` : "Every eligible statement was processed." }), onError: (error) => toast({ title: "Couldn't send statements", description: error.message }) }); }}><Send className="mr-1.5 size-4" />Send statements</Button></div></Panel>
       <FundraisingReportsPanel event={event} />
     </div>
   );

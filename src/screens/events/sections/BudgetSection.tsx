@@ -42,6 +42,7 @@ import {
   useRemoveAuctionItem,
   useRemoveBudgetItem,
   useRemoveRaffleItem,
+  useUpdateRaffleItem,
   useRemoveSponsorship,
   useRemoveTicketType,
   useSaveEventRoi,
@@ -64,6 +65,7 @@ import {
   useAuctionBids,
   useRefundAuctionOrder,
   useExtendAuctionItem,
+  useExtendAuctionItems,
   useUpdateBudgetItem,
   useUpdateSponsorship,
   useUpdateTicketType,
@@ -607,6 +609,7 @@ export function TicketsPanel({ event }: { event: Event }) {
   const [price, setPrice] = useState("");
   const [ticketFmv, setTicketFmv] = useState("");
   const [ticketBenefits, setTicketBenefits] = useState("");
+  const [ticketFmvZeroConfirmed, setTicketFmvZeroConfirmed] = useState(false);
   const [allocation, setAllocation] = useState("");
   const [invitationRows, setInvitationRows] = useState("");
   const [invitationConsent, setInvitationConsent] = useState(false);
@@ -684,13 +687,14 @@ export function TicketsPanel({ event }: { event: Event }) {
           const fmvCents = centsFromInput(ticketFmv);
           if (!trimmed || cents === null || !Number.isFinite(total) || (cents > 0 && fmvCents === null)) return;
           add.mutate(
-            { eventId: event.id, draft: { name: trimmed, priceCents: cents, fairMarketValueCents: fmvCents, benefitsDescription: ticketBenefits.trim() || null, quantityTotal: total } },
+            { eventId: event.id, draft: { name: trimmed, priceCents: cents, fairMarketValueCents: fmvCents, fmvZeroConfirmed: ticketFmvZeroConfirmed, benefitsDescription: ticketBenefits.trim() || null, quantityTotal: total } },
             {
               onSuccess: () => {
                 setName("");
                 setPrice("");
                 setTicketFmv("");
                 setTicketBenefits("");
+                setTicketFmvZeroConfirmed(false);
                 setAllocation("");
               },
               onError: (mutationError) => toast({ title: "Couldn't add ticket type", description: mutationError.message }),
@@ -707,6 +711,7 @@ export function TicketsPanel({ event }: { event: Event }) {
         />
         <Input value={ticketFmv} onChange={(inputEvent) => setTicketFmv(inputEvent.target.value)} placeholder="FMV per ticket" inputMode="decimal" aria-label="Fair market value per ticket" className="w-32 text-right" />
         <Input value={ticketBenefits} onChange={(inputEvent) => setTicketBenefits(inputEvent.target.value)} placeholder="Benefits, meal, entertainment" aria-label="Ticket benefits description" className="min-w-[12rem] flex-1" />
+        {(centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === 0 ? <label className="flex max-w-xs items-center gap-2 text-xs text-warning-text"><input type="checkbox" checked={ticketFmvZeroConfirmed} onChange={(event) => setTicketFmvZeroConfirmed(event.target.checked)} />I confirm this paid ticket provides no goods or services.</label> : null}
         <Input
           value={price}
           onChange={(inputEvent) => setPrice(inputEvent.target.value)}
@@ -723,7 +728,7 @@ export function TicketsPanel({ event }: { event: Event }) {
           aria-label="Allocation, zero for unlimited"
           className="w-28 text-right"
         />
-        <Button type="submit" size="sm" disabled={!name.trim() || centsFromInput(price) === null || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === null) || add.isPending}>
+        <Button type="submit" size="sm" disabled={!name.trim() || centsFromInput(price) === null || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === null) || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === 0 && !ticketFmvZeroConfirmed) || add.isPending}>
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
@@ -779,7 +784,7 @@ export function TicketsPanel({ event }: { event: Event }) {
                 </div>
                 {ticket.description ? <p className="text-xs text-muted-foreground">{ticket.description}</p> : null}
                 {ticket.priceCents > 0 ? <p className="text-xs text-muted-foreground">FMV {ticket.fairMarketValueCents == null ? "missing" : formatMoney(ticket.fairMarketValueCents)}{ticket.benefitsDescription ? ` · ${ticket.benefitsDescription}` : ""}</p> : null}
-                {ticket.priceCents > 0 ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>FMV</span><MoneyCell value={ticket.fairMarketValueCents ?? null} label={`FMV for ${ticket.name}`} onCommit={(next) => update.mutate({ eventId: event.id, id: ticket.id, patch: { fairMarketValueCents: next } })} /><Input defaultValue={ticket.benefitsDescription ?? ""} placeholder="Benefits description" className="h-8 max-w-xs" onBlur={(inputEvent) => { const next = inputEvent.target.value.trim() || null; if (next !== ticket.benefitsDescription) update.mutate({ eventId: event.id, id: ticket.id, patch: { benefitsDescription: next } }); }} /></div> : null}
+                {ticket.priceCents > 0 ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>FMV</span><MoneyCell value={ticket.fairMarketValueCents ?? null} label={`FMV for ${ticket.name}`} onCommit={(next) => { if (next === 0 && !window.confirm("Confirm this paid ticket provides no goods or services and should have a $0 fair market value.")) return; update.mutate({ eventId: event.id, id: ticket.id, patch: { fairMarketValueCents: next, fmvZeroConfirmed: next === 0 } }); }} /><Input defaultValue={ticket.benefitsDescription ?? ""} placeholder="Benefits description" className="h-8 max-w-xs" onBlur={(inputEvent) => { const next = inputEvent.target.value.trim() || null; if (next !== ticket.benefitsDescription) update.mutate({ eventId: event.id, id: ticket.id, patch: { benefitsDescription: next } }); }} />{ticket.fairMarketValueCents === 0 ? <Pill tone={ticket.fmvZeroConfirmed ? "success" : "warning"}>{ticket.fmvZeroConfirmed ? "Confirmed: no goods/services" : "Confirmation required"}</Pill> : null}</div> : null}
                 {unlimited ? (
                   <p data-numeric className="text-xs text-muted-foreground">
                     {ticket.quantitySold} sold · unlimited allocation
@@ -958,6 +963,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
   const { data: auctionBidHistory } = useAuctionBids(event.id);
   const refundAuction = useRefundAuctionOrder();
   const extendAuctionItem = useExtendAuctionItem();
+  const extendAuctionItems = useExtendAuctionItems();
   const { data: donors } = useAuctionDonors(event.id);
   const addDonor = useAddAuctionDonor();
   const updateDonor = useUpdateAuctionDonor();
@@ -976,12 +982,16 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
   const [donorBusiness, setDonorBusiness] = useState("");
   const [donorContact, setDonorContact] = useState("");
   const [donorEmail, setDonorEmail] = useState("");
+  const [bulkExtendScope, setBulkExtendScope] = useState("");
+  const [bulkExtendMinutes, setBulkExtendMinutes] = useState("2");
 
   const lots = only ? allLots?.filter((lot) => lot.auctionType === only) : allLots;
   const bids = sumCents((lots ?? []).map((lot) => lot.currentBidCents));
   useEffect(() => setAuctionSettings(normalizeAuctionPageSettings(event.auctionPage)), [event.auctionPage]);
   const settings = auctionSettings;
   const auctionUrl = auctionToken ? `${window.location.origin}/auction/${auctionToken}` : null;
+  const bulkCategories = [...new Set((lots ?? []).map((lot) => lot.category).filter((value): value is string => Boolean(value)))].sort();
+  const bulkWaves = [...new Set((lots ?? []).map((lot) => lot.closingWave).filter((value): value is string => Boolean(value)))].sort();
 
   const saveSetting = (patch: Partial<typeof settings>) => {
     const next = { ...auctionSettings, ...patch };
@@ -1039,6 +1049,7 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
           <label className="flex items-center gap-2 text-xs text-muted-foreground">Auto-extend minutes<Input type="number" min={0} max={60} value={settings.autoExtendMinutes} onChange={(inputEvent) => saveSetting({ autoExtendMinutes: Math.max(0, Math.min(60, Number(inputEvent.target.value) || 0)) })} className="w-20" /></label>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">Bid history<select value={settings.bidHistoryPrivacy} onChange={(event) => saveSetting({ bidHistoryPrivacy: event.target.value as "paddle" | "initials" })} className="h-9 rounded-md border border-input bg-background px-2 text-sm"><option value="paddle">Paddle number</option><option value="initials">Initials</option></select></label>
         </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-background p-3"><span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bulk extend</span><select value={bulkExtendScope} onChange={(event) => setBulkExtendScope(event.target.value)} className="h-9 min-w-48 rounded-md border border-input bg-background px-2 text-sm"><option value="">Choose category or wave</option>{bulkCategories.map((value) => <option key={`category-${value}`} value={`category:${value}`}>Category: {value}</option>)}{bulkWaves.map((value) => <option key={`wave-${value}`} value={`wave:${value}`}>Closing wave: {value}</option>)}</select><Input className="w-24" type="number" min={1} max={120} value={bulkExtendMinutes} onChange={(event) => setBulkExtendMinutes(event.target.value)} aria-label="Bulk extension minutes" /><Button size="sm" variant="outline" disabled={!bulkExtendScope || extendAuctionItems.isPending} onClick={() => { const [kindName, value] = bulkExtendScope.split(":", 2); const itemIds = (lots ?? []).filter((lot) => lot.status === "open" && (kindName === "category" ? lot.category === value : lot.closingWave === value)).map((lot) => lot.id); extendAuctionItems.mutate({ eventId: event.id, itemIds, minutes: Math.max(1, Math.min(120, Number(bulkExtendMinutes) || 2)) }, { onSuccess: (result) => toast({ title: `${result.extended} item${result.extended === 1 ? "" : "s"} extended`, description: "Bidders and watchers were notified." }), onError: (error) => toast({ title: "Couldn't extend items", description: error.message }) }); }}>Extend and notify</Button></div>
       </div>
 
       <form
@@ -1172,6 +1183,8 @@ export function AuctionPanel({ event, only }: { event: Event; only?: AuctionKind
                     <label className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5"><span>Reserve</span><MoneyCell value={lot.reserveCents ?? null} label={`Reserve for ${lot.title}`} onCommit={(next) => update.mutate({ eventId: event.id, id: lot.id, patch: { reserveCents: next } })} /></label>
                     <Input type="number" min={1} defaultValue={lot.quantityAvailable ?? 1} aria-label={`Quantity available for ${lot.title}`} onBlur={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { quantityAvailable: Math.max(1, Number(inputEvent.target.value) || 1) } })} />
                     <select defaultValue={lot.incrementRule ?? "tiered"} onChange={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { incrementRule: inputEvent.target.value as "tiered" | "fixed" } })} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="tiered">Tiered bid increment</option><option value="fixed">Fixed bid increment</option></select>
+                    <select defaultValue={lot.itemType ?? lot.auctionType} onChange={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { itemType: inputEvent.target.value as "silent" | "live" | "buy_now" | "fixed_price" | "fund_a_need" } })} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="silent">Silent auction</option><option value="live">Live auction</option><option value="buy_now">Buy it now</option><option value="fixed_price">Fixed-price signup</option><option value="fund_a_need">Fund-a-Need</option></select>
+                    <Input defaultValue={lot.closingWave ?? ""} placeholder="Closing wave, e.g. Travel 8:00 PM" aria-label={`Closing wave for ${lot.title}`} onBlur={(inputEvent) => { const next = inputEvent.target.value.trim() || null; if (next !== lot.closingWave) update.mutate({ eventId: event.id, id: lot.id, patch: { closingWave: next } }); }} />
                     <label className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2"><input type="checkbox" defaultChecked={lot.showFairMarketValue !== false} onChange={(inputEvent) => update.mutate({ eventId: event.id, id: lot.id, patch: { showFairMarketValue: inputEvent.target.checked } })} />Show estimated value to bidders</label>
                     <Input type="datetime-local" defaultValue={toDateTimeLocalInput(lot.closesAt)} aria-label={`Closing time for ${lot.title}`} onBlur={(inputEvent) => {
                       const next = fromDateTimeLocalInput(inputEvent.target.value);
@@ -1446,10 +1459,12 @@ export function RafflePanel({ event }: { event: Event }) {
   const remove = useRemoveRaffleItem();
   const sell = useSellRaffleTickets();
   const draw = useDrawRaffle();
+  const updateRaffle = useUpdateRaffleItem();
 
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [total, setTotal] = useState("");
+  const [raffleFmv, setRaffleFmv] = useState("");
   const [selling, setSelling] = useState<string | null>(null);
   const [buyerName, setBuyerName] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
@@ -1507,6 +1522,7 @@ export function RafflePanel({ event }: { event: Event }) {
               draft: {
                 name: trimmed,
                 ticketPriceCents: cents,
+                fairMarketValueCents: centsFromInput(raffleFmv),
                 totalTickets: Number.isFinite(parsedTotal) ? parsedTotal : 0,
               },
             },
@@ -1515,6 +1531,7 @@ export function RafflePanel({ event }: { event: Event }) {
                 setName("");
                 setPrice("");
                 setTotal("");
+                setRaffleFmv("");
               },
               onError: (error) => toast({ title: "Couldn't add raffle", description: error.message }),
             },
@@ -1544,6 +1561,7 @@ export function RafflePanel({ event }: { event: Event }) {
           aria-label="Total tickets, zero for unlimited"
           className="w-32 text-right"
         />
+        <Input value={raffleFmv} onChange={(event) => setRaffleFmv(event.target.value)} placeholder="Prize FMV" inputMode="decimal" aria-label="Raffle prize fair market value" className="w-28 text-right" />
         <Button type="submit" size="sm" disabled={!name.trim() || centsFromInput(price) === null || add.isPending}>
           <Plus className="mr-1.5 size-3.5" />
           Add
@@ -1567,6 +1585,7 @@ export function RafflePanel({ event }: { event: Event }) {
                 <span data-numeric className="text-sm text-muted-foreground">
                   {formatMoney(raffle.ticketPriceCents)} each
                 </span>
+                {raffle.fairMarketValueCents != null ? <span className="text-xs text-muted-foreground">Prize value {formatMoney(raffle.fairMarketValueCents)}</span> : null}
                 {raffle.status === "open" ? (
                   <>
                     <Button variant="outline" size="sm" onClick={() => setSelling(selling === raffle.id ? null : raffle.id)}>
@@ -1581,7 +1600,7 @@ export function RafflePanel({ event }: { event: Event }) {
                           { eventId: event.id, raffleItemId: raffle.id },
                           {
                             onSuccess: (drawn) =>
-                              toast({ title: "Winner drawn", description: `${drawn.winnerName} wins ${drawn.name}.` }),
+                              toast({ title: "Winner drawn", description: `${drawn.winnerName} wins ${drawn.name}.${drawn.w2gReviewRequired ? " W-2G review and secure taxpayer-ID collection are required." : ""}` }),
                             onError: (error) => toast({ title: "Couldn't draw", description: error.message }),
                           },
                         )
@@ -1611,6 +1630,7 @@ export function RafflePanel({ event }: { event: Event }) {
                   Winner: {raffle.winnerName} ({raffle.winnerEmail})
                 </p>
               ) : null}
+              {raffle.w2gReviewRequired ? <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/30 bg-warning-tint p-3 text-xs text-warning-text"><strong>W-2G review required.</strong><span>Use the school's secure taxpayer-ID process; never type a full taxpayer ID into Beebizy.</span>{raffle.taxpayerIdCollectionStatus !== "collected" ? <Button size="sm" variant="outline" disabled={updateRaffle.isPending} onClick={() => updateRaffle.mutate({ eventId: event.id, id: raffle.id, patch: { taxpayerIdCollectionStatus: "collected" } }, { onSuccess: () => toast({ title: "Secure taxpayer-ID collection marked complete" }) })}>Mark securely collected</Button> : <Pill tone="success">Secure collection complete</Pill>}</div> : null}
 
               <Meter
                 value={raffle.soldTickets}

@@ -6,7 +6,7 @@ import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 import { SCHOOL_GRADES, type AuctionOrder, type DonationCheckoutResult, type FundraisingReceipt, type FundraisingReceiptLineItem, type PublicBidderBill, type PublicTicketOrderStatus, type StripeConnectStatus, type TicketCheckoutResult, type TicketOrder } from "../data/entities.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
-import { notifyAuctionPaymentConfirmation, notifyAuctionWinner, notifyBidderBill, notifyCombinedFundraisingReceipt, notifyTicketOrderConfirmation, sendEmail } from "./notify.ts";
+import { notifyAuctionPaymentConfirmation, notifyAuctionWinner, notifyBidderBill, notifyCombinedFundraisingReceipt, notifyExperienceCertificate, notifyTicketOrderConfirmation, sendEmail } from "./notify.ts";
 import { allocateAuctionBidder } from "./auctionBidderAllocation.ts";
 import { databaseErrorMessage } from "./errorMessage.ts";
 import {
@@ -706,6 +706,9 @@ export async function createPublicTicketCheckout(
   if (!row.ticket.isActive) throw new HttpError(409, `${row.ticket.name} is not on sale.`);
   if (row.ticket.priceCents > 0 && row.ticket.fairMarketValueCents == null) {
     throw new HttpError(409, "The organizer must set the fair market value before this paid ticket can be sold.");
+  }
+  if (row.ticket.priceCents > 0 && row.ticket.fairMarketValueCents === 0 && !row.ticket.fmvZeroConfirmed) {
+    throw new HttpError(409, "The organizer must confirm that this paid ticket provides no goods or services before using a $0 fair market value.");
   }
   if (input.quantity > row.ticket.maxPerOrder) {
     throw new HttpError(409, `You can purchase at most ${row.ticket.maxPerOrder} at a time.`);
@@ -1589,15 +1592,25 @@ export async function completeBidderBillPayment(billId: string, paymentIntentId:
   const [bill] = transitioned ? [transitioned] : await db.select().from(bidderBills).where(and(eq(bidderBills.id, billId), eq(bidderBills.status, "paid"))).limit(1);
   if (!bill) return;
   if (transitioned) {
-    const orders = await db.select().from(auctionOrders).where(and(eq(auctionOrders.eventId, bill.eventId), eq(auctionOrders.bidderId, bill.bidderId)));
+    const orders = await db.select({ order: auctionOrders, item: auctionItems, bidder: auctionBidders, event: events }).from(auctionOrders)
+      .innerJoin(auctionItems, eq(auctionOrders.itemId, auctionItems.id))
+      .innerJoin(auctionBidders, eq(auctionOrders.bidderId, auctionBidders.id))
+      .innerJoin(events, eq(auctionOrders.eventId, events.id))
+      .where(and(eq(auctionOrders.eventId, bill.eventId), eq(auctionOrders.bidderId, bill.bidderId)));
     await db.batch([
       db.update(auctionOrders).set({ status: "paid", paidAt, stripePaymentIntentId: paymentIntentId, updatedAt: paidAt })
         .where(and(eq(auctionOrders.eventId, bill.eventId), eq(auctionOrders.bidderId, bill.bidderId), eq(auctionOrders.status, "pending"))),
       orders.length > 0
         ? db.update(auctionItems).set({ paymentReceivedAt: paidAt, paymentMethod: "Stripe", fulfillmentStatus: "ready", updatedAt: paidAt })
-          .where(inArray(auctionItems.id, orders.map((order) => order.itemId)))
+          .where(inArray(auctionItems.id, orders.map(({ order }) => order.itemId)))
         : db.update(events).set({ updatedAt: paidAt }).where(eq(events.id, bill.eventId)),
     ]);
+    const origin = (process.env.APP_ORIGIN || process.env.PUBLIC_APP_URL || "https://beebizy-studio-preview.vercel.app").replace(/\/$/, "");
+    for (const { order, item, bidder, event } of orders.filter(({ order, item }) => ["pending", "paid"].includes(order.status) && item.deliveryMethod === "Certificate emailed")) {
+      const certificateToken = order.certificateToken ?? crypto.randomUUID();
+      if (!order.certificateToken) await db.update(auctionOrders).set({ certificateToken, updatedAt: new Date() }).where(and(eq(auctionOrders.id, order.id), sql`${auctionOrders.certificateToken} is null`));
+      await notifyExperienceCertificate({ orderId: order.id, to: bidder.email, winnerName: bidder.name, eventTitle: event.title, itemTitle: item.title, certificateUrl: `${origin}/certificate/${certificateToken}` });
+    }
   }
   await issueBillReceipt(billId);
 }
@@ -1833,6 +1846,16 @@ export async function publicDonationStatus(campaignToken: string, donationId: st
     .leftJoin(fundraisingReceipts, eq(donations.receiptId, fundraisingReceipts.id))
     .where(and(eq(donationCampaigns.publicToken, campaignToken), eq(donations.id, donationId))).limit(1);
   return row ? { donationId: row.donation.id, status: row.donation.status, receiptToken: row.receiptToken } : null;
+}
+
+export async function publicExperienceCertificate(token: string): Promise<import("../data/entities.ts").PublicExperienceCertificate | null> {
+  const [row] = await db.select({ order: auctionOrders, item: auctionItems, bidder: auctionBidders, event: events, workspace: workspaces }).from(auctionOrders)
+    .innerJoin(auctionItems, eq(auctionOrders.itemId, auctionItems.id))
+    .innerJoin(auctionBidders, eq(auctionOrders.bidderId, auctionBidders.id))
+    .innerJoin(events, eq(auctionOrders.eventId, events.id))
+    .innerJoin(workspaces, eq(auctionOrders.workspaceId, workspaces.id))
+    .where(and(eq(auctionOrders.certificateToken, token), eq(auctionOrders.status, "paid"))).limit(1);
+  return row ? { itemTitle: row.item.title, winnerName: row.bidder.name, eventTitle: row.event.title, organizationName: row.workspace.legalName || row.workspace.name, restrictions: row.item.restrictions, expiresAt: row.item.expiresAt?.toISOString() ?? null, deliveryDetails: row.item.deliveryDetails } : null;
 }
 
 export async function completeDonationCheckoutSession(session: Stripe.Checkout.Session, eventAccount?: string | null): Promise<void> {

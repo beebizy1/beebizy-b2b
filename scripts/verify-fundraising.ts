@@ -2,6 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { db } from "../src/server/db";
 import * as s from "../src/server/schema";
 import { allocateAuctionBidder } from "../src/server/auctionBidderAllocation";
+import { raffle, tickets } from "../src/server/repos";
 
 const suffix = Date.now().toString(36);
 const workspaceId = `ws_fundraising_verify_${suffix}`;
@@ -23,6 +24,23 @@ try {
     category: "Fundraiser",
     auctionPublicToken: `auction-${suffix}`,
   });
+  const context = { userId: "fundraising-verifier", email: "hello@beebizy.com", workspaceId, role: "owner" as const };
+
+  const unconfirmedZeroFmvBlocked = await tickets.create(context, eventId, {
+    name: "Admission",
+    priceCents: 5_000,
+    fairMarketValueCents: 0,
+    quantityTotal: 100,
+  }).then(() => false, (error) => error instanceof Error && /confirm.*no goods or services/i.test(error.message));
+  check("paid tickets with zero FMV require an explicit confirmation", unconfirmedZeroFmvBlocked);
+  const confirmedTicket = await tickets.create(context, eventId, {
+    name: "Admission",
+    priceCents: 5_000,
+    fairMarketValueCents: 0,
+    fmvZeroConfirmed: true,
+    quantityTotal: 100,
+  });
+  check("confirmed zero-FMV paid tickets persist the tax safeguard", confirmedTicket.fmvZeroConfirmed === true);
 
   const allocations = await Promise.all(Array.from({ length: 12 }, (_, index) => allocateAuctionBidder({
     workspaceId,
@@ -89,6 +107,31 @@ try {
   const directReceiptDeleteBlocked = await db.delete(s.fundraisingReceipts).where(eq(s.fundraisingReceipts.id, receiptId))
     .then(() => false, (error) => `${error instanceof Error ? error.message : String(error)} ${(error as { cause?: { message?: string } })?.cause?.message ?? ""}`.includes("receipts are immutable"));
   check("direct receipt deletion remains blocked", directReceiptDeleteBlocked);
+
+  await db.update(s.workspaces).set({ raffleEnabled: true, raffleRegistrationConfirmed: true }).where(eq(s.workspaces.id, workspaceId));
+  const raffleItem = await raffle.create(context, eventId, {
+    name: "Verification prize",
+    ticketPriceCents: 100,
+    fairMarketValueCents: 100_000,
+    totalTickets: 100,
+  });
+  await db.insert(s.raffleTickets).values({
+    id: `raffle_ticket_${suffix}`,
+    workspaceId,
+    eventId,
+    raffleItemId: raffleItem.id,
+    buyerName: "Verification Winner",
+    buyerEmail: `raffle-${suffix}@beebizy.com`,
+    quantity: 1,
+  });
+  const drawnRaffle = await raffle.draw(context, eventId, raffleItem.id);
+  check("high-value raffle prizes trigger W-2G review", drawnRaffle.w2gReviewRequired === true);
+  check("taxpayer ID collection is tracked without storing an ID", drawnRaffle.taxpayerIdCollectionStatus === "required");
+  const [{ taxTasks } = { taxTasks: 0 }] = await db.select({ taxTasks: count() }).from(s.checklistItems).where(and(
+    eq(s.checklistItems.eventId, eventId),
+    sql`${s.checklistItems.title} like 'Review W-2G reporting%'`,
+  ));
+  check("raffle tax review creates an operational checklist task", Number(taxTasks) === 1);
 } finally {
   await db.delete(s.workspaces).where(eq(s.workspaces.id, workspaceId));
   const [remainingWorkspace] = await db.select({ id: s.workspaces.id }).from(s.workspaces).where(eq(s.workspaces.id, workspaceId)).limit(1);

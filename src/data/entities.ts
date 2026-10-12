@@ -941,6 +941,7 @@ export interface TicketType {
   description: string | null;
   priceCents: Cents;
   fairMarketValueCents?: Cents | null;
+  fmvZeroConfirmed?: boolean;
   benefitsDescription?: string | null;
   /** 0 means unlimited. */
   quantityTotal: number;
@@ -958,6 +959,7 @@ export interface TicketTypeDraft {
   description?: string | null;
   priceCents: Cents;
   fairMarketValueCents?: Cents | null;
+  fmvZeroConfirmed?: boolean;
   benefitsDescription?: string | null;
   quantityTotal: number;
   isActive?: boolean;
@@ -1451,11 +1453,23 @@ export interface PublicDonationStatus {
   receiptToken: string | null;
 }
 
+export interface PublicExperienceCertificate {
+  itemTitle: string;
+  winnerName: string;
+  eventTitle: string;
+  organizationName: string;
+  restrictions: string | null;
+  expiresAt: IsoDateTime | null;
+  deliveryDetails: string | null;
+}
+
 export interface FundraisingDashboard {
   totals: { silentCents: Cents; liveCents: Cents; pledgesCents: Cents; ticketsCents: Cents; donationsCents: Cents; totalCents: Cents };
   bidders: { registered: number; checkedIn: number; remote: number };
   items: { total: number; noBids: number; sold: number; sellThroughRate: number };
   byGrade: Array<{ grade: string; households: number; itemsDonated: number; totalRaisedCents: Cents }>;
+  hotItems: Array<{ id: string; title: string; bidCountLastFiveMinutes: number; closesAt: IsoDateTime | null }>;
+  noBidClosingSoon: Array<{ id: string; title: string; closesAt: IsoDateTime | null }>;
 }
 
 export interface FundraisingReports {
@@ -1469,6 +1483,7 @@ export interface FundraisingReports {
   historical: Array<Record<string, string | number | boolean | null>>;
   familyHistory: Array<Record<string, string | number | boolean | null>>;
   itemIntelligence: Array<Record<string, string | number | boolean | null>>;
+  yearEndStatements: Array<Record<string, string | number | boolean | null>>;
 }
 
 export interface PublicItemIntakePayload {
@@ -1552,6 +1567,9 @@ export interface PublicAuctionPayload {
   items: PublicAuctionItem[];
   announcements?: Array<{ id: string; message: string; sentAt: IsoDateTime }>;
   donationToken?: string | null;
+  fundANeedTotalCents?: Cents;
+  latestPledges?: Array<{ amountCents: Cents; donorLabel: string; createdAt: IsoDateTime }>;
+  sponsors?: Array<{ name: string; logoUrl: string | null }>;
 }
 
 export interface PublicAuctionBidResult {
@@ -1570,12 +1588,15 @@ export interface RaffleItem {
   description: string | null;
   imageUrl: string | null;
   ticketPriceCents: Cents;
+  fairMarketValueCents?: Cents | null;
   totalTickets: number;
   soldTickets: number;
   winnerName: string | null;
   winnerEmail: string | null;
   winnerTicketId: string | null;
   drawnAt: IsoDateTime | null;
+  w2gReviewRequired?: boolean;
+  taxpayerIdCollectionStatus?: "not_required" | "required" | "collected";
   status: RaffleStatus;
   createdAt: IsoDateTime;
   updatedAt?: IsoDateTime;
@@ -1586,8 +1607,10 @@ export interface RaffleItemDraft {
   description?: string | null;
   imageUrl?: string | null;
   ticketPriceCents?: Cents;
+  fairMarketValueCents?: Cents | null;
   totalTickets?: number;
   status?: RaffleStatus;
+  taxpayerIdCollectionStatus?: "not_required" | "required" | "collected";
 }
 
 export type RaffleItemPatch = Partial<RaffleItemDraft>;

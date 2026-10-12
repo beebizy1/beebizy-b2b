@@ -470,6 +470,13 @@
       "when": 1791846336839,
       "tag": "0066_allow_receipt_parent_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1791847042328,
+      "tag": "0067_complete_fundraising_spec",
+      "breakpoints": true
     }
   ]
 }

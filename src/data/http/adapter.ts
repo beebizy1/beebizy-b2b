@@ -50,6 +50,7 @@ import type {
   PublicDonationCampaign,
   DonationCheckoutResult,
   PublicDonationStatus,
+  PublicExperienceCertificate,
   FundraisingReports,
   MoodBoardImage,
   EventRoi,
@@ -253,6 +254,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       updateSubmission: (eventId, submissionId, patch) => client.patch<ItemSubmission>(`/events/${eventId}/item-submissions/${submissionId}`, patch),
       dashboard: (eventId) => client.get<FundraisingDashboard>(`/events/${eventId}/fundraising-dashboard`),
       extendItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; extensionMinutes: number }>(`/events/${eventId}/auction/${itemId}/extend`, { minutes }),
+      extendItems: (eventId, itemIds, minutes) => client.post<{ extended: number }>(`/events/${eventId}/auction/extend-many`, { itemIds, minutes }),
       reopenItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; status: "open" }>(`/events/${eventId}/auction/${itemId}/reopen`, { minutes }),
       getPublicIntake: async (auctionToken) => {
         try {
@@ -268,6 +270,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       }),
       uploadPublicItemImage: async (auctionToken, file) =>
         (await publicUpload<{ url: string }>(`/public/auctions/${auctionToken}/intake/upload`, file)).url,
+      reinvitePastDonors: (eventId) => client.post<{ sent: number; failed: number }>(`/events/${eventId}/item-donor-reinvites`),
+      mergeItems: (eventId, itemIds, title) => client.post<{ packageItemId: string }>(`/events/${eventId}/auction-packages`, { itemIds, title }),
       buildBills: (eventId) => client.post<{ created: number; bills: PublicBidderBill[] }>(`/events/${eventId}/bidder-bills/build`),
       sendBills: (eventId) => client.post<{ sent: number; autoCharged: number; failed: number }>(`/events/${eventId}/bidder-bills/send`),
       refundBill: (eventId, billId) => client.post<PublicBidderBill>(`/events/${eventId}/bidder-bills/${billId}/refund`),
@@ -291,11 +295,16 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
         try { return await publicRequest<PublicDonationStatus>(`/public/donations/${token}/status/${encodeURIComponent(donationId)}`); }
         catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
       },
+      getPublicCertificate: async (token) => {
+        try { return await publicRequest<PublicExperienceCertificate>(`/public/certificates/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
       previewBroadcast: (eventId, draft) => client.post<{ recipients: number }>(`/events/${eventId}/fundraising-broadcasts/preview`, draft),
       sendBroadcast: (eventId, draft) => client.post<{ recipients: number; sent: number; failed: number }>(`/events/${eventId}/fundraising-broadcasts/send`, draft),
       recordLiveSale: (eventId, itemId, paddleNumbers, amountCents) => client.post<{ winners: number }>(`/events/${eventId}/auction/${itemId}/live-sale`, { paddleNumbers, amountCents }),
       undoLiveSale: (eventId, itemId) => client.post<{ reopened: true }>(`/events/${eventId}/auction/${itemId}/undo-sale`),
       reports: (eventId) => client.get<FundraisingReports>(`/events/${eventId}/fundraising-reports`),
+      sendYearEndStatements: (taxYear) => client.post<{ sent: number; failed: number }>("/fundraising/year-end-statements/send", { taxYear }),
     },
 
     assistant: {

@@ -387,6 +387,24 @@ export async function notifyCombinedFundraisingReceipt(input: {
   });
 }
 
+export async function notifyExperienceCertificate(input: {
+  orderId: string;
+  to: string;
+  winnerName: string;
+  eventTitle: string;
+  itemTitle: string;
+  certificateUrl: string;
+}): Promise<EmailOutcome> {
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-certificate-${input.orderId}`,
+    subject: `Your certificate - ${emailSubjectPart(input.itemTitle)}`,
+    text: `Hi ${input.winnerName},\n\nYour experience certificate for ${input.itemTitle} at ${input.eventTitle} is ready.\n\nView or save it as a PDF: ${input.certificateUrl}`,
+    html: brandedEmail({ title: "Your auction certificate", greeting: `Hi ${input.winnerName},`, paragraphs: [`Your experience certificate for ${input.itemTitle} at ${input.eventTitle} is ready.`], details: [["Experience", input.itemTitle], ["Event", input.eventTitle]], action: { label: "View certificate", url: input.certificateUrl } }),
+  });
+}
+
 const FEEDBACK_NOTIFICATION_EMAIL = "hello@beebizy.com";
 
 function emailSubjectPart(value: string): string {

@@ -96,6 +96,7 @@ vi.mock("./commercePayments", () => ({
   publicFundraisingReceipt: vi.fn(),
   createDonationCheckout: vi.fn(),
   publicDonationStatus: vi.fn(),
+  publicExperienceCertificate: vi.fn(),
   refundBidderBill: vi.fn(),
   sendDueBidderBillReminders: vi.fn(),
 }));
@@ -107,12 +108,15 @@ vi.mock("./ticketInvitations", () => ({
 vi.mock("./fundraisingUx", () => ({
   createAuctionCategory: vi.fn(),
   extendAuctionItem: vi.fn(),
+  extendAuctionItems: vi.fn(),
   reopenAuctionItem: vi.fn(),
   fundraisingDashboard: vi.fn(),
   getFundraisingOrganizationProfile: vi.fn(),
   listAuctionCategories: vi.fn(),
   listItemSubmissions: vi.fn(),
+  mergeAuctionItems: vi.fn(),
   publicItemIntake: vi.fn(),
+  reinvitePastItemDonors: vi.fn(),
   submitPublicItem: vi.fn(),
   updateFundraisingOrganizationProfile: vi.fn(),
   updateItemSubmission: vi.fn(),
@@ -127,6 +131,8 @@ vi.mock("./fundraisingUx", () => ({
   sendFundraisingBroadcast: vi.fn(),
   sendDueClosingAlerts: vi.fn(),
   sendAllDueClosingAlerts: vi.fn(),
+  sendDueYearEndStatements: vi.fn(),
+  sendYearEndStatements: vi.fn(),
   recordLiveAuctionSale: vi.fn(),
   undoLiveAuctionSale: vi.fn(),
   buyNowAuctionItem: vi.fn(),
@@ -139,7 +145,7 @@ const { createCheckoutSession, handleStripeWebhook } = await import("./billing")
 const { openTicketInvitation } = await import("./ticketInvitations");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
-const { sendAllDueClosingAlerts } = await import("./fundraisingUx");
+const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
 
 describe("fundraising maintenance", () => {
   it("requires the cron secret and runs both due-job families", async () => {
@@ -147,9 +153,10 @@ describe("fundraising maintenance", () => {
     expect((await handleRequest(new Request("http://localhost/api/fundraising/maintenance"))).status).toBe(401);
     vi.mocked(sendAllDueClosingAlerts).mockResolvedValue(3);
     vi.mocked(sendDueBidderBillReminders).mockResolvedValue({ sent: 2, failed: 0 });
+    vi.mocked(sendDueYearEndStatements).mockResolvedValue({ sent: 1, failed: 0 });
     const response = await handleRequest(new Request("http://localhost/api/fundraising/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, eventsChecked: 3, reminders: { sent: 2, failed: 0 } });
+    expect(await response.json()).toEqual({ ok: true, eventsChecked: 3, reminders: { sent: 2, failed: 0 }, yearEndStatements: { sent: 1, failed: 0 } });
     vi.unstubAllEnvs();
   });
 });

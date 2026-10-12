@@ -2511,13 +2511,18 @@ export const memoryAdapter: DataAdapter = {
     createCategory: async (name) => ({ id: newId("acat"), name, sortOrder: 99 }),
     listSubmissions: async () => [],
     updateSubmission: async () => { throw new DataError("not-found", "That item submission no longer exists."); },
-    dashboard: async () => ({ totals: { silentCents: 0, liveCents: 0, pledgesCents: 0, ticketsCents: 0, donationsCents: 0, totalCents: 0 }, bidders: { registered: 0, checkedIn: 0, remote: 0 }, items: { total: 0, noBids: 0, sold: 0, sellThroughRate: 0 }, byGrade: [] }),
+    dashboard: async () => ({ totals: { silentCents: 0, liveCents: 0, pledgesCents: 0, ticketsCents: 0, donationsCents: 0, totalCents: 0 }, bidders: { registered: 0, checkedIn: 0, remote: 0 }, items: { total: 0, noBids: 0, sold: 0, sellThroughRate: 0 }, byGrade: [], hotItems: [], noBidClosingSoon: [] }),
     extendItem: async (eventId, itemId, minutes) => {
       const item = required(store().auction.find((row) => row.eventId === eventId && row.id === itemId), "That auction item no longer exists.");
       const closesAt = new Date((item.closesAt ? new Date(item.closesAt).getTime() : Date.now()) + minutes * 60_000).toISOString();
       item.closesAt = closesAt;
       item.extensionMinutes = (item.extensionMinutes ?? 0) + minutes;
       return { closesAt, extensionMinutes: item.extensionMinutes };
+    },
+    extendItems: async (eventId, itemIds, minutes) => {
+      let extended = 0;
+      for (const itemId of itemIds) { await memoryAdapter.fundraising.extendItem(eventId, itemId, minutes); extended += 1; }
+      return { extended };
     },
     reopenItem: async (eventId, itemId, minutes) => {
       const item = required(store().auction.find((row) => row.eventId === eventId && row.id === itemId), "That auction item no longer exists.");
@@ -2536,6 +2541,8 @@ export const memoryAdapter: DataAdapter = {
       return { eventTitle: event.title, organizationName: "Beebizy Demo School", categories: ["Experiences", "Dining"], grades: ["K", "1", "2", "3"], submission: { id: newId("isub"), eventId: event.id, donorId: null, submittedBy: draft.donorName, publicToken: newId("submission"), payload: draft as unknown as Record<string, unknown>, status: "submitted", auctionItemId: item.id, requestedChanges: null, submittedAt: nowIso(), updatedAt: null } };
     },
     uploadPublicItemImage: async (_auctionToken, file) => URL.createObjectURL(file),
+    reinvitePastDonors: async () => ({ sent: 0, failed: 0 }),
+    mergeItems: async () => ({ packageItemId: newId("auc") }),
     buildBills: async () => ({ created: 0, bills: [] }),
     sendBills: async () => ({ sent: 0, autoCharged: 0, failed: 0 }),
     refundBill: async (_eventId, billId) => ({ id: billId, eventId: "evt-gala", bidderId: "bidder-1", bidderName: "Demo Bidder", bidderEmail: "demo@example.com", publicToken: "demo-bill", itemsTotalCents: 0, pledgesTotalCents: 0, feesCoveredCents: 0, totalCents: 0, applicationFeeCents: 0, status: "refunded", paidAt: null, eventTitle: "Demo Gala", lineItems: [], coverFeesAvailable: false, receiptToken: null }),
@@ -2547,11 +2554,13 @@ export const memoryAdapter: DataAdapter = {
     getPublicCampaign: async () => null,
     createDonationCheckout: async (token) => ({ donationId: newId("donation"), checkoutUrl: `/give/${token}?donation=success` }),
     getDonationStatus: async (_token, donationId) => ({ donationId, status: "paid", receiptToken: null }),
+    getPublicCertificate: async () => null,
     previewBroadcast: async () => ({ recipients: 0 }),
     sendBroadcast: async () => ({ recipients: 0, sent: 0, failed: 0 }),
     recordLiveSale: async (_eventId, _itemId, paddleNumbers) => ({ winners: paddleNumbers.length }),
     undoLiveSale: async () => ({ reopened: true }),
-    reports: async () => ({ bidders: [], bids: [], items: [], attendance: [], grades: [], payments: [], acknowledgments: [], historical: [], familyHistory: [], itemIntelligence: [] }),
+    reports: async () => ({ bidders: [], bids: [], items: [], attendance: [], grades: [], payments: [], acknowledgments: [], historical: [], familyHistory: [], itemIntelligence: [], yearEndStatements: [] }),
+    sendYearEndStatements: async () => ({ sent: 0, failed: 0 }),
   },
   assistant: {
     chat: async ({ messages }) => {

@@ -3889,6 +3889,14 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
   const [campaign] = await db.select({ token: s.donationCampaigns.publicToken }).from(s.donationCampaigns)
     .where(and(eq(s.donationCampaigns.eventId, eventRow.event.id), eq(s.donationCampaigns.isActive, true)))
     .orderBy(asc(s.donationCampaigns.createdAt)).limit(1);
+  const [pledgeRows, sponsorRows] = await Promise.all([
+    db.select({ amountCents: s.fundraisingPledges.amountCents, anonymous: s.fundraisingPledges.anonymous, createdAt: s.fundraisingPledges.createdAt, bidderName: s.auctionBidders.name })
+      .from(s.fundraisingPledges)
+      .leftJoin(s.auctionBidders, eq(s.fundraisingPledges.bidderId, s.auctionBidders.id))
+      .where(eq(s.fundraisingPledges.eventId, eventRow.event.id)).orderBy(desc(s.fundraisingPledges.createdAt)),
+    db.select({ name: s.sponsorships.companyName, logoUrl: s.sponsorships.logoUrl }).from(s.sponsorships)
+      .where(and(eq(s.sponsorships.eventId, eventRow.event.id), eq(s.sponsorships.status, "confirmed"))).orderBy(asc(s.sponsorships.companyName)),
+  ]);
   return {
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
@@ -3898,6 +3906,9 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
     items,
     announcements: announcements.map((announcement) => ({ ...announcement, sentAt: announcement.sentAt.toISOString() })),
     donationToken: campaign?.token ?? null,
+    fundANeedTotalCents: pledgeRows.reduce((sum, pledge) => sum + pledge.amountCents, 0),
+    latestPledges: pledgeRows.slice(0, 8).map((pledge) => ({ amountCents: pledge.amountCents, donorLabel: pledge.anonymous ? "Anonymous" : pledge.bidderName ?? "Gala donor", createdAt: pledge.createdAt.toISOString() })),
+    sponsors: sponsorRows,
   };
 }
 
@@ -4190,14 +4201,19 @@ export const tickets = {
       .from(s.ticketTypes)
       .where(eq(s.ticketTypes.eventId, eventId));
     const id = newId("tt");
+    const priceCents = optInt(body, "priceCents") ?? 0;
+    const fairMarketValueCents = optInt(body, "fairMarketValueCents");
+    const fmvZeroConfirmed = optBool(body, "fmvZeroConfirmed") ?? false;
+    if (priceCents > 0 && fairMarketValueCents === 0 && !fmvZeroConfirmed) throw new HttpError(409, "Confirm that this paid ticket provides no goods or services before using a $0 fair market value.");
     await db.insert(s.ticketTypes).values({
       id,
       workspaceId: ctx.workspaceId,
       eventId,
       name: str(body, "name"),
       description: optStr(body, "description"),
-      priceCents: optInt(body, "priceCents") ?? 0,
-      fairMarketValueCents: optInt(body, "fairMarketValueCents"),
+      priceCents,
+      fairMarketValueCents,
+      fmvZeroConfirmed,
       benefitsDescription: optStr(body, "benefitsDescription"),
       quantityTotal: optInt(body, "quantityTotal") ?? 0,
       isActive: optBool(body, "isActive") ?? true,
@@ -4219,12 +4235,17 @@ export const tickets = {
     if (nextTotal !== 0 && nextTotal < current.quantitySold) {
       throw new HttpError(409, `${current.quantitySold} of these are already sold — the allocation can't go below that.`);
     }
+    const nextPrice = "priceCents" in body ? (optInt(body, "priceCents") ?? 0) : current.priceCents;
+    const nextFmv = "fairMarketValueCents" in body ? optInt(body, "fairMarketValueCents") : current.fairMarketValueCents;
+    const nextZeroConfirmed = "fmvZeroConfirmed" in body ? (optBool(body, "fmvZeroConfirmed") ?? false) : current.fmvZeroConfirmed;
+    if (nextPrice > 0 && nextFmv === 0 && !nextZeroConfirmed) throw new HttpError(409, "Confirm that this paid ticket provides no goods or services before using a $0 fair market value.");
 
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
       priceCents: (b) => optInt(b, "priceCents") ?? 0,
       fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
+      fmvZeroConfirmed: (b) => Boolean(b.fmvZeroConfirmed),
       benefitsDescription: (b) => optStr(b, "benefitsDescription"),
       quantityTotal: (b) => optInt(b, "quantityTotal") ?? 0,
       isActive: (b) => Boolean(b.isActive),
@@ -4274,6 +4295,7 @@ export const raffle = {
       description: optStr(body, "description"),
       imageUrl: optStr(body, "imageUrl"),
       ticketPriceCents: optInt(body, "ticketPriceCents") ?? 0,
+      fairMarketValueCents: optInt(body, "fairMarketValueCents"),
       totalTickets: optInt(body, "totalTickets") ?? 0,
     });
     const [row] = await db.select().from(s.raffleItems).where(eq(s.raffleItems.id, id)).limit(1);
@@ -4285,8 +4307,10 @@ export const raffle = {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
       ticketPriceCents: (b) => optInt(b, "ticketPriceCents") ?? 0,
+      fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
       totalTickets: (b) => optInt(b, "totalTickets") ?? 0,
       status: (b) => str(b, "status", "open"),
+      taxpayerIdCollectionStatus: (b) => str(b, "taxpayerIdCollectionStatus", "not_required"),
     });
     const updated = await db
       .update(s.raffleItems)
@@ -4402,6 +4426,10 @@ export const raffle = {
     // Weighted by quantity: ten tickets is ten chances, not one.
     const pool = entries.flatMap((entry) => Array.from({ length: entry.quantity }, () => entry));
     const winner = pool[Math.floor(Math.random() * pool.length)]!;
+    const [raffleItem] = await db.select().from(s.raffleItems).where(eq(s.raffleItems.id, raffleItemId)).limit(1);
+    if (!raffleItem) throw new HttpError(404, "That raffle no longer exists.");
+    const netPrizeValue = Math.max(0, (raffleItem.fairMarketValueCents ?? 0) - raffleItem.ticketPriceCents);
+    const w2gReviewRequired = netPrizeValue >= 60_000 && (raffleItem.ticketPriceCents === 0 || (raffleItem.fairMarketValueCents ?? 0) >= raffleItem.ticketPriceCents * 300);
 
     const updated = await db
       .update(s.raffleItems)
@@ -4411,10 +4439,13 @@ export const raffle = {
         winnerTicketId: winner.id,
         drawnAt: new Date(),
         status: "drawn",
+        w2gReviewRequired,
+        taxpayerIdCollectionStatus: w2gReviewRequired ? "required" : "not_required",
         updatedAt: new Date(),
       })
       .where(and(eq(s.raffleItems.id, raffleItemId), eq(s.raffleItems.workspaceId, ctx.workspaceId)))
       .returning();
+    if (w2gReviewRequired) await db.insert(s.checklistItems).values({ id: newId("cl"), workspaceId: ctx.workspaceId, eventId, title: `Review W-2G reporting for raffle winner: ${winner.buyerName}`, description: `Prize: ${raffleItem.name}. Confirm current IRS thresholds with the school's tax advisor and collect taxpayer ID through the school's approved secure process. Do not store a full taxpayer ID in Beebizy.`, category: "Fundraising", sortOrder: 999 });
     return map.toRaffleItem(updated[0]!);
   },
 };

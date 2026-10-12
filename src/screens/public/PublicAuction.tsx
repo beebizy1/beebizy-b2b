@@ -50,6 +50,8 @@ export default function PublicAuctionPage({ token }: { token: string }) {
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("ending");
   const [filter, setFilter] = useState("all");
+  const [minimumPrice, setMinimumPrice] = useState("");
+  const [maximumPrice, setMaximumPrice] = useState("");
   const [myBidsOnly, setMyBidsOnly] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [customGift, setCustomGift] = useState("");
@@ -71,10 +73,14 @@ export default function PublicAuctionPage({ token }: { token: string }) {
 
   const items = useMemo(() => {
     const term = search.trim().toLowerCase();
+    const minCents = minimumPrice.trim() ? Number(minimumPrice) * 100 : null;
+    const maxCents = maximumPrice.trim() ? Number(maximumPrice) * 100 : null;
     const visible = (auction?.items ?? []).filter((item) =>
       (category === "all" || item.category === category) &&
       (!term || `${item.title} ${item.description ?? ""} ${item.category ?? ""} ${item.creditText ?? ""}`.toLowerCase().includes(term)) &&
       (!myBidsOnly || Boolean(bidderProfile?.winningItemIds.includes(item.id) || bidderProfile?.outbidItemIds.includes(item.id))) &&
+      (minCents == null || (item.currentBidCents ?? item.startingBidCents) >= minCents) &&
+      (maxCents == null || (item.currentBidCents ?? item.startingBidCents) <= maxCents) &&
       (filter === "all" ||
         (filter === "no-bids" && item.bidCount === 0) ||
         (filter === "ending" && item.closesAt != null && new Date(item.closesAt).getTime() - clockNow <= 15 * 60_000) ||
@@ -90,7 +96,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
       if (sort === "new") return right.id.localeCompare(left.id);
       return (left.closesAt ? new Date(left.closesAt).getTime() : Number.MAX_SAFE_INTEGER) - (right.closesAt ? new Date(right.closesAt).getTime() : Number.MAX_SAFE_INTEGER);
     });
-  }, [auction?.items, bidderProfile, category, clockNow, filter, myBidsOnly, search, sort]);
+  }, [auction?.items, bidderProfile, category, clockNow, filter, maximumPrice, minimumPrice, myBidsOnly, search, sort]);
 
   if (isLoading) return <PublicFrame><LoadingRows rows={5} /></PublicFrame>;
   if (!auction) {
@@ -173,6 +179,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
           </div>
           <label className="flex items-center gap-2 rounded-md border border-input bg-background px-3"><SlidersHorizontal className="size-4 text-muted-foreground" /><select value={filter} onChange={(event) => setFilter(event.target.value)} className="h-9 bg-transparent text-sm outline-none"><option value="all">All items</option><option value="silent">Silent auction</option><option value="live">Live auction</option><option value="no-bids">No bids yet</option><option value="ending">Ending soon</option><option value="buy-now">Buy it now</option><option value="watching">Items I'm watching</option></select></label>
           <select value={sort} onChange={(event) => setSort(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="ending">Ending soon</option><option value="bids">Most bids</option><option value="low">Lowest current bid</option><option value="value">Highest value</option><option value="new">Newest</option></select>
+          <div className="flex items-center gap-2"><Input className="w-28" inputMode="decimal" value={minimumPrice} onChange={(event) => setMinimumPrice(event.target.value)} placeholder="Min $" aria-label="Minimum current bid" /><span className="text-muted-foreground">to</span><Input className="w-28" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} placeholder="Max $" aria-label="Maximum current bid" /></div>
         </div>
 
         {items.length === 0 ? (
