@@ -6,7 +6,7 @@
  */
 
 import type { Cents } from "./money";
-import { SCHOOL_GRADES, type FundraisingBroadcastAudience } from "./entities";
+import { SCHOOL_GRADES, type FundraisingBroadcastAudience } from "./entities.ts";
 
 const STATIC_BROADCAST_AUDIENCES = new Set(["all", "remote", "in_room", "bidders", "outbid", "watchers"]);
 
