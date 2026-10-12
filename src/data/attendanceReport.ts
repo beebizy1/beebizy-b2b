@@ -1,4 +1,5 @@
 import type { RegistrationWithGuest } from "./entities";
+import { csvCell } from "./spreadsheet.ts";
 
 export interface UniqueAttendeeRecord {
   name: string;
@@ -100,4 +101,3 @@ export function attendanceNamesCsv(attendees: UniqueAttendeeRecord[]): string {
   const lines = attendees.map((row) => csvCell(row.name));
   return ["Full Name", ...lines].join("\r\n") + "\r\n";
 }
-import { csvCell } from "./spreadsheet";
