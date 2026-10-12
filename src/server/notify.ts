@@ -297,13 +297,10 @@ export async function notifyAuctionDonorThankYou(input: {
   contactName: string;
   donorName: string;
   eventTitle: string;
-  items: Array<{ title: string; fairMarketValueCents: number | null }>;
+  itemTitles: string[];
+  receivedDate: string;
 }): Promise<EmailOutcome> {
-  const itemSummary = input.items.length > 0
-    ? input.items.map((item) => item.fairMarketValueCents == null
-      ? item.title
-      : `${item.title} (${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(item.fairMarketValueCents / 100)} fair market value)`).join(", ")
-    : "your auction donation";
+  const itemSummary = input.itemTitles.length > 0 ? input.itemTitles.join(", ") : "your auction donation";
   return sendEmail({
     to: input.to,
     replyTo: "hello@beebizy.com",
@@ -311,16 +308,23 @@ export async function notifyAuctionDonorThankYou(input: {
     subject: `Thank you for supporting ${emailSubjectPart(input.eventTitle)}`,
     text: [
       `Hi ${input.contactName},`, "", `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
-      `Donation acknowledgment: ${itemSummary}`, "", "Your contribution helps make this event possible. Keep this email for your records. Consult a tax professional about deductibility.",
+      `Property received: ${itemSummary}`,
+      `Date received: ${input.receivedDate}`,
+      "No goods or services were provided in exchange for this donated property.",
+      "No dollar value is stated. The donor is responsible for valuing the contribution and should consult a tax professional about deductibility.",
+      "",
+      "Your contribution helps make this event possible.",
     ].join("\n"),
     html: brandedEmail({
       title: "Thank you for your auction donation",
       greeting: `Hi ${input.contactName},`,
       paragraphs: [
         `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
-        "Your contribution helps make this event possible. Keep this email for your records. Consult a tax professional about deductibility.",
+        "No goods or services were provided in exchange for this donated property.",
+        "No dollar value is stated. The donor is responsible for valuing the contribution and should consult a tax professional about deductibility.",
+        "Your contribution helps make this event possible.",
       ],
-      details: [["Event", input.eventTitle], ["Donation", itemSummary]],
+      details: [["Event", input.eventTitle], ["Property received", itemSummary], ["Date received", input.receivedDate]],
     }),
   });
 }

@@ -6,6 +6,7 @@ import {
   notifyTicketOrderConfirmation,
   notifyTicketInvitation,
   notifyAuctionOutbid,
+  notifyAuctionDonorThankYou,
   notifyTeamUpdate,
   notifyVolunteerAssignment,
   notifyWorkAssignment,
@@ -181,6 +182,23 @@ describe("ticket and auction action emails", () => {
     const body = JSON.parse(String(request.body));
     expect(body.text).toContain("$85.00");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("auction-outbid-bid-2-bidder@example.com");
+  });
+
+  it("acknowledges donated property without assigning a dollar value", async () => {
+    const fetch = configureDelivery();
+    await notifyAuctionDonorThankYou({
+      donorId: "donor-1",
+      to: "donor@example.com",
+      contactName: "Ada",
+      donorName: "Ada's Bakery",
+      eventTitle: "School Gala",
+      itemTitles: ["Private baking class"],
+      receivedDate: "October 12, 2026",
+    });
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.text).toContain("Property received: Private baking class");
+    expect(body.text).toContain("No dollar value is stated");
+    expect(body.text).not.toMatch(/fair market value|\$\d/i);
   });
 });
 

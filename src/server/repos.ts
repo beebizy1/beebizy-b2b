@@ -3729,10 +3729,7 @@ export const auctionManagement = {
       )).limit(1);
     if (!row) throw new HttpError(404, "That donor no longer exists.");
     if (!row.donor.email) throw new HttpError(409, "Add the donor's email before sending a thank-you.");
-    const items = await db.select({
-      title: s.auctionItems.title,
-      fairMarketValueCents: s.auctionItems.fairMarketValueCents,
-    }).from(s.auctionItems)
+    const items = await db.select({ title: s.auctionItems.title, createdAt: s.auctionItems.createdAt }).from(s.auctionItems)
       .where(eq(s.auctionItems.donorId, donorId)).orderBy(asc(s.auctionItems.title));
     const outcome = await notifyAuctionDonorThankYou({
       donorId,
@@ -3740,7 +3737,13 @@ export const auctionManagement = {
       contactName: row.donor.contactName || row.donor.businessName,
       donorName: row.donor.businessName,
       eventTitle: row.event.title,
-      items,
+      itemTitles: items.map((item) => item.title),
+      receivedDate: (items[0]?.createdAt ?? row.donor.updatedAt ?? row.donor.createdAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        timeZone: "UTC",
+      }),
     });
     if (outcome.status !== "sent") throw new HttpError(502, "The thank-you email could not be delivered.");
     const [updated] = await db.update(s.auctionDonors).set({ thankYouStatus: "sent", updatedAt: new Date() })
