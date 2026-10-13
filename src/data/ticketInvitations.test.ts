@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTicketInvitationRecipients } from "./ticketInvitations";
+import { eventInvitationRecipients, parseTicketInvitationRecipients } from "./ticketInvitations";
 
 describe("ticket invitation recipient input", () => {
   it("accepts an email without requiring a separate name", () => {
@@ -18,5 +18,15 @@ describe("ticket invitation recipient input", () => {
 
   it("ignores malformed lines", () => {
     expect(parseTicketInvitationRecipients("not-an-email\nName only,")).toEqual([]);
+  });
+
+  it("reuses active event guests while excluding cancelled and duplicate contacts", () => {
+    const row = (id: string, eventId: string, status: "confirmed" | "cancelled", name: string, contact: string) => ({ id, eventId, status, guest: { id: `guest-${id}`, name, contact } }) as never;
+    expect(eventInvitationRecipients([
+      row("1", "event-one", "confirmed", "Ada Lovelace", "ADA@example.com"),
+      row("2", "event-one", "confirmed", "Ada Updated", "ada@example.com"),
+      row("3", "event-one", "cancelled", "Cancelled Guest", "cancelled@example.com"),
+      row("4", "event-two", "confirmed", "Other Event", "other@example.com"),
+    ], "event-one")).toEqual([{ name: "Ada Updated", email: "ada@example.com" }]);
   });
 });

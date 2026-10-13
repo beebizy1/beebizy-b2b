@@ -166,8 +166,8 @@ export default function EventForm({ id }: { id?: string }) {
     }
 
     const onCreated = (created: { id: string; title: string }) => {
-      toast({ title: "Event created", description: `“${created.title}” is ready to plan.` });
-      navigate(`/app/events/${created.id}`);
+      toast({ title: "Event created", description: `Next, build the invite list for “${created.title}”.` });
+      navigate(`/app/events/${created.id}/share`);
     };
 
     if (form.templateId !== NO_TEMPLATE) {

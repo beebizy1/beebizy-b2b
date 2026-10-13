@@ -36,6 +36,7 @@ export async function sendTicketInvitations(
   recipients: Array<{ name: string; email: string }>,
   consentConfirmed: boolean,
   request: Request,
+  testOnly = false,
 ): Promise<TicketInvitationBatchResult> {
   if (!consentConfirmed) {
     throw new HttpError(400, "Confirm that these recipients expect event communication before sending.");
@@ -59,6 +60,32 @@ export async function sendTicketInvitations(
   }).where(eq(events.id, eventId)).returning({ shareToken: events.shareToken });
   if (!shared?.shareToken) throw new Error("The event ticket link could not be created.");
   const origin = (process.env.PUBLIC_APP_URL?.trim() || process.env.APP_ORIGIN?.trim() || new URL(request.url).origin).replace(/\/$/, "");
+  const invitationDesign = normalizeRegistrationPage(event.event.registrationPage);
+  const deliver = (input: { invitationId: string; recipient: { name: string; email: string }; invitationUrl: string; attemptKey: string }) => notifyTicketInvitation({
+    invitationId: input.invitationId,
+    to: input.recipient.email,
+    recipientName: input.recipient.name,
+    eventTitle: event.event.title,
+    startsAt: event.event.startsAt.toISOString(),
+    timeZone: event.timeZone,
+    invitationUrl: input.invitationUrl,
+    organizationName: event.legalName || event.workspaceName,
+    headline: invitationDesign.headline || event.event.title,
+    welcomeMessage: invitationDesign.welcomeMessage || event.event.description || `You are invited to ${event.event.title}.`,
+    designedHtml: registrationInvitationHtml(invitationDesign, event.event.title, event.event.description, input.invitationUrl, input.recipient.name, event.legalName || event.workspaceName),
+    deliveryAttemptKey: input.attemptKey,
+  });
+
+  if (testOnly) {
+    const testUrl = `${origin}/e/${encodeURIComponent(shared.shareToken)}/tickets?preview=1`;
+    const results = await Promise.all(normalized.map((recipient) => deliver({ invitationId: `test-${eventId}-${recipient.email}`, recipient, invitationUrl: testUrl, attemptKey: crypto.randomUUID() })));
+    return {
+      attempted: results.length,
+      sent: results.filter((result) => result.status === "sent").length,
+      failed: results.filter((result) => result.status !== "sent").length,
+      invitations: [],
+    };
+  }
 
   const outcomes: Array<{ invitation: TicketInvitation; sent: boolean }> = [];
   for (let start = 0; start < normalized.length; start += 10) {
@@ -87,28 +114,7 @@ export async function sendTicketInvitations(
         eq(ticketInvitations.recipientEmail, recipient.email),
       )).limit(1);
       if (!stored) throw new Error(`Invitation for ${recipient.email} could not be saved.`);
-      const invitationDesign = normalizeRegistrationPage(event.event.registrationPage);
-      const outcome = await notifyTicketInvitation({
-        invitationId: stored.id,
-        to: stored.recipientEmail,
-        recipientName: stored.recipientName,
-        eventTitle: event.event.title,
-        startsAt: event.event.startsAt.toISOString(),
-        timeZone: event.timeZone,
-        invitationUrl: `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`,
-        organizationName: event.legalName || event.workspaceName,
-        headline: invitationDesign.headline || event.event.title,
-        welcomeMessage: invitationDesign.welcomeMessage || event.event.description || `You are invited to ${event.event.title}.`,
-        designedHtml: registrationInvitationHtml(
-          invitationDesign,
-          event.event.title,
-          event.event.description,
-          `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`,
-          stored.recipientName,
-          event.legalName || event.workspaceName,
-        ),
-        deliveryAttemptKey: (stored.updatedAt ?? stored.createdAt).getTime().toString(36),
-      });
+      const outcome = await deliver({ invitationId: stored.id, recipient: { name: stored.recipientName, email: stored.recipientEmail }, invitationUrl: `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`, attemptKey: (stored.updatedAt ?? stored.createdAt).getTime().toString(36) });
       const sent = outcome.status === "sent";
       const now = new Date();
       const [updated] = await db.update(ticketInvitations).set({

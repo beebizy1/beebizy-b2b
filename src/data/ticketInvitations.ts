@@ -1,3 +1,5 @@
+import type { RegistrationWithGuest } from "./entities";
+
 export interface TicketInvitationRecipientDraft {
   name: string;
   email: string;
@@ -25,4 +27,12 @@ export function parseTicketInvitationRecipients(value: string): TicketInvitation
     byEmail.set(email, { name: suppliedName || nameFromEmail(email), email });
   }
   return [...byEmail.values()];
+}
+
+/** The reusable, contactable part of one event's guest list. */
+export function eventInvitationRecipients(rows: RegistrationWithGuest[], eventId: string): TicketInvitationRecipientDraft[] {
+  return parseTicketInvitationRecipients(rows
+    .filter((row) => row.eventId === eventId && row.status !== "cancelled" && row.guest?.contact)
+    .map((row) => `${row.guest!.name}, ${row.guest!.contact}`)
+    .join("\n"));
 }

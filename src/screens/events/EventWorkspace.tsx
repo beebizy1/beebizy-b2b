@@ -497,7 +497,7 @@ function WorkspaceHeader({
                 Edit
               </Link>
             </Button>
-            {experience === "standard" ? (
+            {experience === "standard" && active !== "share" ? (
               <Button asChild size="sm">
                 <Link href={eventSectionHref(event.id, "share")}>
                   <Share2 className="mr-1.5 size-3.5" />
@@ -506,28 +506,29 @@ function WorkspaceHeader({
               </Button>
             ) : null}
 
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/app/events/${event.id}/summary`}>
-                <FileText className="mr-1.5 size-3.5" />
-                Attendance dashboard
-              </Link>
-            </Button>
+            {active === "share" ? <Button asChild variant="outline" size="sm"><Link href={`/app/events/${event.id}`}>Back to event workspace</Link></Button> : <>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/app/events/${event.id}/summary`}>
+                  <FileText className="mr-1.5 size-3.5" />
+                  Attendance dashboard
+                </Link>
+              </Button>
 
-            <EventSpreadsheetImportDialog event={event} />
+              <EventSpreadsheetImportDialog event={event} />
 
-            {canManageAccess ? <EventAccessDialog event={event} /> : null}
+              {canManageAccess ? <EventAccessDialog event={event} /> : null}
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              title="Send one consolidated responsibility email to each assigned person"
-              disabled={sendAssignmentSummaries.isPending}
-              onClick={emailResponsibilities}
-            >
-              <MailCheck className="mr-1.5 size-3.5" />
-              {sendAssignmentSummaries.isPending ? "Sending..." : "Email assignments"}
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title="Send one consolidated responsibility email to each assigned person"
+                disabled={sendAssignmentSummaries.isPending}
+                onClick={emailResponsibilities}
+              >
+                <MailCheck className="mr-1.5 size-3.5" />
+                {sendAssignmentSummaries.isPending ? "Sending..." : "Email assignments"}
+              </Button>
 
             {experience === "standard" ? <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -592,6 +593,7 @@ function WorkspaceHeader({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            </>}
           </div>
         </div>
       </div>
@@ -599,7 +601,7 @@ function WorkspaceHeader({
       {health && experience === "standard" ? <RiskStrip health={health} eventId={event.id} /> : null}
       </div>
 
-      <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
+      {active !== "share" ? <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
         <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} />
         <div className="flex items-center gap-2 overflow-x-auto border-t border-hairline py-2" aria-label="Event days">
           {days.map((day) => (
@@ -621,7 +623,7 @@ function WorkspaceHeader({
           </Button>
           <span className="shrink-0 text-xs text-muted-foreground">Event-wide sections stay shared. Schedules and shifts follow the selected day.</span>
         </div>
-      </div>
+      </div> : null}
     </section>
   );
 }

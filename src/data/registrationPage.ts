@@ -124,6 +124,14 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
   };
 }
 
+export function registrationPageIsCustomized(value: unknown): boolean {
+  const page = normalizeRegistrationPage(value);
+  return page.template !== DEFAULT_REGISTRATION_PAGE.template ||
+    page.accentColor !== DEFAULT_REGISTRATION_PAGE.accentColor ||
+    Boolean(page.headline || page.welcomeMessage || page.heroImageUrl) ||
+    page.registrationTypes.join("\u0000") !== DEFAULT_REGISTRATION_PAGE.registrationTypes.join("\u0000");
+}
+
 function contrastAgainstWhite(hex: string): number {
   const channels = [1, 3, 5].map((index) => {
     const component = Number.parseInt(hex.slice(index, index + 2), 16) / 255;

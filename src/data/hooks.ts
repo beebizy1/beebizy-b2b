@@ -874,8 +874,8 @@ export function useTicketInvitations(eventId: string) {
 
 export function useSendTicketInvitations() {
   return useAdapterMutation(
-    (a, vars: { eventId: string; recipients: Array<{ name: string; email: string }>; consentConfirmed: boolean }) =>
-      a.tickets.sendInvitations(vars.eventId, vars.recipients, vars.consentConfirmed),
+    (a, vars: { eventId: string; recipients: Array<{ name: string; email: string }>; consentConfirmed: boolean; testOnly?: boolean }) =>
+      a.tickets.sendInvitations(vars.eventId, vars.recipients, { consentConfirmed: vars.consentConfirmed, testOnly: vars.testOnly }),
     (vars) => [qk.ticketInvitations(vars.eventId)],
   );
 }

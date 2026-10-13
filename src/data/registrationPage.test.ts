@@ -5,6 +5,7 @@ import {
   LEGACY_REGISTRATION_PAGE,
   REGISTRATION_PAGE_TEMPLATES,
   registrationInvitationHtml,
+  registrationPageIsCustomized,
   normalizeRegistrationPage,
 } from "./registrationPage";
 
@@ -62,6 +63,14 @@ describe("registration page settings", () => {
     });
     expect(normalizeRegistrationPage({ accentColor: "#FFFFFF", heroImageUrl: "http://example.com/a.jpg" }))
       .toMatchObject({ accentColor: DEFAULT_REGISTRATION_PAGE.accentColor, heroImageUrl: null });
+  });
+
+  it("counts template, color and guest-type choices as invitation design work", () => {
+    expect(registrationPageIsCustomized(DEFAULT_REGISTRATION_PAGE)).toBe(false);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, template: "garden" })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, accentColor: "#245F45" })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, registrationTypes: ["Parent/Guardian"] })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, showAgenda: false, collectOrganization: false })).toBe(false);
   });
 
   it("builds a safe, themed invitation that links to the registration page", () => {

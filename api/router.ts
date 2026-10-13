@@ -909,8 +909,9 @@ async function handleAuthed(
                 email: z.string().trim().email().max(320),
               })).min(1).max(500),
               consentConfirmed: z.boolean(),
+              testOnly: z.boolean().optional().default(false),
             }).parse(body);
-            return json(await sendTicketInvitations(ctx, a, input.recipients, input.consentConfirmed, request), 201);
+            return json(await sendTicketInvitations(ctx, a, input.recipients, input.consentConfirmed, request, input.testOnly), 201);
           }
           return notFound();
         }

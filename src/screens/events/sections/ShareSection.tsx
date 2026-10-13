@@ -20,6 +20,9 @@ import {
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
 import type { Event } from "@/data/entities";
+import EventLaunchGuide from "./EventLaunchGuide";
+import TicketInvitationBuilder from "./TicketInvitationBuilder";
+import GuidedTicketPricing from "./GuidedTicketPricing";
 
 const REGISTRATION_TYPE_PRESETS = [
   { label: "School gala", types: ["Parent/Guardian", "Alumni", "Faculty/Staff", "Friend of school"] },
@@ -118,6 +121,8 @@ export default function ShareSection({ event }: { event: Event }) {
   const update = useUpdateEvent();
   const uploadImage = useUploadAuctionImage();
   const { data: tickets } = useTickets(event.id);
+  const [activeWorkspace, setActiveWorkspace] = useState<"design" | "pricing" | "sender" | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
   const [guestTypesInput, setGuestTypesInput] = useState(() => normalizeRegistrationPage(event.registrationPage).registrationTypes.join(", "));
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
@@ -159,10 +164,34 @@ export default function ShareSection({ event }: { event: Event }) {
     );
   };
 
+  const revealInvitationDesign = () => {
+    setActiveWorkspace("design");
+    setShowDetails(true);
+    window.requestAnimationFrame(() => document.getElementById("registration-site-builder")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const revealInvitationSender = () => {
+    setActiveWorkspace("sender");
+    setShowDetails(false);
+    window.requestAnimationFrame(() => document.getElementById("guided-invitation-sender")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const revealTicketPricing = () => {
+    setActiveWorkspace("pricing");
+    setShowDetails(false);
+    window.requestAnimationFrame(() => document.getElementById("guided-ticket-pricing")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
+    <div className="space-y-6">
+      <EventLaunchGuide event={event} tickets={tickets ?? []} publishing={share.isPending || update.isPending} onDesignInvite={revealInvitationDesign} onPublishInvite={() => void publish()} onSendInvites={revealInvitationSender} onPriceTickets={revealTicketPricing} />
+      {activeWorkspace === "pricing" ? <div id="guided-ticket-pricing"><GuidedTicketPricing event={event} /></div> : null}
+      {activeWorkspace === "sender" ? <div id="guided-invitation-sender"><TicketInvitationBuilder event={event} guided /></div> : null}
+      <details className="rounded-xl border border-hairline bg-background" open={showDetails} onToggle={(event) => { setShowDetails(event.currentTarget.open); if (!event.currentTarget.open && activeWorkspace === "design") setActiveWorkspace(null); }}>
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">{activeWorkspace === "design" ? "Invitation design and preview" : "Advanced public links and settings"}</summary>
+        <div id="registration-site-builder" className="grid gap-6 border-t border-hairline p-5 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
       <div className="space-y-6">
-        <Panel>
+        {activeWorkspace === "design" ? <Panel>
           <PanelHeader title="Registration site builder" description="Choose a starting point, then make the guest page match this event" actions={<Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill>} />
           <div className="space-y-6 p-5">
             <fieldset>
@@ -228,9 +257,9 @@ export default function ShareSection({ event }: { event: Event }) {
               {eventUrl ? <Button asChild variant="outline"><a href={eventUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Open live page</a></Button> : null}
             </div>
           </div>
-        </Panel>
+        </Panel> : null}
 
-        {event.shareToken && eventUrl ? (
+        {activeWorkspace !== "design" ? <>{event.shareToken && eventUrl ? (
           <Panel>
             <PanelHeader title="Invite guests" description="The registration link works without a Beebizy login" actions={<Pill tone="success">Live</Pill>} />
             <div className="divide-y divide-hairline">
@@ -271,20 +300,22 @@ export default function ShareSection({ event }: { event: Event }) {
               {onSale.map((ticket) => <li key={ticket.id} className="flex items-center gap-3 px-5 py-3"><Ticket className="size-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{ticket.name}</p><p className="truncate text-xs text-muted-foreground">{ticket.description || "Registration option"}</p></div><span data-numeric className="text-sm font-semibold">{formatMoney(ticket.priceCents)}</span></li>)}
             </ul>
           </Panel>
-        ) : null}
+        ) : null}</> : null}
       </div>
 
       <div className="space-y-6">
-        <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} /></div></Panel>
-        <Panel>
+        {activeWorkspace === "design" ? <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} /></div></Panel> : null}
+        {activeWorkspace !== "design" ? <Panel>
           <PanelHeader title="What guests can access" description="Only the public event experience" />
           <div className="space-y-3 px-5 py-4 text-sm">
             <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-success-text" /><p><span className="font-medium">Visible:</span> registration branding, event details, registration form, selected agenda, volunteer openings, tickets on sale, and the bidder auction when it is live.</p></div>
             <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-danger-text" /><p><span className="font-medium">Never visible:</span> budgets, vendor fees, guest contact details, internal checklists, sponsorship amounts, or bids.</p></div>
             <p className="border-t border-hairline pt-3 text-xs text-muted-foreground">Every submission is added directly to this event's registration list, ready for filtering and check-in.</p>
           </div>
-        </Panel>
+        </Panel> : null}
       </div>
+        </div>
+      </details>
     </div>
   );
 }

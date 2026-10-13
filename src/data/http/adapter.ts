@@ -552,8 +552,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       refundOrder: (eventId, orderId) =>
         client.post<TicketOrder>(`/events/${eventId}/ticket-orders/${orderId}/refund`),
       listInvitations: (eventId) => client.get<TicketInvitation[]>(`/events/${eventId}/ticket-invitations`),
-      sendInvitations: (eventId, recipients, consentConfirmed) =>
-        client.post<TicketInvitationBatchResult>(`/events/${eventId}/ticket-invitations`, { recipients, consentConfirmed }),
+      sendInvitations: (eventId, recipients, options) =>
+        client.post<TicketInvitationBatchResult>(`/events/${eventId}/ticket-invitations`, { recipients, consentConfirmed: options.consentConfirmed, testOnly: options.testOnly === true }),
       getPublicOrderStatus: async (shareToken, orderId) => {
         try {
           return await publicRequest<PublicTicketOrderStatus>(`/public/events/${shareToken}/ticket-orders/${orderId}`);

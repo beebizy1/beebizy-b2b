@@ -69,6 +69,7 @@ import {
   useUpdateTicketType,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
+import { ticketDraftFromForm } from "@/data/ticketDraft";
 import { buildBudgetSuggestions, reallocateBudgetAmounts, suggestedTotalBudgetCents } from "@/data/planner";
 import { usePreferences } from "@/app/preferences";
 import {
@@ -675,15 +676,12 @@ export function TicketsPanel({ event }: { event: Event }) {
         className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
         onSubmit={(formEvent) => {
           formEvent.preventDefault();
-          const trimmed = name.trim();
-          const cents = centsFromInput(price);
-          const total = allocation.trim() === "" ? 0 : Number.parseInt(allocation, 10);
-          const fmvCents = centsFromInput(ticketFmv);
-          if (!trimmed || cents === null || !Number.isFinite(total) || (cents > 0 && fmvCents === null)) return;
-          const samePrice = (tickets ?? []).find((ticket) => ticket.priceCents === cents && ticket.isActive);
-          if (samePrice && !window.confirm(`You already have “${samePrice.name}” at ${formatMoney(cents)}. Add another ticket option at the same price?`)) return;
+          const draft = ticketDraftFromForm({ name, price, quantity: allocation, fairMarketValue: ticketFmv, zeroValueConfirmed: ticketFmvZeroConfirmed, benefitsDescription: ticketBenefits });
+          if (!draft) return;
+          const samePrice = (tickets ?? []).find((ticket) => ticket.priceCents === draft.priceCents && ticket.isActive);
+          if (samePrice && !window.confirm(`You already have “${samePrice.name}” at ${formatMoney(draft.priceCents)}. Add another ticket option at the same price?`)) return;
           add.mutate(
-            { eventId: event.id, draft: { name: trimmed, priceCents: cents, fairMarketValueCents: fmvCents, fmvZeroConfirmed: ticketFmvZeroConfirmed, benefitsDescription: ticketBenefits.trim() || null, quantityTotal: total } },
+            { eventId: event.id, draft },
             {
               onSuccess: () => {
                 setName("");

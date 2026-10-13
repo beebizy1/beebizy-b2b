@@ -753,7 +753,15 @@ describe("workspace member ticket invitations", () => {
       body: JSON.stringify({ recipients: [{ name: "Laila", email: "laila@beebizy.com" }], consentConfirmed: true }),
     }));
     expect(response.status).toBe(201);
-    expect(sendTicketInvitations).toHaveBeenCalledWith(context, "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request));
+    expect(sendTicketInvitations).toHaveBeenCalledWith(context, "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request), false);
+  });
+
+  it("marks a test delivery so it does not count as a real invitation", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "user-laila", workspaceId: "workspace-school", email: "laila@beebizy.com", role: "member", access: { status: "beta", plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false } });
+    vi.mocked(sendTicketInvitations).mockResolvedValue({ attempted: 1, sent: 1, failed: 0, invitations: [] });
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/ticket-invitations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipients: [{ name: "Laila", email: "laila@beebizy.com" }], consentConfirmed: true, testOnly: true }) }));
+    expect(response.status).toBe(201);
+    expect(sendTicketInvitations).toHaveBeenCalledWith(expect.anything(), "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request), true);
   });
 });
 

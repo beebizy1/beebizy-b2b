@@ -254,7 +254,7 @@ export interface TicketsRepository extends EventScopedRepository<TicketType, Tic
   sendInvitations(
     eventId: string,
     recipients: Array<{ name: string; email: string }>,
-    consentConfirmed: boolean,
+    options: { consentConfirmed: boolean; testOnly?: boolean },
   ): Promise<TicketInvitationBatchResult>;
   getPublicOrderStatus(shareToken: string, orderId: string): Promise<PublicTicketOrderStatus | null>;
 }
