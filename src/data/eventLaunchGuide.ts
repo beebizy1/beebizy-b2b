@@ -10,6 +10,27 @@ export const EVENT_LAUNCH_STEP_IDS = ["event", "invite-list", "invite-design", "
 export type EventLaunchStepId = (typeof EVENT_LAUNCH_STEP_IDS)[number];
 export type EventLaunchCompletion = Record<EventLaunchStepId, boolean>;
 
+export interface EventDetailsReturnTarget {
+  href: string;
+  label: "Back to event" | "Back to launch guide";
+}
+
+export function eventLaunchPath(eventId: string): string {
+  return `/app/events/${eventId}/share`;
+}
+
+/** Keeps Step 1 edits connected to the launch guide instead of stranding the organizer in the workspace. */
+export function eventLaunchDetailsHref(eventId: string): string {
+  return `/app/events/${eventId}/edit?returnTo=${encodeURIComponent(eventLaunchPath(eventId))}`;
+}
+
+export function eventDetailsReturnTarget(eventId: string, search: string): EventDetailsReturnTarget {
+  const launchGuide = eventLaunchPath(eventId);
+  return new URLSearchParams(search).get("returnTo") === launchGuide
+    ? { href: launchGuide, label: "Back to launch guide" }
+    : { href: `/app/events/${eventId}`, label: "Back to event" };
+}
+
 /** Six named checkpoints shared by the launch guide's progress and next-step logic. */
 export function eventLaunchCompletion(input: EventLaunchProgressInput): EventLaunchCompletion {
   return {

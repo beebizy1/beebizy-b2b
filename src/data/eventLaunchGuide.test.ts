@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { eventLaunchCompletion, nextEventLaunchStep } from "./eventLaunchGuide";
+import {
+  eventDetailsReturnTarget,
+  eventLaunchCompletion,
+  eventLaunchDetailsHref,
+  nextEventLaunchStep,
+} from "./eventLaunchGuide";
 
 describe("event launch guide", () => {
   it("keeps the organizer on the first unfinished step even when later work is already done", () => {
@@ -23,5 +28,21 @@ describe("event launch guide", () => {
       invitationsSent: true,
     });
     expect(nextEventLaunchStep(completion)).toBeNull();
+  });
+
+  it("round-trips event detail edits back to the launch guide", () => {
+    const href = eventLaunchDetailsHref("evt-123");
+    expect(href).toBe("/app/events/evt-123/edit?returnTo=%2Fapp%2Fevents%2Fevt-123%2Fshare");
+    expect(eventDetailsReturnTarget("evt-123", "returnTo=%2Fapp%2Fevents%2Fevt-123%2Fshare")).toEqual({
+      href: "/app/events/evt-123/share",
+      label: "Back to launch guide",
+    });
+  });
+
+  it("ignores unrelated return paths and falls back to the event workspace", () => {
+    expect(eventDetailsReturnTarget("evt-123", "returnTo=https%3A%2F%2Fevil.example")).toEqual({
+      href: "/app/events/evt-123",
+      label: "Back to event",
+    });
   });
 });

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
 import { useMe, useRegistrations, useStartStripeConnect, useStripeConnectStatus, useTicketInvitations } from "@/data/hooks";
 import { registrationPageIsCustomized } from "@/data/registrationPage";
-import { eventLaunchCompletion, nextEventLaunchStep } from "@/data/eventLaunchGuide";
+import { eventLaunchCompletion, eventLaunchDetailsHref, nextEventLaunchStep } from "@/data/eventLaunchGuide";
 import type { EventLaunchStepId } from "@/data/eventLaunchGuide";
 import { eventInvitationRecipients } from "@/data/ticketInvitations";
 import type { Event, TicketType } from "@/data/entities";
@@ -58,7 +58,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
       complete: completion.event,
       icon: PartyPopper,
       detail: <p>Your event already exists. Review the basics whenever the date, location, or capacity changes.</p>,
-      action: <Button asChild variant="outline" size="sm"><a href={`/app/events/${event.id}/edit`}>Review event details</a></Button>,
+      action: <Button asChild variant="outline" size="sm"><a href={eventLaunchDetailsHref(event.id)}>Review event details</a></Button>,
     },
     {
       number: 2,

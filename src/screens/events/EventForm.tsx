@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { ArrowLeft, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import {
 import { EVENT_CATEGORIES, EVENT_STATUSES, type EventDraft, type EventStatus } from "@/data/entities";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AccountExperience } from "@/data/accountExperience";
+import { eventDetailsReturnTarget } from "@/data/eventLaunchGuide";
 
 const NO_VENUE = "__none__";
 const NO_TEMPLATE = "__blank__";
@@ -84,6 +85,7 @@ const EMPTY: FormState = {
 export default function EventForm({ id }: { id?: string }) {
   const isEdit = Boolean(id);
   const [, navigate] = useLocation();
+  const search = useSearch();
   const { experience, canSwitchExperience } = useAccountExperience();
   const { data: locations } = useLocations();
   const { data: templates } = useTemplates();
@@ -95,6 +97,9 @@ export default function EventForm({ id }: { id?: string }) {
 
   const [form, setForm] = useState<FormState>(() => ({ ...EMPTY, experience }));
   const [touched, setTouched] = useState(false);
+  const returnTarget = isEdit && id
+    ? eventDetailsReturnTarget(id, search)
+    : { href: "/app/events", label: "All events" as const };
 
   useEffect(() => {
     if (!existing) return;
@@ -157,7 +162,7 @@ export default function EventForm({ id }: { id?: string }) {
         {
           onSuccess: () => {
             toast({ title: "Saved", description: `“${draft.title}” is up to date.` });
-            navigate(`/app/events/${id}`);
+            navigate(returnTarget.href);
           },
           onError: (mutationError) => toast({ title: "Couldn't save", description: mutationError.message }),
         },
@@ -196,11 +201,11 @@ export default function EventForm({ id }: { id?: string }) {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <Link
-        href={isEdit && id ? `/app/events/${id}` : "/app/events"}
+        href={returnTarget.href}
         className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
-        {isEdit ? "Back to event" : "All events"}
+        {returnTarget.label}
       </Link>
 
       <PageHeader
@@ -211,6 +216,18 @@ export default function EventForm({ id }: { id?: string }) {
             : "Start blank, or from a template that brings its checklist, run of show and budget with it."
         }
       />
+
+      {isEdit && returnTarget.label === "Back to launch guide" ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-foreground">You are editing Step 1 of Launch your event.</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Save your changes or return to the six-step checklist at any time.</p>
+          </div>
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href={returnTarget.href}>Back to launch guide</Link>
+          </Button>
+        </div>
+      ) : null}
 
       <Panel>
         <PanelHeader title="Details" />
@@ -379,7 +396,7 @@ export default function EventForm({ id }: { id?: string }) {
 
           <div className="flex items-center justify-end gap-2 border-t border-hairline pt-4">
             <Button asChild variant="outline" type="button">
-              <Link href={isEdit && id ? `/app/events/${id}` : "/app/events"}>Cancel</Link>
+              <Link href={returnTarget.href}>Cancel</Link>
             </Button>
             <Button type="submit" disabled={saving}>
               <Save className="mr-1.5 size-4" />
