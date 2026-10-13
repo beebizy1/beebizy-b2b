@@ -464,7 +464,7 @@ export function BudgetPanel({ event }: { event: Event }) {
       ) : null}
 
       <form
-        className="flex flex-wrap items-center gap-2 border-b border-hairline px-5 py-3"
+        className="grid gap-3 border-b border-hairline px-5 py-4 sm:grid-cols-2 lg:grid-cols-5"
         onSubmit={(formEvent) => {
           formEvent.preventDefault();
           const trimmed = name.trim();
@@ -698,37 +698,17 @@ export function TicketsPanel({ event }: { event: Event }) {
           );
         }}
       >
-        <Input
-          value={name}
-          onChange={(inputEvent) => setName(inputEvent.target.value)}
-          placeholder="Ticket name…"
-          aria-label="Ticket name"
-          className="min-w-[9rem] flex-1"
-        />
-        <Input value={ticketFmv} onChange={(inputEvent) => setTicketFmv(inputEvent.target.value)} placeholder="FMV per ticket" inputMode="decimal" aria-label="Fair market value per ticket" className="w-32 text-right" />
-        <Input value={ticketBenefits} onChange={(inputEvent) => setTicketBenefits(inputEvent.target.value)} placeholder="Benefits, meal, entertainment" aria-label="Ticket benefits description" className="min-w-[12rem] flex-1" />
-        {(centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === 0 ? <label className="flex max-w-xs items-center gap-2 text-xs text-warning-text"><input type="checkbox" checked={ticketFmvZeroConfirmed} onChange={(event) => setTicketFmvZeroConfirmed(event.target.checked)} />I confirm this paid ticket provides no goods or services.</label> : null}
-        <Input
-          value={price}
-          onChange={(inputEvent) => setPrice(inputEvent.target.value)}
-          placeholder="Price"
-          inputMode="decimal"
-          aria-label="Ticket price"
-          className="w-24 text-right"
-        />
-        <Input
-          value={allocation}
-          onChange={(inputEvent) => setAllocation(inputEvent.target.value)}
-          placeholder="Qty (0 = ∞)"
-          inputMode="numeric"
-          aria-label="Allocation, zero for unlimited"
-          className="w-28 text-right"
-        />
-        <Button type="submit" size="sm" disabled={!name.trim() || centsFromInput(price) === null || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === null) || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === 0 && !ticketFmvZeroConfirmed) || add.isPending}>
+        <label className="space-y-1.5 text-xs font-medium text-foreground"><span>Ticket option name</span><Input value={name} onChange={(inputEvent) => setName(inputEvent.target.value)} placeholder="General admission" aria-label="Ticket option name" /></label>
+        <label className="space-y-1.5 text-xs font-medium text-foreground"><span>Price per ticket</span><Input value={price} onChange={(inputEvent) => setPrice(inputEvent.target.value)} placeholder="150.00" inputMode="decimal" aria-label="Ticket price" className="text-right" /></label>
+        <label className="space-y-1.5 text-xs font-medium text-foreground"><span>Value of benefits</span><Input value={ticketFmv} onChange={(inputEvent) => setTicketFmv(inputEvent.target.value)} placeholder="Meal, entertainment, etc." inputMode="decimal" aria-label="Fair market value per ticket" className="text-right" /></label>
+        <label className="space-y-1.5 text-xs font-medium text-foreground"><span>Total tickets available</span><Input value={allocation} onChange={(inputEvent) => setAllocation(inputEvent.target.value)} placeholder="0 = unlimited" inputMode="numeric" aria-label="Total tickets available, zero for unlimited" className="text-right" /></label>
+        <label className="space-y-1.5 text-xs font-medium text-foreground"><span>Benefits description</span><Input value={ticketBenefits} onChange={(inputEvent) => setTicketBenefits(inputEvent.target.value)} placeholder="Dinner and program" aria-label="Ticket benefits description" /></label>
+        {(centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === 0 ? <label className="flex items-center gap-2 text-xs text-warning-text sm:col-span-2 lg:col-span-5"><input type="checkbox" checked={ticketFmvZeroConfirmed} onChange={(event) => setTicketFmvZeroConfirmed(event.target.checked)} />I confirm this paid ticket provides no goods or services.</label> : null}
+        <Button type="submit" size="sm" className="justify-self-start sm:col-span-2 lg:col-span-5" disabled={!name.trim() || centsFromInput(price) === null || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === null) || ((centsFromInput(price) ?? 0) > 0 && centsFromInput(ticketFmv) === 0 && !ticketFmvZeroConfirmed) || add.isPending}>
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
-        <p className="w-full text-xs text-muted-foreground">Add each ticket option once. Guests will see every active option and choose one before selecting their household quantity.</p>
+        <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-5">Add each ticket option once. “Total tickets available” controls inventory for that option; use 0 only when it should be unlimited. Guests choose their household quantity later.</p>
       </form>
 
       {isLoading ? (

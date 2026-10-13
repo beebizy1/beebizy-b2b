@@ -2143,23 +2143,31 @@ export const registrations = {
       const guest = map.toGuest(guestRows[0]!);
       let bidderAccess: RegistrationWithGuest["bidderAccess"] = null;
       if (event.auctionPublicToken) {
-        const allocation = await allocateAuctionBidder({
-          workspaceId: ctx.workspaceId,
-          eventId,
-          name: draft.name,
-          email: draft.contact.toLowerCase(),
-          phone: null,
-          householdId: null,
-          attendeeId: guest.id,
-          paymentMethodId: null,
-          stripeCustomerId: null,
-          autoChargeOptIn: false,
-          checkedInAt,
-          participantType: "gala",
-          publicToken: crypto.randomUUID(),
-          updateExisting: false,
-        });
-        bidderAccess = { paddleNumber: allocation.paddleNumber, publicToken: allocation.publicToken };
+        try {
+          const allocation = await allocateAuctionBidder({
+            workspaceId: ctx.workspaceId,
+            eventId,
+            name: draft.name,
+            email: draft.contact.toLowerCase(),
+            phone: null,
+            householdId: null,
+            attendeeId: guest.id,
+            paymentMethodId: null,
+            stripeCustomerId: null,
+            autoChargeOptIn: false,
+            checkedInAt,
+            participantType: "gala",
+            publicToken: crypto.randomUUID(),
+            updateExisting: false,
+          });
+          bidderAccess = { paddleNumber: allocation.paddleNumber, publicToken: allocation.publicToken };
+        } catch (allocationError) {
+          await db.batch([
+            db.delete(s.registrations).where(eq(s.registrations.id, registrationId)),
+            db.delete(s.guests).where(eq(s.guests.id, guestId)),
+          ]);
+          throw allocationError;
+        }
       }
       return { ...map.toRegistration(registrationRows[0]!, event.title), guest, bidderAccess };
     } catch (error) {
