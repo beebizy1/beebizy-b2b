@@ -8,7 +8,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
-import { CalendarDays, Check, ExternalLink, HeartHandshake, MapPin, Ticket, Users } from "lucide-react";
+import { CalendarDays, Check, ExternalLink, HeartHandshake, MapPin, Minus, Plus, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -358,6 +358,15 @@ export function PublicTicketsPage({ token }: { token: string }) {
   );
   const chosen = onSale.find((ticket) => ticket.id === selected) ?? null;
   const remaining = chosen === null ? null : chosen.quantityTotal === 0 ? null : chosen.quantityTotal - chosen.quantitySold;
+  const quantityLimit = chosen ? Math.max(1, Math.min(remaining ?? (chosen.maxPerOrder ?? 10), chosen.maxPerOrder ?? 10)) : 1;
+  const changeQuantity = (requested: number) => {
+    const nextQuantity = Math.max(1, Math.min(requested, quantityLimit));
+    setQuantity(nextQuantity);
+    setGuestNames((current) => Array.from(
+      { length: nextQuantity },
+      (_, index) => current[index] ?? (index === 0 ? name : ""),
+    ));
+  };
 
   if (isLoading) {
     return (
@@ -471,7 +480,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
             }}
           >
             <Panel>
-              <PanelHeader title="Choose a ticket" />
+              <PanelHeader title="Select a ticket option" description="Choose one option below. You will select the household quantity and enter every ticket holder next." />
               <ul className="divide-y divide-hairline">
                 {onSale.map((ticket) => {
                   const left = ticket.quantityTotal === 0 ? null : ticket.quantityTotal - ticket.quantitySold;
@@ -564,23 +573,13 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   <p className="text-xs text-muted-foreground">Choose up to five grades or community groups.</p>
                 </fieldset>
                 <div className="space-y-1.5">
-                  <Label htmlFor="buyer-quantity">How many</Label>
-                  <Input
-                    id="buyer-quantity"
-                    type="number"
-                    min={1}
-                    max={Math.min(remaining ?? Number.POSITIVE_INFINITY, chosen?.maxPerOrder ?? 10)}
-                    value={quantity}
-                    onChange={(inputEvent) => {
-                      const requested = Math.max(1, Number.parseInt(inputEvent.target.value, 10) || 1);
-                      const nextQuantity = Math.min(requested, remaining ?? requested, chosen?.maxPerOrder ?? 10);
-                      setQuantity(nextQuantity);
-                      setGuestNames((current) => Array.from(
-                        { length: nextQuantity },
-                        (_, index) => current[index] ?? (index === 0 ? name : ""),
-                      ));
-                    }}
-                  />
+                  <Label htmlFor="buyer-quantity">Number of tickets</Label>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="icon" variant="outline" aria-label="Remove one ticket" disabled={!chosen || quantity <= 1} onClick={() => changeQuantity(quantity - 1)}><Minus className="size-4" /></Button>
+                    <Input id="buyer-quantity" type="number" min={1} max={quantityLimit} value={quantity} onChange={(inputEvent) => changeQuantity(Number.parseInt(inputEvent.target.value, 10) || 1)} className="w-20 text-center font-semibold" />
+                    <Button type="button" size="icon" variant="outline" aria-label="Add one ticket" disabled={!chosen || quantity >= quantityLimit} onClick={() => changeQuantity(quantity + 1)}><Plus className="size-4" /></Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Use + to add a spouse or guest, then enter each person's full name below.</p>
                   {remaining !== null ? (
                     <p data-numeric className="text-xs text-muted-foreground">
                       {remaining} available

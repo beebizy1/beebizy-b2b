@@ -223,6 +223,8 @@ export interface Registration extends OwnedRecord {
 
 export interface RegistrationWithGuest extends Registration {
   guest: Guest | null;
+  /** Private bidder identity used only by authenticated check-in staff for connected badge QR codes. */
+  bidderAccess?: { paddleNumber: number; publicToken: string } | null;
 }
 
 export interface RegistrationDraft {

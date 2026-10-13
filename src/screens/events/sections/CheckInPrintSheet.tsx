@@ -6,7 +6,7 @@ import type { BadgeNameLayout } from "./badgeNameLayout";
 
 export type CheckInPrintJob =
   | { kind: "guest-list" }
-  | { kind: "badge"; row: RegistrationWithGuest; layout?: BadgeNameLayout }
+  | { kind: "badge"; row: RegistrationWithGuest; layout?: BadgeNameLayout; bidderAccessUrl?: string | null }
   | { kind: "printer-test"; name: string; layout?: BadgeNameLayout };
 
 interface CheckInPrintSheetProps {
@@ -27,7 +27,7 @@ function attendance(row: RegistrationWithGuest, formatDate: Preferences["date"])
 export function CheckInPrintSheet({ event, job, rows, formatDate, timeZoneLabel }: CheckInPrintSheetProps) {
   if (!job) return null;
   const badgeName = job.kind === "badge" ? job.row.guest?.name ?? "Guest" : job.kind === "printer-test" ? job.name : null;
-  if (badgeName) return <NameBadgePrintSheet name={badgeName} layout={job.kind === "guest-list" ? null : job.layout} />;
+  if (badgeName) return <NameBadgePrintSheet name={badgeName} layout={job.kind === "guest-list" ? null : job.layout} bidderAccessUrl={job.kind === "badge" ? job.bidderAccessUrl : null} />;
 
   const sheet = (
     <section className="check-in-print-area" aria-hidden="true">

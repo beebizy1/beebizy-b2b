@@ -184,11 +184,14 @@ describe("ticket and auction action emails", () => {
       invitationId: "invite-1", to: "guest@example.com", recipientName: "Ada",
       eventTitle: "School Gala", startsAt: "2026-11-01T01:00:00.000Z",
       timeZone: "America/Los_Angeles", invitationUrl: "https://beebizy.test/invite/one",
+      organizationName: "Cedar Grove School",
     });
     const request = fetch.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(request.body));
-    expect(body.html).toContain(">Choose a ticket</a>");
-    expect(body.text).toContain("Choose a free or paid ticket");
+    expect(body.from).toBe("Cedar Grove School <events@beebizy.com>");
+    expect(body.html).toContain(">View tickets &amp; RSVP</a>");
+    expect(body.text).toContain("View ticket options and RSVP");
+    expect(body.text).toContain("sent by Cedar Grove School using Beebizy");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-1");
   });
 
@@ -198,6 +201,7 @@ describe("ticket and auction action emails", () => {
       invitationId: "invite-2", to: "laila@example.com", recipientName: "Laila",
       eventTitle: "School Gala", startsAt: "2026-11-01T01:00:00.000Z",
       timeZone: "America/Los_Angeles", invitationUrl: "https://beebizy.test/invite/two",
+      organizationName: "Cedar Grove School",
       headline: "An evening under the stars", welcomeMessage: "Join our school community.",
       designedHtml: "<html><body><h1>Designed invitation</h1></body></html>",
       deliveryAttemptKey: "attempt-2",
@@ -255,6 +259,8 @@ describe("registration confirmation email", () => {
       timeZone: "America/Los_Angeles",
       location: "Mission Hall, Santa Clara",
       eventUrl: "https://beebizy.test/e/demo-day",
+      auctionAccessUrl: "https://beebizy.test/auction/demo?bidder=private",
+      paddleNumber: 214,
     })).toEqual({ status: "sent" });
 
     const request = fetch.mock.calls[0]?.[1] as RequestInit;
@@ -268,6 +274,7 @@ describe("registration confirmation email", () => {
     expect(body.text).toContain("Guest type: Investor");
     expect(body.text).toContain("Mission Hall, Santa Clara");
     expect(body.text).toContain("https://beebizy.test/e/demo-day");
+    expect(body.text).toContain("private bidder paddle 214");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("registration-confirmation-reg-123");
   });
 });

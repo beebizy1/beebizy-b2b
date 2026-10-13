@@ -680,6 +680,8 @@ export function TicketsPanel({ event }: { event: Event }) {
           const total = allocation.trim() === "" ? 0 : Number.parseInt(allocation, 10);
           const fmvCents = centsFromInput(ticketFmv);
           if (!trimmed || cents === null || !Number.isFinite(total) || (cents > 0 && fmvCents === null)) return;
+          const samePrice = (tickets ?? []).find((ticket) => ticket.priceCents === cents && ticket.isActive);
+          if (samePrice && !window.confirm(`You already have “${samePrice.name}” at ${formatMoney(cents)}. Add another ticket option at the same price?`)) return;
           add.mutate(
             { eventId: event.id, draft: { name: trimmed, priceCents: cents, fairMarketValueCents: fmvCents, fmvZeroConfirmed: ticketFmvZeroConfirmed, benefitsDescription: ticketBenefits.trim() || null, quantityTotal: total } },
             {
@@ -726,6 +728,7 @@ export function TicketsPanel({ event }: { event: Event }) {
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
+        <p className="w-full text-xs text-muted-foreground">Add each ticket option once. Guests will see every active option and choose one before selecting their household quantity.</p>
       </form>
 
       {isLoading ? (

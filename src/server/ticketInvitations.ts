@@ -48,7 +48,7 @@ export async function sendTicketInvitations(
   if (normalized.length === 0) throw new HttpError(400, "Add at least one valid name and email.");
   if (normalized.length > 500) throw new HttpError(400, "Send no more than 500 invitations at a time.");
 
-  const [event] = await db.select({ event: events, timeZone: workspaces.timeZone }).from(events)
+  const [event] = await db.select({ event: events, timeZone: workspaces.timeZone, workspaceName: workspaces.name, legalName: workspaces.legalName }).from(events)
     .innerJoin(workspaces, eq(events.workspaceId, workspaces.id))
     .where(and(eq(events.id, eventId), eq(events.workspaceId, ctx.workspaceId))).limit(1);
   if (!event) throw new HttpError(404, "That event no longer exists.");
@@ -96,6 +96,7 @@ export async function sendTicketInvitations(
         startsAt: event.event.startsAt.toISOString(),
         timeZone: event.timeZone,
         invitationUrl: `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`,
+        organizationName: event.legalName || event.workspaceName,
         headline: invitationDesign.headline || event.event.title,
         welcomeMessage: invitationDesign.welcomeMessage || event.event.description || `You are invited to ${event.event.title}.`,
         designedHtml: registrationInvitationHtml(
@@ -104,6 +105,7 @@ export async function sendTicketInvitations(
           event.event.description,
           `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`,
           stored.recipientName,
+          event.legalName || event.workspaceName,
         ),
         deliveryAttemptKey: (stored.updatedAt ?? stored.createdAt).getTime().toString(36),
       });

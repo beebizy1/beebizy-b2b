@@ -348,7 +348,11 @@ export function CheckInPanel({ event }: { event: Event }) {
     return caught instanceof Error ? caught.message : "The Brother printer could not be reached.";
   };
 
-  const printNameDirectly = async (layout: BadgeNameLayout, allowConnectionPrompt = true) => {
+  const bidderAccessUrl = (row?: RegistrationWithGuest) => event.auctionPublicToken && row?.bidderAccess
+    ? `${window.location.origin}/auction/${event.auctionPublicToken}?bidder=${encodeURIComponent(row.bidderAccess.publicToken)}`
+    : null;
+
+  const printNameDirectly = async (layout: BadgeNameLayout, allowConnectionPrompt = true, accessUrl?: string | null) => {
     const name = normalizeBadgeName(`${layout.line1} ${layout.line2}`);
     try {
       let printer = brotherPrinterRef.current;
@@ -362,9 +366,9 @@ export function CheckInPanel({ event }: { event: Event }) {
         brotherPrinterRef.current = printer;
       }
       setBrotherPrinterState("printing");
-      await printBrotherNameLabel(printer, layout);
+      await printBrotherNameLabel(printer, layout, {}, accessUrl);
       setBrotherPrinterState("connected");
-      toast({ title: "Badge sent to Brother QL-800", description: `${name.trim()} is centered on one label.` });
+      toast({ title: "Badge sent to Brother QL-800", description: accessUrl ? `${name.trim()} and their private bidder QR are on one label.` : `${name.trim()} is centered on one label.` });
     } catch (caught) {
       const printer = brotherPrinterRef.current;
       brotherPrinterRef.current = null;
@@ -383,7 +387,7 @@ export function CheckInPanel({ event }: { event: Event }) {
         if (!saved) return;
       }
       setBadgeEditor(null);
-      setPrintJob({ kind: "badge", row: badgeEditor.row, layout });
+      setPrintJob({ kind: "badge", row: badgeEditor.row, layout, bidderAccessUrl: bidderAccessUrl(badgeEditor.row) });
       return;
     }
     if (badgeEditor.destination === "test-system") {
@@ -392,7 +396,7 @@ export function CheckInPanel({ event }: { event: Event }) {
       return;
     }
     setBadgeEditor(null);
-    await printNameDirectly(layout, badgeEditor.allowConnectionPrompt ?? true);
+    await printNameDirectly(layout, badgeEditor.allowConnectionPrompt ?? true, bidderAccessUrl(badgeEditor.row));
   };
 
   const addStarter = async () => {
@@ -510,6 +514,7 @@ export function CheckInPanel({ event }: { event: Event }) {
             if (printBadge) openBadgeEditor(row.guest?.name ?? "Guest", {
               destination: "brother",
               allowConnectionPrompt: false,
+              row,
             });
           }}
         />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Copy, FileCheck2, Plus, ReceiptText, Send, Users } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, FileCheck2, Gavel, Gift, Plus, ReceiptText, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ import {
   useReinvitePastItemDonors,
   useSendBidderBills,
   useSendYearEndStatements,
+  useShareAuction,
   useUpdateFundraisingOrganizationProfile,
   useUpdateItemSubmission,
 } from "@/data/hooks";
@@ -48,6 +49,7 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
   const refundBill = useRefundBidderBill();
   const sendYearEndStatements = useSendYearEndStatements();
   const reinvitePastDonors = useReinvitePastItemDonors();
+  const shareAuction = useShareAuction();
   const [profileForm, setProfileForm] = useState<FundraisingOrganizationProfile | null>(null);
   const [newCategory, setNewCategory] = useState("");
   const [changeRequests, setChangeRequests] = useState<Record<string, string>>({});
@@ -56,10 +58,14 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
   const [billReview, setBillReview] = useState<PublicBidderBill[]>([]);
   const [packageItemIds, setPackageItemIds] = useState<string[]>([]);
   const [packageTitle, setPackageTitle] = useState("");
+  const [auctionToken, setAuctionToken] = useState(event.auctionPublicToken ?? null);
 
   useEffect(() => { if (profile) setProfileForm(profile); }, [profile]);
+  useEffect(() => setAuctionToken(event.auctionPublicToken ?? null), [event.auctionPublicToken]);
 
-  const intakeUrl = event.auctionPublicToken ? `${window.location.origin}/donate/event/${event.auctionPublicToken}` : null;
+  const intakeUrl = auctionToken ? `${window.location.origin}/donate/event/${auctionToken}` : null;
+  const bidderUrl = auctionToken ? `${window.location.origin}/auction/${auctionToken}` : null;
+  const bidderDisplayUrl = auctionToken ? `${bidderUrl}/display` : null;
   const p0Ready = Boolean(profile?.legalName && profile?.ein && profile?.orgType);
 
   return (
@@ -67,7 +73,7 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
       {!p0Ready ? (
         <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-tint p-4 text-sm text-warning-text">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <div><p className="font-semibold">Tax receipt setup is incomplete</p><p>Add the organization's legal name, EIN, and organization type before issuing bidder or donor receipts. Templates still require CPA or nonprofit tax attorney approval before launch.</p></div>
+          <div><p className="font-semibold">Receipt setup needed</p><p>Before Beebizy can issue tax receipts, enter the school or nonprofit's official legal name, EIN, and whether it is a 501(c)(3) or public institution. Ask the organization's finance lead, CPA, or nonprofit attorney to approve the receipt wording before launch.</p></div>
         </div>
       ) : null}
 
@@ -84,11 +90,13 @@ export default function FundraisingOperationsPanel({ event }: { event: Event }) 
       {dashboard && (dashboard.hotItems.length > 0 || dashboard.noBidClosingSoon.length > 0) ? <Panel><PanelHeader title="Closing opportunities" description="Act on hot bidding and no-bid items before the window closes." /><div className="grid gap-3 p-5 lg:grid-cols-2">{dashboard.hotItems.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-success/30 bg-success-tint p-3"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.title}</p><p data-numeric className="text-xs text-success-text">{item.bidCountLastFiveMinutes} bids in the last 5 minutes</p></div><Button size="sm" variant="outline" disabled={extendHotItem.isPending} onClick={() => extendHotItem.mutate({ eventId: event.id, itemId: item.id, minutes: 2 }, { onSuccess: () => toast({ title: `${item.title} extended 2 minutes` }) })}>Extend +2m</Button></div>)}{dashboard.noBidClosingSoon.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning-tint p-3"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.title}</p><p className="text-xs text-warning-text">No bids and closing soon</p></div><Button size="sm" variant="outline" disabled={sendPromotionBlast.isPending} onClick={() => sendPromotionBlast.mutate({ eventId: event.id, audience: "all", itemIds: [item.id], channels: ["email", "in_app"], message: `${item.title} has no bids yet and is closing soon. Open the auction now to bid.` }, { onSuccess: (result) => toast({ title: `Promotion sent to ${result.sent} bidders` }), onError: (error) => toast({ title: "Couldn't send promotion", description: error.message }) })}>Send blast</Button></div>)}</div></Panel> : null}
 
       <Panel>
-        <PanelHeader title="Family donation link" description="One link for every family and business donor. Each submission lands in the review queue below." />
-        <div className="flex flex-wrap items-center gap-3 p-5">
-          <div className="min-w-0 flex-1"><p className="truncate font-mono text-xs text-muted-foreground">{intakeUrl ?? "Create the public auction link first."}</p></div>
-          {intakeUrl ? <><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(intakeUrl); toast({ title: "Family donation link copied" }); }}><Copy className="mr-1.5 size-4" />Copy</Button><Button variant="outline" size="sm" asChild><a href={intakeUrl} target="_blank" rel="noreferrer">Open form</a></Button><Button variant="outline" size="sm" disabled={reinvitePastDonors.isPending} onClick={() => { if (!window.confirm("Email this intake link to prior auction item donors in this workspace?")) return; reinvitePastDonors.mutate(event.id, { onSuccess: (result) => toast({ title: `${result.sent} prior donors invited`, description: result.failed ? `${result.failed} could not be delivered.` : undefined }), onError: (error) => toast({ title: "Couldn't invite prior donors", description: error.message }) }); }}><Send className="mr-1.5 size-4" />Re-invite prior donors</Button></> : null}
-        </div>
+        <PanelHeader title="Donor and bidder links" description="These public pages do not require an organizer login. Copy the donor form for item donors and the bidder page for guests." />
+        {!auctionToken ? <div className="p-5"><Button disabled={shareAuction.isPending} onClick={() => shareAuction.mutate(event.id, { onSuccess: (result) => { setAuctionToken(result.auctionPublicToken); toast({ title: "Donor and bidder links created" }); }, onError: (error) => toast({ title: "Couldn't create public links", description: error.message }) })}><Plus className="mr-1.5 size-4" />Create donor and bidder links</Button></div> : (
+          <div className="grid gap-4 p-5 lg:grid-cols-2">
+            <article className="rounded-xl border border-hairline bg-background p-4"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-muted text-primary"><Gift className="size-5" /></span><div className="min-w-0"><h3 className="font-semibold">Donor item form</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Send this link to families and businesses. They enter the item description, photos, value, restrictions, expiration, and delivery details themselves.</p></div></div><p className="mt-3 truncate rounded-md bg-surface-sunken p-2 font-mono text-xs text-muted-foreground">{intakeUrl}</p><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(intakeUrl!); toast({ title: "Donor form link copied" }); }}><Copy className="mr-1.5 size-4" />Copy donor link</Button><Button size="sm" variant="outline" asChild><a href={intakeUrl!} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 size-4" />Open donor form</a></Button><Button size="sm" variant="outline" disabled={reinvitePastDonors.isPending} onClick={() => { if (!window.confirm("Email this prefilled donor form to prior auction item donors in this workspace?")) return; reinvitePastDonors.mutate(event.id, { onSuccess: (result) => toast({ title: `${result.sent} prior donors invited`, description: result.failed ? `${result.failed} could not be delivered.` : undefined }), onError: (error) => toast({ title: "Couldn't invite prior donors", description: error.message }) }); }}><Send className="mr-1.5 size-4" />Re-invite prior donors</Button></div></article>
+            <article className="rounded-xl border border-hairline bg-background p-4"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-muted text-primary"><Gavel className="size-5" /></span><div className="min-w-0"><h3 className="font-semibold">Bidder auction page</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Share this with guests. They register for a paddle, add a card or wallet, browse items, watch favorites, bid, and make Fund-a-Need gifts.</p></div></div><p className="mt-3 truncate rounded-md bg-surface-sunken p-2 font-mono text-xs text-muted-foreground">{bidderUrl}</p><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(bidderUrl!); toast({ title: "Bidder page link copied" }); }}><Copy className="mr-1.5 size-4" />Copy bidder link</Button><Button size="sm" variant="outline" asChild><a href={bidderUrl!} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 size-4" />Open bidder page</a></Button><Button size="sm" variant="outline" asChild><a href={bidderDisplayUrl!} target="_blank" rel="noreferrer">Open display QR</a></Button></div></article>
+          </div>
+        )}
       </Panel>
 
       <Panel>

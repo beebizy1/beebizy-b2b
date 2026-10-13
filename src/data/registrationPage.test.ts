@@ -71,13 +71,15 @@ describe("registration page settings", () => {
       headline: "Welcome <friends>",
       welcomeMessage: "Register & join us.",
       heroImageUrl: "https://images.example.com/garden.jpg",
-    }, "Garden Gala", "An evening together", "https://beebizy.example/e/token?guest=1&source=email", "Laila <Marshall>");
+    }, "Garden Gala", "An evening together", "https://beebizy.example/e/token?guest=1&source=email", "Laila <Marshall>", "Cedar Grove School");
     expect(html).toContain("#245F45");
     expect(html).toContain("https://images.example.com/garden.jpg");
     expect(html).toContain("Welcome &lt;friends&gt;");
     expect(html).toContain("Register &amp; join us.");
     expect(html).toContain("https://beebizy.example/e/token?guest=1&amp;source=email");
     expect(html).toContain("Hi Laila &lt;Marshall&gt;,");
+    expect(html).toContain("View tickets &amp; RSVP");
+    expect(html).toContain("Sent by Cedar Grove School using Beebizy");
     expect(html).not.toContain("Welcome <friends>");
   });
 });

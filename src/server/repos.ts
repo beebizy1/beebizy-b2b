@@ -1026,6 +1026,31 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   }
   const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
   const registration = map.toRegistration(row!, event.title);
+  let bidderAccessUrl: string | null = null;
+  let bidderPaddle: number | null = null;
+  if (event.auctionPublicToken) {
+    const [existingBidder] = await db.select({ paddleNumber: s.auctionBidders.paddleNumber, publicToken: s.auctionBidders.publicToken }).from(s.auctionBidders).where(and(
+      eq(s.auctionBidders.eventId, event.id), eq(s.auctionBidders.email, draft.email),
+    )).limit(1);
+    const bidder = existingBidder ?? await allocateAuctionBidder({
+      workspaceId: event.workspaceId,
+      eventId: event.id,
+      name: draft.name,
+      email: draft.email,
+      phone: null,
+      householdId: null,
+      attendeeId: guest.id,
+      paymentMethodId: null,
+      stripeCustomerId: null,
+      autoChargeOptIn: false,
+      checkedInAt: null,
+      participantType: "gala",
+      publicToken: crypto.randomUUID(),
+      updateExisting: false,
+    });
+    bidderPaddle = bidder.paddleNumber;
+    bidderAccessUrl = `${appOrigin()}/auction/${encodeURIComponent(event.auctionPublicToken)}?bidder=${encodeURIComponent(bidder.publicToken)}`;
+  }
   const shared = await eventByShareToken(token);
   const publicEvent = shared?.event;
   const location = publicEvent?.locationRecord
@@ -1047,6 +1072,8 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     timeZone: shared?.timeZone ?? "UTC",
     location,
     eventUrl: `${appOrigin()}/e/${encodeURIComponent(token)}`,
+    auctionAccessUrl: bidderAccessUrl,
+    paddleNumber: bidderPaddle,
   });
   return { ...registration, confirmationEmailStatus: email.status };
 }
@@ -1841,15 +1868,23 @@ export const guests = {
 
 async function joinRegistrations(where: ReturnType<typeof and>): Promise<RegistrationWithGuest[]> {
   const rows = await db
-    .select({ registration: s.registrations, guest: s.guests, eventTitle: s.events.title })
+    .select({ registration: s.registrations, guest: s.guests, eventTitle: s.events.title, paddleNumber: s.auctionBidders.paddleNumber, bidderToken: s.auctionBidders.publicToken })
     .from(s.registrations)
     .innerJoin(s.events, eq(s.registrations.eventId, s.events.id))
     .leftJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .leftJoin(s.auctionBidders, and(
+      eq(s.auctionBidders.eventId, s.registrations.eventId),
+      or(
+        eq(s.auctionBidders.attendeeId, s.guests.id),
+        and(isNotNull(s.guests.contact), eq(s.auctionBidders.email, s.guests.contact)),
+      ),
+    ))
     .where(where)
     .orderBy(desc(s.registrations.registeredAt));
   return rows.map((row) => ({
     ...map.toRegistration(row.registration, row.eventTitle),
     guest: row.guest ? map.toGuest(row.guest) : null,
+    bidderAccess: row.paddleNumber && row.bidderToken ? { paddleNumber: row.paddleNumber, publicToken: row.bidderToken } : null,
   }));
 }
 
@@ -2106,7 +2141,27 @@ export const registrations = {
     try {
       const [guestRows, registrationRows] = await db.batch([guestInsert, registrationInsert]);
       const guest = map.toGuest(guestRows[0]!);
-      return { ...map.toRegistration(registrationRows[0]!, event.title), guest };
+      let bidderAccess: RegistrationWithGuest["bidderAccess"] = null;
+      if (event.auctionPublicToken) {
+        const allocation = await allocateAuctionBidder({
+          workspaceId: ctx.workspaceId,
+          eventId,
+          name: draft.name,
+          email: draft.contact.toLowerCase(),
+          phone: null,
+          householdId: null,
+          attendeeId: guest.id,
+          paymentMethodId: null,
+          stripeCustomerId: null,
+          autoChargeOptIn: false,
+          checkedInAt,
+          participantType: "gala",
+          publicToken: crypto.randomUUID(),
+          updateExisting: false,
+        });
+        bidderAccess = { paddleNumber: allocation.paddleNumber, publicToken: allocation.publicToken };
+      }
+      return { ...map.toRegistration(registrationRows[0]!, event.title), guest, bidderAccess };
     } catch (error) {
       if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
@@ -4196,6 +4251,13 @@ export const tickets = {
   },
 
   async create(ctx: RequestContext, eventId: string, body: Body) {
+    const name = str(body, "name").trim();
+    const [duplicate] = await db.select({ id: s.ticketTypes.id }).from(s.ticketTypes).where(and(
+      eq(s.ticketTypes.workspaceId, ctx.workspaceId),
+      eq(s.ticketTypes.eventId, eventId),
+      sql`lower(trim(${s.ticketTypes.name})) = lower(${name})`,
+    )).limit(1);
+    if (duplicate) throw new HttpError(409, `A ticket option named “${name}” already exists. Edit that option instead of adding it twice.`);
     const [{ maxOrder } = { maxOrder: 0 }] = await db
       .select({ maxOrder: sql<number>`coalesce(max(${s.ticketTypes.sortOrder}), 0)` })
       .from(s.ticketTypes)
@@ -4209,7 +4271,7 @@ export const tickets = {
       id,
       workspaceId: ctx.workspaceId,
       eventId,
-      name: str(body, "name"),
+      name,
       description: optStr(body, "description"),
       priceCents,
       fairMarketValueCents,
@@ -4230,6 +4292,17 @@ export const tickets = {
       .where(and(eq(s.ticketTypes.id, id), eq(s.ticketTypes.workspaceId, ctx.workspaceId)))
       .limit(1);
     if (!current) throw new HttpError(404, "That ticket type no longer exists.");
+
+    if ("name" in body) {
+      const nextName = str(body, "name").trim();
+      const [duplicate] = await db.select({ id: s.ticketTypes.id }).from(s.ticketTypes).where(and(
+        eq(s.ticketTypes.workspaceId, ctx.workspaceId),
+        eq(s.ticketTypes.eventId, eventId),
+        ne(s.ticketTypes.id, id),
+        sql`lower(trim(${s.ticketTypes.name})) = lower(${nextName})`,
+      )).limit(1);
+      if (duplicate) throw new HttpError(409, `Another ticket option is already named “${nextName}”.`);
+    }
 
     const nextTotal = "quantityTotal" in body ? (optInt(body, "quantityTotal") ?? 0) : current.quantityTotal;
     if (nextTotal !== 0 && nextTotal < current.quantitySold) {

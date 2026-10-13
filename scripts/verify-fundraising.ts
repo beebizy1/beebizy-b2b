@@ -42,6 +42,14 @@ try {
     quantityTotal: 100,
   });
   check("confirmed zero-FMV paid tickets persist the tax safeguard", confirmedTicket.fmvZeroConfirmed === true);
+  const duplicateTicketBlocked = await tickets.create(context, eventId, {
+    name: "  admission  ",
+    priceCents: 5_000,
+    fairMarketValueCents: 0,
+    fmvZeroConfirmed: true,
+    quantityTotal: 100,
+  }).then(() => false, (error) => error instanceof Error && /already exists/i.test(error.message));
+  check("duplicate ticket option names are blocked case-insensitively", duplicateTicketBlocked);
 
   const allocations = await Promise.all(Array.from({ length: 12 }, (_, index) => allocateAuctionBidder({
     workspaceId,

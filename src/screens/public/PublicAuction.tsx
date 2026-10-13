@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, Gavel, Gift, Heart, Search, Share2, SlidersHorizontal, UserRoundPlus, WalletCards } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, Eye, Gavel, Gift, Heart, ReceiptText, Search, Share2, SlidersHorizontal, UserRoundPlus, WalletCards, X } from "lucide-react";
+import QRCode from "qrcode";
 import { PublicFrame } from "./PublicEvent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,9 @@ export default function PublicAuctionPage({ token }: { token: string }) {
   const [customGift, setCustomGift] = useState("");
   const [selectedPhotos, setSelectedPhotos] = useState<Record<string, number>>({});
   const [clockNow, setClockNow] = useState(Date.now());
+  const [mobileTab, setMobileTab] = useState<"auction" | "watching" | "mine" | "give">("auction");
+  const [showPaddle, setShowPaddle] = useState(false);
+  const [paddleQr, setPaddleQr] = useState("");
   const { data: bidderProfile, isLoading: bidderProfileLoading } = usePublicBidderProfile(token, bidderToken || null);
 
   useEffect(() => {
@@ -71,6 +75,12 @@ export default function PublicAuctionPage({ token }: { token: string }) {
     toast({ title: "Bidder link expired", description: "Register again or use the newest private link from your email." });
   }, [bidderProfile, bidderProfileLoading, bidderToken, token]);
 
+  useEffect(() => {
+    if (!bidderToken || !bidderProfile) { setPaddleQr(""); return; }
+    const privateUrl = `${window.location.origin}/auction/${token}?bidder=${encodeURIComponent(bidderToken)}`;
+    void QRCode.toDataURL(privateUrl, { width: 320, margin: 1, color: { dark: "#17130a", light: "#ffffff" } }).then(setPaddleQr);
+  }, [bidderProfile, bidderToken, token]);
+
   const items = useMemo(() => {
     const term = search.trim().toLowerCase();
     const minCents = minimumPrice.trim() ? Number(minimumPrice) * 100 : null;
@@ -78,14 +88,14 @@ export default function PublicAuctionPage({ token }: { token: string }) {
     const visible = (auction?.items ?? []).filter((item) =>
       (category === "all" || item.category === category) &&
       (!term || `${item.title} ${item.description ?? ""} ${item.category ?? ""} ${item.creditText ?? ""}`.toLowerCase().includes(term)) &&
-      (!myBidsOnly || Boolean(bidderProfile?.winningItemIds.includes(item.id) || bidderProfile?.outbidItemIds.includes(item.id))) &&
+      (!(myBidsOnly || mobileTab === "mine") || Boolean(bidderProfile?.winningItemIds.includes(item.id) || bidderProfile?.outbidItemIds.includes(item.id))) &&
       (minCents == null || (item.currentBidCents ?? item.startingBidCents) >= minCents) &&
       (maxCents == null || (item.currentBidCents ?? item.startingBidCents) <= maxCents) &&
       (filter === "all" ||
         (filter === "no-bids" && item.bidCount === 0) ||
         (filter === "ending" && item.closesAt != null && new Date(item.closesAt).getTime() - clockNow <= 15 * 60_000) ||
         (filter === "buy-now" && item.buyNowCents != null) ||
-        (filter === "watching" && bidderProfile?.watchedItemIds.includes(item.id)) ||
+        ((filter === "watching" || mobileTab === "watching") && bidderProfile?.watchedItemIds.includes(item.id)) ||
         (filter === "live" && item.itemType === "live") ||
         (filter === "silent" && item.itemType !== "live")),
     );
@@ -96,7 +106,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
       if (sort === "new") return right.id.localeCompare(left.id);
       return (left.closesAt ? new Date(left.closesAt).getTime() : Number.MAX_SAFE_INTEGER) - (right.closesAt ? new Date(right.closesAt).getTime() : Number.MAX_SAFE_INTEGER);
     });
-  }, [auction?.items, bidderProfile, category, clockNow, filter, maximumPrice, minimumPrice, myBidsOnly, search, sort]);
+  }, [auction?.items, bidderProfile, category, clockNow, filter, maximumPrice, minimumPrice, mobileTab, myBidsOnly, search, sort]);
 
   if (isLoading) return <PublicFrame><LoadingRows rows={5} /></PublicFrame>;
   if (!auction) {
@@ -105,7 +115,7 @@ export default function PublicAuctionPage({ token }: { token: string }) {
 
   return (
     <PublicFrame>
-      <div className="space-y-6">
+      <div className="space-y-6 pb-24 sm:pb-0">
         <section className="rounded-3xl bg-[#17130a] px-6 py-8 text-white sm:px-8">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ffd700]">Beebizy auction</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">{auction.settings.title || auction.eventTitle}</h1>
@@ -161,14 +171,14 @@ export default function PublicAuctionPage({ token }: { token: string }) {
         ) : (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-success/20 bg-success-tint px-4 py-3 text-sm text-success-text">
             <CheckCircle2 className="size-4" aria-hidden="true" />
-            <span className="font-semibold">Paddle {bidderProfile?.paddleNumber ?? "assigned"}</span>
+            <button type="button" className="rounded-lg bg-primary px-3 py-2 font-black text-primary-foreground shadow-sm" onClick={() => setShowPaddle(true)}>Paddle {bidderProfile?.paddleNumber ?? "assigned"}</button>
             <span className="min-w-0 flex-1">{bidderProfile?.hasPaymentMethod ? "You're ready to bid." : "Add a card or wallet before your first bid."}</span>
             {!bidderProfile?.hasPaymentMethod ? <Button size="sm" disabled={setupWallet.isPending} onClick={() => setupWallet.mutate({ token, bidderToken }, { onSuccess: (result) => window.location.assign(result.url), onError: (error) => toast({ title: "Couldn't open wallet setup", description: error.message }) })}><WalletCards className="mr-1.5 size-4" />{setupWallet.isPending ? "Opening..." : "Add card or wallet"}</Button> : null}
             <Button size="sm" variant={myBidsOnly ? "default" : "outline"} onClick={() => setMyBidsOnly((value) => !value)}>My bids {(bidderProfile?.outbidItemIds.length ?? 0) > 0 ? `(${bidderProfile?.outbidItemIds.length} outbid)` : ""}</Button>
           </div>
         )}
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        {mobileTab !== "give" ? <><div className="flex gap-2 overflow-x-auto pb-1">
           <Button size="sm" variant={category === "all" ? "default" : "outline"} onClick={() => setCategory("all")}>All</Button>
           {auction.categories.map((itemCategory) => <Button key={itemCategory} size="sm" variant={category === itemCategory ? "default" : "outline"} className="shrink-0" onClick={() => setCategory(itemCategory)}>{itemCategory}</Button>)}
         </div>
@@ -255,15 +265,24 @@ export default function PublicAuctionPage({ token }: { token: string }) {
               );
             })}
           </div>
-        )}
+        )}</> : null}
 
-        {bidderToken ? (
+        {bidderToken && (mobileTab === "give" || mobileTab === "auction") ? (
           <Panel className="p-6">
             <div className="flex flex-wrap items-start gap-4"><div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.15em] text-primary">Fund-a-Need</p><h2 className="mt-1 text-xl font-bold">Raise your paddle from anywhere</h2><p className="mt-1 text-sm text-muted-foreground">Gifts are added to your single event bill. No goods or services are provided.</p></div><div className="flex flex-wrap gap-2">{[100_00, 250_00, 500_00, 1_000_00].map((amount) => <Button key={amount} variant="outline" disabled={pledge.isPending || !bidderProfile?.hasPaymentMethod} onClick={() => pledge.mutate({ token, bidderToken, amountCents: amount, channel: bidderProfile?.checkedInAt ? "in_room" : "remote" }, { onSuccess: () => toast({ title: `${formatMoney(amount)} pledge recorded` }), onError: (error) => toast({ title: "Couldn't record pledge", description: error.message }) })}>{formatMoney(amount)}</Button>)}</div></div>
             <form className="mt-4 flex max-w-sm gap-2" onSubmit={(event) => { event.preventDefault(); const cents = Math.round(Number(customGift) * 100); if (cents < 100) return; pledge.mutate({ token, bidderToken, amountCents: cents, channel: bidderProfile?.checkedInAt ? "in_room" : "remote" }, { onSuccess: () => { setCustomGift(""); toast({ title: `${formatMoney(cents)} pledge recorded` }); }, onError: (error) => toast({ title: "Couldn't record pledge", description: error.message }) }); }}><Input type="number" min="1" step="0.01" value={customGift} onChange={(event) => setCustomGift(event.target.value)} placeholder="Custom amount" /><Button type="submit" disabled={!bidderProfile?.hasPaymentMethod || pledge.isPending}>Give</Button></form>
           </Panel>
         ) : null}
       </div>
+      {bidderToken ? <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-hairline bg-background/95 px-2 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden" aria-label="Bidder navigation">
+        {([
+          ["auction", "Auction", Gavel],
+          ["watching", "Watching", Eye],
+          ["mine", "My bids", ReceiptText],
+          ["give", "Give", Gift],
+        ] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-current={mobileTab === value ? "page" : undefined} onClick={() => { setMobileTab(value); setMyBidsOnly(value === "mine"); if (value !== "watching") setFilter("all"); }} className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[11px] font-semibold ${mobileTab === value ? "bg-primary-muted text-primary" : "text-muted-foreground"}`}><Icon className="size-5" />{label}{value === "mine" && (bidderProfile?.outbidItemIds.length ?? 0) > 0 ? <span className="absolute mt-[-3px] translate-x-3 rounded-full bg-danger px-1 text-[9px] text-white">{bidderProfile!.outbidItemIds.length}</span> : null}</button>)}
+      </nav> : null}
+      {showPaddle && bidderProfile ? <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/80 p-5" role="dialog" aria-modal="true" aria-label={`Paddle ${bidderProfile.paddleNumber}`}><section className="relative w-full max-w-sm rounded-3xl bg-foreground p-8 text-center text-background shadow-2xl"><button type="button" aria-label="Close paddle" onClick={() => setShowPaddle(false)} className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-background text-foreground"><X className="size-5" /></button><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Your bidder paddle</p><div className="mx-auto mt-5 grid aspect-[.87] w-48 place-items-center bg-primary text-6xl font-black text-primary-foreground [clip-path:polygon(50%_0,100%_25%,100%_75%,50%_100%,0_75%,0_25%)]" data-numeric>{bidderProfile.paddleNumber}</div>{paddleQr ? <img src={paddleQr} alt="Private QR code for this bidder paddle" className="mx-auto mt-5 size-36 rounded-xl bg-background p-2" /> : null}<p className="mt-4 text-lg font-bold">Paddle {bidderProfile.paddleNumber}</p><p className="mt-2 text-sm text-background/70">Hold this screen up during the live auction, or scan the QR from your printed badge to reopen your private bidder account.</p></section></div> : null}
     </PublicFrame>
   );
 }

@@ -102,7 +102,8 @@ export default function TicketInvitationBuilder({ event }: { event: Event }) {
               <p className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: design.accentColor }}>You're invited</p>
               <h3 className="text-xl font-bold text-foreground">{headline}</h3>
               <p className="text-sm leading-6 text-muted-foreground">{message}</p>
-              <span className="inline-flex rounded-md px-3 py-2 text-xs font-bold text-primary-foreground" style={{ backgroundColor: design.accentColor }}>Choose a ticket</span>
+              <span className="inline-flex rounded-md px-3 py-2 text-xs font-bold text-primary-foreground" style={{ backgroundColor: design.accentColor }}>View tickets &amp; RSVP</span>
+              <p className="text-xs leading-5 text-muted-foreground">This button opens the ticket options. Guests choose their ticket type, quantity, and household names before confirming.</p>
             </div>
           </div>
         </div>
@@ -121,7 +122,7 @@ export default function TicketInvitationBuilder({ event }: { event: Event }) {
         <div className="space-y-4">
           <div><p className="text-sm font-semibold text-foreground">3. Preview and send yourself a test</p><p className="text-xs text-muted-foreground">The test uses the exact design and connected ticket link guests will receive.</p></div>
           <div className="flex gap-2"><Input type="email" value={testEmail} onChange={(inputEvent) => setTestEmail(inputEvent.target.value)} placeholder="Your email address" aria-label="Test invitation email" /><Button type="button" variant="outline" disabled={sendInvitations.isPending || updateEvent.isPending || uploadImage.isPending || !testEmail.trim()} onClick={() => void send(parseTicketInvitationRecipients(testEmail), true)}><Eye className="mr-1.5 size-4" />Send test</Button></div>
-          <div className="rounded-lg border border-hairline bg-surface-sunken p-4 text-sm text-muted-foreground"><p className="font-medium text-foreground">What the button does</p><p className="mt-1">Creates a private invitation, emails the designed message, and connects the guest directly to this event's Beebizy ticket checkout.</p></div>
+          <div className="rounded-lg border border-hairline bg-surface-sunken p-4 text-sm text-muted-foreground"><p className="font-medium text-foreground">What “View tickets &amp; RSVP” does</p><p className="mt-1">It opens this event's ticket options. The guest selects one ticket type, chooses how many tickets their household needs, enters each ticket holder's name, and confirms or pays.</p></div>
         </div>
       </section>
 

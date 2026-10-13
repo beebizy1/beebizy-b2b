@@ -28,7 +28,16 @@ export interface EmailMessage {
   replyTo?: string | null;
   /** Stable business-event key. Resend uses it to collapse uncertain retries. */
   idempotencyKey?: string;
+  /** Customer-facing sender name while the verified Beebizy sending address remains unchanged. */
+  fromName?: string | null;
   attachments?: Array<{ filename: string; content: string; content_type?: string }>;
+}
+
+function senderWithDisplayName(configuredFrom: string, displayName: string | null | undefined): string {
+  const safeName = displayName?.replace(/[\r\n<>"\\]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
+  if (!safeName) return configuredFrom;
+  const address = configuredFrom.match(/<([^<>]+)>\s*$/)?.[1] ?? configuredFrom;
+  return `${safeName} <${address.trim()}>`;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
@@ -47,7 +56,7 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
         ...(message.idempotencyKey ? { "Idempotency-Key": message.idempotencyKey } : {}),
       },
       body: JSON.stringify({
-        from,
+        from: senderWithDisplayName(from, message.fromName),
         to: [message.to],
         subject: message.subject,
         text: message.text,
@@ -214,6 +223,7 @@ export async function notifyTicketInvitation(input: {
   startsAt: string;
   timeZone: string;
   invitationUrl: string;
+  organizationName: string;
   headline?: string;
   welcomeMessage?: string;
   designedHtml?: string;
@@ -228,16 +238,16 @@ export async function notifyTicketInvitation(input: {
     input.welcomeMessage || `You are invited to ${input.eventTitle}.`,
     `When: ${when}`,
     "",
-    `Choose a free or paid ticket: ${input.invitationUrl}`,
+    `View ticket options and RSVP: ${input.invitationUrl}`,
     "",
-    "This invitation was sent by the event organizer through Beebizy. Questions? Reply to this email.",
+    `This invitation was sent by ${input.organizationName} using Beebizy. Questions? Reply to this email.`,
   ].join("\n");
   const html = input.designedHtml ?? brandedEmail({
     title: `You're invited to ${input.eventTitle}`,
     greeting: `Hi ${input.recipientName},`,
     paragraphs: [`You are invited to ${input.eventTitle}.`],
     details,
-    action: { label: "Choose a ticket", url: input.invitationUrl },
+    action: { label: "View tickets & RSVP", url: input.invitationUrl },
   });
   const outcome = await sendEmail({
     to: input.to,
@@ -246,6 +256,7 @@ export async function notifyTicketInvitation(input: {
     subject,
     text,
     html,
+    fromName: input.organizationName,
   });
   if (outcome.status !== "sent") {
     console.warn("TICKET_INVITATION_EMAIL_NOT_SENT", input.invitationId, outcome.status, outcome.reason);
@@ -520,6 +531,8 @@ export async function notifyRegistrationConfirmation(input: {
   timeZone: string;
   location: string | null;
   eventUrl: string;
+  auctionAccessUrl?: string | null;
+  paddleNumber?: number | null;
 }): Promise<EmailOutcome> {
   const start = formatInZone(input.startsAt, input.timeZone, "full");
   const end = input.endsAt ? formatInZone(input.endsAt, input.timeZone, "full") : null;
@@ -538,6 +551,7 @@ export async function notifyRegistrationConfirmation(input: {
       input.location ? `Where: ${input.location}` : null,
       "",
       `View the event: ${input.eventUrl}`,
+      input.auctionAccessUrl ? `Open your private bidder paddle${input.paddleNumber ? ` ${input.paddleNumber}` : ""}: ${input.auctionAccessUrl}` : null,
       "",
       "If you have questions, reply to this email and the Beebizy team will help.",
     ].filter((line): line is string => line !== null).join("\n"),

@@ -8,6 +8,7 @@ import {
   type RawImageData,
 } from "@thermal-label/brother-ql-core";
 import { normalizeBadgeName, suggestBadgeNameLayout, type BadgeNameLayout } from "./badgeNameLayout";
+import { badgeQrMatrix } from "./badgeQr";
 
 export const BROTHER_BADGE_WIDTH_DOTS = 696;
 export const BROTHER_BADGE_LENGTH_DOTS = 1063;
@@ -89,6 +90,7 @@ function normalizeLayout(nameOrLayout: string | BadgeNameLayout): BadgeNameLayou
 export function renderBrotherNameLabel(
   nameOrLayout: string | BadgeNameLayout,
   createCanvas: CanvasFactory = () => document.createElement("canvas") as unknown as BadgeCanvas,
+  bidderAccessUrl?: string | null,
 ): RawImageData {
   const layout = normalizeLayout(nameOrLayout);
   const lines = [layout.line1, layout.line2].filter(Boolean);
@@ -103,7 +105,7 @@ export function renderBrotherNameLabel(
   context.textAlign = "center";
   context.textBaseline = "middle";
 
-  let fontSize = lines.length === 2 ? 112 : 128;
+  let fontSize = bidderAccessUrl ? (lines.length === 2 ? 86 : 100) : (lines.length === 2 ? 112 : 128);
   do {
     context.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
     if (Math.max(...lines.map((line) => context.measureText(line).width)) <= MAX_NAME_WIDTH_DOTS || fontSize === 48) break;
@@ -112,12 +114,28 @@ export function renderBrotherNameLabel(
 
   context.fillStyle = "#000000";
   const lineOffset = fontSize * 0.625;
+  const nameCenterY = bidderAccessUrl ? 260 : canvas.height / 2;
   lines.forEach((line, index) => {
     const y = lines.length === 1
-      ? canvas.height / 2
-      : canvas.height / 2 + (index === 0 ? -lineOffset : lineOffset);
+      ? nameCenterY
+      : nameCenterY + (index === 0 ? -lineOffset : lineOffset);
     context.fillText(line, canvas.width / 2, y);
   });
+  if (bidderAccessUrl) {
+    const qr = badgeQrMatrix(bidderAccessUrl);
+    const qrSize = 350;
+    const moduleSize = Math.max(1, Math.floor(qrSize / qr.size));
+    const renderedSize = moduleSize * qr.size;
+    const startX = Math.floor((canvas.width - renderedSize) / 2);
+    const startY = 500;
+    for (let row = 0; row < qr.size; row += 1) {
+      for (let column = 0; column < qr.size; column += 1) {
+        if (qr.dark(row, column)) context.fillRect(startX + column * moduleSize, startY + row * moduleSize, moduleSize, moduleSize);
+      }
+    }
+    context.font = "700 44px Arial, Helvetica, sans-serif";
+    context.fillText("SCAN TO BID", canvas.width / 2, startY + renderedSize + 70);
+  }
   const image = context.getImageData(0, 0, canvas.width, canvas.height);
   return {
     width: image.width,
@@ -189,13 +207,13 @@ export async function connectBrotherQl800(): Promise<BrotherQl800Printer> {
   return openBrotherQl800(device);
 }
 
-function encodeBrotherNameLabel(nameOrLayout: string | BadgeNameLayout): Uint8Array {
+function encodeBrotherNameLabel(nameOrLayout: string | BadgeNameLayout, bidderAccessUrl?: string | null): Uint8Array {
   const media = findMedia(DK_22251_MEDIA_ID) as BrotherQLMedia | undefined;
   if (!media) throw new Error("The Brother DK-22251 label format is unavailable.");
   const device = findDevice(BROTHER_QL800_VENDOR_ID, BROTHER_QL800_PRODUCT_ID);
   const engine = device?.engines[0];
   if (!device || !engine) throw new Error("The Brother QL-800 print format is unavailable.");
-  const { black, red } = renderMultiPlaneImage(renderBrotherNameLabel(nameOrLayout), {
+  const { black, red } = renderMultiPlaneImage(renderBrotherNameLabel(nameOrLayout, undefined, bidderAccessUrl), {
     palette: media.palette ?? [],
     rotate: 0,
   });
@@ -227,6 +245,7 @@ export async function printBrotherNameLabel(
   printer: BrotherQl800Printer,
   nameOrLayout: string | BadgeNameLayout,
   options: PrintOptions = {},
+  bidderAccessUrl?: string | null,
 ): Promise<void> {
-  await withPrintTimeout(printer.write(encodeBrotherNameLabel(nameOrLayout)), options.timeoutMs ?? DEFAULT_PRINT_TIMEOUT_MS);
+  await withPrintTimeout(printer.write(encodeBrotherNameLabel(nameOrLayout, bidderAccessUrl)), options.timeoutMs ?? DEFAULT_PRINT_TIMEOUT_MS);
 }
