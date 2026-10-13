@@ -707,6 +707,7 @@ export const FLOORPLAN_SHAPES = [
   "chair",
   "chair-row",
   "custom-shape",
+  "image",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 
@@ -754,6 +755,8 @@ export interface FloorplanItem {
   points?: FloorplanPoint[];
   /** Straight anchors, smoothed anchors, or a freehand outline. */
   customShapeMode?: FloorplanCustomShapeMode;
+  /** Uploaded image rendered inside an image object. */
+  imageUrl?: string;
 }
 
 /**

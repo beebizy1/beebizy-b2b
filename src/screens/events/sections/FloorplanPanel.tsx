@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Circle,
   GripVertical,
+  ImagePlus,
   LayoutGrid,
   Lock,
   Minus,
@@ -38,6 +39,7 @@ import {
   useDeleteFloorplan,
   useFloorplans,
   useSaveFloorplan,
+  useUploadAuctionImage,
 } from "@/data/hooks";
 import {
   FLOORPLAN_SHAPES,
@@ -86,6 +88,7 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
   "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
   "custom-shape": { label: "Custom shape", width: 18, height: 14, seats: null, round: false, className: "border-transparent bg-transparent text-info-text shadow-none" },
+  image: { label: "Image", width: 18, height: 14, seats: null, round: false, className: "overflow-hidden border-primary/40 bg-surface text-foreground" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
@@ -105,12 +108,38 @@ function newItemId(): string {
   return `fp-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
 }
 
+function openItemPosition(
+  items: FloorplanItem[],
+  room: FloorplanRoom,
+  spec: ShapeSpec,
+): FloorplanPoint {
+  const candidates = [14, 26, 38, 50, 62, 74, 86].flatMap((y) =>
+    [14, 26, 38, 50, 62, 74, 86].map((x) => ({ x, y })),
+  );
+  const rotated = [...candidates.slice(items.length % candidates.length), ...candidates.slice(0, items.length % candidates.length)];
+  const open = rotated.find((candidate) => {
+    if (!pointIsInsideRoom(room, candidate.x, candidate.y)) return false;
+    return items.every((item) => {
+      const itemSpec = SHAPES[item.shape];
+      const horizontalClearance = ((item.width ?? itemSpec.width) + spec.width) / 2 + 2;
+      const verticalClearance = ((item.height ?? itemSpec.height) + spec.height) / 2 + 2;
+      return Math.abs(candidate.x - item.x) >= horizontalClearance || Math.abs(candidate.y - item.y) >= verticalClearance;
+    });
+  });
+
+  return open ?? nearestPointInsideRoom(room, {
+    x: clamp(20 + ((items.length * 13) % 60)),
+    y: clamp(24 + ((items.length * 9) % 50)),
+  });
+}
+
 /**
  * One room's editor. Remounted per room by the panel below (via `key`), so the local
  * unsaved state cannot leak from the terrace layout into the ballroom's.
  */
 function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const savePlan = useSaveFloorplan();
+  const uploadImage = useUploadAuctionImage();
 
   const [name, setName] = useState<string | null>(null);
   const [items, setItems] = useState<FloorplanItem[] | null>(null);
@@ -126,10 +155,13 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
   const suppressPaletteClick = useRef(false);
   const freehandDraftRef = useRef<FloorplanPoint[] | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Local edits win until saved or reset; otherwise mirror the stored plan. Memoized so
   // the derived values below don't recompute on every render.
   const workingItems = useMemo(() => items ?? saved?.items ?? [], [items, saved]);
+  const workingItemsRef = useRef(workingItems);
+  workingItemsRef.current = workingItems;
   const workingName = name ?? saved?.name ?? "Room layout";
   const workingRoom = useMemo(
     () => room ?? saved.room ?? DEFAULT_FLOORPLAN_ROOM,
@@ -235,14 +267,17 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     setSelectedCorner(shape === "custom" ? 0 : null);
   };
 
-  const addShape = (shape: FloorplanShape, position?: { x: number; y: number }) => {
+  const addShape = (
+    shape: FloorplanShape,
+    position?: { x: number; y: number },
+    options?: Pick<FloorplanItem, "label" | "imageUrl">,
+  ) => {
     const spec = SHAPES[shape];
-    const sameShape = workingItems.filter((item) => item.shape === shape).length;
-    const staggered = {
-      x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
-      y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
-    };
-    const fallbackPosition = nearestPointInsideRoom(workingRoom, staggered);
+    const currentItems = workingItemsRef.current;
+    const sameShape = currentItems.filter((item) => item.shape === shape).length;
+    const fallbackPosition = position
+      ? nearestPointInsideRoom(workingRoom, { x: clamp(position.x), y: clamp(position.y) })
+      : openItemPosition(currentItems, workingRoom, spec);
     const item: FloorplanItem = {
       id: newItemId(),
       shape,
@@ -258,12 +293,36 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       ...(shape === "custom-shape"
         ? { customShapeMode: "polygon" as const, points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
         : {}),
+      ...options,
     };
-    setItems([...workingItems, item]);
+    setItems([...currentItems, item]);
     setSelectedId(item.id);
     setSelectedItemCorner(null);
     setFreehandDraft(null);
     freehandDraftRef.current = null;
+  };
+
+  const uploadFloorplanImage = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Choose an image file" });
+      return;
+    }
+    if (file.size > 4_000_000) {
+      toast({ title: "Image is too large", description: "Choose an image smaller than 4 MB." });
+      return;
+    }
+
+    uploadImage.mutate(file, {
+      onSuccess: (imageUrl) => {
+        const filename = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+        addShape("image", undefined, {
+          label: (filename || "Image").slice(0, 80),
+          imageUrl,
+        });
+        toast({ title: "Image added", description: "Select it to resize or rotate it." });
+      },
+      onError: (error) => toast({ title: "Couldn't upload image", description: error.message }),
+    });
   };
 
   const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
@@ -624,7 +683,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           className="h-8 w-52"
         />
         <span className="text-xs text-muted-foreground">Drag into the room:</span>
-        {FLOORPLAN_SHAPES.map((shape) => (
+        {FLOORPLAN_SHAPES.filter((shape) => shape !== "image").map((shape) => (
           <Button
             key={shape}
             type="button"
@@ -646,6 +705,28 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             {SHAPES[shape].label}
           </Button>
         ))}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          aria-label="Choose a floorplan image"
+          onChange={(inputEvent) => {
+            const file = inputEvent.target.files?.[0];
+            inputEvent.target.value = "";
+            if (file) uploadFloorplanImage(file);
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={uploadImage.isPending}
+          onClick={() => imageInputRef.current?.click()}
+        >
+          <ImagePlus className="mr-1 size-3.5" />
+          {uploadImage.isPending ? "Uploading image…" : "Upload image"}
+        </Button>
       </div>
 
       {(
@@ -733,7 +814,21 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)`,
                     }}
                   >
-                    {customPoints ? (
+                    {item.shape === "image" && item.imageUrl ? (
+                      <>
+                        <img
+                          src={item.imageUrl}
+                          alt=""
+                          draggable={false}
+                          className="pointer-events-none absolute inset-0 size-full select-none rounded-[inherit] object-contain"
+                        />
+                        {isSelected ? (
+                          <span className="pointer-events-none absolute inset-x-1 bottom-1 truncate rounded bg-surface/90 px-1 py-0.5 text-[9px] shadow-xs">
+                            {item.label}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : customPoints ? (
                       <>
                         <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
                           {customMode === "polygon" ? (
@@ -752,7 +847,24 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                             />
                           )}
                         </svg>
-                        <span className="relative z-10 px-2">{item.label}</span>
+                        {isSelected && !item.locked ? (
+                          <textarea
+                            value={item.label}
+                            onChange={(inputEvent) => updateItem(item.id, { label: inputEvent.target.value })}
+                            onBlur={(inputEvent) => {
+                              const label = inputEvent.target.value.trim();
+                              updateItem(item.id, { label: label || "Custom shape" });
+                            }}
+                            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+                            onClick={(mouseEvent) => mouseEvent.stopPropagation()}
+                            aria-label="Label inside custom shape"
+                            placeholder="Type a label"
+                            rows={2}
+                            className="relative z-10 mx-2 min-w-0 resize-none rounded border border-info/40 bg-surface/90 px-1.5 py-1 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+                          />
+                        ) : (
+                          <span className="relative z-10 px-2">{item.label}</span>
+                        )}
                         {isSelected && !item.locked && customMode !== "freehand"
                           ? customPoints.map((point, index) => (
                               <button
@@ -845,7 +957,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
             <p className="mt-2 text-xs text-muted-foreground">
               Drag objects from the toolbar to place them inside the room outline. Select one to move, resize, rotate,
-              or lock it. Custom shapes can use straight anchors, smooth curves, or a freehand outline.
+              or lock it. Type directly inside a selected custom shape. Uploaded images use the same resize and rotation controls.
             </p>
           </div>
 

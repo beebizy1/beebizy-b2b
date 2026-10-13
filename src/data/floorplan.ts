@@ -20,6 +20,7 @@ const floorplanItemSchema = z.object({
   width: z.number().finite().min(1).max(100).optional(),
   height: z.number().finite().min(1).max(100).optional(),
   rotation: z.number().finite().min(0).max(359).optional(),
+  imageUrl: z.string().url().optional(),
   customShapeMode: z.enum(FLOORPLAN_CUSTOM_SHAPE_MODES).optional(),
   points: z.array(z.object({
     x: z.number().finite().min(0).max(100),
@@ -38,6 +39,13 @@ const floorplanItemSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "Straight and curved custom shapes can have at most 24 editable corners.",
       path: ["points"],
+    });
+  }
+  if (item.shape === "image" && !item.imageUrl) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Floorplan image objects need an uploaded image URL.",
+      path: ["imageUrl"],
     });
   }
 });

@@ -4,7 +4,7 @@ import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
   it("supports Santa Clara site features and individual seating", () => {
-    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row"]));
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row", "image"]));
   });
 
   it("calculates usable square footage for rectangular, oval and traced rooms", () => {
@@ -71,6 +71,28 @@ describe("parseFloorplanDraft", () => {
       ],
     };
     expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("preserves uploaded floorplan images and their rotation", () => {
+    const item = {
+      id: "image-1",
+      shape: "image" as const,
+      label: "Sponsor logo",
+      x: 50,
+      y: 50,
+      seats: null,
+      width: 24,
+      height: 18,
+      rotation: 90,
+      imageUrl: "https://example.com/sponsor-logo.png",
+    };
+
+    expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("requires an uploaded image URL for image objects", () => {
+    const item = { id: "image-1", shape: "image", label: "Logo", x: 42, y: 58, seats: null };
+    expect(() => parseFloorplanDraft({ name: "Expo", items: [item] })).toThrow(/image URL/i);
   });
 
   it("validates and preserves physical room dimensions and a custom outline", () => {
