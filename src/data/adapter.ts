@@ -434,7 +434,7 @@ export interface BillingRepository {
   checkout(interval: BillingInterval): Promise<{ url: string }>;
   portal(): Promise<{ url: string }>;
   connectStatus(): Promise<StripeConnectStatus>;
-  startConnectOnboarding(): Promise<StripeConnectStatus>;
+  startConnectOnboarding(returnTo?: string): Promise<StripeConnectStatus>;
 }
 
 export interface FundraisingRepository {

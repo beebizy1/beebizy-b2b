@@ -28,7 +28,7 @@ function SendControls({ recipientCount, consent, onConsentChange, busy, onSend, 
   return <div className="space-y-4"><label className="flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={consent} onChange={(event) => onConsentChange(event.target.checked)} className="mt-1 size-4 accent-[hsl(var(--primary))]" /><span>I confirm these guests expect communication about this event.</span></label><Button type="button" disabled={!recipientCount || !consent || busy} onClick={onSend}><Send className="mr-1.5 size-4" />{busy ? "Sending invitations…" : `Send ${recipientCount || ""} invitation${recipientCount === 1 ? "" : "s"}`}</Button>{tracking}</div>;
 }
 
-export default function TicketInvitationBuilder({ event, guided = false }: { event: Event; guided?: boolean }) {
+export default function TicketInvitationBuilder({ event, guided = false, onDone }: { event: Event; guided?: boolean; onDone?: () => void }) {
   const { data: invitations } = useTicketInvitations(event.id);
   const { data: registrations } = useRegistrations();
   const sendInvitations = useSendTicketInvitations();
@@ -67,6 +67,7 @@ export default function TicketInvitationBuilder({ event, guided = false }: { eve
         title: test ? (result.sent ? "Test invitation sent" : "Test invitation was not delivered") : `${result.sent} invitation${result.sent === 1 ? "" : "s"} sent`,
         description: result.failed ? `${result.failed} could not be delivered. Check the delivery list below.` : test ? `Check ${rows[0]!.email}.` : "Delivery tracking is shown below.",
       });
+      if (!test) onDone?.();
     } catch (error) {
       toast({ title: test ? "Couldn't send the test" : "Couldn't send invitations", description: error instanceof Error ? error.message : "Try again." });
     }
@@ -112,7 +113,7 @@ export default function TicketInvitationBuilder({ event, guided = false }: { eve
 
   if (guided) return (
     <Panel>
-      <PanelHeader title="Send invitations" description="Your invite design and ticket link are ready. The guest list from Step 2 is loaded below." />
+      <PanelHeader title="Send invitations" description="Your invite design and ticket link are ready. The guest list from Step 2 is loaded below." actions={onDone ? <Button type="button" variant="outline" size="sm" onClick={onDone}>Back to launch guide</Button> : undefined} />
       <section className="space-y-4 p-5">
         <div className="rounded-lg border border-primary/20 bg-primary-muted/30 p-4 text-sm"><p className="font-semibold text-foreground">Each guest gets their own link</p><p className="mt-1 text-muted-foreground">The link opens this event's ticket choices. Beebizy tracks delivery, opens, and registrations.</p></div>
         <RecipientEditor id="guided-ticket-invitees" value={guestRows} onChange={setGuestRows} eventInvitees={eventInvitees} onUseEventList={useEventGuestList} onUpload={(file) => void loadSpreadsheet(file)} validCount={recipients.length} />

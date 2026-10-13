@@ -2495,13 +2495,13 @@ export const memoryAdapter: DataAdapter = {
       payoutsEnabled: true,
       ready: true,
     }),
-    startConnectOnboarding: async () => ({
+    startConnectOnboarding: async (returnTo) => ({
       accountId: "acct_demo",
       detailsSubmitted: true,
       chargesEnabled: true,
       payoutsEnabled: true,
       ready: true,
-      onboardingUrl: "/app/tickets?stripe=demo",
+      onboardingUrl: `${returnTo ?? "/app/tickets"}?stripe=demo`,
     }),
   },
   fundraising: {

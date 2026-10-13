@@ -50,6 +50,17 @@ function appOrigin(request: Request): string {
   return configured ? new URL(configured).origin : new URL(request.url).origin;
 }
 
+export function stripeConnectReturnUrls(origin: string, requestedReturnTo: unknown): { refreshUrl: string; returnUrl: string } {
+  const safePath = typeof requestedReturnTo === "string" && /^\/app\/events\/[A-Za-z0-9_-]+\/share$/.test(requestedReturnTo)
+    ? requestedReturnTo
+    : "/app/tickets";
+  const refreshUrl = new URL(safePath, origin);
+  const returnUrl = new URL(safePath, origin);
+  refreshUrl.searchParams.set("stripe", "refresh");
+  returnUrl.searchParams.set("stripe", "return");
+  return { refreshUrl: refreshUrl.toString(), returnUrl: returnUrl.toString() };
+}
+
 function requireOwner(ctx: RequestContext): void {
   if (ctx.role !== "owner") throw new HttpError(403, "Only the workspace owner can connect the payment account.");
 }
@@ -110,6 +121,7 @@ export async function getStripeConnectStatus(ctx: RequestContext): Promise<Strip
 export async function createStripeConnectOnboarding(
   ctx: RequestContext,
   request: Request,
+  returnTo?: unknown,
 ): Promise<StripeConnectStatus> {
   requireOwner(ctx);
   const stripe = stripeClient();
@@ -139,12 +151,13 @@ export async function createStripeConnectOnboarding(
   }
 
   const origin = appOrigin(request);
+  const returnUrls = stripeConnectReturnUrls(origin, returnTo);
   const link = await stripe.accountLinks.create({
     account: accountId,
     type: "account_onboarding",
     collection_options: { fields: "eventually_due", future_requirements: "include" },
-    refresh_url: `${origin}/app/tickets?stripe=refresh`,
-    return_url: `${origin}/app/tickets?stripe=return`,
+    refresh_url: returnUrls.refreshUrl,
+    return_url: returnUrls.returnUrl,
   });
   const account = await stripe.accounts.retrieve(accountId);
   await syncConnectedAccount(workspace.id, account);

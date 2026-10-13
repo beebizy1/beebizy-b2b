@@ -10,7 +10,7 @@ import { ticketDraftFromForm } from "@/data/ticketDraft";
 import type { Event, TicketType } from "@/data/entities";
 import { toast } from "@/hooks/use-toast";
 
-export default function GuidedTicketPricing({ event }: { event: Event }) {
+export default function GuidedTicketPricing({ event, onDone }: { event: Event; onDone?: () => void }) {
   const { data: tickets } = useTickets(event.id);
   const addTicket = useAddTicketType();
   const updateTicket = useUpdateTicketType();
@@ -47,14 +47,14 @@ export default function GuidedTicketPricing({ event }: { event: Event }) {
   const save = () => {
     const draft = ticketDraftFromForm({ name, price, quantity, fairMarketValue: benefitValue, zeroValueConfirmed: zeroBenefitConfirmed });
     if (!draft) return;
-    const options = { onSuccess: () => { toast({ title: editingId ? "Ticket updated" : "Ticket added" }); clear(); }, onError: (error: Error) => toast({ title: "Couldn't save ticket", description: error.message }) };
+    const options = { onSuccess: () => { toast({ title: editingId ? "Ticket updated" : "Ticket added" }); clear(); onDone?.(); }, onError: (error: Error) => toast({ title: "Couldn't save ticket", description: error.message }) };
     if (editingId) updateTicket.mutate({ eventId: event.id, id: editingId, patch: draft }, options);
     else addTicket.mutate({ eventId: event.id, draft }, options);
   };
 
   return (
     <Panel>
-      <PanelHeader title="Price your tickets" description="Keep it simple: name the ticket, set the price, and say how many can be sold." />
+      <PanelHeader title="Price your tickets" description="Keep it simple: name the ticket, set the price, and say how many can be sold." actions={onDone ? <Button type="button" variant="outline" size="sm" onClick={onDone}>Back to launch guide</Button> : undefined} />
       {activeTickets.length > 0 ? <ul className="divide-y divide-hairline border-b border-hairline">{activeTickets.map((ticket) => <li key={ticket.id} className="flex flex-wrap items-center gap-3 px-5 py-3"><span className="grid size-8 place-items-center rounded-lg bg-primary-muted text-primary"><Ticket className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{ticket.name}</p><p className="text-xs text-muted-foreground">{ticket.quantityTotal === 0 ? "Unlimited" : `${ticket.quantityTotal - ticket.quantitySold} available`}</p></div><strong data-numeric className="text-sm">{ticket.priceCents ? formatMoney(ticket.priceCents) : "Free"}</strong><Button type="button" size="sm" variant="outline" onClick={() => edit(ticket)}>Edit</Button></li>)}</ul> : null}
       <div className="grid gap-4 p-5 sm:grid-cols-3">
         <div className="space-y-1.5"><Label htmlFor="guided-ticket-name">Ticket name</Label><Input id="guided-ticket-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="General admission" /></div>

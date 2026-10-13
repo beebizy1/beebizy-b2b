@@ -4,7 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
 import { useMe, useRegistrations, useStartStripeConnect, useStripeConnectStatus, useTicketInvitations } from "@/data/hooks";
 import { registrationPageIsCustomized } from "@/data/registrationPage";
-import { eventLaunchCompletion, eventLaunchDetailsHref, nextEventLaunchStep } from "@/data/eventLaunchGuide";
+import {
+  eventLaunchCompletion,
+  eventLaunchDetailsHref,
+  eventLaunchPath,
+  eventLaunchRegistrationsHref,
+  nextEventLaunchStep,
+  openEventLaunchStep,
+} from "@/data/eventLaunchGuide";
 import type { EventLaunchStepId } from "@/data/eventLaunchGuide";
 import { eventInvitationRecipients } from "@/data/ticketInvitations";
 import type { Event, TicketType } from "@/data/entities";
@@ -37,7 +44,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
   const { data: invitations } = useTicketInvitations(event.id);
   const { data: registrations } = useRegistrations();
   const startConnect = useStartStripeConnect();
-  const [selectedStep, setSelectedStep] = useState<EventLaunchStepId | null>(null);
+  const [selectedStep, setSelectedStep] = useState<{ id: EventLaunchStepId; wasComplete: boolean } | null>(null);
   const activeTickets = tickets.filter((ticket) => ticket.isActive);
   const contactableInvitees = eventInvitationRecipients(registrations ?? [], event.id);
   const invitationsSent = (invitations ?? []).some((invitation) => ["sent", "opened", "registered"].includes(invitation.status));
@@ -68,7 +75,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
       complete: completion["invite-list"],
       icon: Users,
       detail: <p>You have {contactableInvitees.length} {contactableInvitees.length === 1 ? "person" : "people"} with an email address on this event's list. Step 6 will load them automatically.</p>,
-      action: <Button asChild size="sm"><a href={`/app/events/${event.id}/registrations`}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</a></Button>,
+      action: <Button asChild size="sm"><a href={eventLaunchRegistrationsHref(event.id)}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</a></Button>,
     },
     {
       number: 3,
@@ -98,7 +105,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
       complete: completion.payments,
       icon: CreditCard,
       detail: connect?.ready ? <div className="space-y-2"><p>Stripe is connected. Stripe will send paid ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div> : <div className="space-y-2"><p>Stripe is the secure payment service that sends money to the school.</p><p><strong>1.</strong> Click Connect below.</p><p><strong>2.</strong> The school owner fills out Stripe's form.</p><p><strong>3.</strong> Stripe sends ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div>,
-      action: connect?.ready ? <Button asChild variant="outline" size="sm"><a href="/app/tickets">Review payment setup</a></Button> : identity?.role === "owner" ? <Button type="button" size="sm" disabled={connectLoading || startConnect.isPending} onClick={() => startConnect.mutate(undefined, { onSuccess: (status) => { if (status.onboardingUrl) window.location.assign(status.onboardingUrl); }, onError: (error) => toast({ title: "Couldn't open Stripe", description: error.message }) })}>{startConnect.isPending ? "Opening Stripe…" : connect?.accountId ? "Continue Stripe setup" : "Connect bank account with Stripe"}</Button> : <p className="text-xs font-medium text-muted-foreground">Ask the Beebizy workspace owner to connect Stripe.</p>,
+      action: connect?.ready ? <Button asChild variant="outline" size="lg"><a href={eventLaunchPath(event.id)}>Stripe connected · Continue to next step</a></Button> : identity?.role === "owner" ? <Button type="button" size="lg" className="w-full text-base font-bold shadow-sm sm:w-auto" disabled={connectLoading || startConnect.isPending} onClick={() => startConnect.mutate(eventLaunchPath(event.id), { onSuccess: (status) => { if (status.onboardingUrl) window.location.assign(status.onboardingUrl); }, onError: (error) => toast({ title: "Couldn't open Stripe", description: error.message }) })}>{startConnect.isPending ? "Opening Stripe…" : connect?.accountId ? "Continue connecting Stripe" : "Connect Stripe bank account"}</Button> : <p className="text-xs font-medium text-muted-foreground">Ask the Beebizy workspace owner to connect Stripe.</p>,
     },
     {
       number: 6,
@@ -114,7 +121,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
 
   const completedCount = Object.values(completion).filter(Boolean).length;
   const nextStep = nextEventLaunchStep(completion);
-  const openStep = selectedStep ?? nextStep ?? "send";
+  const openStep = openEventLaunchStep(selectedStep?.id ?? null, selectedStep?.wasComplete ?? false, completion);
 
   return (
     <Panel className="overflow-hidden border-primary/20">
@@ -127,7 +134,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
           const next = nextStep === step.id && !step.complete;
           return (
             <li key={step.id} className={expanded ? "bg-primary-muted/25" : "bg-background"}>
-              <button type="button" className="flex w-full items-center gap-3 px-5 py-4 text-left" aria-expanded={expanded} onClick={() => setSelectedStep(expanded ? null : step.id)}>
+              <button type="button" className="flex w-full items-center gap-3 px-5 py-4 text-left" aria-expanded={expanded} onClick={() => setSelectedStep(expanded ? null : { id: step.id, wasComplete: step.complete })}>
                 <span className={`grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold ${step.complete ? "bg-success text-white" : next ? "bg-primary text-primary-foreground" : "bg-surface-sunken text-muted-foreground"}`}>{step.complete ? <Check className="size-4" /> : step.number}</span>
                 <Icon className={`size-4 shrink-0 ${step.complete ? "text-success-text" : next ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" />
                 <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-foreground">Step {step.number}. {step.title}</span><span className="mt-0.5 block text-xs text-muted-foreground">{step.summary}</span></span>

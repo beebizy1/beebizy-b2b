@@ -3,7 +3,22 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./db", () => ({ db: {} }));
 vi.mock("./notify", () => ({ notifyTicketOrderConfirmation: vi.fn() }));
 
-const { requireCheckoutMatch, ticketCheckoutSessionParams } = await import("./commercePayments");
+const { requireCheckoutMatch, stripeConnectReturnUrls, ticketCheckoutSessionParams } = await import("./commercePayments");
+
+describe("Stripe Connect launch-guide return", () => {
+  it("returns onboarding to the event's master step list", () => {
+    expect(stripeConnectReturnUrls("https://beebizy.example", "/app/events/evt-123/share")).toEqual({
+      refreshUrl: "https://beebizy.example/app/events/evt-123/share?stripe=refresh",
+      returnUrl: "https://beebizy.example/app/events/evt-123/share?stripe=return",
+    });
+  });
+
+  it("rejects external or unrelated return destinations", () => {
+    expect(stripeConnectReturnUrls("https://beebizy.example", "https://evil.example").returnUrl).toBe(
+      "https://beebizy.example/app/tickets?stripe=return",
+    );
+  });
+});
 
 describe("ticket Checkout session", () => {
   it("routes exactly the calculated Beebizy fee while leaving processing fees to Stripe", () => {

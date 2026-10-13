@@ -242,7 +242,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       checkout: (interval) => client.post<{ url: string }>("/billing/checkout", { interval }),
       portal: () => client.post<{ url: string }>("/billing/portal"),
       connectStatus: () => client.get<StripeConnectStatus>("/billing/connect"),
-      startConnectOnboarding: () => client.post<StripeConnectStatus>("/billing/connect/onboarding"),
+      startConnectOnboarding: (returnTo) => client.post<StripeConnectStatus>("/billing/connect/onboarding", { returnTo }),
     },
 
     fundraising: {

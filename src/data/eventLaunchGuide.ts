@@ -24,6 +24,10 @@ export function eventLaunchDetailsHref(eventId: string): string {
   return `/app/events/${eventId}/edit?returnTo=${encodeURIComponent(eventLaunchPath(eventId))}`;
 }
 
+export function eventLaunchRegistrationsHref(eventId: string): string {
+  return `/app/events/${eventId}/registrations?returnTo=${encodeURIComponent(eventLaunchPath(eventId))}`;
+}
+
 export function eventDetailsReturnTarget(eventId: string, search: string): EventDetailsReturnTarget {
   const launchGuide = eventLaunchPath(eventId);
   return new URLSearchParams(search).get("returnTo") === launchGuide
@@ -45,4 +49,14 @@ export function eventLaunchCompletion(input: EventLaunchProgressInput): EventLau
 
 export function nextEventLaunchStep(completion: EventLaunchCompletion): EventLaunchStepId | null {
   return EVENT_LAUNCH_STEP_IDS.find((step) => !completion[step]) ?? null;
+}
+
+/** Keeps deliberate review of a completed step open, but advances once an unfinished step becomes complete. */
+export function openEventLaunchStep(
+  selectedStep: EventLaunchStepId | null,
+  selectedWasComplete: boolean,
+  completion: EventLaunchCompletion,
+): EventLaunchStepId {
+  if (selectedStep && (selectedWasComplete || !completion[selectedStep])) return selectedStep;
+  return nextEventLaunchStep(completion) ?? "send";
 }

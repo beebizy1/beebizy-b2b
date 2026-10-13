@@ -852,7 +852,7 @@ export function useStripeConnectStatus() {
 
 export function useStartStripeConnect() {
   return useAdapterMutation(
-    (a) => a.billing.startConnectOnboarding(),
+    (a, returnTo: string | undefined) => a.billing.startConnectOnboarding(returnTo),
     () => [qk.stripeConnect],
   );
 }

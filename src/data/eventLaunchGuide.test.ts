@@ -3,7 +3,9 @@ import {
   eventDetailsReturnTarget,
   eventLaunchCompletion,
   eventLaunchDetailsHref,
+  eventLaunchRegistrationsHref,
   nextEventLaunchStep,
+  openEventLaunchStep,
 } from "./eventLaunchGuide";
 
 describe("event launch guide", () => {
@@ -44,5 +46,24 @@ describe("event launch guide", () => {
       href: "/app/events/evt-123",
       label: "Back to event",
     });
+  });
+
+  it("brings the invite-list editor back to the master launch guide", () => {
+    expect(eventLaunchRegistrationsHref("evt-123")).toBe(
+      "/app/events/evt-123/registrations?returnTo=%2Fapp%2Fevents%2Fevt-123%2Fshare",
+    );
+  });
+
+  it("advances from a completed selected step to the next unfinished step", () => {
+    const completion = eventLaunchCompletion({
+      inviteeCount: 10,
+      invitationDesigned: true,
+      activeTicketCount: 0,
+      stripeReady: false,
+      invitationsSent: false,
+    });
+    expect(openEventLaunchStep("invite-design", false, completion)).toBe("tickets");
+    expect(openEventLaunchStep("tickets", false, completion)).toBe("tickets");
+    expect(openEventLaunchStep("invite-design", true, completion)).toBe("invite-design");
   });
 });

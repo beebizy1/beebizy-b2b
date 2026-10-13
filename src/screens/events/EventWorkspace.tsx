@@ -85,6 +85,7 @@ import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
 import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel, selectedEventDay } from "@/data/eventDays";
 import { useAccountExperience } from "@/app/useAccountExperience";
+import { eventDetailsReturnTarget } from "@/data/eventLaunchGuide";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
@@ -730,6 +731,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const { timeZone } = usePreferences();
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
+  const returnTarget = eventDetailsReturnTarget(id, search);
 
   if (isLoading) {
     return (
@@ -786,6 +788,17 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
         experience={experience}
         canManageAccess={identity?.role === "owner"}
       />
+      {active !== "share" && returnTarget.label === "Back to launch guide" ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-foreground">This workspace was opened from Launch your event.</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Make your changes, then return to the master checklist to continue with the next step.</p>
+          </div>
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href={returnTarget.href}><ArrowLeft className="mr-1.5 size-3.5" />Back to launch guide</Link>
+          </Button>
+        </div>
+      ) : null}
       <EventLiveUpdates event={event} />
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}

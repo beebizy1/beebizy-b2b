@@ -658,7 +658,7 @@ async function handleAuthed(
       if (a === "portal" && method === "POST") return json(await createPortalSession(ctx, request));
       if (a === "connect" && method === "GET") return json(await getStripeConnectStatus(ctx));
       if (a === "connect" && b === "onboarding" && method === "POST") {
-        return json(await createStripeConnectOnboarding(ctx, request));
+        return json(await createStripeConnectOnboarding(ctx, request, body.returnTo));
       }
       return notFound();
     }
