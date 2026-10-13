@@ -51,8 +51,6 @@ import {
   useTickets,
   useTicketOrders,
   useRefundTicketOrder,
-  useTicketInvitations,
-  useSendTicketInvitations,
   useUpdateAuctionItem,
   useShareAuction,
   useUpdateAuctionSettings,
@@ -87,7 +85,7 @@ import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { csvCell } from "@/data/spreadsheet";
 import { fromDateTimeLocalInput, toDateTimeLocalInput } from "@/lib/datetime";
-import { readSpreadsheetFile } from "@/data/import";
+import TicketInvitationBuilder from "./TicketInvitationBuilder";
 
 /** Inline money field that only writes on blur, so every keystroke isn't a mutation. */
 function MoneyCell({
@@ -603,16 +601,12 @@ export function TicketsPanel({ event }: { event: Event }) {
   const remove = useRemoveTicketType();
   const { data: orders, isLoading: ordersLoading } = useTicketOrders(event.id);
   const refund = useRefundTicketOrder();
-  const { data: invitations } = useTicketInvitations(event.id);
-  const sendInvitations = useSendTicketInvitations();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [ticketFmv, setTicketFmv] = useState("");
   const [ticketBenefits, setTicketBenefits] = useState("");
   const [ticketFmvZeroConfirmed, setTicketFmvZeroConfirmed] = useState(false);
   const [allocation, setAllocation] = useState("");
-  const [invitationRows, setInvitationRows] = useState("");
-  const [invitationConsent, setInvitationConsent] = useState(false);
 
   const revenue = sumCents((tickets ?? []).map((ticket) => ticket.priceCents * ticket.quantitySold));
   const sold = (tickets ?? []).reduce((total, ticket) => total + ticket.quantitySold, 0);
@@ -803,92 +797,7 @@ export function TicketsPanel({ event }: { event: Event }) {
         </ul>
       )}
     </Panel>
-    <Panel>
-      <PanelHeader
-        title="Designed ticket invitations"
-        description={invitations?.length ? `${invitations.filter((invitation) => invitation.status === "registered").length} registered from ${invitations.length} invitations` : "Send each guest a unique, textable ticket link"}
-      />
-      <form
-        className="space-y-4 p-5"
-        onSubmit={(formEvent) => {
-          formEvent.preventDefault();
-          const recipients = invitationRows.split(/\r?\n/).flatMap((line) => {
-            const [name, email] = line.split(",").map((value) => value.trim());
-            return name && email ? [{ name, email }] : [];
-          });
-          if (recipients.length === 0) {
-            toast({ title: "Add invitees", description: "Use one line per person: Full name, email@example.com" });
-            return;
-          }
-          sendInvitations.mutate({ eventId: event.id, recipients, consentConfirmed: invitationConsent }, {
-            onSuccess: (result) => {
-              setInvitationRows("");
-              toast({ title: `${result.sent} invitations sent`, description: result.failed ? `${result.failed} could not be delivered.` : undefined });
-            },
-            onError: (error) => toast({ title: "Couldn't send invitations", description: error.message }),
-          });
-        }}
-      >
-        <div className="space-y-1.5">
-          <label htmlFor="ticket-invitees" className="text-sm font-medium text-foreground">Guest list</label>
-          <textarea id="ticket-invitees" value={invitationRows} onChange={(event) => setInvitationRows(event.target.value)} placeholder={"Poorvi Shukla, poorvi@example.com\nTarang Goyal, tarang@example.com"} className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
-          <p className="text-xs text-muted-foreground">Paste rows from a spreadsheet as Full name, email. Duplicate emails are sent once.</p>
-        </div>
-        <label className="inline-flex cursor-pointer items-center text-sm font-medium text-primary hover:underline">
-          Upload a CSV or Excel guest list
-          <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            void readSpreadsheetFile(file).then((tables) => {
-              const table = tables[0];
-              if (!table) throw new Error("The spreadsheet is empty.");
-              const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
-              const emailHeader = table.headers.find((header) => normalized(header).includes("email"));
-              const fullNameHeader = table.headers.find((header) => ["name", "fullname", "guestname", "attendeename"].includes(normalized(header)));
-              const firstNameHeader = table.headers.find((header) => normalized(header) === "firstname");
-              const lastNameHeader = table.headers.find((header) => normalized(header) === "lastname");
-              if (!emailHeader || (!fullNameHeader && !firstNameHeader && !lastNameHeader)) {
-                throw new Error("The file needs an email column and either full name or first/last name columns.");
-              }
-              const lines = table.rows.flatMap((row) => {
-                const email = String(row[emailHeader] ?? "").trim();
-                const name = fullNameHeader
-                  ? String(row[fullNameHeader] ?? "").trim()
-                  : [firstNameHeader ? row[firstNameHeader] : null, lastNameHeader ? row[lastNameHeader] : null].filter(Boolean).join(" ").trim();
-                return name && email ? [`${name}, ${email}`] : [];
-              });
-              if (lines.length === 0) throw new Error("No valid name and email rows were found.");
-              setInvitationRows(lines.join("\n"));
-              toast({ title: `${lines.length} invitees loaded` });
-            }).catch((error: unknown) => toast({ title: "Couldn't read guest list", description: error instanceof Error ? error.message : String(error) }));
-          }} />
-        </label>
-        <label className="flex items-start gap-2 text-sm text-muted-foreground">
-          <input type="checkbox" checked={invitationConsent} onChange={(event) => setInvitationConsent(event.target.checked)} className="mt-1 size-4 accent-[hsl(var(--primary))]" />
-          <span>I confirm these recipients expect communication about this event.</span>
-        </label>
-        <Button type="submit" disabled={!invitationRows.trim() || !invitationConsent || sendInvitations.isPending}>
-          {sendInvitations.isPending ? "Sending…" : "Send invitations"}
-        </Button>
-        {(invitations ?? []).length > 0 ? (
-          <div className="border-t border-hairline pt-4">
-            <p className="mb-2 text-sm font-semibold text-foreground">Individual invitation links</p>
-            <ul className="max-h-56 divide-y divide-hairline overflow-auto rounded-lg border border-hairline">
-              {(invitations ?? []).map((invitation) => {
-                const invitationUrl = `${window.location.origin}/api/public/ticket-invitations/${invitation.publicToken}`;
-                return (
-                  <li key={invitation.id} className="flex items-center gap-2 px-3 py-2">
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invitation.recipientName}</p><p className="truncate text-xs text-muted-foreground">{invitation.recipientEmail}</p></div>
-                    <Pill tone={invitation.status === "registered" ? "success" : invitation.status === "failed" ? "warning" : undefined}>{invitation.status}</Pill>
-                    <Button type="button" size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(invitationUrl); toast({ title: `Link copied for ${invitation.recipientName}` }); }}><Copy className="mr-1.5 size-3.5" />Copy</Button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ) : null}
-      </form>
-    </Panel>
+    <TicketInvitationBuilder event={event} />
     <Panel>
       <PanelHeader
         title="Ticket orders"

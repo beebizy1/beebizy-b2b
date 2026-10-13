@@ -214,21 +214,25 @@ export async function notifyTicketInvitation(input: {
   startsAt: string;
   timeZone: string;
   invitationUrl: string;
+  headline?: string;
+  welcomeMessage?: string;
+  designedHtml?: string;
+  deliveryAttemptKey?: string;
 }): Promise<EmailOutcome> {
   const when = `${formatInZone(input.startsAt, input.timeZone, "full")} ${timeZoneLabel(input.timeZone, new Date(input.startsAt))}`;
-  const subject = `You're invited - ${emailSubjectPart(input.eventTitle)}`;
+  const subject = `You're invited - ${emailSubjectPart(input.headline || input.eventTitle)}`;
   const details: Array<[string, string]> = [["Event", input.eventTitle], ["When", when]];
   const text = [
     `Hi ${input.recipientName},`,
     "",
-    `You are invited to ${input.eventTitle}.`,
+    input.welcomeMessage || `You are invited to ${input.eventTitle}.`,
     `When: ${when}`,
     "",
     `Choose a free or paid ticket: ${input.invitationUrl}`,
     "",
     "This invitation was sent by the event organizer through Beebizy. Questions? Reply to this email.",
   ].join("\n");
-  const html = brandedEmail({
+  const html = input.designedHtml ?? brandedEmail({
     title: `You're invited to ${input.eventTitle}`,
     greeting: `Hi ${input.recipientName},`,
     paragraphs: [`You are invited to ${input.eventTitle}.`],
@@ -238,7 +242,7 @@ export async function notifyTicketInvitation(input: {
   const outcome = await sendEmail({
     to: input.to,
     replyTo: "hello@beebizy.com",
-    idempotencyKey: `ticket-invitation-${input.invitationId}`,
+    idempotencyKey: `ticket-invitation-${input.invitationId}${input.deliveryAttemptKey ? `-${input.deliveryAttemptKey}` : ""}`,
     subject,
     text,
     html,

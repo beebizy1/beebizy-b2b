@@ -192,6 +192,24 @@ describe("ticket and auction action emails", () => {
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-1");
   });
 
+  it("sends the saved invitation design and permits an intentional resend", async () => {
+    const fetch = configureDelivery();
+    await notifyTicketInvitation({
+      invitationId: "invite-2", to: "laila@example.com", recipientName: "Laila",
+      eventTitle: "School Gala", startsAt: "2026-11-01T01:00:00.000Z",
+      timeZone: "America/Los_Angeles", invitationUrl: "https://beebizy.test/invite/two",
+      headline: "An evening under the stars", welcomeMessage: "Join our school community.",
+      designedHtml: "<html><body><h1>Designed invitation</h1></body></html>",
+      deliveryAttemptKey: "attempt-2",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.subject).toContain("An evening under the stars");
+    expect(body.text).toContain("Join our school community.");
+    expect(body.html).toContain("Designed invitation");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-2-attempt-2");
+  });
+
   it("uses the bid event as the idempotency key for outbid alerts", async () => {
     const fetch = configureDelivery();
     await notifyAuctionOutbid({

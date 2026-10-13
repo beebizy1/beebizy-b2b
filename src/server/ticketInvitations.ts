@@ -4,6 +4,7 @@ import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
 import { notifyTicketInvitation } from "./notify.ts";
 import { events, ticketInvitations, workspaces } from "./schema.ts";
+import { normalizeRegistrationPage, registrationInvitationHtml } from "../data/registrationPage.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -89,6 +90,7 @@ export async function sendTicketInvitations(
         eq(ticketInvitations.recipientEmail, recipient.email),
       )).limit(1);
       if (!stored) throw new Error(`Invitation for ${recipient.email} could not be saved.`);
+      const invitationDesign = normalizeRegistrationPage(event.event.registrationPage);
       const outcome = await notifyTicketInvitation({
         invitationId: stored.id,
         to: stored.recipientEmail,
@@ -97,6 +99,16 @@ export async function sendTicketInvitations(
         startsAt: event.event.startsAt.toISOString(),
         timeZone: event.timeZone,
         invitationUrl: `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`,
+        headline: invitationDesign.headline || event.event.title,
+        welcomeMessage: invitationDesign.welcomeMessage || event.event.description || `You are invited to ${event.event.title}.`,
+        designedHtml: registrationInvitationHtml(
+          invitationDesign,
+          event.event.title,
+          event.event.description,
+          `${origin}/api/public/ticket-invitations/${encodeURIComponent(stored.publicToken)}`,
+          stored.recipientName,
+        ),
+        deliveryAttemptKey: (stored.updatedAt ?? stored.createdAt).getTime().toString(36),
       });
       const sent = outcome.status === "sent";
       const now = new Date();

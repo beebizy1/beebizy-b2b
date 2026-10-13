@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useShareEvent, useTickets, useUpdateEvent } from "@/data/hooks";
+import { useShareEvent, useTickets, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import {
   REGISTRATION_PAGE_TEMPLATES,
@@ -109,15 +109,16 @@ function RegistrationPreview({ event, settings }: { event: Event; settings: Regi
 export default function ShareSection({ event }: { event: Event }) {
   const share = useShareEvent();
   const update = useUpdateEvent();
+  const uploadImage = useUploadAuctionImage();
   const { data: tickets } = useTickets(event.id);
-  const [draft, setDraft] = useState<RegistrationPageSettings>(() => normalizeRegistrationPage(event.registrationPage));
+  const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
   const [guestTypesInput, setGuestTypesInput] = useState(() => normalizeRegistrationPage(event.registrationPage).registrationTypes.join(", "));
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
   const eventUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}`) : null;
   const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
   const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
-    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}${published.paymentUrl ? `\n\nPayment link: ${published.paymentUrl}` : ""}\n\nPowered by Beebizy`
+    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister and choose tickets here: ${eventUrl}\n\nPowered by Beebizy`
     : "";
   const inviteHtml = eventUrl
     ? registrationInvitationHtml(published, event.title, event.description, eventUrl)
@@ -125,7 +126,7 @@ export default function ShareSection({ event }: { event: Event }) {
 
   const publish = async () => {
     try {
-      const registrationPage = normalizeRegistrationPage({ ...draft, registrationTypes: guestTypesInput.split(",") });
+      const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
       setDraft(registrationPage);
       setGuestTypesInput(registrationPage.registrationTypes.join(", "));
       await update.mutateAsync({ id: event.id, patch: { registrationPage } });
@@ -137,7 +138,7 @@ export default function ShareSection({ event }: { event: Event }) {
   };
 
   const save = () => {
-    const registrationPage = normalizeRegistrationPage({ ...draft, registrationTypes: guestTypesInput.split(",") });
+    const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
     setDraft(registrationPage);
     setGuestTypesInput(registrationPage.registrationTypes.join(", "));
     update.mutate(
@@ -181,14 +182,16 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={600} rows={4} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="registration-hero">Hero image URL</Label>
-                <Input id="registration-hero" type="url" value={draft.heroImageUrl ?? ""} placeholder="https://example.com/event-photo.jpg" onChange={(e) => setDraft((current) => ({ ...current, heroImageUrl: e.target.value || null }))} />
-                <p className="text-xs text-muted-foreground">Use a public HTTPS image link. This image is separate from the internal mood board.</p>
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="registration-payment">External payment link (optional)</Label>
-                <Input id="registration-payment" type="url" value={draft.paymentUrl ?? ""} placeholder="https://your-checkout-provider.com/event" onChange={(e) => setDraft((current) => ({ ...current, paymentUrl: e.target.value || null }))} />
-                <p className="text-xs text-muted-foreground">Use the organizer's existing HTTPS checkout. Beebizy links guests there but does not process or deduct the payment.</p>
+                <Label>Invitation image or logo</Label>
+                <div className="flex flex-wrap items-center gap-3">
+                  {draft.heroImageUrl ? <img src={draft.heroImageUrl} alt="Invitation" className="h-20 w-32 rounded-lg border border-hairline object-cover" /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><Image className="size-5 text-muted-foreground" /></div>}
+                  <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-surface-sunken">
+                    <Image className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.heroImageUrl ? "Replace image" : "Upload image"}
+                    <input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(inputEvent) => { const file = inputEvent.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, heroImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload image", description: error.message }) }); }} />
+                  </label>
+                  {draft.heroImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, heroImageUrl: null }))}>Remove</Button> : null}
+                </div>
+                <p className="text-xs text-muted-foreground">Upload a banner photo or organization logo. It appears in the invitation email and registration page.</p>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-types">Guest types</Label>
@@ -220,8 +223,7 @@ export default function ShareSection({ event }: { event: Event }) {
             <PanelHeader title="Invite guests" description="The registration link works without a Beebizy login" actions={<Pill tone="success">Live</Pill>} />
             <div className="divide-y divide-hairline">
               <CopyRow label="Registration site" url={eventUrl} hint="Event details and registration" />
-              {onSale.length > 0 && ticketUrl && !published.paymentUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
-              {published.paymentUrl ? <CopyRow label="External payment" url={published.paymentUrl} hint="Organizer-owned checkout" /> : null}
+              {onSale.length > 0 && ticketUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
             </div>
             <div className="border-t border-hairline p-5">
               <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
