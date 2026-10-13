@@ -125,7 +125,7 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
 
   return (
     <Panel className="overflow-hidden border-primary/20">
-      <PanelHeader title="Launch your event" description="Follow these six steps in order. Finish one, then move to the next." actions={<Pill tone={completedCount === 6 ? "success" : "warning"}>{completedCount} of 6 done</Pill>} />
+      <PanelHeader title="Launch your event" description={`${event.title} · Follow these six steps in order. Finish one, then move to the next.`} actions={<Pill tone={completedCount === 6 ? "success" : "warning"}>{completedCount} of 6 done</Pill>} />
       <div className="h-1.5 bg-surface-sunken"><div className="h-full bg-primary transition-[width]" style={{ width: `${(completedCount / 6) * 100}%` }} /></div>
       <ol className="divide-y divide-hairline">
         {steps.map((step) => {

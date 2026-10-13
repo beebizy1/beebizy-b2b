@@ -113,7 +113,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone 
 
   if (guided) return (
     <Panel>
-      <PanelHeader title="Send invitations" description="Your invite design and ticket link are ready. The guest list from Step 2 is loaded below." actions={onDone ? <Button type="button" variant="outline" size="sm" onClick={onDone}>Back to launch guide</Button> : undefined} />
+      <PanelHeader title="Send invitations" description="Your invite design and ticket link are ready. The guest list from Step 2 is loaded below." />
       <section className="space-y-4 p-5">
         <div className="rounded-lg border border-primary/20 bg-primary-muted/30 p-4 text-sm"><p className="font-semibold text-foreground">Each guest gets their own link</p><p className="mt-1 text-muted-foreground">The link opens this event's ticket choices. Beebizy tracks delivery, opens, and registrations.</p></div>
         <RecipientEditor id="guided-ticket-invitees" value={guestRows} onChange={setGuestRows} eventInvitees={eventInvitees} onUseEventList={useEventGuestList} onUpload={(file) => void loadSpreadsheet(file)} validCount={recipients.length} />

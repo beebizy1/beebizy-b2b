@@ -28,6 +28,7 @@ import { EVENT_CATEGORIES, EVENT_STATUSES, type EventDraft, type EventStatus } f
 import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AccountExperience } from "@/data/accountExperience";
 import { eventDetailsReturnTarget } from "@/data/eventLaunchGuide";
+import EventLaunchContextBar from "./EventLaunchContextBar";
 
 const NO_VENUE = "__none__";
 const NO_TEMPLATE = "__blank__";
@@ -100,6 +101,7 @@ export default function EventForm({ id }: { id?: string }) {
   const returnTarget = isEdit && id
     ? eventDetailsReturnTarget(id, search)
     : { href: "/app/events", label: "All events" as const };
+  const guidedLaunchEdit = isEdit && returnTarget.label === "Back to launch guide";
 
   useEffect(() => {
     if (!existing) return;
@@ -200,37 +202,33 @@ export default function EventForm({ id }: { id?: string }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <Link
-        href={returnTarget.href}
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden="true" />
-        {returnTarget.label}
-      </Link>
-
-      <PageHeader
-        title={isEdit ? (existing?.title ?? "Edit event") : "Plan an event"}
-        description={
-          isEdit
-            ? "Changes apply immediately. Moving the venue updates the event's venue snapshot."
-            : "Start blank, or from a template that brings its checklist, run of show and budget with it."
-        }
-      />
-
-      {isEdit && returnTarget.label === "Back to launch guide" ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-foreground">You are editing Step 1 of Launch your event.</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Save your changes or return to the six-step checklist at any time.</p>
-          </div>
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link href={returnTarget.href}>Back to launch guide</Link>
-          </Button>
-        </div>
-      ) : null}
+      {guidedLaunchEdit && existing ? (
+        <EventLaunchContextBar activeStep={1} eventTitle={existing.title} backHref={returnTarget.href} />
+      ) : (
+        <>
+          <Link
+            href={returnTarget.href}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            {returnTarget.label}
+          </Link>
+          <PageHeader
+            title={isEdit ? (existing?.title ?? "Edit event") : "Plan an event"}
+            description={
+              isEdit
+                ? "Changes apply immediately. Moving the venue updates the event's venue snapshot."
+                : "Start blank, or from a template that brings its checklist, run of show and budget with it."
+            }
+          />
+        </>
+      )}
 
       <Panel>
-        <PanelHeader title="Details" />
+        <PanelHeader
+          title={guidedLaunchEdit ? "Step 1. Event details" : "Details"}
+          description={guidedLaunchEdit ? "Set the basics, then save to return to the checklist and continue." : undefined}
+        />
         <form
           className="space-y-5 p-5"
           onSubmit={(formEvent) => {

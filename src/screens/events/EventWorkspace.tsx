@@ -102,6 +102,7 @@ import { ChecklistPanel, MoodBoardPanel, RunOfShowPanel } from "./sections/PlanS
 import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/VendorsSection";
 import EventLiveUpdates from "./EventLiveUpdates";
 import EventSpreadsheetImportDialog from "./EventSpreadsheetImportDialog";
+import EventLaunchContextBar from "./EventLaunchContextBar";
 import {
   AuctionPanel,
   BudgetPanel,
@@ -777,29 +778,24 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
 
   const days = eventDayOptions(event.date, event.endDate, timeZone);
   const selectedDay = selectedEventDay(search, days);
+  const guidedInviteList = active === "registrations" && returnTarget.label === "Back to launch guide";
+  const launchWorkspace = active === "share";
 
   return (
-    <div className="space-y-6">
-      <WorkspaceHeader
-        event={event}
-        health={health}
-        active={active}
-        plan={plan}
-        experience={experience}
-        canManageAccess={identity?.role === "owner"}
-      />
-      {active !== "share" && returnTarget.label === "Back to launch guide" ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-foreground">This workspace was opened from Launch your event.</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Make your changes, then return to the master checklist to continue with the next step.</p>
-          </div>
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link href={returnTarget.href}><ArrowLeft className="mr-1.5 size-3.5" />Back to launch guide</Link>
-          </Button>
-        </div>
+    <div className={cn("space-y-6", (guidedInviteList || launchWorkspace) && "mx-auto max-w-6xl")}>
+      {guidedInviteList ? (
+        <EventLaunchContextBar activeStep={2} eventTitle={event.title} backHref={returnTarget.href} />
+      ) : !launchWorkspace ? (
+        <WorkspaceHeader
+          event={event}
+          health={health}
+          active={active}
+          plan={plan}
+          experience={experience}
+          canManageAccess={identity?.role === "owner"}
+        />
       ) : null}
-      <EventLiveUpdates event={event} />
+      {!guidedInviteList && !launchWorkspace ? <EventLiveUpdates event={event} /> : null}
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}

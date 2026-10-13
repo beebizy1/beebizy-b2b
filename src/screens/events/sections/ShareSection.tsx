@@ -21,6 +21,7 @@ import {
 } from "@/data/registrationPage";
 import type { Event } from "@/data/entities";
 import EventLaunchGuide from "./EventLaunchGuide";
+import EventLaunchContextBar from "../EventLaunchContextBar";
 import TicketInvitationBuilder from "./TicketInvitationBuilder";
 import GuidedTicketPricing from "./GuidedTicketPricing";
 
@@ -193,15 +194,23 @@ export default function ShareSection({ event }: { event: Event }) {
 
   return (
     <div className="space-y-6">
-      <div id="event-launch-guide"><EventLaunchGuide event={event} tickets={tickets ?? []} publishing={share.isPending || update.isPending} onDesignInvite={revealInvitationDesign} onPublishInvite={() => void publish()} onSendInvites={revealInvitationSender} onPriceTickets={revealTicketPricing} /></div>
+      {activeWorkspace === null ? (
+        <div id="event-launch-guide"><EventLaunchGuide event={event} tickets={tickets ?? []} publishing={share.isPending || update.isPending} onDesignInvite={revealInvitationDesign} onPublishInvite={() => void publish()} onSendInvites={revealInvitationSender} onPriceTickets={revealTicketPricing} /></div>
+      ) : (
+        <EventLaunchContextBar
+          activeStep={activeWorkspace === "design" ? 3 : activeWorkspace === "pricing" ? 4 : 6}
+          eventTitle={event.title}
+          onBack={returnToLaunchGuide}
+        />
+      )}
       {activeWorkspace === "pricing" ? <div id="guided-ticket-pricing"><GuidedTicketPricing event={event} onDone={returnToLaunchGuide} /></div> : null}
       {activeWorkspace === "sender" ? <div id="guided-invitation-sender"><TicketInvitationBuilder event={event} guided onDone={returnToLaunchGuide} /></div> : null}
-      <details className="rounded-xl border border-hairline bg-background" open={showDetails} onToggle={(event) => { setShowDetails(event.currentTarget.open); if (!event.currentTarget.open && activeWorkspace === "design") setActiveWorkspace(null); }}>
+      {activeWorkspace === null || activeWorkspace === "design" ? <details className="rounded-xl border border-hairline bg-background" open={showDetails} onToggle={(event) => { setShowDetails(event.currentTarget.open); if (!event.currentTarget.open && activeWorkspace === "design") setActiveWorkspace(null); }}>
         <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">{activeWorkspace === "design" ? "Invitation design and preview" : "Advanced public links and settings"}</summary>
         <div id="registration-site-builder" className="grid gap-6 border-t border-hairline p-5 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
       <div className="space-y-6">
         {activeWorkspace === "design" ? <Panel>
-          <PanelHeader title="Registration site builder" description="Choose a starting point, then make the guest page match this event" actions={<div className="flex items-center gap-2"><Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill><Button type="button" variant="outline" size="sm" onClick={returnToLaunchGuide}>Back to launch guide</Button></div>} />
+          <PanelHeader title="Registration site builder" description="Choose a starting point, then make the guest page match this event" actions={<Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill>} />
           <div className="space-y-6 p-5">
             <fieldset>
               <legend className="flex items-center gap-2 text-sm font-semibold text-foreground"><Palette className="size-4" /> Template</legend>
@@ -324,7 +333,7 @@ export default function ShareSection({ event }: { event: Event }) {
         </Panel> : null}
       </div>
         </div>
-      </details>
+      </details> : null}
     </div>
   );
 }
