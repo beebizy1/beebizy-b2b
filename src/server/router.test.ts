@@ -142,7 +142,7 @@ const { config, handleRequest, requireScopedRoute } = await import("../../api/ro
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
-const { openTicketInvitation } = await import("./ticketInvitations");
+const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
@@ -732,6 +732,28 @@ describe("public commerce endpoints", () => {
     expect(donor.status).toBe(200);
     expect(invitation.status).toBe(302);
     expect(invitation.headers.get("location")).toBe("http://localhost/e/share-token/tickets?invite=invite-token");
+  });
+});
+
+describe("workspace member ticket invitations", () => {
+  it("allows a full workspace member to send the event's invitations", async () => {
+    const context = {
+      userId: "user-laila",
+      workspaceId: "workspace-school",
+      email: "laila@beebizy.com",
+      role: "member" as const,
+      eventScopeId: null,
+      access: { status: "beta" as const, plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(sendTicketInvitations).mockResolvedValue({ attempted: 1, sent: 1, failed: 0, invitations: [] });
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/ticket-invitations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recipients: [{ name: "Laila", email: "laila@beebizy.com" }], consentConfirmed: true }),
+    }));
+    expect(response.status).toBe(201);
+    expect(sendTicketInvitations).toHaveBeenCalledWith(context, "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request));
   });
 });
 

@@ -37,9 +37,6 @@ export async function sendTicketInvitations(
   consentConfirmed: boolean,
   request: Request,
 ): Promise<TicketInvitationBatchResult> {
-  if (!(["owner", "admin"] as const).includes(ctx.role as "owner" | "admin")) {
-    throw new HttpError(403, "Only an owner or admin can send ticket invitations.");
-  }
   if (!consentConfirmed) {
     throw new HttpError(400, "Confirm that these recipients expect event communication before sending.");
   }
