@@ -8,7 +8,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
-import { CalendarDays, Check, ExternalLink, HeartHandshake, MapPin, Minus, Plus, Ticket, Users } from "lucide-react";
+import { CalendarDays, Check, ExternalLink, Gavel, HeartHandshake, MapPin, Minus, Plus, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ import { useEventByShareToken, usePublicRegistration, usePublicTicketOrderStatus
 import { formatMoney } from "@/data/money";
 import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import { SCHOOL_GRADES, type Event, type PublicRegistrationResult, type SchoolGrade } from "@/data/entities";
+import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
@@ -132,6 +133,8 @@ export function PublicEventPage({ token }: { token: string }) {
   }
   if (!event) return <EventNotFound />;
   const registrationPage = normalizeRegistrationPage(event.registrationPage);
+  const auctionPage = normalizeAuctionPageSettings(event.auctionPage);
+  const bidderExperienceOpen = Boolean(event.auctionPublicToken) && (auctionPage.registrationOpen || auctionPage.catalogPublished);
 
   const maxScheduledDay = Math.max(1, ...(agenda ?? []).map((cue) => cue.dayNumber));
   const eventDays = eventDayOptions(event.date, event.endDate, timeZone, maxScheduledDay);
@@ -180,6 +183,22 @@ export function PublicEventPage({ token }: { token: string }) {
                 <a href={registrationPage.paymentUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="mr-1.5 size-4" />Continue to payment
                 </a>
+              </Button>
+            </div>
+          </Panel>
+        ) : null}
+
+        {bidderExperienceOpen && event.auctionPublicToken ? (
+          <Panel className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{auctionPage.catalogPublished ? "Auction and mobile bidding" : "Bidder registration is open"}</p>
+                <p className="text-xs text-muted-foreground">{auctionPage.catalogPublished ? "Browse auction items, save favorites, get a paddle, and bid from your phone." : "Get your paddle now. Auction items will appear here when the organizer publishes the catalog."}</p>
+              </div>
+              <Button asChild>
+                <Link href={`/auction/${event.auctionPublicToken}`}>
+                  <Gavel className="mr-1.5 size-4" />{auctionPage.catalogPublished ? "Open auction" : "Get a bidder paddle"}
+                </Link>
               </Button>
             </div>
           </Panel>
@@ -261,7 +280,7 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !selectedSegment) return <EventNotFound />;
   if (result) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><p className="mt-3 text-sm text-muted-foreground">{result.confirmationEmailStatus === "sent" ? `A confirmation email was sent to ${email.trim()}.` : `Your place is confirmed, but we could not send the confirmation email to ${email.trim()}. Please save this event link.`}</p><div className="mt-4 flex flex-wrap justify-center gap-2">{settings.paymentUrl ? <Button asChild size="sm"><a href={settings.paymentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Continue to payment</a></Button> : null}<Button asChild variant="outline" size="sm"><Link href={`/e/${token}`}>Back to the event</Link></Button></div></Panel></PublicFrame>;
-  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment } }, { onSuccess: setResult, onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Organization<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
+  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment } }, { onSuccess: setResult, onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Company, school, or organization <span className="font-normal text-muted-foreground">(optional)</span><Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Example: Cedar Grove School or Acme Inc." /><span className="block text-xs font-normal text-muted-foreground">This helps the event organizer understand who you are attending with. Leave it blank if it does not apply.</span></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
 }
 
 export function PublicVolunteerSignupPage({ token }: { token: string }) {

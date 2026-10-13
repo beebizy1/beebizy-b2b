@@ -17,8 +17,9 @@ describe("registration page settings", () => {
     ]);
   });
 
-  it("preserves segmented links for events created before the builder", () => {
+  it("gives events created before the builder a neutral client-facing guest type", () => {
     expect(normalizeRegistrationPage(null)).toEqual(LEGACY_REGISTRATION_PAGE);
+    expect(normalizeRegistrationPage(null).registrationTypes).toEqual(["General"]);
     expect(normalizeRegistrationPage(DEFAULT_REGISTRATION_PAGE)).toEqual(DEFAULT_REGISTRATION_PAGE);
   });
 

@@ -64,10 +64,10 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   collectOrganization: true,
 };
 
-/** Null means an event predates the builder. Keep its already-shared segment links valid. */
+/** Null means an event predates the builder. Use a neutral public label until the client customizes it. */
 export const LEGACY_REGISTRATION_PAGE: RegistrationPageSettings = {
   ...DEFAULT_REGISTRATION_PAGE,
-  registrationTypes: ["Investor", "Company", "General", "Student"],
+  registrationTypes: ["General"],
 };
 
 function text(value: unknown, maxLength: number): string {

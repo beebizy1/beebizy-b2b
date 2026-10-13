@@ -1,7 +1,7 @@
 /** The organizer-facing builder for the event's public registration site. */
 
 import { useState, type CSSProperties } from "react";
-import { Check, Copy, ExternalLink, Eye, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
+import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { useShareEvent, useTickets, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
+import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import {
   REGISTRATION_PAGE_TEMPLATES,
   normalizeRegistrationPage,
@@ -19,6 +20,12 @@ import {
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
 import type { Event } from "@/data/entities";
+
+const REGISTRATION_TYPE_PRESETS = [
+  { label: "School gala", types: ["Parent/Guardian", "Alumni", "Faculty/Staff", "Friend of school"] },
+  { label: "Open event", types: ["Guest"] },
+  { label: "Professional", types: ["Attendee", "Sponsor", "Speaker", "Staff"] },
+] as const;
 
 function absoluteUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
@@ -116,6 +123,8 @@ export default function ShareSection({ event }: { event: Event }) {
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
   const eventUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}`) : null;
   const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
+  const auctionUrl = event.auctionPublicToken ? absoluteUrl(`/auction/${event.auctionPublicToken}`) : null;
+  const auctionPage = normalizeAuctionPageSettings(event.auctionPage);
   const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
     ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister and choose tickets here: ${eventUrl}\n\nPowered by Beebizy`
@@ -196,7 +205,10 @@ export default function ShareSection({ event }: { event: Event }) {
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-types">Guest types</Label>
                 <Input id="registration-types" value={guestTypesInput} placeholder="General, VIP, Speaker" onChange={(e) => setGuestTypesInput(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Separate each type with a comma. Guests choose one when they register, and it appears in the segmented list.</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {REGISTRATION_TYPE_PRESETS.map((preset) => <Button key={preset.label} type="button" size="sm" variant="outline" onClick={() => setGuestTypesInput(preset.types.join(", "))}>{preset.label}</Button>)}
+                </div>
+                <p className="text-xs text-muted-foreground">These labels are customer-facing. Choose a preset or enter client-specific types separated by commas. Guests select one when they register.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="registration-color">Brand color</Label>
@@ -206,7 +218,7 @@ export default function ShareSection({ event }: { event: Event }) {
                 </div>
               </div>
               <div className="space-y-3 rounded-lg border border-hairline p-3">
-                <label className="flex items-center justify-between gap-3 text-sm"><span>Ask for organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label>
+                <div><label className="flex items-center justify-between gap-3 text-sm"><span>Ask for company, school, or organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label><p className="mt-1 pr-12 text-xs text-muted-foreground">Adds an optional field so guests can name the business, school, nonprofit, or group they represent.</p></div>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show public agenda</span><Switch checked={draft.showAgenda} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showAgenda: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
               </div>
@@ -224,6 +236,7 @@ export default function ShareSection({ event }: { event: Event }) {
             <div className="divide-y divide-hairline">
               <CopyRow label="Registration site" url={eventUrl} hint="Event details and registration" />
               {onSale.length > 0 && ticketUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
+              {auctionUrl ? <CopyRow label="Bidder auction" url={auctionUrl} hint="Public mobile bidding" /> : null}
             </div>
             <div className="border-t border-hairline p-5">
               <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
@@ -246,6 +259,11 @@ export default function ShareSection({ event }: { event: Event }) {
           </Panel>
         )}
 
+        <Panel>
+          <PanelHeader title="Bidder-facing auction" description="This is the mobile page guests use to get a paddle, browse items, and bid" actions={auctionUrl ? <Pill tone={auctionPage.catalogPublished ? "success" : "warning"}>{auctionPage.catalogPublished ? "Live" : "Preview ready"}</Pill> : <Pill>Not created</Pill>} />
+          {auctionUrl ? <div className="divide-y divide-hairline"><CopyRow label="Public bidder page" url={auctionUrl} hint={auctionPage.catalogPublished ? "No organizer login required" : "Registration open; catalog still hidden"} /><div className="px-5 py-4 text-xs text-muted-foreground">{auctionPage.catalogPublished ? "This link also appears on the public event page as “Open auction.”" : "Guests can receive a paddle now. Unpublished auction items remain hidden until the catalog is ready."}</div></div> : <EmptyState icon={Gavel} title="The bidder page has not been created" description="Open Fundraising and create the donor and bidder links. Beebizy will then place the auction button on this public registration site." action={<Button asChild><a href={`/app/events/${event.id}/fundraising`}><Gavel className="mr-1.5 size-4" />Open fundraising setup</a></Button>} />}
+        </Panel>
+
         {onSale.length > 0 ? (
           <Panel>
             <PanelHeader title="Ticket options" description="These appear automatically on the registration site" />
@@ -261,7 +279,7 @@ export default function ShareSection({ event }: { event: Event }) {
         <Panel>
           <PanelHeader title="What guests can access" description="Only the public event experience" />
           <div className="space-y-3 px-5 py-4 text-sm">
-            <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-success-text" /><p><span className="font-medium">Visible:</span> registration branding, event details, registration form, selected agenda, volunteer openings, and tickets on sale.</p></div>
+            <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-success-text" /><p><span className="font-medium">Visible:</span> registration branding, event details, registration form, selected agenda, volunteer openings, tickets on sale, and the bidder auction when it is live.</p></div>
             <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-danger-text" /><p><span className="font-medium">Never visible:</span> budgets, vendor fees, guest contact details, internal checklists, sponsorship amounts, or bids.</p></div>
             <p className="border-t border-hairline pt-3 text-xs text-muted-foreground">Every submission is added directly to this event's registration list, ready for filtering and check-in.</p>
           </div>
