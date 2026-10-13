@@ -377,7 +377,18 @@ export function PublicTicketsPage({ token }: { token: string }) {
   );
   const chosen = onSale.find((ticket) => ticket.id === selected) ?? null;
   const remaining = chosen === null ? null : chosen.quantityTotal === 0 ? null : chosen.quantityTotal - chosen.quantitySold;
-  const quantityLimit = chosen ? Math.max(1, Math.min(remaining ?? (chosen.maxPerOrder ?? 10), chosen.maxPerOrder ?? 10)) : 1;
+  const chosenSoldOut = chosen !== null && remaining !== null && remaining <= 0;
+  const maxPerOrder = chosen?.maxPerOrder ?? 10;
+  const quantityLimit = chosen ? Math.max(1, Math.min(remaining ?? maxPerOrder, maxPerOrder)) : 1;
+  const quantityHelp = chosenSoldOut
+    ? "This ticket option is sold out. Choose another available option."
+    : chosen && remaining !== null && remaining <= quantity
+    ? remaining === 1
+      ? "Only 1 ticket remains for this option, so another guest cannot be added."
+      : `This order includes all ${remaining} remaining tickets for this option.`
+    : chosen && quantity >= maxPerOrder
+      ? `This ticket option allows up to ${maxPerOrder} tickets per order.`
+      : "Use + to add a spouse or guest, then enter each person's full name below.";
   const changeQuantity = (requested: number) => {
     const nextQuantity = Math.max(1, Math.min(requested, quantityLimit));
     setQuantity(nextQuantity);
@@ -598,7 +609,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
                     <Input id="buyer-quantity" type="number" min={1} max={quantityLimit} value={quantity} onChange={(inputEvent) => changeQuantity(Number.parseInt(inputEvent.target.value, 10) || 1)} className="w-20 text-center font-semibold" />
                     <Button type="button" size="icon" variant="outline" aria-label="Add one ticket" disabled={!chosen || quantity >= quantityLimit} onClick={() => changeQuantity(quantity + 1)}><Plus className="size-4" /></Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">Use + to add a spouse or guest, then enter each person's full name below.</p>
+                  <p className={cn("text-xs", chosenSoldOut || (remaining !== null && remaining <= quantity) ? "text-warning-text" : "text-muted-foreground")}>{quantityHelp}</p>
                   {remaining !== null ? (
                     <p data-numeric className="text-xs text-muted-foreground">
                       {remaining} available
@@ -653,7 +664,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
                     {chosen ? formatMoney(chosen.priceCents * quantity + (Math.round(Number(donationAddOn || 0) * 100) || 0)) : formatMoney(0)}
                   </span>
                 </p>
-                <Button type="submit" disabled={!chosen || !name.trim() || !contact.trim() || purchase.isPending}>
+                <Button type="submit" disabled={!chosen || chosenSoldOut || !name.trim() || !contact.trim() || purchase.isPending}>
                   <Ticket className="mr-1.5 size-4" />
                   {purchase.isPending ? "Reserving…" : chosen && chosen.priceCents > 0 ? "Continue to secure payment" : "Confirm registration"}
                 </Button>
