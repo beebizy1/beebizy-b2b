@@ -4,6 +4,8 @@ import {
   eventLaunchCompletion,
   eventLaunchDetailsHref,
   eventLaunchRegistrationsHref,
+  eventLaunchStepHref,
+  eventLaunchUnlocks,
   nextEventLaunchStep,
   openEventLaunchStep,
 } from "./eventLaunchGuide";
@@ -52,6 +54,43 @@ describe("event launch guide", () => {
     expect(eventLaunchRegistrationsHref("evt-123")).toBe(
       "/app/events/evt-123/registrations?returnTo=%2Fapp%2Fevents%2Fevt-123%2Fshare",
     );
+  });
+
+  it("builds direct links for every launch step", () => {
+    expect(eventLaunchStepHref("evt-123", "event")).toContain("/edit?returnTo=");
+    expect(eventLaunchStepHref("evt-123", "invite-list")).toContain("/registrations?returnTo=");
+    expect(eventLaunchStepHref("evt-123", "invite-design")).toBe("/app/events/evt-123/share?step=invite-design");
+    expect(eventLaunchStepHref("evt-123", "payments")).toBe("/app/events/evt-123/share?step=payments");
+  });
+
+  it("locks future steps until every earlier requirement is complete", () => {
+    const completion = eventLaunchCompletion({
+      inviteeCount: 0,
+      invitationDesigned: false,
+      activeTicketCount: 0,
+      stripeReady: false,
+      invitationsSent: false,
+    });
+    expect(eventLaunchUnlocks(completion)).toEqual({
+      event: true,
+      "invite-list": true,
+      "invite-design": false,
+      tickets: false,
+      payments: false,
+      send: false,
+    });
+  });
+
+  it("keeps completed later work clickable without unlocking unfinished steps around it", () => {
+    const completion = eventLaunchCompletion({
+      inviteeCount: 0,
+      invitationDesigned: true,
+      activeTicketCount: 0,
+      stripeReady: false,
+      invitationsSent: false,
+    });
+    expect(eventLaunchUnlocks(completion)["invite-design"]).toBe(true);
+    expect(eventLaunchUnlocks(completion).tickets).toBe(false);
   });
 
   it("advances from a completed selected step to the next unfinished step", () => {

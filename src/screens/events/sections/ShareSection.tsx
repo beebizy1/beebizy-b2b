@@ -1,6 +1,7 @@
 /** The organizer-facing builder for the event's public registration site. */
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { useLocation, useSearch } from "wouter";
 import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,8 +21,10 @@ import {
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
 import type { Event } from "@/data/entities";
+import { EVENT_LAUNCH_STEP_IDS, eventLaunchPath, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import EventLaunchGuide from "./EventLaunchGuide";
 import EventLaunchContextBar from "../EventLaunchContextBar";
+import { useEventLaunchProgress } from "../useEventLaunchProgress";
 import TicketInvitationBuilder from "./TicketInvitationBuilder";
 import GuidedTicketPricing from "./GuidedTicketPricing";
 
@@ -118,6 +121,8 @@ function RegistrationPreview({ event, settings }: { event: Event; settings: Regi
 }
 
 export default function ShareSection({ event }: { event: Event }) {
+  const [, navigate] = useLocation();
+  const search = useSearch();
   const share = useShareEvent();
   const update = useUpdateEvent();
   const uploadImage = useUploadAuctionImage();
@@ -126,6 +131,9 @@ export default function ShareSection({ event }: { event: Event }) {
   const [showDetails, setShowDetails] = useState(false);
   const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
   const [guestTypesInput, setGuestTypesInput] = useState(() => normalizeRegistrationPage(event.registrationPage).registrationTypes.join(", "));
+  const progress = useEventLaunchProgress(event);
+  const requestedStep = EVENT_LAUNCH_STEP_IDS.find((step) => step === new URLSearchParams(search).get("step")) ?? null;
+  const requestedStepUnlocked = requestedStep ? progress.unlocked[requestedStep] : false;
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
   const eventUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}`) : null;
   const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
@@ -153,6 +161,7 @@ export default function ShareSection({ event }: { event: Event }) {
   };
 
   const returnToLaunchGuide = () => {
+    navigate(eventLaunchPath(event.id), { replace: true });
     setActiveWorkspace(null);
     setShowDetails(false);
     window.requestAnimationFrame(() => document.getElementById("event-launch-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -192,15 +201,40 @@ export default function ShareSection({ event }: { event: Event }) {
     window.requestAnimationFrame(() => document.getElementById("guided-ticket-pricing")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
+  useEffect(() => {
+    if (!requestedStep || !requestedStepUnlocked) return;
+    if (requestedStep === "invite-design") {
+      setActiveWorkspace("design");
+      setShowDetails(true);
+    } else if (requestedStep === "tickets") {
+      setActiveWorkspace("pricing");
+      setShowDetails(false);
+    } else if (requestedStep === "send") {
+      setActiveWorkspace("sender");
+      setShowDetails(false);
+    } else {
+      setActiveWorkspace(null);
+      setShowDetails(false);
+    }
+  }, [requestedStep, requestedStepUnlocked]);
+
+  const selectLaunchStep = (step: EventLaunchStepId) => {
+    if (!progress.unlocked[step]) return;
+    navigate(eventLaunchStepHref(event.id, step));
+  };
+
   return (
     <div className="space-y-6">
       {activeWorkspace === null ? (
-        <div id="event-launch-guide"><EventLaunchGuide event={event} tickets={tickets ?? []} publishing={share.isPending || update.isPending} onDesignInvite={revealInvitationDesign} onPublishInvite={() => void publish()} onSendInvites={revealInvitationSender} onPriceTickets={revealTicketPricing} /></div>
+        <div id="event-launch-guide"><EventLaunchGuide event={event} focusStep={requestedStep} publishing={share.isPending || update.isPending} onDesignInvite={revealInvitationDesign} onPublishInvite={() => void publish()} onSendInvites={revealInvitationSender} onPriceTickets={revealTicketPricing} /></div>
       ) : (
         <EventLaunchContextBar
           activeStep={activeWorkspace === "design" ? 3 : activeWorkspace === "pricing" ? 4 : 6}
           eventTitle={event.title}
           onBack={returnToLaunchGuide}
+          completion={progress.completion}
+          unlocked={progress.unlocked}
+          onStepSelect={selectLaunchStep}
         />
       )}
       {activeWorkspace === "pricing" ? <div id="guided-ticket-pricing"><GuidedTicketPricing event={event} onDone={returnToLaunchGuide} /></div> : null}

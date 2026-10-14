@@ -85,7 +85,7 @@ import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
 import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel, selectedEventDay } from "@/data/eventDays";
 import { useAccountExperience } from "@/app/useAccountExperience";
-import { eventDetailsReturnTarget } from "@/data/eventLaunchGuide";
+import { eventDetailsReturnTarget, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
@@ -103,6 +103,7 @@ import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/Vendors
 import EventLiveUpdates from "./EventLiveUpdates";
 import EventSpreadsheetImportDialog from "./EventSpreadsheetImportDialog";
 import EventLaunchContextBar from "./EventLaunchContextBar";
+import { useEventLaunchProgress } from "./useEventLaunchProgress";
 import {
   AuctionPanel,
   BudgetPanel,
@@ -443,8 +444,8 @@ function WorkspaceHeader({
         All events
       </Link>
 
-      <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
-        <div className="min-w-0 space-y-3">
+      <div className="flex flex-col gap-5">
+        <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="display-md text-foreground">{event.title}</h1>
             <EventStatusBadge status={event.status} />
@@ -724,8 +725,10 @@ function ContingencyWorkspace({ event }: { event: Event }) {
 }
 
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
+  const [, navigate] = useLocation();
   const search = useSearch();
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
+  const launchProgress = useEventLaunchProgress(event);
   const { data: health } = useEventHealth(id);
   const { data: identity } = useMe();
   const { experience } = useAccountExperience();
@@ -733,6 +736,10 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
   const returnTarget = eventDetailsReturnTarget(id, search);
+  const selectLaunchStep = (step: EventLaunchStepId) => {
+    if (!launchProgress.unlocked[step]) return;
+    navigate(eventLaunchStepHref(id, step));
+  };
 
   if (isLoading) {
     return (
@@ -784,7 +791,14 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   return (
     <div className={cn("space-y-6", (guidedInviteList || launchWorkspace) && "mx-auto max-w-6xl")}>
       {guidedInviteList ? (
-        <EventLaunchContextBar activeStep={2} eventTitle={event.title} backHref={returnTarget.href} />
+        <EventLaunchContextBar
+          activeStep={2}
+          eventTitle={event.title}
+          backHref={returnTarget.href}
+          completion={launchProgress.completion}
+          unlocked={launchProgress.unlocked}
+          onStepSelect={selectLaunchStep}
+        />
       ) : !launchWorkspace ? (
         <WorkspaceHeader
           event={event}

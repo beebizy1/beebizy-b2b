@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import {
   CheckCircle2,
   CreditCard,
@@ -890,6 +891,8 @@ function AuctionCard({
 /* --------------------------------------------------------------------- panel */
 
 export default function FundraisingPanel({ event }: { event: Event }) {
+  const search = useSearch();
+  const guidedAuctionSetup = new URLSearchParams(search).get("setup") === "auction";
   const { data: auctionItems, isLoading: auctionLoading } = useAuctionItems(event.id);
   const { data: sponsorships, isLoading: sponsorsLoading } = useSponsorships(event.id);
   const removeAuction = useRemoveAuctionItem();
@@ -919,6 +922,24 @@ export default function FundraisingPanel({ event }: { event: Event }) {
 
   return (
     <div className="space-y-10">
+      {guidedAuctionSetup ? (
+        <Panel id="auction-setup-guide" className="overflow-hidden border-primary/30">
+          <div className="border-b border-hairline bg-primary-muted/35 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-text">Fundraiser auction setup</p>
+            <h2 className="mt-1 text-xl font-bold text-foreground">Your event is ready for auction items</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Add items yourself or copy the donor form link so families and businesses can submit descriptions, photos, values, restrictions, expiration dates, and delivery details on their own.</p>
+          </div>
+          <ol className="grid gap-3 p-5 md:grid-cols-3">
+            <li className="rounded-xl border border-hairline bg-background p-4"><span className="grid size-8 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">1</span><p className="mt-3 font-semibold text-foreground">Add your own items</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Enter an auction item directly when the school already has the details.</p></li>
+            <li className="rounded-xl border border-hairline bg-background p-4"><span className="grid size-8 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">2</span><p className="mt-3 font-semibold text-foreground">Send the donor form</p><p className="mt-1 text-xs leading-5 text-muted-foreground">The public link is ready for donors and does not require a Beebizy login.</p></li>
+            <li className="rounded-xl border border-hairline bg-background p-4"><span className="grid size-8 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">3</span><p className="mt-3 font-semibold text-foreground">Review submissions</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Approve submitted items into the auction catalog when the information is complete.</p></li>
+          </ol>
+          <div className="flex flex-wrap gap-2 border-t border-hairline px-5 py-4">
+            <Button onClick={() => setAuctionDialog({ open: true, item: null })}><Plus className="mr-1.5 size-4" />Add auction item</Button>
+            <Button variant="outline" onClick={() => document.getElementById("donor-bidder-links")?.scrollIntoView({ behavior: "smooth", block: "start" })}><LinkIcon className="mr-1.5 size-4" />{event.auctionPublicToken ? "Copy donor item link" : "Create donor item link"}</Button>
+          </div>
+        </Panel>
+      ) : null}
       <FundraisingOperationsPanel event={event} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
@@ -949,7 +970,7 @@ export default function FundraisingPanel({ event }: { event: Event }) {
         />
       </div>
 
-      <section>
+      <section id="auction-items">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 text-lg font-bold text-foreground">

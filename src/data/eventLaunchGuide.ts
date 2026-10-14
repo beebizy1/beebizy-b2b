@@ -28,6 +28,12 @@ export function eventLaunchRegistrationsHref(eventId: string): string {
   return `/app/events/${eventId}/registrations?returnTo=${encodeURIComponent(eventLaunchPath(eventId))}`;
 }
 
+export function eventLaunchStepHref(eventId: string, step: EventLaunchStepId): string {
+  if (step === "event") return eventLaunchDetailsHref(eventId);
+  if (step === "invite-list") return eventLaunchRegistrationsHref(eventId);
+  return `${eventLaunchPath(eventId)}?step=${step}`;
+}
+
 export function eventDetailsReturnTarget(eventId: string, search: string): EventDetailsReturnTarget {
   const launchGuide = eventLaunchPath(eventId);
   return new URLSearchParams(search).get("returnTo") === launchGuide
@@ -49,6 +55,16 @@ export function eventLaunchCompletion(input: EventLaunchProgressInput): EventLau
 
 export function nextEventLaunchStep(completion: EventLaunchCompletion): EventLaunchStepId | null {
   return EVENT_LAUNCH_STEP_IDS.find((step) => !completion[step]) ?? null;
+}
+
+/** A future step unlocks only after every earlier step is complete. Completed steps stay reviewable. */
+export function eventLaunchUnlocks(completion: EventLaunchCompletion): EventLaunchCompletion {
+  let everyEarlierStepComplete = true;
+  return Object.fromEntries(EVENT_LAUNCH_STEP_IDS.map((step) => {
+    const unlocked = completion[step] || everyEarlierStepComplete;
+    everyEarlierStepComplete = everyEarlierStepComplete && completion[step];
+    return [step, unlocked];
+  })) as EventLaunchCompletion;
 }
 
 /** Keeps deliberate review of a completed step open, but advances once an unfinished step becomes complete. */

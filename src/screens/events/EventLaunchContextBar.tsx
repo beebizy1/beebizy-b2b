@@ -1,7 +1,8 @@
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Lock } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { EVENT_LAUNCH_STEP_IDS, type EventLaunchCompletion, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 
 const STEPS = [
   "Event",
@@ -17,11 +18,17 @@ export default function EventLaunchContextBar({
   eventTitle,
   backHref,
   onBack,
+  completion,
+  unlocked,
+  onStepSelect,
 }: {
   activeStep: number;
   eventTitle: string;
   backHref?: string;
   onBack?: () => void;
+  completion?: EventLaunchCompletion;
+  unlocked?: EventLaunchCompletion;
+  onStepSelect?: (step: EventLaunchStepId) => void;
 }) {
   const backContent = (
     <>
@@ -49,20 +56,42 @@ export default function EventLaunchContextBar({
       </div>
       <ol className="workspace-scrollbar flex gap-2 overflow-x-auto px-4 py-3 sm:grid sm:grid-cols-6 sm:px-5">
         {STEPS.map((label, index) => {
+          const id = EVENT_LAUNCH_STEP_IDS[index]!;
           const number = index + 1;
           const current = number === activeStep;
-          const previous = number < activeStep;
-          return (
-            <li key={label} aria-current={current ? "step" : undefined} className="flex min-w-28 items-center gap-2 sm:min-w-0">
+          const complete = completion?.[id] ?? number < activeStep;
+          const available = unlocked?.[id] ?? number <= activeStep;
+          const content = (
+            <>
               <span className={cn(
                 "grid size-7 shrink-0 place-items-center rounded-full border text-xs font-bold",
-                previous && "border-success bg-success text-white",
+                complete && "border-success bg-success text-white",
                 current && "border-primary bg-primary text-primary-foreground ring-4 ring-primary/15",
-                !previous && !current && "border-hairline bg-background text-muted-foreground",
+                !complete && !current && available && "border-hairline bg-background text-muted-foreground",
+                !available && "border-hairline bg-surface-sunken text-muted-foreground",
               )}>
-                {previous ? <Check className="size-3.5" aria-hidden="true" /> : number}
+                {complete && !current ? <Check className="size-3.5" aria-hidden="true" /> : !available ? <Lock className="size-3" aria-hidden="true" /> : number}
               </span>
               <span className={cn("text-xs font-medium", current ? "text-foreground" : "text-muted-foreground")}>{label}</span>
+            </>
+          );
+          return (
+            <li key={id} className="min-w-28 sm:min-w-0">
+              {onStepSelect ? (
+                <button
+                  type="button"
+                  aria-current={current ? "step" : undefined}
+                  aria-label={`Step ${number}: ${label}${complete ? ", complete" : !available ? ", locked" : ""}`}
+                  title={!available ? "Finish the earlier steps to unlock this one." : current ? "You are here" : `Go to ${label}`}
+                  disabled={!available || current}
+                  className="flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-colors enabled:hover:bg-primary-muted/50 disabled:cursor-default"
+                  onClick={() => onStepSelect(id)}
+                >
+                  {content}
+                </button>
+              ) : (
+                <div aria-current={current ? "step" : undefined} className="flex items-center gap-2 p-1.5">{content}</div>
+              )}
             </li>
           );
         })}

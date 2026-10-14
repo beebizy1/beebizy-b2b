@@ -1,11 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronDown, CreditCard, ListChecks, Mail, Palette, PartyPopper, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useMe, useRegistrations, useStartStripeConnect, useStripeConnectStatus, useTicketInvitations } from "@/data/hooks";
-import { registrationPageIsCustomized } from "@/data/registrationPage";
+import { useMe, useStartStripeConnect } from "@/data/hooks";
 import {
-  eventLaunchCompletion,
   eventLaunchDetailsHref,
   eventLaunchPath,
   eventLaunchRegistrationsHref,
@@ -13,14 +11,14 @@ import {
   openEventLaunchStep,
 } from "@/data/eventLaunchGuide";
 import type { EventLaunchStepId } from "@/data/eventLaunchGuide";
-import { eventInvitationRecipients } from "@/data/ticketInvitations";
-import type { Event, TicketType } from "@/data/entities";
+import type { Event } from "@/data/entities";
 import { toast } from "@/hooks/use-toast";
+import { useEventLaunchProgress } from "../useEventLaunchProgress";
 
 interface EventLaunchGuideProps {
   event: Event;
-  tickets: TicketType[];
   publishing: boolean;
+  focusStep?: EventLaunchStepId | null;
   onDesignInvite(): void;
   onPublishInvite(): void;
   onSendInvites(): void;
@@ -38,23 +36,18 @@ interface LaunchStep {
   action: ReactNode;
 }
 
-export default function EventLaunchGuide({ event, tickets, publishing, onDesignInvite, onPublishInvite, onSendInvites, onPriceTickets }: EventLaunchGuideProps) {
+export default function EventLaunchGuide({ event, publishing, focusStep, onDesignInvite, onPublishInvite, onSendInvites, onPriceTickets }: EventLaunchGuideProps) {
   const { data: identity } = useMe();
-  const { data: connect, isLoading: connectLoading } = useStripeConnectStatus();
-  const { data: invitations } = useTicketInvitations(event.id);
-  const { data: registrations } = useRegistrations();
   const startConnect = useStartStripeConnect();
   const [selectedStep, setSelectedStep] = useState<{ id: EventLaunchStepId; wasComplete: boolean } | null>(null);
-  const activeTickets = tickets.filter((ticket) => ticket.isActive);
-  const contactableInvitees = eventInvitationRecipients(registrations ?? [], event.id);
-  const invitationsSent = (invitations ?? []).some((invitation) => ["sent", "opened", "registered"].includes(invitation.status));
-  const completion = eventLaunchCompletion({
-    inviteeCount: contactableInvitees.length,
-    invitationDesigned: registrationPageIsCustomized(event.registrationPage),
-    activeTicketCount: activeTickets.length,
-    stripeReady: connect?.ready === true,
-    invitationsSent,
-  });
+  const { activeTickets, completion, connect, connectLoading, contactableInvitees, unlocked } = useEventLaunchProgress(event);
+  const focusedComplete = focusStep ? completion[focusStep] : false;
+  const focusedUnlocked = focusStep ? unlocked[focusStep] : false;
+
+  useEffect(() => {
+    if (!focusStep || !focusedUnlocked) return;
+    setSelectedStep({ id: focusStep, wasComplete: focusedComplete });
+  }, [focusStep, focusedComplete, focusedUnlocked]);
 
   const steps: LaunchStep[] = [
     {
@@ -132,13 +125,14 @@ export default function EventLaunchGuide({ event, tickets, publishing, onDesignI
           const Icon = step.icon;
           const expanded = openStep === step.id;
           const next = nextStep === step.id && !step.complete;
+          const locked = !unlocked[step.id];
           return (
             <li key={step.id} className={expanded ? "bg-primary-muted/25" : "bg-background"}>
-              <button type="button" className="flex w-full items-center gap-3 px-5 py-4 text-left" aria-expanded={expanded} onClick={() => setSelectedStep(expanded ? null : { id: step.id, wasComplete: step.complete })}>
+              <button type="button" disabled={locked} className="flex w-full items-center gap-3 px-5 py-4 text-left disabled:cursor-not-allowed disabled:opacity-60" aria-expanded={expanded} title={locked ? "Finish the earlier steps to unlock this one." : undefined} onClick={() => setSelectedStep(expanded ? null : { id: step.id, wasComplete: step.complete })}>
                 <span className={`grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold ${step.complete ? "bg-success text-white" : next ? "bg-primary text-primary-foreground" : "bg-surface-sunken text-muted-foreground"}`}>{step.complete ? <Check className="size-4" /> : step.number}</span>
                 <Icon className={`size-4 shrink-0 ${step.complete ? "text-success-text" : next ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" />
                 <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-foreground">Step {step.number}. {step.title}</span><span className="mt-0.5 block text-xs text-muted-foreground">{step.summary}</span></span>
-                <span className="shrink-0 text-xs font-semibold text-muted-foreground">{step.complete ? "Done" : next ? "Next" : "Later"}</span>
+                <span className="shrink-0 text-xs font-semibold text-muted-foreground">{step.complete ? "Done" : next ? "Next" : locked ? "Locked" : "Later"}</span>
                 <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
               {expanded ? <div className="grid gap-4 px-5 pb-5 pl-[5.75rem] text-sm leading-6 text-muted-foreground"><div>{step.detail}</div><div>{step.action}</div></div> : null}
