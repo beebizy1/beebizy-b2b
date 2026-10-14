@@ -41,6 +41,18 @@ export const DEFAULT_FLOORPLAN_ROOM: FloorplanRoom = {
   points: RECTANGLE_POINTS,
 };
 
+/** Shared selected-item overlay geometry so edit handles stay usable around the toolbar. */
+export const FLOORPLAN_ITEM_OVERLAY = {
+  toolbarGapPx: 18,
+  toolbarZIndex: 30,
+  cornerHandleZIndex: 40,
+} as const;
+
+export function floorplanItemToolbarPlacement(itemY: number): { top?: string; bottom?: string } {
+  const offset = `calc(100% + ${FLOORPLAN_ITEM_OVERLAY.toolbarGapPx}px)`;
+  return itemY < 15 ? { top: offset } : { bottom: offset };
+}
+
 export function roomPointsForShape(shape: FloorplanRoomShape): FloorplanPoint[] {
   if (shape === "l-shape") return L_SHAPE_POINTS.map((point) => ({ ...point }));
   if (shape === "custom") return CUSTOM_POINTS.map((point) => ({ ...point }));

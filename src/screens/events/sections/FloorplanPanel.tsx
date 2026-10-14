@@ -62,7 +62,9 @@ import { useDataMode } from "@/data/provider";
 import {
   DEFAULT_FLOORPLAN_ROOM,
   DEFAULT_CUSTOM_OBJECT_POINTS,
+  FLOORPLAN_ITEM_OVERLAY,
   addRoomCorner,
+  floorplanItemToolbarPlacement,
   nearestPointInsideRoom,
   pointIsInsideRoom,
   rotationFromPointerAngles,
@@ -1057,10 +1059,10 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                                   });
                                 }}
                                 className={cn(
-                                  "absolute z-20 size-3 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-surface bg-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  "absolute size-3 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-surface bg-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                   selectedItemCorner === index && "scale-125 ring-2 ring-ring",
                                 )}
-                                style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                                style={{ left: `${point.x}%`, top: `${point.y}%`, zIndex: FLOORPLAN_ITEM_OVERLAY.cornerHandleZIndex }}
                               />
                             ))
                           : null}
@@ -1080,11 +1082,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                     )}
                     {isSelected && !item.locked ? (
                       <div
-                        className="absolute z-30 flex touch-none items-center gap-0.5 rounded-full border border-hairline bg-surface p-0.5 text-muted-foreground shadow-md"
+                        className="absolute flex touch-none items-center gap-0.5 rounded-full border border-hairline bg-surface p-0.5 text-muted-foreground shadow-md"
                         style={{
                           left: item.x < 15 ? "0%" : item.x > 85 ? "100%" : "50%",
-                          top: item.y < 15 ? "calc(100% + 6px)" : undefined,
-                          bottom: item.y < 15 ? undefined : "calc(100% + 6px)",
+                          ...floorplanItemToolbarPlacement(item.y),
+                          zIndex: FLOORPLAN_ITEM_OVERLAY.toolbarZIndex,
                           transform: `translateX(${item.x < 15 ? "0%" : item.x > 85 ? "-100%" : "-50%"}) rotate(${-(item.rotation ?? 0)}deg)`,
                         }}
                       >

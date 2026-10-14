@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_FLOORPLAN_ROOM,
+  FLOORPLAN_ITEM_OVERLAY,
   addRoomCorner,
   nearestPointInsideRoom,
   pointIsInsideRoom,
@@ -73,5 +74,10 @@ describe("floorplan room geometry", () => {
     expect(rotationFromPointerAngles(10, 20, 50)).toBe(40);
     expect(rotationFromPointerAngles(350, 170, -170)).toBe(10);
     expect(rotationFromPointerAngles(15, -170, 170)).toBe(355);
+  });
+
+  it("keeps custom-shape edit handles clear of the floating move and rotate toolbar", () => {
+    expect(FLOORPLAN_ITEM_OVERLAY.toolbarGapPx).toBeGreaterThanOrEqual(16);
+    expect(FLOORPLAN_ITEM_OVERLAY.cornerHandleZIndex).toBeGreaterThan(FLOORPLAN_ITEM_OVERLAY.toolbarZIndex);
   });
 });
