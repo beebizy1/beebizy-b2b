@@ -14,13 +14,18 @@ export interface PaymentProgressDeposit {
   amountCents: number;
   status: DepositStatus;
   paidDate: IsoDateTime | null;
+  paidBy?: string | null;
+  paymentMethod?: string | null;
 }
 
 export interface VendorPaymentProgress {
   paidCents: number;
   remainingCents: number;
   completedAt: IsoDateTime | null;
-  paidDeposits: Array<{ id: string; amountCents: number; paidDate: IsoDateTime | null }>;
+  completedBy: string | null;
+  lastPaidAt: IsoDateTime | null;
+  lastPaidBy: string | null;
+  paidDeposits: Array<{ id: string; amountCents: number; paidDate: IsoDateTime | null; paidBy: string | null; paymentMethod: string | null }>;
 }
 
 export function vendorPaymentPlanDeposits<T extends { paymentPlanId: string | null; vendorName: string }>(
@@ -40,16 +45,27 @@ export function vendorPaymentProgress(
 ): VendorPaymentProgress {
   const paidDeposits = deposits
     .filter((deposit) => deposit.status === "paid")
-    .map(({ id, amountCents, paidDate }) => ({ id, amountCents, paidDate }))
+    .map(({ id, amountCents, paidDate, paidBy, paymentMethod }) => ({ id, amountCents, paidDate, paidBy: paidBy ?? null, paymentMethod: paymentMethod ?? null }))
     .sort((a, b) => (a.paidDate ?? "9999").localeCompare(b.paidDate ?? "9999"));
   const paidCents = paidDeposits.reduce((total, deposit) => total + deposit.amountCents, 0);
   const remainingCents = remainingBalanceCents(totalAmountCents, paidCents);
+  const everyPaidDepositHasDate = paidDeposits.every((deposit) => deposit.paidDate);
+  const lastPaid = everyPaidDepositHasDate ? paidDeposits.at(-1) ?? null : null;
   const completedAt = remainingCents === 0
     && paidDeposits.length > 0
-    && paidDeposits.every((deposit) => deposit.paidDate)
+    && everyPaidDepositHasDate
+    && Boolean(paidDeposits.at(-1)!.paidBy)
     ? paidDeposits.at(-1)!.paidDate
     : null;
-  return { paidCents, remainingCents, completedAt, paidDeposits };
+  return {
+    paidCents,
+    remainingCents,
+    completedAt,
+    completedBy: completedAt ? paidDeposits.at(-1)!.paidBy : null,
+    lastPaidAt: lastPaid?.paidDate ?? null,
+    lastPaidBy: lastPaid?.paidBy ?? null,
+    paidDeposits,
+  };
 }
 
 export type BalanceDueState = "paid" | "upcoming" | "overdue" | "unscheduled";

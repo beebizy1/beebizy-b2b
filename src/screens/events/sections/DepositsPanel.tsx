@@ -11,7 +11,7 @@ import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill, StatTil
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
-import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPaymentPlanDeposits, vendorPaymentProgress } from "@/data/depositTracker";
+import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPaymentPlanDeposits, vendorPaymentProgress, type BalanceDueState, type VendorPaymentProgress } from "@/data/depositTracker";
 import {
   useAddDeposit,
   useAddVendorPaymentPlan,
@@ -104,6 +104,10 @@ function DepositRow({ eventId, deposit, vendorName, timeZone }: { eventId: strin
           value={deposit.status}
           onValueChange={(value) => {
             const status = value as DepositStatus;
+            if (status === "paid" && !paidBy.trim()) {
+              toast({ title: "Add who paid before closing this payment" });
+              return;
+            }
             const previousPaidDate = paidDate;
             const nextPaidDate = status === "paid" ? (deposit.paidDate ?? todayIsoInZone(timeZone)) : null;
             setPaidDate(nextPaidDate?.slice(0, 10) ?? "");
@@ -123,13 +127,11 @@ function DepositRow({ eventId, deposit, vendorName, timeZone }: { eventId: strin
   );
 }
 
-function PaymentPlanRow({ eventId, plan, deposits, onSelect }: { eventId: string; plan: VendorPaymentPlan; deposits: Deposit[]; onSelect: (name: string) => void }) {
-  const { date: formatDate, timeZone } = usePreferences();
+function PaymentPlanRow({ eventId, plan, progress, dueState, onSelect }: { eventId: string; plan: VendorPaymentPlan; progress: VendorPaymentProgress; dueState: BalanceDueState; onSelect: (name: string) => void }) {
+  const { date: formatDate } = usePreferences();
   const update = useUpdateVendorPaymentPlan();
   const [total, setTotal] = useState(centsToInput(plan.totalAmountCents));
   const [balanceDueDate, setBalanceDueDate] = useState(plan.balanceDueDate.slice(0, 10));
-  const progress = vendorPaymentProgress(plan.totalAmountCents, deposits);
-  const dueState = balanceDueState(plan.balanceDueDate, progress.remainingCents, new Date(), timeZone);
 
   return (
     <TableRow>
@@ -158,9 +160,10 @@ function PaymentPlanRow({ eventId, plan, deposits, onSelect }: { eventId: string
         {progress.paidDeposits.length > 0 ? (
           <div className="mt-1 space-y-0.5">
             {progress.paidDeposits.map((deposit) => (
-              <p key={deposit.id} data-numeric className="text-right text-[11px] text-muted-foreground">
-                {formatMoney(deposit.amountCents)} · {deposit.paidDate ? `paid ${formatDate(deposit.paidDate, "dayMonthYear")}` : "paid date needed"}
-              </p>
+              <div key={deposit.id} className="text-right text-[11px] text-muted-foreground">
+                <p data-numeric>{formatMoney(deposit.amountCents)} · {deposit.paidDate ? `paid ${formatDate(deposit.paidDate, "dayMonthYear")}` : "paid date needed"}</p>
+                <p>{deposit.paidBy ?? "Who paid needed"}{deposit.paymentMethod ? ` · ${deposit.paymentMethod}` : ""}</p>
+              </div>
             ))}
           </div>
         ) : <p className="mt-1 text-right text-[11px] text-muted-foreground">No deposits paid</p>}
@@ -182,10 +185,20 @@ function PaymentPlanRow({ eventId, plan, deposits, onSelect }: { eventId: string
         />
         <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(plan.balanceDueDate, "dayMonthYear")}</p>
       </TableCell>
-      <TableCell data-numeric className="min-w-36">
-        {progress.completedAt ? <span className="font-medium text-success-text">{formatDate(progress.completedAt, "dayMonthYear")}</span> : progress.remainingCents === 0 ? <span className="text-warning-text">Date needed</span> : <span className="text-muted-foreground">Not completed</span>}
+      <TableCell data-numeric className="min-w-44">
+        {progress.lastPaidAt ? (
+          <><p className="font-medium text-foreground">{progress.lastPaidBy ?? "Name needed"}</p><p className="text-[11px] text-muted-foreground">{formatDate(progress.lastPaidAt, "dayMonthYear")}</p></>
+        ) : <span className="text-muted-foreground">None yet</span>}
       </TableCell>
-      <TableCell><Pill tone={dueState === "overdue" ? "danger" : dueState === "paid" ? "success" : "neutral"}>{dueState}</Pill></TableCell>
+      <TableCell data-numeric className="min-w-44">
+        {progress.completedAt ? (
+          <><Pill tone="success">Paid in full</Pill><p className="mt-1 text-[11px] text-success-text">{progress.completedBy ?? "Name needed"} · {formatDate(progress.completedAt, "dayMonthYear")}</p></>
+        ) : progress.remainingCents === 0 ? (
+          <><Pill tone="warning">Needs details</Pill><p className="mt-1 text-[11px] text-warning-text">Add who paid and the paid date</p></>
+        ) : (
+          <><Pill tone={dueState === "overdue" ? "danger" : "neutral"}>{dueState === "overdue" ? "Overdue" : "Balance due"}</Pill><p className="mt-1 text-[11px] text-muted-foreground">Payment loop still open</p></>
+        )}
+      </TableCell>
     </TableRow>
   );
 }
@@ -204,8 +217,11 @@ export default function DepositsPanel({ event }: { event: Event }) {
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [paymentPaidDate, setPaymentPaidDate] = useState("");
+  const [newPaymentPaidBy, setNewPaymentPaidBy] = useState("");
+  const [newPaymentMethod, setNewPaymentMethod] = useState("");
   const [balanceDueDate, setBalanceDueDate] = useState("");
   const [status, setStatus] = useState<DepositStatus>("paid");
+  const [planFilter, setPlanFilter] = useState<"all" | "due" | "overdue" | "paid">("all");
 
   const rows = useMemo(() => depositsQuery.data ?? [], [depositsQuery.data]);
   const storedPlans = useMemo(() => plansQuery.data ?? [], [plansQuery.data]);
@@ -216,6 +232,15 @@ export default function DepositsPanel({ event }: { event: Event }) {
     return values;
   }, [rows]);
   const paymentsForPlan = (plan: VendorPaymentPlan) => vendorPaymentPlanDeposits(plan, rows);
+  const trackedPlans = storedPlans.map((plan) => {
+    const deposits = paymentsForPlan(plan);
+    const progress = vendorPaymentProgress(plan.totalAmountCents, deposits);
+    return {
+      plan,
+      progress,
+      dueState: balanceDueState(plan.balanceDueDate, progress.remainingCents, new Date(), timeZone),
+    };
+  });
 
   const suggestedPlans = useMemo(() => {
     const values = new Map<string, { name: string; totalAmountCents: number; source: "Vendor" | "Budget" }>();
@@ -232,17 +257,24 @@ export default function DepositsPanel({ event }: { event: Event }) {
   }, [bookings, budget, storedPlans]);
 
   const committed = sumCents(storedPlans.map((plan) => plan.totalAmountCents));
-  const plannedOutstanding = sumCents(storedPlans.map((plan) => vendorPaymentProgress(plan.totalAmountCents, paymentsForPlan(plan)).remainingCents));
+  const plannedOutstanding = sumCents(trackedPlans.map(({ progress }) => progress.remainingCents));
   const plannedIds = new Set(storedPlans.map((plan) => plan.id));
   const plannedVendorKeys = new Set(storedPlans.map((plan) => vendorKey(plan.vendorName)));
   const unplannedOutstanding = sumCents(rows.filter((row) => !(row.paymentPlanId ? plannedIds.has(row.paymentPlanId) : plannedVendorKeys.has(vendorKey(row.vendorName))) && row.status !== "paid" && row.status !== "refunded").map((row) => row.amountCents));
   const outstanding = plannedOutstanding + unplannedOutstanding;
   const overdueVendors = new Set(rows.filter((row) => row.status === "overdue").map((row) => vendorKey(row.vendorName)));
-  for (const plan of storedPlans) {
-    const remaining = vendorPaymentProgress(plan.totalAmountCents, paymentsForPlan(plan)).remainingCents;
-    if (balanceDueState(plan.balanceDueDate, remaining, new Date(), timeZone) === "overdue") overdueVendors.add(vendorKey(plan.vendorName));
+  for (const { plan, dueState } of trackedPlans) {
+    if (dueState === "overdue") overdueVendors.add(vendorKey(plan.vendorName));
   }
   const overdueCount = overdueVendors.size;
+  const trackedOverdueCount = trackedPlans.filter(({ dueState }) => dueState === "overdue").length;
+  const paidInFullCount = trackedPlans.filter(({ progress }) => Boolean(progress.completedAt && progress.completedBy)).length;
+  const balanceDueCount = trackedPlans.filter(({ progress }) => progress.remainingCents > 0).length;
+  const visibleTrackedPlans = trackedPlans.filter(({ progress, dueState }) =>
+    planFilter === "all"
+    || (planFilter === "due" && progress.remainingCents > 0)
+    || (planFilter === "overdue" && dueState === "overdue")
+    || (planFilter === "paid" && Boolean(progress.completedAt && progress.completedBy)));
 
   const selectVendor = (name: string) => {
     setVendorName(name);
@@ -257,10 +289,10 @@ export default function DepositsPanel({ event }: { event: Event }) {
   const depositCents = centsFromInput(amount);
   const totalCents = centsFromInput(totalAmount);
   const existingPlan = storedPlans.find((plan) => vendorKey(plan.vendorName) === vendorKey(vendorName));
-  const alreadyPaidCents = existingPlan ? vendorPaymentProgress(existingPlan.totalAmountCents, paymentsForPlan(existingPlan)).paidCents : 0;
+  const alreadyPaidCents = existingPlan ? (trackedPlans.find(({ plan }) => plan.id === existingPlan.id)?.progress.paidCents ?? 0) : 0;
   const nextPaidCents = alreadyPaidCents + (status === "paid" ? (depositCents ?? 0) : 0);
   const hasDeposit = depositCents != null;
-  const validTracker = Boolean(vendorName.trim() && totalCents != null && totalCents >= nextPaidCents && balanceDueDate);
+  const validTracker = Boolean(vendorName.trim() && totalCents != null && totalCents >= nextPaidCents && balanceDueDate && (!hasDeposit || status !== "paid" || newPaymentPaidBy.trim()));
   const loading = depositsQuery.isLoading || plansQuery.isLoading;
   const error = depositsQuery.error ?? plansQuery.error;
 
@@ -278,22 +310,32 @@ export default function DepositsPanel({ event }: { event: Event }) {
       {storedPlans.length > 0 || suggestedPlans.length > 0 ? (
         <Panel className="overflow-hidden">
           <PanelHeader title="Vendor payment tracker" description="Follow each contract from deposit payments through the remaining balance and paid-in-full date" />
+          <div className="flex flex-wrap gap-2 border-b border-hairline px-5 py-3" aria-label="Filter vendor payment plans">
+            {([
+              ["all", `All ${storedPlans.length + suggestedPlans.length}`],
+              ["due", `Balance due ${balanceDueCount}`],
+              ["overdue", `Overdue ${trackedOverdueCount}`],
+              ["paid", `Paid in full ${paidInFullCount}`],
+            ] as const).map(([value, label]) => (
+              <Button key={value} type="button" variant={planFilter === value ? "default" : "outline"} size="sm" aria-pressed={planFilter === value} onClick={() => setPlanFilter(value)}>{label}</Button>
+            ))}
+          </div>
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader><TableRow><TableHead>Vendor or expense</TableHead><TableHead className="text-right">Contracted</TableHead><TableHead className="text-right">Deposit history</TableHead><TableHead className="text-right">Remaining balance</TableHead><TableHead>Balance due</TableHead><TableHead>Completed</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Vendor or expense</TableHead><TableHead className="text-right">Contracted</TableHead><TableHead className="text-right">Deposit history</TableHead><TableHead className="text-right">Remaining balance</TableHead><TableHead>Balance due</TableHead><TableHead>Last paid by</TableHead><TableHead>Closed loop</TableHead></TableRow></TableHeader>
               <TableBody>
-                {storedPlans.map((plan) => <PaymentPlanRow key={plan.id} eventId={event.id} plan={plan} deposits={paymentsForPlan(plan)} onSelect={selectVendor} />)}
-                {suggestedPlans.map((plan) => (
+                {visibleTrackedPlans.map(({ plan, progress, dueState }) => <PaymentPlanRow key={plan.id} eventId={event.id} plan={plan} progress={progress} dueState={dueState} onSelect={selectVendor} />)}
+                {planFilter === "all" ? suggestedPlans.map((plan) => (
                   <TableRow key={vendorKey(plan.name)}>
                     <TableCell><button type="button" className="text-left font-medium hover:underline" onClick={() => selectVendor(plan.name)}>{plan.name}</button><p className="text-xs text-muted-foreground">Suggested from {plan.source.toLowerCase()}</p></TableCell>
                     <TableCell data-numeric className="text-right">{formatMoney(plan.totalAmountCents)}</TableCell>
                     <TableCell data-numeric className="text-right">{formatMoney(sumCents((paymentGroups.get(`vendor:${vendorKey(plan.name)}`) ?? []).map(depositPaidCents)))}</TableCell>
                     <TableCell data-numeric className="text-right">Set up below</TableCell>
                     <TableCell>Date needed</TableCell>
-                    <TableCell className="text-muted-foreground">Not completed</TableCell>
-                    <TableCell><Pill tone="warning">not tracked</Pill></TableCell>
+                    <TableCell className="text-muted-foreground">None yet</TableCell>
+                    <TableCell><Pill tone="warning">Not tracked</Pill></TableCell>
                   </TableRow>
-                ))}
+                )) : null}
               </TableBody>
             </Table>
           </div>
@@ -316,9 +358,9 @@ export default function DepositsPanel({ event }: { event: Event }) {
                 : await addPlan.mutateAsync({ eventId: event.id, draft: { vendorName: trimmed, totalAmountCents: totalCents, balanceDueDate: finalDue } });
               planSaved = true;
               if (hasDeposit && depositCents != null) {
-                await addDeposit.mutateAsync({ eventId: event.id, draft: { paymentPlanId: savedPlan.id, vendorName: savedPlan.vendorName, amountCents: depositCents, dueDate: dateIso(dueDate), paidDate: status === "paid" ? (dateIso(paymentPaidDate) ?? todayIsoInZone(timeZone)) : null, status } });
+                await addDeposit.mutateAsync({ eventId: event.id, draft: { paymentPlanId: savedPlan.id, vendorName: savedPlan.vendorName, amountCents: depositCents, dueDate: dateIso(dueDate), paidDate: status === "paid" ? (dateIso(paymentPaidDate) ?? todayIsoInZone(timeZone)) : null, paidBy: newPaymentPaidBy.trim() || null, paymentMethod: newPaymentMethod.trim() || null, status } });
               }
-              setVendorName(""); setTotalAmount(""); setAmount(""); setDueDate(""); setPaymentPaidDate(""); setBalanceDueDate(""); setStatus("paid");
+              setVendorName(""); setTotalAmount(""); setAmount(""); setDueDate(""); setPaymentPaidDate(""); setNewPaymentPaidBy(""); setNewPaymentMethod(""); setBalanceDueDate(""); setStatus("paid");
               toast({ title: hasDeposit ? "Payment tracker saved" : "Vendor payment plan saved" });
             } catch (mutationError) {
               if (planSaved) {
@@ -337,6 +379,8 @@ export default function DepositsPanel({ event }: { event: Event }) {
           <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Deposit status</span><Select value={status} onValueChange={(value) => setStatus(value as DepositStatus)}><SelectTrigger className="capitalize" aria-label="Payment status"><SelectValue /></SelectTrigger><SelectContent>{DEPOSIT_STATUSES.map((option) => <SelectItem key={option} value={option} className="capitalize">{option}</SelectItem>)}</SelectContent></Select></label>
           <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Deposit due <span className="font-normal">(optional)</span></span><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Deposit due date" /></label>
           <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Date paid <span className="font-normal">(defaults to today)</span></span><Input type="date" value={paymentPaidDate} onChange={(e) => setPaymentPaidDate(e.target.value)} aria-label="New payment paid date" disabled={status !== "paid"} /></label>
+          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Paid by {status === "paid" ? <span className="text-danger-text">(required)</span> : null}</span><Input value={newPaymentPaidBy} onChange={(e) => setNewPaymentPaidBy(e.target.value)} placeholder="Person or account" aria-label="New payment paid by" /></label>
+          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Method</span><Input value={newPaymentMethod} onChange={(e) => setNewPaymentMethod(e.target.value)} placeholder="Wire, check, card" aria-label="New payment method" /></label>
           <div className="xl:col-span-5">{totalCents != null && depositCents != null ? <p className="text-sm text-muted-foreground">Remaining after all paid deposits: <strong className="text-foreground">{formatMoney(remainingBalanceCents(totalCents, nextPaidCents))}</strong></p> : <p className="text-sm text-muted-foreground">Enter the total cost and deposit to calculate the remaining balance.</p>}</div>
           <Button type="submit" size="sm" disabled={!validTracker || addDeposit.isPending || addPlan.isPending || updatePlan.isPending}><Plus className="mr-1.5 size-3.5" aria-hidden="true" />{hasDeposit ? "Save payment" : "Save plan"}</Button>
         </form>
