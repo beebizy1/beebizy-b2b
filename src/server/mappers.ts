@@ -23,6 +23,7 @@ import type {
   CheckInStation,
   Event,
   Deposit,
+  VendorPaymentPlan,
   EventHistoryEntry,
   MoodBoardImage,
   ProductFeedback,
@@ -376,13 +377,29 @@ export function toDeposit(row: InferSelectModel<typeof s.deposits>): Deposit {
   return {
     id: row.id,
     eventId: row.eventId,
+    paymentPlanId: row.paymentPlanId,
     vendorName: row.vendorName,
+    totalAmountCents: row.totalAmountCents,
     amountCents: row.amountCents,
     dueDate: iso(row.dueDate),
     paidDate: iso(row.paidDate),
+    balanceDueDate: iso(row.balanceDueDate),
     paidBy: row.paidBy,
     paymentMethod: row.paymentMethod,
     status: row.status,
+    notes: row.notes,
+    createdAt: isoRequired(row.createdAt),
+    updatedAt: iso(row.updatedAt) ?? undefined,
+  };
+}
+
+export function toVendorPaymentPlan(row: InferSelectModel<typeof s.vendorPaymentPlans>): VendorPaymentPlan {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    vendorName: row.vendorName,
+    totalAmountCents: row.totalAmountCents,
+    balanceDueDate: isoRequired(row.balanceDueDate),
     notes: row.notes,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,

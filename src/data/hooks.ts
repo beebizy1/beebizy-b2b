@@ -69,6 +69,8 @@ import type {
   RfpResponseStatus,
   DepositDraft,
   DepositPatch,
+  VendorPaymentPlanDraft,
+  VendorPaymentPlanPatch,
   TeamHoursDraft,
   TeamHoursPatch,
   TeamUpdateDraft,
@@ -165,6 +167,7 @@ export const qk = {
   sponsorships: (eventId: string) => ["sponsorships", eventId] as const,
   rfps: (eventId: string) => ["rfps", eventId] as const,
   deposits: (eventId: string) => ["deposits", eventId] as const,
+  vendorPaymentPlans: (eventId: string) => ["vendorPaymentPlans", eventId] as const,
   teamHours: (eventId: string) => ["teamHours", eventId] as const,
 
   templates: ["templates"] as const,
@@ -1505,6 +1508,37 @@ export function useRemoveDeposit() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.deposits.remove(vars.eventId, vars.id),
     (vars) => [qk.deposits(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useVendorPaymentPlans(eventId: string) {
+  return useAdapterQuery(
+    qk.vendorPaymentPlans(eventId),
+    (a) => a.vendorPaymentPlans.list(eventId),
+    { enabled: !!eventId },
+  );
+}
+
+export function useAddVendorPaymentPlan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VendorPaymentPlanDraft }) =>
+      a.vendorPaymentPlans.create(vars.eventId, vars.draft),
+    (vars) => [qk.vendorPaymentPlans(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useUpdateVendorPaymentPlan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: VendorPaymentPlanPatch }) =>
+      a.vendorPaymentPlans.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.vendorPaymentPlans(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useRemoveVendorPaymentPlan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.vendorPaymentPlans.remove(vars.eventId, vars.id),
+    (vars) => [qk.vendorPaymentPlans(vars.eventId), ...eventDerivedKeys(vars.eventId)],
   );
 }
 

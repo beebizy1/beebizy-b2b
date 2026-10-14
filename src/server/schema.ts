@@ -706,10 +706,13 @@ export const deposits = pgTable(
   "deposits",
   {
     ...eventChild,
+    paymentPlanId: text("payment_plan_id").references(() => vendorPaymentPlans.id, { onDelete: "set null" }),
     vendorName: text("vendor_name").notNull(),
+    totalAmountCents: bigint("total_amount_cents", { mode: "number" }),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     dueDate: timestamp("due_date", { withTimezone: true }),
     paidDate: timestamp("paid_date", { withTimezone: true }),
+    balanceDueDate: timestamp("balance_due_date", { withTimezone: true }),
     paidBy: text("paid_by"),
     paymentMethod: text("payment_method"),
     status: depositStatus("status").notNull().default("pending"),
@@ -717,7 +720,26 @@ export const deposits = pgTable(
   },
   (table) => [
     index("deposits_event_due_idx").on(table.eventId, table.dueDate),
+    index("deposits_payment_plan_idx").on(table.paymentPlanId),
     check("deposits_amount_nonnegative_check", sql`${table.amountCents} >= 0`),
+    check("deposits_total_nonnegative_check", sql`${table.totalAmountCents} is null or ${table.totalAmountCents} >= 0`),
+    check("deposits_amount_within_total_check", sql`${table.totalAmountCents} is null or ${table.amountCents} <= ${table.totalAmountCents}`),
+  ],
+);
+
+export const vendorPaymentPlans = pgTable(
+  "vendor_payment_plans",
+  {
+    ...eventChild,
+    vendorName: text("vendor_name").notNull(),
+    vendorKey: text("vendor_key").notNull(),
+    totalAmountCents: bigint("total_amount_cents", { mode: "number" }).notNull(),
+    balanceDueDate: timestamp("balance_due_date", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+  },
+  (table) => [
+    uniqueIndex("vendor_payment_plans_event_vendor_idx").on(table.eventId, table.vendorKey),
+    check("vendor_payment_plans_total_nonnegative_check", sql`${table.totalAmountCents} >= 0`),
   ],
 );
 

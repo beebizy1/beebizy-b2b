@@ -1056,9 +1056,12 @@ describe("deposits", () => {
   it("creates, updates and removes a deposit", async () => {
     const created = await memoryAdapter.deposits.create("evt-gala", {
       vendorName: "Bloom & Vine",
+      totalAmountCents: 500_000,
       amountCents: 120_000,
+      balanceDueDate: "2026-11-01T12:00:00.000Z",
     });
     expect(created.status).toBe("pending");
+    expect(created).toMatchObject({ totalAmountCents: 500_000, balanceDueDate: "2026-11-01T12:00:00.000Z" });
 
     const paid = await memoryAdapter.deposits.update("evt-gala", created.id, {
       status: "paid",
@@ -1070,6 +1073,62 @@ describe("deposits", () => {
     await memoryAdapter.deposits.remove("evt-gala", created.id);
     const remaining = await memoryAdapter.deposits.list("evt-gala");
     expect(remaining.map((deposit) => deposit.id)).not.toContain(created.id);
+  });
+
+  it("tracks one vendor plan across multiple paid deposits", async () => {
+    const plan = await memoryAdapter.vendorPaymentPlans.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      totalAmountCents: 500_000,
+      balanceDueDate: "2026-11-01T12:00:00.000Z",
+    });
+    const firstPayment = await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      amountCents: 120_000,
+      status: "paid",
+    });
+    await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      amountCents: 80_000,
+      status: "paid",
+    });
+
+    const updated = await memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, {
+      totalAmountCents: 450_000,
+    });
+    expect(firstPayment.paymentPlanId).toBe(plan.id);
+    expect(updated.totalAmountCents).toBe(450_000);
+    await expect(
+      memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, { totalAmountCents: 199_999 }),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("does not let paid deposits exceed the vendor total", async () => {
+    await memoryAdapter.vendorPaymentPlans.create("evt-gala", {
+      vendorName: "Balance Guard Vendor",
+      totalAmountCents: 100_000,
+      balanceDueDate: "2026-11-01T12:00:00.000Z",
+    });
+    await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Balance Guard Vendor",
+      amountCents: 75_000,
+      status: "paid",
+    });
+    await expect(
+      memoryAdapter.deposits.create("evt-gala", {
+        vendorName: "Balance Guard Vendor",
+        amountCents: 30_000,
+        status: "paid",
+      }),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("rejects a payment plan from another event", async () => {
+    await expect(memoryAdapter.deposits.create("evt-gala", {
+      paymentPlanId: "vpp-kickoff-venue",
+      vendorName: "Moscone Center West",
+      amountCents: 10_000,
+      status: "paid",
+    })).rejects.toBeInstanceOf(DataError);
   });
 });
 

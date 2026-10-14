@@ -47,6 +47,9 @@ import type {
   Deposit,
   DepositDraft,
   DepositPatch,
+  VendorPaymentPlan,
+  VendorPaymentPlanDraft,
+  VendorPaymentPlanPatch,
   Event,
   AssignmentSummaryResult,
   CustomReportRow,
@@ -540,6 +543,7 @@ export interface DataAdapter {
   sponsorships: EventScopedRepository<Sponsorship, SponsorshipDraft, SponsorshipPatch>;
   rfps: RfpsRepository;
   deposits: EventScopedRepository<Deposit, DepositDraft, DepositPatch>;
+  vendorPaymentPlans: EventScopedRepository<VendorPaymentPlan, VendorPaymentPlanDraft, VendorPaymentPlanPatch>;
   teamHours: EventScopedRepository<TeamHoursEntry, TeamHoursDraft, TeamHoursPatch>;
   templates: TemplatesRepository;
   canvases: CanvasesRepository;

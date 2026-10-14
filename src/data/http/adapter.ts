@@ -33,6 +33,7 @@ import type {
   CheckInStation,
   CustomReportRow,
   Deposit,
+  VendorPaymentPlan,
   Event,
   AssignmentSummaryResult,
   EventHealth,
@@ -524,6 +525,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     deposits: eventScoped<Deposit, never, never>(client, "deposits") as DataAdapter["deposits"],
+    vendorPaymentPlans: eventScoped<VendorPaymentPlan, never, never>(client, "vendor-payment-plans") as DataAdapter["vendorPaymentPlans"],
     teamHours: eventScoped<TeamHoursEntry, never, never>(client, "team-hours") as DataAdapter["teamHours"],
     teamUpdates: {
       list: (eventId) => client.get<TeamUpdate[]>(`/events/${eventId}/updates`),

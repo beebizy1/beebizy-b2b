@@ -1203,6 +1203,7 @@ const eventChildren: Record<
   volunteers: repos.volunteers,
   budget: repos.budget,
   deposits: repos.deposits,
+  "vendor-payment-plans": repos.vendorPaymentPlans,
   menu: repos.menu,
   "mood-board": repos.moodBoard,
   auction: repos.auction,

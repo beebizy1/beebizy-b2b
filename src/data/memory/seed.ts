@@ -36,6 +36,7 @@ import type {
   RfpInvitation,
   RfpResponse,
   Deposit,
+  VendorPaymentPlan,
   TeamHoursEntry,
   Template,
   TemplateContents,
@@ -74,6 +75,7 @@ export interface MemoryDb {
   rfpResponses: (RfpResponse & { invitationId?: string })[];
   rfpInvitations: RfpInvitation[];
   deposits: Deposit[];
+  vendorPaymentPlans: VendorPaymentPlan[];
   teamHours: TeamHoursEntry[];
   templates: (Template & TemplateContents)[];
   canvases: Canvas[];
@@ -1774,10 +1776,13 @@ export function buildSeed(): MemoryDb {
     {
       id: "dep-gala-venue",
       eventId: "evt-gala",
+      paymentPlanId: "vpp-gala-venue",
       vendorName: "Moscone Center West",
+      totalAmountCents: usd(30000),
       amountCents: usd(15000),
       dueDate: at(-24),
       paidDate: at(-22),
+      balanceDueDate: at(35),
       paidBy: "Maria Santos",
       paymentMethod: "Bank transfer",
       status: "paid",
@@ -1787,10 +1792,13 @@ export function buildSeed(): MemoryDb {
     {
       id: "dep-gala-catering",
       eventId: "evt-gala",
+      paymentPlanId: "vpp-gala-catering",
       vendorName: "Golden Gate Catering",
+      totalAmountCents: usd(17000),
       amountCents: usd(8500),
       dueDate: at(6),
       paidDate: null,
+      balanceDueDate: at(28),
       paidBy: null,
       paymentMethod: null,
       status: "pending",
@@ -1800,10 +1808,13 @@ export function buildSeed(): MemoryDb {
     {
       id: "dep-gala-av",
       eventId: "evt-gala",
+      paymentPlanId: "vpp-gala-av",
       vendorName: "Apex AV & Sound",
+      totalAmountCents: usd(6800),
       amountCents: usd(3400),
       dueDate: at(-3),
       paidDate: null,
+      balanceDueDate: at(14),
       paidBy: null,
       paymentMethod: null,
       status: "overdue",
@@ -1813,10 +1824,13 @@ export function buildSeed(): MemoryDb {
     {
       id: "dep-kickoff-venue",
       eventId: "evt-skickoff",
+      paymentPlanId: "vpp-kickoff-venue",
       vendorName: "Moscone Center West",
+      totalAmountCents: usd(24000),
       amountCents: usd(12000),
       dueDate: at(-14),
       paidDate: at(-14),
+      balanceDueDate: at(14),
       paidBy: "Tom Nguyen",
       paymentMethod: "Corporate card",
       status: "paid",
@@ -1826,16 +1840,27 @@ export function buildSeed(): MemoryDb {
     {
       id: "dep-cab-venue",
       eventId: "evt-cab",
+      paymentPlanId: "vpp-cab-venue",
       vendorName: "The Foundry Loft",
+      totalAmountCents: usd(5500),
       amountCents: usd(2750),
       dueDate: at(-40),
       paidDate: at(-38),
+      balanceDueDate: at(-10),
       paidBy: "Dana Kim",
       paymentMethod: "Bank transfer",
       status: "refunded",
       notes: "Date moved; deposit returned in full and re-booked.",
       createdAt: at(-45),
     },
+  ];
+
+  const vendorPaymentPlans: VendorPaymentPlan[] = [
+    { id: "vpp-gala-venue", eventId: "evt-gala", vendorName: "Moscone Center West", totalAmountCents: usd(30000), balanceDueDate: at(35), notes: null, createdAt: at(-30) },
+    { id: "vpp-gala-catering", eventId: "evt-gala", vendorName: "Golden Gate Catering", totalAmountCents: usd(17000), balanceDueDate: at(28), notes: null, createdAt: at(-8) },
+    { id: "vpp-gala-av", eventId: "evt-gala", vendorName: "Apex AV & Sound", totalAmountCents: usd(6800), balanceDueDate: at(14), notes: null, createdAt: at(-6) },
+    { id: "vpp-kickoff-venue", eventId: "evt-skickoff", vendorName: "Moscone Center West", totalAmountCents: usd(24000), balanceDueDate: at(14), notes: null, createdAt: at(-20) },
+    { id: "vpp-cab-venue", eventId: "evt-cab", vendorName: "The Foundry Loft", totalAmountCents: usd(5500), balanceDueDate: at(-10), notes: null, createdAt: at(-45) },
   ];
 
   /* ------------------------------------------------------------- team hours */
@@ -1888,6 +1913,7 @@ export function buildSeed(): MemoryDb {
     rfpInvitations,
     rfpResponses,
     deposits,
+    vendorPaymentPlans,
     teamHours,
     templates,
     canvases,

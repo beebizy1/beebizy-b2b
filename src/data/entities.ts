@@ -1846,10 +1846,16 @@ export type DepositStatus = (typeof DEPOSIT_STATUSES)[number];
 export interface Deposit {
   id: string;
   eventId: string;
+  /** Stable relation to the vendor contract. Null only for legacy/unplanned payments. */
+  paymentPlanId: string | null;
   vendorName: string;
+  /** Full contracted vendor cost used to calculate the balance after deposits. */
+  totalAmountCents: Cents | null;
   amountCents: Cents;
   dueDate: IsoDateTime | null;
   paidDate: IsoDateTime | null;
+  /** Deadline for the amount still owed after paid deposits. */
+  balanceDueDate: IsoDateTime | null;
   paidBy: string | null;
   paymentMethod: string | null;
   status: DepositStatus;
@@ -1859,10 +1865,13 @@ export interface Deposit {
 }
 
 export interface DepositDraft {
+  paymentPlanId?: string | null;
   vendorName: string;
+  totalAmountCents?: Cents | null;
   amountCents: Cents;
   dueDate?: IsoDateTime | null;
   paidDate?: IsoDateTime | null;
+  balanceDueDate?: IsoDateTime | null;
   paidBy?: string | null;
   paymentMethod?: string | null;
   status?: DepositStatus;
@@ -1870,6 +1879,27 @@ export interface DepositDraft {
 }
 
 export type DepositPatch = Partial<DepositDraft>;
+
+/** One authoritative vendor contract; individual deposits remain separate payment rows. */
+export interface VendorPaymentPlan {
+  id: string;
+  eventId: string;
+  vendorName: string;
+  totalAmountCents: Cents;
+  balanceDueDate: IsoDateTime;
+  notes: string | null;
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
+
+export interface VendorPaymentPlanDraft {
+  vendorName: string;
+  totalAmountCents: Cents;
+  balanceDueDate: IsoDateTime;
+  notes?: string | null;
+}
+
+export type VendorPaymentPlanPatch = Partial<VendorPaymentPlanDraft>;
 
 /* --------------------------------------------------------------- workspace team */
 

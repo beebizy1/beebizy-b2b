@@ -815,13 +815,16 @@ export function buildEventImportPlan(
   const deposits = (depositTable?.rows ?? []).flatMap((row): DepositDraft[] => {
     const vendorName = stringFrom(row, depositTable!, ["vendor", "vendor name", "payee", "name"]);
     const amountCents = moneyCents(valueFrom(row, depositTable!, ["amount", "deposit", "deposit amount"]));
+    const totalAmountCents = moneyCents(valueFrom(row, depositTable!, ["total vendor cost", "contract total", "total amount", "vendor total"]));
     if (!vendorName || amountCents === null) return [];
     const statusText = normalize(stringFrom(row, depositTable!, ["status"]));
     return [{
       vendorName,
+      totalAmountCents: totalAmountCents == null ? null : Math.max(0, totalAmountCents),
       amountCents: Math.max(0, amountCents),
       dueDate: dateTime(valueFrom(row, depositTable!, ["due date", "due"]), 12),
       paidDate: dateTime(valueFrom(row, depositTable!, ["paid date", "date paid"]), 12),
+      balanceDueDate: dateTime(valueFrom(row, depositTable!, ["balance due date", "remaining balance due", "final payment due"]), 12),
       paidBy: stringFrom(row, depositTable!, ["paid by", "payer"]) || null,
       paymentMethod: stringFrom(row, depositTable!, ["payment method", "method"]) || null,
       status: (["paid", "overdue", "refunded"].includes(statusText) ? statusText : "pending") as DepositDraft["status"],

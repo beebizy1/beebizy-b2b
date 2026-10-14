@@ -354,6 +354,18 @@ describe("a single unnamed sheet, as Google Sheets always sends", () => {
     expect(asGoogleSheet("Contingency Task,Owner\nPrepare rain route,Sam").checklist).toHaveLength(1);
   });
 
+  it("imports vendor totals and remaining balance due dates into the payment tracker", () => {
+    const plan = asGoogleSheet(
+      "Vendor,Deposit Amount,Total Vendor Cost,Balance Due Date,Status\nVenue,5000,12000,2026-11-15,paid",
+    );
+    expect(plan.deposits[0]).toMatchObject({
+      amountCents: 500_000,
+      totalAmountCents: 1_200_000,
+      status: "paid",
+    });
+    expect(plan.deposits[0]?.balanceDueDate).toContain("2026-11-15");
+  });
+
   it("does not invent required RFP details when a row is incomplete", () => {
     const plan = asGoogleSheet("RFP Title,Headcount\nHotel,200");
     expect(plan.rfps).toHaveLength(0);

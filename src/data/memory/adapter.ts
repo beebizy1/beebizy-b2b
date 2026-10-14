@@ -64,6 +64,9 @@ import type {
   Deposit,
   DepositDraft,
   DepositPatch,
+  VendorPaymentPlan,
+  VendorPaymentPlanDraft,
+  VendorPaymentPlanPatch,
   Event,
   EventFilter,
   EventHealth,
@@ -335,6 +338,7 @@ const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "eventVendors",
   "rfps",
   "deposits",
+  "vendorPaymentPlans",
   "teamHours",
 ];
 
@@ -1907,16 +1911,19 @@ const rfps: RfpsRepository = {
 
 /* ------------------------------------------------------------------ deposits */
 
-const deposits = eventScoped<Deposit, DepositDraft, DepositPatch>(
+const depositsBase = eventScoped<Deposit, DepositDraft, DepositPatch>(
   () => store().deposits,
   "dep",
   (eventId, draft) => ({
     id: "",
     eventId,
+    paymentPlanId: draft.paymentPlanId ?? null,
     vendorName: draft.vendorName,
+    totalAmountCents: draft.totalAmountCents ?? null,
     amountCents: draft.amountCents,
     dueDate: draft.dueDate ?? null,
     paidDate: draft.paidDate ?? null,
+    balanceDueDate: draft.balanceDueDate ?? null,
     paidBy: draft.paidBy ?? null,
     paymentMethod: draft.paymentMethod ?? null,
     status: draft.status ?? "pending",
@@ -1927,6 +1934,90 @@ const deposits = eventScoped<Deposit, DepositDraft, DepositPatch>(
   // Soonest due first; deposits with no due date sink to the bottom.
   (a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
 );
+
+const vendorPaymentPlansBase = eventScoped<VendorPaymentPlan, VendorPaymentPlanDraft, VendorPaymentPlanPatch>(
+  () => store().vendorPaymentPlans,
+  "vpp",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    vendorName: draft.vendorName,
+    totalAmountCents: draft.totalAmountCents,
+    balanceDueDate: draft.balanceDueDate,
+    notes: draft.notes ?? null,
+    createdAt: nowIso(),
+  }),
+  undefined,
+  (a, b) => a.vendorName.localeCompare(b.vendorName),
+);
+
+const normalizedVendorName = (value: string) => value.trim().toLocaleLowerCase();
+
+function validatePaymentPlan(eventId: string, draft: VendorPaymentPlanDraft, currentId?: string): void {
+  const duplicate = store().vendorPaymentPlans.find(
+    (row) => row.eventId === eventId
+      && row.id !== currentId
+      && normalizedVendorName(row.vendorName) === normalizedVendorName(draft.vendorName),
+  );
+  if (duplicate) throw new DataError("conflict", `A payment plan already exists for ${draft.vendorName}.`);
+  const paidCents = currentId
+    ? store().deposits.filter((row) => row.eventId === eventId && row.paymentPlanId === currentId && row.status === "paid").reduce((total, row) => total + row.amountCents, 0)
+    : 0;
+  if (draft.totalAmountCents < paidCents) {
+    throw new DataError("invalid", "The total vendor cost cannot be less than deposits already paid.");
+  }
+}
+
+const vendorPaymentPlans: EventScopedRepository<VendorPaymentPlan, VendorPaymentPlanDraft, VendorPaymentPlanPatch> = {
+  ...vendorPaymentPlansBase,
+  async create(eventId, draft) {
+    validatePaymentPlan(eventId, draft);
+    return vendorPaymentPlansBase.create(eventId, draft);
+  },
+  async update(eventId, id, patch) {
+    const current = required(
+      store().vendorPaymentPlans.find((row) => row.id === id && row.eventId === eventId),
+      `Record ${id} no longer exists.`,
+    );
+    validatePaymentPlan(eventId, { ...current, ...patch }, id);
+    return vendorPaymentPlansBase.update(eventId, id, patch);
+  },
+};
+
+function validateDepositPayment(eventId: string, deposit: DepositDraft, currentId?: string): void {
+  const plan = store().vendorPaymentPlans.find((row) => row.eventId === eventId && (
+    deposit.paymentPlanId ? row.id === deposit.paymentPlanId : normalizedVendorName(row.vendorName) === normalizedVendorName(deposit.vendorName)
+  ));
+  if (!plan) {
+    if (deposit.paymentPlanId) throw new DataError("invalid", "That vendor payment plan does not belong to this event.");
+    return;
+  }
+  const paidCents = store().deposits
+    .filter((row) => row.eventId === eventId && row.id !== currentId && row.paymentPlanId === plan.id && row.status === "paid")
+    .reduce((total, row) => total + row.amountCents, 0)
+    + (deposit.status === "paid" ? deposit.amountCents : 0);
+  if (paidCents > plan.totalAmountCents) {
+    throw new DataError("invalid", "Paid deposits cannot be greater than the total vendor cost.");
+  }
+}
+
+const deposits: EventScopedRepository<Deposit, DepositDraft, DepositPatch> = {
+  ...depositsBase,
+  async create(eventId, draft) {
+    const inferredPlan = store().vendorPaymentPlans.find((row) => row.eventId === eventId && normalizedVendorName(row.vendorName) === normalizedVendorName(draft.vendorName));
+    const resolved = { ...draft, paymentPlanId: draft.paymentPlanId ?? inferredPlan?.id ?? null };
+    validateDepositPayment(eventId, resolved);
+    return depositsBase.create(eventId, resolved);
+  },
+  async update(eventId, id, patch) {
+    const current = required(
+      store().deposits.find((row) => row.id === id && row.eventId === eventId),
+      `Record ${id} no longer exists.`,
+    );
+    validateDepositPayment(eventId, { ...current, ...patch }, id);
+    return depositsBase.update(eventId, id, patch);
+  },
+};
 
 /* ---------------------------------------------------------------- team hours */
 
@@ -2638,6 +2729,7 @@ export const memoryAdapter: DataAdapter = {
   sponsorships,
   rfps,
   deposits,
+  vendorPaymentPlans,
   teamHours,
   templates,
   canvases,

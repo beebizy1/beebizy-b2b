@@ -43,6 +43,7 @@ vi.mock("./repos", () => {
     volunteers: child,
     budget: child,
     deposits: child,
+    vendorPaymentPlans: child,
     menu: child,
     moodBoard: child,
     floorplan: { ...child, share: vi.fn() },
@@ -142,7 +143,7 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
@@ -1065,6 +1066,28 @@ describe("billing endpoints", () => {
       vendorName: "Venue",
       amountCents: 50000,
       status: "pending",
+    });
+  });
+
+  it("persists vendor payment plans through the event route", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    vi.mocked(vendorPaymentPlans.list).mockResolvedValue([]);
+    vi.mocked(vendorPaymentPlans.create).mockResolvedValue({ id: "vpp-1" } as never);
+
+    const list = await handleRequest(new Request("http://localhost/api/events/evt-1/vendor-payment-plans"));
+    const create = await handleRequest(new Request("http://localhost/api/events/evt-1/vendor-payment-plans", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vendorName: "Venue", totalAmountCents: 250000, balanceDueDate: "2026-12-01T12:00:00.000Z" }),
+    }));
+
+    expect(list.status).toBe(200);
+    expect(create.status).toBe(201);
+    expect(vendorPaymentPlans.list).toHaveBeenCalledWith(owner, "evt-1");
+    expect(vendorPaymentPlans.create).toHaveBeenCalledWith(owner, "evt-1", {
+      vendorName: "Venue",
+      totalAmountCents: 250000,
+      balanceDueDate: "2026-12-01T12:00:00.000Z",
     });
   });
 

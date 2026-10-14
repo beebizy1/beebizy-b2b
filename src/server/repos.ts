@@ -41,6 +41,7 @@ import type {
   CustomReportRow,
   Event,
   Deposit,
+  VendorPaymentPlan,
   AssignmentSummaryResult,
   EventHealth,
   EventHistoryChange,
@@ -3392,6 +3393,94 @@ const depositAmount = (body: Body): number => {
   return value;
 };
 
+const optionalDepositAmount = (body: Body, key: string): number | null => {
+  const value = optInt(body, key);
+  if (value !== null && value < 0) throw new HttpError(400, `${key} cannot be negative.`);
+  return value;
+};
+
+const depositAmounts = (body: Body) => {
+  const amountCents = depositAmount(body);
+  const totalAmountCents = optionalDepositAmount(body, "totalAmountCents");
+  if (totalAmountCents !== null && amountCents > totalAmountCents) {
+    throw new HttpError(400, "The deposit cannot be greater than the total vendor cost.");
+  }
+  return { amountCents, totalAmountCents };
+};
+
+const paymentPlanTotal = (body: Body): number => {
+  const value = optInt(body, "totalAmountCents") ?? 0;
+  if (value < 0) throw new HttpError(400, "totalAmountCents cannot be negative.");
+  return value;
+};
+
+const normalizedVendorKey = (value: string) => value.trim().toLocaleLowerCase();
+
+async function paidDepositsForPlan(
+  ctx: RequestContext,
+  eventId: string,
+  paymentPlanId: string,
+  excludeId?: string,
+): Promise<number> {
+  const conditions = [
+    eq(s.deposits.workspaceId, ctx.workspaceId),
+    eq(s.deposits.eventId, eventId),
+    eq(s.deposits.status, "paid"),
+    eq(s.deposits.paymentPlanId, paymentPlanId),
+  ];
+  if (excludeId) conditions.push(ne(s.deposits.id, excludeId));
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${s.deposits.amountCents}), 0)::bigint` })
+    .from(s.deposits)
+    .where(and(...conditions));
+  return Number(row?.total ?? 0);
+}
+
+export const vendorPaymentPlans = eventScoped({
+  table: s.vendorPaymentPlans as never,
+  mapper: map.toVendorPaymentPlan as never,
+  idPrefix: "vpp",
+  order: "createdAt",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    vendorName: str(body, "vendorName"),
+    vendorKey: normalizedVendorKey(str(body, "vendorName")),
+    totalAmountCents: paymentPlanTotal(body),
+    balanceDueDate: parseDate(body.balanceDueDate, "balanceDueDate"),
+    notes: optStr(body, "notes"),
+    sortOrder,
+  }),
+  patch: {
+    totalAmountCents: (b) => paymentPlanTotal(b),
+    balanceDueDate: (b) => parseDate(b.balanceDueDate, "balanceDueDate"),
+    notes: (b) => optStr(b, "notes"),
+  },
+  beforeWrite: async (ctx, eventId, body, current) => {
+    const previous = current as VendorPaymentPlan | null;
+    const vendorName = previous?.vendorName ?? ("vendorName" in body ? str(body, "vendorName") : undefined);
+    const totalAmountCents = "totalAmountCents" in body ? paymentPlanTotal(body) : previous?.totalAmountCents;
+    if (!vendorName || totalAmountCents == null) return;
+
+    const [duplicate] = await db
+      .select({ id: s.vendorPaymentPlans.id })
+      .from(s.vendorPaymentPlans)
+      .where(and(
+        eq(s.vendorPaymentPlans.workspaceId, ctx.workspaceId),
+        eq(s.vendorPaymentPlans.eventId, eventId),
+        sql`lower(trim(${s.vendorPaymentPlans.vendorName})) = lower(trim(${vendorName}))`,
+      ))
+      .limit(1);
+    if (duplicate && duplicate.id !== previous?.id) {
+      throw new HttpError(409, `A payment plan already exists for ${vendorName}.`);
+    }
+
+    const paidCents = previous ? await paidDepositsForPlan(ctx, eventId, previous.id) : 0;
+    if (totalAmountCents < paidCents) {
+      throw new HttpError(400, "The total vendor cost cannot be less than deposits already paid.");
+    }
+  },
+});
+
 export const deposits = eventScoped({
   table: s.deposits as never,
   mapper: map.toDeposit as never,
@@ -3399,10 +3488,12 @@ export const deposits = eventScoped({
   order: "createdAt",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
+    paymentPlanId: optStr(body, "paymentPlanId"),
     vendorName: str(body, "vendorName"),
-    amountCents: depositAmount(body),
+    ...depositAmounts(body),
     dueDate: parseOptionalDate(body.dueDate, "dueDate"),
     paidDate: parseOptionalDate(body.paidDate, "paidDate"),
+    balanceDueDate: parseOptionalDate(body.balanceDueDate, "balanceDueDate"),
     paidBy: optStr(body, "paidBy"),
     paymentMethod: optStr(body, "paymentMethod"),
     status: depositStatus(body),
@@ -3410,14 +3501,50 @@ export const deposits = eventScoped({
     sortOrder,
   }),
   patch: {
+    paymentPlanId: (b) => optStr(b, "paymentPlanId"),
     vendorName: (b) => str(b, "vendorName"),
+    totalAmountCents: (b) => optionalDepositAmount(b, "totalAmountCents"),
     amountCents: (b) => depositAmount(b),
     dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
     paidDate: (b) => parseOptionalDate(b.paidDate, "paidDate"),
+    balanceDueDate: (b) => parseOptionalDate(b.balanceDueDate, "balanceDueDate"),
     paidBy: (b) => optStr(b, "paidBy"),
     paymentMethod: (b) => optStr(b, "paymentMethod"),
     status: (b) => depositStatus(b),
     notes: (b) => optStr(b, "notes"),
+  },
+  beforeWrite: async (ctx, eventId, body, current) => {
+    const previous = current as Deposit | null;
+    const paymentPlanId = "paymentPlanId" in body ? optStr(body, "paymentPlanId") : previous?.paymentPlanId;
+    const vendorName = "vendorName" in body ? str(body, "vendorName") : previous?.vendorName;
+    const amountCents = "amountCents" in body ? depositAmount(body) : previous?.amountCents;
+    const status = "status" in body ? depositStatus(body) : previous?.status;
+    if (!vendorName || amountCents == null || status == null) return;
+
+    const planConditions = paymentPlanId
+      ? [eq(s.vendorPaymentPlans.id, paymentPlanId)]
+      : [sql`lower(trim(${s.vendorPaymentPlans.vendorName})) = lower(trim(${vendorName}))`];
+    const [plan] = await db
+      .select({ id: s.vendorPaymentPlans.id, totalAmountCents: s.vendorPaymentPlans.totalAmountCents })
+      .from(s.vendorPaymentPlans)
+      .where(and(
+        eq(s.vendorPaymentPlans.workspaceId, ctx.workspaceId),
+        eq(s.vendorPaymentPlans.eventId, eventId),
+        ...planConditions,
+      ))
+      .limit(1);
+    if (!plan) {
+      if (paymentPlanId) throw new HttpError(400, "That vendor payment plan does not belong to this event.");
+      return;
+    }
+    if (!paymentPlanId && !previous?.paymentPlanId) body.paymentPlanId = plan.id;
+
+    const resolvedPlanId = paymentPlanId ?? plan.id;
+    const otherPaidCents = await paidDepositsForPlan(ctx, eventId, resolvedPlanId, previous?.id);
+    const nextPaidCents = otherPaidCents + (status === "paid" ? amountCents : 0);
+    if (nextPaidCents > plan.totalAmountCents) {
+      throw new HttpError(400, "Paid deposits cannot be greater than the total vendor cost.");
+    }
   },
 });
 
