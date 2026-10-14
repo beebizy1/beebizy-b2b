@@ -77,6 +77,43 @@ interface ShapeSpec {
   className: string;
 }
 
+interface InlineLabelEditorProps {
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: (value: string) => void;
+  ariaLabel: string;
+  placeholder: string;
+  className: string;
+  multiline?: boolean;
+  autoFocus?: boolean;
+}
+
+function InlineLabelEditor({
+  value,
+  onChange,
+  onCommit,
+  ariaLabel,
+  placeholder,
+  className,
+  multiline = false,
+  autoFocus = false,
+}: InlineLabelEditorProps) {
+  const shared = {
+    value,
+    placeholder,
+    maxLength: 80,
+    autoFocus,
+    className,
+    "aria-label": ariaLabel,
+    onChange: (inputEvent: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(inputEvent.target.value),
+    onBlur: (inputEvent: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => onCommit(inputEvent.target.value),
+    onPointerDown: (pointerEvent: React.PointerEvent<HTMLInputElement | HTMLTextAreaElement>) => pointerEvent.stopPropagation(),
+    onClick: (mouseEvent: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>) => mouseEvent.stopPropagation(),
+  };
+
+  return multiline ? <textarea {...shared} rows={2} /> : <input {...shared} />;
+}
+
 const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   "round-table": { label: "Round table", width: 9, height: 12, seats: 10, round: true, className: "bg-primary-muted border-primary/40 text-foreground" },
   "long-table": { label: "Long table", width: 22, height: 7, seats: 16, round: false, className: "bg-primary-muted border-primary/40 text-foreground" },
@@ -91,7 +128,7 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
   "custom-shape": { label: "Custom shape", width: 18, height: 14, seats: null, round: false, className: "border-transparent bg-transparent text-info-text shadow-none" },
   image: { label: "Image", width: 18, height: 14, seats: null, round: false, className: "overflow-hidden border-primary/40 bg-surface text-foreground" },
-  text: { label: "Text", width: 20, height: 7, seats: null, round: false, className: "border-transparent bg-transparent text-foreground shadow-none" },
+  text: { label: "Text box", width: 20, height: 7, seats: null, round: false, className: "border-dashed border-primary/40 bg-surface/90 text-foreground" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
@@ -187,8 +224,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const normalizeTextLabel = (id: string, value: string) => {
-    updateItem(id, { label: value.trim() || "Text" });
+  const normalizeLabel = (id: string, value: string, fallback: string) => {
+    updateItem(id, { label: value.trim() || fallback });
   };
 
   const updateItemPoint = (id: string, index: number, point: FloorplanPoint) => {
@@ -831,41 +868,28 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                           className="pointer-events-none absolute inset-0 size-full select-none rounded-[inherit] object-contain"
                         />
                         {isSelected ? (
-                          <span className="pointer-events-none absolute inset-x-1 bottom-1 truncate rounded bg-surface/90 px-1 py-0.5 text-[9px] shadow-xs">
-                            {item.label}
-                          </span>
+                          <InlineLabelEditor
+                            value={item.label}
+                            onChange={(value) => updateItem(item.id, { label: value })}
+                            onCommit={(value) => normalizeLabel(item.id, value, "Image")}
+                            ariaLabel="Image name"
+                            placeholder="Rename image"
+                            className="absolute inset-x-1 bottom-1 z-10 min-w-0 rounded border border-primary/40 bg-surface/95 px-1 py-0.5 text-center text-[9px] font-semibold text-foreground shadow-xs outline-none focus:ring-2 focus:ring-ring/30"
+                          />
                         ) : null}
                       </>
                     ) : item.shape === "text" ? (
-                      isSelected && !item.locked ? (
-                        <>
-                          <button
-                            type="button"
-                            aria-label="Move text label"
-                            title="Drag to move text"
-                            onPointerDown={(pointerEvent) => {
-                              pointerEvent.stopPropagation();
-                              onPointerDown(pointerEvent, item);
-                            }}
-                            className="absolute -top-7 left-1/2 z-20 flex h-6 -translate-x-1/2 touch-none items-center gap-1 rounded-full border border-hairline bg-surface px-2 text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <GripVertical className="size-3" />
-                            Move
-                          </button>
-                          <textarea
-                            value={item.label}
-                            onChange={(inputEvent) => updateItem(item.id, { label: inputEvent.target.value })}
-                            onBlur={(inputEvent) => normalizeTextLabel(item.id, inputEvent.target.value)}
-                            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
-                            onClick={(mouseEvent) => mouseEvent.stopPropagation()}
-                            aria-label="Floorplan text"
-                            placeholder="Type text"
-                            rows={2}
-                            maxLength={80}
-                            autoFocus
-                            className="relative z-10 size-full resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-2 py-1 text-center text-sm font-bold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30 sm:text-base"
-                          />
-                        </>
+                      isSelected ? (
+                        <InlineLabelEditor
+                          value={item.label}
+                          onChange={(value) => updateItem(item.id, { label: value })}
+                          onCommit={(value) => normalizeLabel(item.id, value, "Text box")}
+                          ariaLabel="Floorplan text"
+                          placeholder="Type text"
+                          multiline
+                          autoFocus
+                          className="relative z-10 size-full resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-2 py-1 text-center text-sm font-bold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30 sm:text-base"
+                        />
                       ) : (
                         <span className="whitespace-pre-wrap px-1 leading-tight">{item.label}</span>
                       )
@@ -888,19 +912,14 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                             />
                           )}
                         </svg>
-                        {isSelected && !item.locked ? (
-                          <textarea
+                        {isSelected ? (
+                          <InlineLabelEditor
                             value={item.label}
-                            onChange={(inputEvent) => updateItem(item.id, { label: inputEvent.target.value })}
-                            onBlur={(inputEvent) => {
-                              const label = inputEvent.target.value.trim();
-                              updateItem(item.id, { label: label || "Custom shape" });
-                            }}
-                            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
-                            onClick={(mouseEvent) => mouseEvent.stopPropagation()}
-                            aria-label="Label inside custom shape"
+                            onChange={(value) => updateItem(item.id, { label: value })}
+                            onCommit={(value) => normalizeLabel(item.id, value, "Custom shape")}
+                            ariaLabel="Label inside custom shape"
                             placeholder="Type a label"
-                            rows={2}
+                            multiline
                             className="relative z-10 mx-2 min-w-0 resize-none rounded border border-info/40 bg-surface/90 px-1.5 py-1 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
                           />
                         ) : (
@@ -945,9 +964,34 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                             ))
                           : null}
                       </>
+                    ) : isSelected ? (
+                      <InlineLabelEditor
+                        value={item.label}
+                        onChange={(value) => updateItem(item.id, { label: value })}
+                        onCommit={(value) => normalizeLabel(item.id, value, spec.label)}
+                        ariaLabel="Shape name"
+                        placeholder="Rename shape"
+                        multiline
+                        className="relative z-10 mx-1 min-w-0 resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-1 py-0.5 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+                      />
                     ) : (
                       <span className="px-1">{item.label}</span>
                     )}
+                    {isSelected && !item.locked ? (
+                      <button
+                        type="button"
+                        aria-label={`Move ${spec.label.toLowerCase()}`}
+                        title={`Drag to move ${spec.label.toLowerCase()}`}
+                        onPointerDown={(pointerEvent) => {
+                          pointerEvent.stopPropagation();
+                          onPointerDown(pointerEvent, item);
+                        }}
+                        className="absolute -top-7 left-1/2 z-30 flex h-6 -translate-x-1/2 touch-none items-center gap-1 rounded-full border border-hairline bg-surface px-2 text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <GripVertical className="size-3" />
+                        Move
+                      </button>
+                    ) : null}
                     {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>
                 );
@@ -997,8 +1041,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag objects from the toolbar to place them inside the room outline. Select one to move, resize, rotate,
-              or lock it. Add Text for standalone labels, then type directly on the canvas. Select an uploaded image to resize or rotate it.
+              Select any shape and type its new name directly inside it. Add a Text box for section labels, then move,
+              resize, or rotate it like any other object. Select an uploaded image to rename, resize, or rotate it.
             </p>
           </div>
 
@@ -1012,7 +1056,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   <Textarea
                     value={selected.label}
                     onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
-                    onBlur={(inputEvent) => normalizeTextLabel(selected.id, inputEvent.target.value)}
+                    onBlur={(inputEvent) => normalizeLabel(selected.id, inputEvent.target.value, "Text box")}
                     aria-label="Floorplan text"
                     rows={2}
                     maxLength={80}
@@ -1022,7 +1066,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   <Input
                     value={selected.label}
                     onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
+                    onBlur={(inputEvent) => normalizeLabel(selected.id, inputEvent.target.value, SHAPES[selected.shape].label)}
                     aria-label="Object label"
+                    maxLength={80}
                     className="h-8 w-40"
                   />
                 )}
