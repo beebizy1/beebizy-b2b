@@ -6,6 +6,7 @@ import {
   pointIsInsideRoom,
   roomClipPath,
   roomPointsForShape,
+  rotationFromPointerAngles,
   smoothClosedPath,
 } from "./floorplanGeometry";
 
@@ -66,5 +67,11 @@ describe("floorplan room geometry", () => {
     expect(pointIsInsideRoom(room, placement.x, placement.y)).toBe(true);
     expect(placement.x).toBeLessThanOrEqual(30);
     expect(placement.y).toBeLessThanOrEqual(30);
+  });
+
+  it("rotates objects smoothly across the -180/180 degree pointer boundary", () => {
+    expect(rotationFromPointerAngles(10, 20, 50)).toBe(40);
+    expect(rotationFromPointerAngles(350, 170, -170)).toBe(10);
+    expect(rotationFromPointerAngles(15, -170, 170)).toBe(355);
   });
 });

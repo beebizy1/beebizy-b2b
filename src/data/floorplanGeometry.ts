@@ -74,6 +74,18 @@ export function smoothClosedPath(points: FloorplanPoint[]): string {
   return commands.join(" ");
 }
 
+/** Converts pointer movement around an object's center into a wrapped 0-359° rotation. */
+export function rotationFromPointerAngles(
+  startRotation: number,
+  startPointerAngle: number,
+  currentPointerAngle: number,
+): number {
+  let delta = currentPointerAngle - startPointerAngle;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return ((Math.round(startRotation + delta) % 360) + 360) % 360;
+}
+
 function pointInPolygon(points: FloorplanPoint[], x: number, y: number): boolean {
   let inside = false;
   for (let index = 0, previous = points.length - 1; index < points.length; previous = index, index += 1) {

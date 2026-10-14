@@ -61,6 +61,7 @@ import {
   addRoomCorner,
   nearestPointInsideRoom,
   pointIsInsideRoom,
+  rotationFromPointerAngles,
   roomClipPath,
   roomPointsForShape,
   smoothClosedPath,
@@ -133,6 +134,13 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
 
+function suppressNextClick(ref: { current: boolean }) {
+  ref.current = true;
+  window.setTimeout(() => {
+    ref.current = false;
+  }, 0);
+}
+
 const ROOM_SHAPE_OPTIONS: {
   value: FloorplanRoomShape;
   label: string;
@@ -190,10 +198,19 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const [freehandDraft, setFreehandDraft] = useState<FloorplanPoint[] | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const rotationDragState = useRef<{
+    id: string;
+    centerX: number;
+    centerY: number;
+    startPointerAngle: number;
+    startRotation: number;
+    moved: boolean;
+  } | null>(null);
   const cornerDragState = useRef<{ index: number } | null>(null);
   const itemCornerDragState = useRef<{ id: string; index: number } | null>(null);
   const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
   const suppressPaletteClick = useRef(false);
+  const suppressRotationClick = useRef(false);
   const freehandDraftRef = useRef<FloorplanPoint[] | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -398,11 +415,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     if (!drag) return;
     const moved = Math.hypot(pointerEvent.clientX - drag.startX, pointerEvent.clientY - drag.startY) > 6;
     if (!moved) return;
-    suppressPaletteClick.current = true;
+    suppressNextClick(suppressPaletteClick);
     addShapeAtPointer(drag.shape, pointerEvent.clientX, pointerEvent.clientY);
-    window.setTimeout(() => {
-      suppressPaletteClick.current = false;
-    }, 0);
   };
 
   const removeSelected = () => {
@@ -433,10 +447,44 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
   };
 
+  const beginRotation = (pointerEvent: React.PointerEvent<HTMLButtonElement>, item: FloorplanItem) => {
+    if (pointerEvent.button !== 0 || item.locked) return;
+    const room = roomRef.current;
+    if (!room) return;
+    const rect = room.getBoundingClientRect();
+    const centerX = rect.left + rect.width * (item.x / 100);
+    const centerY = rect.top + rect.height * (item.y / 100);
+    rotationDragState.current = {
+      id: item.id,
+      centerX,
+      centerY,
+      startPointerAngle: Math.atan2(pointerEvent.clientY - centerY, pointerEvent.clientX - centerX) * 180 / Math.PI,
+      startRotation: item.rotation ?? 0,
+      moved: false,
+    };
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+  };
+
   const onPointerMove = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
     const room = roomRef.current;
     if (!room) return;
     const rect = room.getBoundingClientRect();
+    const rotationDrag = rotationDragState.current;
+    if (rotationDrag) {
+      const pointerAngle = Math.atan2(
+        pointerEvent.clientY - rotationDrag.centerY,
+        pointerEvent.clientX - rotationDrag.centerX,
+      ) * 180 / Math.PI;
+      const rotation = rotationFromPointerAngles(
+        rotationDrag.startRotation,
+        rotationDrag.startPointerAngle,
+        pointerAngle,
+      );
+      if (rotation !== rotationDrag.startRotation) rotationDrag.moved = true;
+      updateItem(rotationDrag.id, { rotation });
+      return;
+    }
+
     const cornerDrag = cornerDragState.current;
     if (cornerDrag) {
       updateRoomPoint(cornerDrag.index, {
@@ -475,7 +523,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   };
 
   const endDrag = () => {
+    if (rotationDragState.current?.moved) {
+      suppressNextClick(suppressRotationClick);
+    }
     dragState.current = null;
+    rotationDragState.current = null;
     cornerDragState.current = null;
     itemCornerDragState.current = null;
   };
@@ -978,19 +1030,39 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       <span className="px-1">{item.label}</span>
                     )}
                     {isSelected && !item.locked ? (
-                      <button
-                        type="button"
-                        aria-label={`Move ${spec.label.toLowerCase()}`}
-                        title={`Drag to move ${spec.label.toLowerCase()}`}
-                        onPointerDown={(pointerEvent) => {
-                          pointerEvent.stopPropagation();
-                          onPointerDown(pointerEvent, item);
-                        }}
-                        className="absolute -top-7 left-1/2 z-30 flex h-6 -translate-x-1/2 touch-none items-center gap-1 rounded-full border border-hairline bg-surface px-2 text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <GripVertical className="size-3" />
-                        Move
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Move ${spec.label.toLowerCase()}`}
+                          title={`Drag to move ${spec.label.toLowerCase()}`}
+                          onPointerDown={(pointerEvent) => {
+                            pointerEvent.stopPropagation();
+                            onPointerDown(pointerEvent, item);
+                          }}
+                          className="absolute -top-7 left-1/2 z-30 flex h-6 -translate-x-1/2 touch-none items-center gap-1 rounded-full border border-hairline bg-surface px-2 text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <GripVertical className="size-3" />
+                          Move
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Rotate ${spec.label.toLowerCase()}`}
+                          title="Drag to rotate, or click for 15 degrees"
+                          onPointerDown={(pointerEvent) => {
+                            pointerEvent.stopPropagation();
+                            beginRotation(pointerEvent, item);
+                          }}
+                          onClick={(mouseEvent) => {
+                            mouseEvent.stopPropagation();
+                            if (suppressRotationClick.current) return;
+                            updateItem(item.id, { rotation: ((item.rotation ?? 0) + 15) % 360 });
+                          }}
+                          className="absolute right-1 top-1 z-30 grid size-8 touch-none place-items-center rounded-full border border-primary/40 bg-surface text-foreground shadow-md hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          style={{ transform: `rotate(${-(item.rotation ?? 0)}deg)` }}
+                        >
+                          <RotateCw className="size-4" />
+                        </button>
+                      </>
                     ) : null}
                     {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>
@@ -1042,7 +1114,8 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
             <p className="mt-2 text-xs text-muted-foreground">
               Select any shape and type its new name directly inside it. Add a Text box for section labels, then move,
-              resize, or rotate it like any other object. Select an uploaded image to rename, resize, or rotate it.
+              resize, or rotate it like any other object. The circular handle on a selected item rotates it directly.
+              Select an uploaded image to rename, resize, or rotate it.
             </p>
           </div>
 
