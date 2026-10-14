@@ -710,6 +710,7 @@ export const FLOORPLAN_SHAPES = [
   "chair-row",
   "custom-shape",
   "image",
+  "text",
 ] as const;
 export type FloorplanShape = (typeof FLOORPLAN_SHAPES)[number];
 

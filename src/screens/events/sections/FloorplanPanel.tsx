@@ -26,11 +26,13 @@ import {
   RotateCw,
   Save,
   Shapes,
+  Type,
   Trash2,
   Unlock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
@@ -89,6 +91,7 @@ const SHAPES: Record<FloorplanShape, ShapeSpec> = {
   "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
   "custom-shape": { label: "Custom shape", width: 18, height: 14, seats: null, round: false, className: "border-transparent bg-transparent text-info-text shadow-none" },
   image: { label: "Image", width: 18, height: 14, seats: null, round: false, className: "overflow-hidden border-primary/40 bg-surface text-foreground" },
+  text: { label: "Text", width: 20, height: 7, seats: null, round: false, className: "border-transparent bg-transparent text-foreground shadow-none" },
 };
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
@@ -182,6 +185,10 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   const updateItem = (id: string, patch: Partial<FloorplanItem>) => {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const normalizeTextLabel = (id: string, value: string) => {
+    updateItem(id, { label: value.trim() || "Text" });
   };
 
   const updateItemPoint = (id: string, index: number, point: FloorplanPoint) => {
@@ -372,7 +379,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   /* --------------------------------------------------------------- dragging */
 
-  const onPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>, item: FloorplanItem) => {
+  const onPointerDown = (pointerEvent: React.PointerEvent<HTMLElement>, item: FloorplanItem) => {
     if (item.id !== selectedId) {
       setSelectedItemCorner(null);
       setFreehandDraft(null);
@@ -701,7 +708,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             }}
             title={`Drag ${SHAPES[shape].label.toLowerCase()} into the room, or click to add`}
           >
-            <GripVertical className="mr-1 size-3" />
+            {shape === "text" ? <Type className="mr-1 size-3.5" /> : <GripVertical className="mr-1 size-3" />}
             {SHAPES[shape].label}
           </Button>
         ))}
@@ -803,6 +810,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       item.locked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
                       spec.round ? "rounded-full" : "rounded-md",
                       spec.className,
+                      item.shape === "text" && "text-sm font-bold sm:text-base",
                       isSelected && "ring-2 ring-ring ring-offset-1",
                     )}
                     style={{
@@ -828,6 +836,39 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                           </span>
                         ) : null}
                       </>
+                    ) : item.shape === "text" ? (
+                      isSelected && !item.locked ? (
+                        <>
+                          <button
+                            type="button"
+                            aria-label="Move text label"
+                            title="Drag to move text"
+                            onPointerDown={(pointerEvent) => {
+                              pointerEvent.stopPropagation();
+                              onPointerDown(pointerEvent, item);
+                            }}
+                            className="absolute -top-7 left-1/2 z-20 flex h-6 -translate-x-1/2 touch-none items-center gap-1 rounded-full border border-hairline bg-surface px-2 text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <GripVertical className="size-3" />
+                            Move
+                          </button>
+                          <textarea
+                            value={item.label}
+                            onChange={(inputEvent) => updateItem(item.id, { label: inputEvent.target.value })}
+                            onBlur={(inputEvent) => normalizeTextLabel(item.id, inputEvent.target.value)}
+                            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+                            onClick={(mouseEvent) => mouseEvent.stopPropagation()}
+                            aria-label="Floorplan text"
+                            placeholder="Type text"
+                            rows={2}
+                            maxLength={80}
+                            autoFocus
+                            className="relative z-10 size-full resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-2 py-1 text-center text-sm font-bold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30 sm:text-base"
+                          />
+                        </>
+                      ) : (
+                        <span className="whitespace-pre-wrap px-1 leading-tight">{item.label}</span>
+                      )
                     ) : customPoints ? (
                       <>
                         <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -957,7 +998,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
             <p className="mt-2 text-xs text-muted-foreground">
               Drag objects from the toolbar to place them inside the room outline. Select one to move, resize, rotate,
-              or lock it. Type directly inside a selected custom shape. Uploaded images use the same resize and rotation controls.
+              or lock it. Add Text for standalone labels, then type directly on the canvas. Select an uploaded image to resize or rotate it.
             </p>
           </div>
 
@@ -967,12 +1008,24 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 <span className="block text-xs font-medium text-muted-foreground">
                   {SHAPES[selected.shape].label} label
                 </span>
-                <Input
-                  value={selected.label}
-                  onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
-                  aria-label="Object label"
-                  className="h-8 w-40"
-                />
+                {selected.shape === "text" ? (
+                  <Textarea
+                    value={selected.label}
+                    onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
+                    onBlur={(inputEvent) => normalizeTextLabel(selected.id, inputEvent.target.value)}
+                    aria-label="Floorplan text"
+                    rows={2}
+                    maxLength={80}
+                    className="min-h-16 w-52 resize-none py-2"
+                  />
+                ) : (
+                  <Input
+                    value={selected.label}
+                    onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
+                    aria-label="Object label"
+                    className="h-8 w-40"
+                  />
+                )}
               </label>
               {selected.seats !== null ? (
                 <label className="space-y-1">
@@ -1026,7 +1079,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 </label>
               ) : null}
               <div className="space-y-1">
-                <span className="block text-xs font-medium text-muted-foreground">Rotation</span>
+                <span className="block text-xs font-medium text-muted-foreground">
+                  {selected.shape === "image" ? "Image rotation" : selected.shape === "text" ? "Text rotation" : "Rotation"}
+                </span>
                 <div className="flex items-center gap-1">
                   <Button
                     type="button"

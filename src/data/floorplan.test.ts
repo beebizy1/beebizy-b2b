@@ -4,7 +4,7 @@ import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
   it("supports Santa Clara site features and individual seating", () => {
-    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row", "image"]));
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row", "image", "text"]));
   });
 
   it("calculates usable square footage for rectangular, oval and traced rooms", () => {
@@ -85,6 +85,22 @@ describe("parseFloorplanDraft", () => {
       height: 18,
       rotation: 90,
       imageUrl: "https://example.com/sponsor-logo.png",
+    };
+
+    expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("preserves standalone floorplan text and its rotation", () => {
+    const item = {
+      id: "text-1",
+      shape: "text" as const,
+      label: "Silent auction",
+      x: 50,
+      y: 20,
+      seats: null,
+      width: 28,
+      height: 8,
+      rotation: 15,
     };
 
     expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
