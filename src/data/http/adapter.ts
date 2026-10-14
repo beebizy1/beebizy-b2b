@@ -62,6 +62,7 @@ import type {
   PortfolioSummary,
   ProductFeedback,
   PublicEventPayload,
+  PublicFloorplanPayload,
   PublicRegistrationResult,
   PublicRfpPayload,
   PublicVendorConversation,
@@ -599,6 +600,15 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: (eventId) => client.get<Floorplan[]>(`/events/${eventId}/floorplans`),
       create: (eventId, draft) => client.post<Floorplan>(`/events/${eventId}/floorplans`, draft),
       save: (id, draft) => client.put<Floorplan>(`/floorplans/${id}`, draft),
+      share: (eventId, id) => client.post<{ shareToken: string }>(`/events/${eventId}/floorplans/${id}/share`),
+      getPublic: async (shareToken) => {
+        try {
+          return await publicRequest<PublicFloorplanPayload>(`/public/floorplans/${shareToken}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
       remove: async (id) => {
         await client.del(`/floorplans/${id}`);
       },

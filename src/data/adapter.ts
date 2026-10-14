@@ -81,6 +81,7 @@ import type {
   EventVendorPatch,
   Floorplan,
   FloorplanDraft,
+  PublicFloorplanPayload,
   Location,
   LocationDraft,
   LocationPatch,
@@ -351,6 +352,9 @@ export interface FloorplanRepository {
   list(eventId: string): Promise<Floorplan[]>;
   create(eventId: string, draft: FloorplanDraft): Promise<Floorplan>;
   save(id: string, draft: FloorplanDraft): Promise<Floorplan>;
+  /** Creates or reuses a public token scoped to one floorplan only. */
+  share(eventId: string, id: string): Promise<{ shareToken: string }>;
+  getPublic(shareToken: string): Promise<PublicFloorplanPayload | null>;
   remove(id: string): Promise<void>;
 }
 

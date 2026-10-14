@@ -15,6 +15,7 @@ vi.mock("./repos", () => {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
     publicTickets: vi.fn(),
+    publicFloorplan: vi.fn(),
     publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
     publicRegistration: vi.fn(),
     publicVolunteerSignup: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock("./repos", () => {
     deposits: child,
     menu: child,
     moodBoard: child,
+    floorplan: { ...child, share: vi.fn() },
     auction: child,
     sponsorships: child,
     eventVendors: child,
@@ -140,7 +142,7 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
@@ -665,9 +667,26 @@ describe("public event signup endpoints", () => {
     vi.mocked(publicVolunteerNeeds).mockClear();
     const response = await handleRequest(new Request("http://localhost/api/public/events/share-1"));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ agenda: [], volunteerNeeds: [] });
+    expect(await response.json()).toMatchObject({
+      agenda: [],
+      volunteerNeeds: [],
+    });
     expect(publicAgenda).not.toHaveBeenCalled();
     expect(publicVolunteerNeeds).not.toHaveBeenCalled();
+  });
+
+  it("returns one isolated floorplan through its own token without authorizing", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicFloorplan).mockResolvedValue({
+      eventTitle: "Gala",
+      eventDate: "2026-10-18T18:00:00.000Z",
+      floorplan: { id: "floorplan-1", eventId: "event-1", name: "Ballroom", items: [], updatedAt: "2026-10-14T00:00:00.000Z" },
+    });
+    const response = await handleRequest(new Request("http://localhost/api/public/floorplans/floorplan-token"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ floorplan: { id: "floorplan-1", name: "Ballroom" } });
+    expect(publicFloorplan).toHaveBeenCalledWith("floorplan-token");
+    expect(authorize).not.toHaveBeenCalled();
   });
 
   it("registers one guest without requiring a user session", async () => {

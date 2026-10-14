@@ -100,6 +100,7 @@ import type {
   RegistrationStatus,
   RegistrationWithGuest,
   PublicRegistrationDraft,
+  PublicFloorplanPayload,
   WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
@@ -2129,6 +2130,24 @@ const floorplan: FloorplanRepository = {
       after: { ...copy(existing), ...context } as unknown as Record<string, unknown>,
     });
     return copy(existing);
+  },
+  async share(eventId, id) {
+    await wait();
+    requireEvent(eventId);
+    const plan = required(
+      store().floorplans.find((candidate) => candidate.id === id && candidate.eventId === eventId),
+      `Floorplan ${id} no longer exists.`,
+    );
+    return { shareToken: `demo-floorplan-${plan.id}` };
+  },
+  async getPublic(shareToken): Promise<PublicFloorplanPayload | null> {
+    await wait();
+    if (!shareToken.startsWith("demo-floorplan-")) return null;
+    const planId = shareToken.slice("demo-floorplan-".length);
+    const plan = store().floorplans.find((candidate) => candidate.id === planId);
+    const event = plan ? store().events.find((candidate) => candidate.id === plan.eventId) : null;
+    if (!event || !plan) return null;
+    return copy({ eventTitle: event.title, eventDate: event.date, floorplan: plan });
   },
   async remove(id) {
     await wait();

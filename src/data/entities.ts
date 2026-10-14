@@ -919,6 +919,13 @@ export interface PublicAttendanceDashboardPayload {
   registrationSources: Array<{ label: string; count: number }>;
 }
 
+/** One floorplan shared through its own capability token, without the surrounding event. */
+export interface PublicFloorplanPayload {
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  floorplan: Floorplan;
+}
+
 export type EventHistoryChange = Pick<
   EventHistoryEntry,
   "eventId" | "resource" | "resourceId" | "action" | "before" | "after"

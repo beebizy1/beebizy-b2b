@@ -770,6 +770,31 @@ export const floorplans = pgTable(
   (table) => [index("floorplans_event_idx").on(table.eventId)],
 );
 
+/** Public capability links are isolated from audit history and scoped to one room. */
+export const floorplanShareLinks = pgTable(
+  "floorplan_share_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    floorplanId: text("floorplan_id")
+      .notNull()
+      .references(() => floorplans.id, { onDelete: "cascade" }),
+    publicToken: text("public_token").notNull().unique(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("floorplan_share_links_floorplan_idx").on(table.floorplanId),
+    index("floorplan_share_links_event_idx").on(table.workspaceId, table.eventId),
+  ],
+);
+
 /**
  * Append-only planning history. `eventId` deliberately has no event foreign key: when
  * an event is deleted, its decision history remains available for aggregate learning.

@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Circle,
+  Copy,
   GripVertical,
   ImagePlus,
   LayoutGrid,
@@ -41,12 +42,14 @@ import {
   useDeleteFloorplan,
   useFloorplans,
   useSaveFloorplan,
+  useShareFloorplan,
   useUploadAuctionImage,
 } from "@/data/hooks";
 import {
   FLOORPLAN_SHAPES,
   type Event,
   type Floorplan,
+  type FloorplanDraft,
   type FloorplanCustomShapeMode,
   type FloorplanItem,
   type FloorplanPoint,
@@ -54,7 +57,8 @@ import {
   type FloorplanRoomShape,
   type FloorplanShape,
 } from "@/data/entities";
-import { floorplanRoomSquareFeet } from "@/data/floorplan";
+import { floorplanRoomSquareFeet, parseFloorplanDraft } from "@/data/floorplan";
+import { useDataMode } from "@/data/provider";
 import {
   DEFAULT_FLOORPLAN_ROOM,
   DEFAULT_CUSTOM_OBJECT_POINTS,
@@ -62,21 +66,12 @@ import {
   nearestPointInsideRoom,
   pointIsInsideRoom,
   rotationFromPointerAngles,
-  roomClipPath,
   roomPointsForShape,
   smoothClosedPath,
 } from "@/data/floorplanGeometry";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
-
-interface ShapeSpec {
-  label: string;
-  /** Width and height as a percentage of the room box. */
-  width: number;
-  height: number;
-  seats: number | null;
-  round: boolean;
-  className: string;
-}
+import { FloorplanItemVisual, FloorplanRoomBackdrop } from "@/screens/floorplan/floorplanVisuals";
+import { FLOORPLAN_SHAPE_SPECS } from "@/screens/floorplan/floorplanShapeSpecs";
 
 interface InlineLabelEditorProps {
   value: string;
@@ -115,22 +110,7 @@ function InlineLabelEditor({
   return multiline ? <textarea {...shared} rows={2} /> : <input {...shared} />;
 }
 
-const SHAPES: Record<FloorplanShape, ShapeSpec> = {
-  "round-table": { label: "Round table", width: 9, height: 12, seats: 10, round: true, className: "bg-primary-muted border-primary/40 text-foreground" },
-  "long-table": { label: "Long table", width: 22, height: 7, seats: 16, round: false, className: "bg-primary-muted border-primary/40 text-foreground" },
-  stage: { label: "Stage", width: 30, height: 9, seats: null, round: false, className: "bg-secondary border-secondary text-secondary-foreground" },
-  bar: { label: "Bar", width: 8, height: 16, seats: null, round: false, className: "bg-info-tint border-info/40 text-info-text" },
-  entrance: { label: "Entrance", width: 12, height: 6, seats: null, round: false, className: "bg-success-tint border-success/40 text-success-text" },
-  dancefloor: { label: "Dance floor", width: 24, height: 20, seats: null, round: false, className: "bg-surface-sunken border-dashed border-muted-foreground/50 text-muted-foreground" },
-  booth: { label: "Booth", width: 10, height: 10, seats: 4, round: false, className: "bg-warning-tint border-warning/40 text-warning-text" },
-  av: { label: "AV desk", width: 9, height: 7, seats: null, round: false, className: "bg-muted border-muted-foreground/40 text-muted-foreground" },
-  tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
-  chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
-  "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
-  "custom-shape": { label: "Custom shape", width: 18, height: 14, seats: null, round: false, className: "border-transparent bg-transparent text-info-text shadow-none" },
-  image: { label: "Image", width: 18, height: 14, seats: null, round: false, className: "overflow-hidden border-primary/40 bg-surface text-foreground" },
-  text: { label: "Text box", width: 20, height: 7, seats: null, round: false, className: "border-dashed border-primary/40 bg-surface/90 text-foreground" },
-};
+const SHAPES = FLOORPLAN_SHAPE_SPECS;
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
 
@@ -139,6 +119,33 @@ function suppressNextClick(ref: { current: boolean }) {
   window.setTimeout(() => {
     ref.current = false;
   }, 0);
+}
+
+type FloorplanSaveStatus = "saved" | "unsaved" | "saving" | "error";
+
+interface StoredFloorplanEditorDraft {
+  editedAt: number;
+  draft: FloorplanDraft;
+}
+
+const floorplanDraftKey = (id: string) => `beebizy:floorplan-draft:${id}`;
+
+function readFloorplanEditorDraft(saved: Floorplan): FloorplanDraft | null {
+  try {
+    const raw = window.localStorage.getItem(floorplanDraftKey(saved.id));
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as Partial<StoredFloorplanEditorDraft>;
+    if (typeof stored.editedAt !== "number" || stored.editedAt <= Date.parse(saved.updatedAt) || !stored.draft) return null;
+    return parseFloorplanDraft(stored.draft);
+  } catch {
+    window.localStorage.removeItem(floorplanDraftKey(saved.id));
+    return null;
+  }
+}
+
+function writeFloorplanEditorDraft(id: string, draft: FloorplanDraft) {
+  const stored: StoredFloorplanEditorDraft = { editedAt: Date.now(), draft };
+  window.localStorage.setItem(floorplanDraftKey(id), JSON.stringify(stored));
 }
 
 const ROOM_SHAPE_OPTIONS: {
@@ -159,7 +166,7 @@ function newItemId(): string {
 function openItemPosition(
   items: FloorplanItem[],
   room: FloorplanRoom,
-  spec: ShapeSpec,
+  spec: (typeof SHAPES)[FloorplanShape],
 ): FloorplanPoint {
   const candidates = [14, 26, 38, 50, 62, 74, 86].flatMap((y) =>
     [14, 26, 38, 50, 62, 74, 86].map((x) => ({ x, y })),
@@ -187,11 +194,16 @@ function openItemPosition(
  */
 function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const savePlan = useSaveFloorplan();
+  const shareFloorplan = useShareFloorplan();
   const uploadImage = useUploadAuctionImage();
+  const { mode: dataMode } = useDataMode();
 
-  const [name, setName] = useState<string | null>(null);
-  const [items, setItems] = useState<FloorplanItem[] | null>(null);
-  const [room, setRoom] = useState<FloorplanRoom | null>(null);
+  const recoveredDraftRef = useRef<FloorplanDraft | null>(readFloorplanEditorDraft(saved));
+  const [name, setName] = useState<string | null>(recoveredDraftRef.current?.name ?? null);
+  const [items, setItems] = useState<FloorplanItem[] | null>(recoveredDraftRef.current?.items ?? null);
+  const [room, setRoom] = useState<FloorplanRoom | null>(recoveredDraftRef.current?.room ?? null);
+  const [saveStatus, setSaveStatus] = useState<FloorplanSaveStatus>(recoveredDraftRef.current ? "unsaved" : "saved");
+  const [sharing, setSharing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
   const [selectedItemCorner, setSelectedItemCorner] = useState<number | null>(null);
@@ -213,6 +225,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const suppressRotationClick = useRef(false);
   const freehandDraftRef = useRef<FloorplanPoint[] | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const autoSaveTimer = useRef<number | null>(null);
+  const editRevision = useRef(0);
+  const savePlanRef = useRef(savePlan);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  savePlanRef.current = savePlan;
 
   // Local edits win until saved or reset; otherwise mirror the stored plan. Memoized so
   // the derived values below don't recompute on every render.
@@ -224,7 +241,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     () => room ?? saved.room ?? DEFAULT_FLOORPLAN_ROOM,
     [room, saved.room],
   );
-  const dirty = items !== null || name !== null || room !== null;
+  const currentDraftRef = useRef<FloorplanDraft>({ name: workingName, items: workingItems, room: workingRoom });
+  currentDraftRef.current = { name: workingName, items: workingItems, room: workingRoom };
+  const hasLocalEdits = items !== null || name !== null || room !== null;
 
   const selected = workingItems.find((item) => item.id === selectedId) ?? null;
   const selectedCustomPoints = selected?.shape === "custom-shape"
@@ -236,6 +255,53 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     () => workingItems.reduce((total, item) => total + (item.seats ?? 0), 0),
     [workingItems],
   );
+
+  const persistDraftRef = useRef<(revision: number, draft: FloorplanDraft, manual: boolean) => Promise<boolean>>(async () => false);
+  persistDraftRef.current = async (revision, draft, manual) => {
+    setSaveStatus("saving");
+    const request = saveQueue.current
+      .catch(() => undefined)
+      .then(() => savePlanRef.current.mutateAsync({ id: saved.id, eventId: event.id, draft }));
+    saveQueue.current = request;
+    try {
+      await request;
+      if (editRevision.current === revision) {
+        if (dataMode === "live") window.localStorage.removeItem(floorplanDraftKey(saved.id));
+        setSaveStatus("saved");
+      }
+      if (manual) toast({ title: "Floorplan saved" });
+      return true;
+    } catch (error) {
+      if (editRevision.current === revision) setSaveStatus("error");
+      toast({
+        title: "Couldn't save",
+        description: `${error instanceof Error ? error.message : "Try again."} Your changes are still stored on this device.`,
+      });
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (!hasLocalEdits) return;
+    const draft = { name: workingName, items: workingItems, room: workingRoom };
+    writeFloorplanEditorDraft(saved.id, draft);
+    const revision = editRevision.current + 1;
+    editRevision.current = revision;
+    setSaveStatus("unsaved");
+    if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = window.setTimeout(() => {
+      autoSaveTimer.current = null;
+      void persistDraftRef.current(revision, draft, false);
+    }, 800);
+    return () => {
+      if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+    };
+  }, [event.id, hasLocalEdits, saved.id, workingItems, workingName, workingRoom]);
+
+  useEffect(() => {
+    if (!recoveredDraftRef.current) return;
+    toast({ title: "Recovered your floorplan edits", description: "Beebizy is saving them automatically." });
+  }, []);
 
   const updateItem = (id: string, patch: Partial<FloorplanItem>) => {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -604,22 +670,64 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   const visualAspectRatio = Math.max(0.65, Math.min(2.4, workingRoom.widthFeet / workingRoom.lengthFeet));
 
+  const copyFloorplanLink = async () => {
+    setSharing(true);
+    try {
+      if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+      if (hasLocalEdits) {
+        const savedCurrentRevision = await persistDraftRef.current(
+          editRevision.current,
+          currentDraftRef.current,
+          false,
+        );
+        if (!savedCurrentRevision) return;
+      } else {
+        await saveQueue.current;
+      }
+      const token = (await shareFloorplan.mutateAsync({ eventId: event.id, id: saved.id })).shareToken;
+      const url = new URL(`/floorplan/${encodeURIComponent(token)}`, window.location.origin);
+      await navigator.clipboard.writeText(url.toString());
+      toast({ title: "Floorplan link copied", description: "Vendors and clients can open it without signing in." });
+    } catch (caught) {
+      toast({ title: "Couldn't copy the floorplan link", description: caught instanceof Error ? caught.message : undefined });
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
-    <Panel>
+    <Panel className="relative">
       <PanelHeader
         title="Floorplan"
         description={capacityNote}
         actions={
           <div className="flex items-center gap-2">
-            {dirty ? <Pill tone="warning">unsaved</Pill> : null}
-            {dirty ? (
+            <Button type="button" variant="outline" size="sm" disabled={sharing || shareFloorplan.isPending} onClick={() => void copyFloorplanLink()}>
+              <Copy className="mr-1.5 size-3.5" />
+              {sharing || shareFloorplan.isPending ? "Saving & creating link…" : saveStatus === "saved" ? "Copy share link" : "Save & copy link"}
+            </Button>
+            {saveStatus === "saving" ? <Pill tone="info">Saving…</Pill> : null}
+            {saveStatus === "unsaved" ? <Pill tone="warning">Autosaving…</Pill> : null}
+            {saveStatus === "error" ? <Pill tone="danger">Saved on this device</Pill> : null}
+            {saveStatus === "saved" && hasLocalEdits ? <Pill tone="success">Saved automatically</Pill> : null}
+            {hasLocalEdits ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
+                  const revision = editRevision.current + 1;
+                  editRevision.current = revision;
+                  if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+                  window.localStorage.removeItem(floorplanDraftKey(saved.id));
                   setItems(null);
                   setName(null);
                   setRoom(null);
+                  void persistDraftRef.current(revision, {
+                    name: saved.name,
+                    items: saved.items,
+                    room: saved.room ?? DEFAULT_FLOORPLAN_ROOM,
+                  }, false);
                   setSelectedId(null);
                   setSelectedCorner(null);
                   setSelectedItemCorner(null);
@@ -633,32 +741,29 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             ) : null}
             <Button
               size="sm"
-              disabled={!dirty || savePlan.isPending}
-              onClick={() =>
-                savePlan.mutate(
-                  {
-                    id: saved.id,
-                    eventId: event.id,
-                    draft: { name: workingName, items: workingItems, room: workingRoom },
-                  },
-                  {
-                    onSuccess: () => {
-                      setItems(null);
-                      setName(null);
-                      setRoom(null);
-                      toast({ title: "Floorplan saved" });
-                    },
-                    onError: (error) => toast({ title: "Couldn't save", description: error.message }),
-                  },
-                )
-              }
+              disabled={!hasLocalEdits || saveStatus === "saved" || saveStatus === "saving"}
+              onClick={() => {
+                if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+                autoSaveTimer.current = null;
+                persistDraftRef.current(editRevision.current, {
+                  name: workingName,
+                  items: workingItems,
+                  room: workingRoom,
+                }, true);
+              }}
             >
               <Save className="mr-1.5 size-3.5" />
-              Save
+              Save now
             </Button>
           </div>
         }
       />
+
+      {sharing ? (
+        <div className="absolute inset-0 z-50 grid cursor-wait place-items-center rounded-xl bg-surface/70 backdrop-blur-[1px]" aria-live="polite">
+          <div className="rounded-full border border-hairline bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-lg">Saving the latest floorplan before sharing…</div>
+        </div>
+      ) : null}
 
       <div className="border-b border-hairline bg-surface-sunken/60 px-5 py-4">
         <div className="flex flex-wrap items-end gap-4">
@@ -837,34 +942,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
               className="relative min-h-[360px] w-full overflow-hidden rounded-lg border border-hairline bg-muted/30"
               style={{ aspectRatio: visualAspectRatio }}
             >
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 bg-surface-sunken shadow-inner"
-                style={{
-                  clipPath: roomClipPath(workingRoom),
-                  backgroundImage:
-                    "linear-gradient(to right, hsl(var(--hairline)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--hairline)) 1px, transparent 1px)",
-                  backgroundSize: "5% 8.333%",
-                }}
-              />
-              <svg
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 size-full text-primary/70"
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-              >
-                {workingRoom.shape === "oval" ? (
-                  <ellipse cx="50" cy="50" rx="48" ry="48" fill="none" stroke="currentColor" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-                ) : (
-                  <polygon
-                    points={workingRoom.points.map((point) => `${point.x},${point.y}`).join(" ")}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="0.5"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                )}
-              </svg>
+              <FloorplanRoomBackdrop room={workingRoom} />
 
               {workingItems.length === 0 ? (
                 <div className="absolute inset-0 grid place-items-center">
@@ -911,72 +989,43 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)`,
                     }}
                   >
-                    {item.shape === "image" && item.imageUrl ? (
+                    {!isSelected ? (
+                      <FloorplanItemVisual item={item} />
+                    ) : item.shape === "image" && item.imageUrl ? (
                       <>
-                        <img
-                          src={item.imageUrl}
-                          alt=""
-                          draggable={false}
-                          className="pointer-events-none absolute inset-0 size-full select-none rounded-[inherit] object-contain"
-                        />
-                        {isSelected ? (
-                          <InlineLabelEditor
-                            value={item.label}
-                            onChange={(value) => updateItem(item.id, { label: value })}
-                            onCommit={(value) => normalizeLabel(item.id, value, "Image")}
-                            ariaLabel="Image name"
-                            placeholder="Rename image"
-                            className="absolute inset-x-1 bottom-1 z-10 min-w-0 rounded border border-primary/40 bg-surface/95 px-1 py-0.5 text-center text-[9px] font-semibold text-foreground shadow-xs outline-none focus:ring-2 focus:ring-ring/30"
-                          />
-                        ) : null}
-                      </>
-                    ) : item.shape === "text" ? (
-                      isSelected ? (
+                        <FloorplanItemVisual item={item} showLabel={false} />
                         <InlineLabelEditor
                           value={item.label}
                           onChange={(value) => updateItem(item.id, { label: value })}
-                          onCommit={(value) => normalizeLabel(item.id, value, "Text box")}
-                          ariaLabel="Floorplan text"
-                          placeholder="Type text"
-                          multiline
-                          autoFocus
-                          className="relative z-10 size-full resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-2 py-1 text-center text-sm font-bold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30 sm:text-base"
+                          onCommit={(value) => normalizeLabel(item.id, value, "Image")}
+                          ariaLabel="Image name"
+                          placeholder="Rename image"
+                          className="absolute inset-x-1 bottom-1 z-10 min-w-0 rounded border border-primary/40 bg-surface/95 px-1 py-0.5 text-center text-[9px] font-semibold text-foreground shadow-xs outline-none focus:ring-2 focus:ring-ring/30"
                         />
-                      ) : (
-                        <span className="whitespace-pre-wrap px-1 leading-tight">{item.label}</span>
-                      )
+                      </>
+                    ) : item.shape === "text" ? (
+                      <InlineLabelEditor
+                        value={item.label}
+                        onChange={(value) => updateItem(item.id, { label: value })}
+                        onCommit={(value) => normalizeLabel(item.id, value, "Text box")}
+                        ariaLabel="Floorplan text"
+                        placeholder="Type text"
+                        multiline
+                        autoFocus
+                        className="relative z-10 size-full resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-2 py-1 text-center text-sm font-bold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30 sm:text-base"
+                      />
                     ) : customPoints ? (
                       <>
-                        <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                          {customMode === "polygon" ? (
-                            <polygon
-                              points={customPoints.map((point) => `${point.x},${point.y}`).join(" ")}
-                              className="fill-info-tint stroke-info/60"
-                              strokeWidth="2"
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          ) : (
-                            <path
-                              d={smoothClosedPath(customPoints)}
-                              className="fill-info-tint stroke-info/60"
-                              strokeWidth="2"
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          )}
-                        </svg>
-                        {isSelected ? (
-                          <InlineLabelEditor
-                            value={item.label}
-                            onChange={(value) => updateItem(item.id, { label: value })}
-                            onCommit={(value) => normalizeLabel(item.id, value, "Custom shape")}
-                            ariaLabel="Label inside custom shape"
-                            placeholder="Type a label"
-                            multiline
-                            className="relative z-10 mx-2 min-w-0 resize-none rounded border border-info/40 bg-surface/90 px-1.5 py-1 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
-                          />
-                        ) : (
-                          <span className="relative z-10 px-2">{item.label}</span>
-                        )}
+                        <FloorplanItemVisual item={item} showLabel={false} />
+                        <InlineLabelEditor
+                          value={item.label}
+                          onChange={(value) => updateItem(item.id, { label: value })}
+                          onCommit={(value) => normalizeLabel(item.id, value, "Custom shape")}
+                          ariaLabel="Label inside custom shape"
+                          placeholder="Type a label"
+                          multiline
+                          className="relative z-10 mx-2 min-w-0 resize-none rounded border border-info/40 bg-surface/90 px-1.5 py-1 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+                        />
                         {isSelected && !item.locked && customMode !== "freehand"
                           ? customPoints.map((point, index) => (
                               <button
@@ -1030,7 +1079,15 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       <span className="px-1">{item.label}</span>
                     )}
                     {isSelected && !item.locked ? (
-                      <>
+                      <div
+                        className="absolute z-30 flex touch-none items-center gap-0.5 rounded-full border border-hairline bg-surface p-0.5 text-muted-foreground shadow-md"
+                        style={{
+                          left: item.x < 15 ? "0%" : item.x > 85 ? "100%" : "50%",
+                          top: item.y < 15 ? "calc(100% + 6px)" : undefined,
+                          bottom: item.y < 15 ? undefined : "calc(100% + 6px)",
+                          transform: `translateX(${item.x < 15 ? "0%" : item.x > 85 ? "-100%" : "-50%"}) rotate(${-(item.rotation ?? 0)}deg)`,
+                        }}
+                      >
                         <button
                           type="button"
                           aria-label={`Move ${spec.label.toLowerCase()}`}
@@ -1039,7 +1096,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                             pointerEvent.stopPropagation();
                             onPointerDown(pointerEvent, item);
                           }}
-                          className="absolute -top-7 left-1/2 z-30 flex h-6 -translate-x-1/2 touch-none items-center gap-1 rounded-full border border-hairline bg-surface px-2 text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex h-7 items-center gap-1 rounded-full px-2 text-[10px] font-medium hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <GripVertical className="size-3" />
                           Move
@@ -1057,12 +1114,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                             if (suppressRotationClick.current) return;
                             updateItem(item.id, { rotation: ((item.rotation ?? 0) + 15) % 360 });
                           }}
-                          className="absolute right-1 top-1 z-30 grid size-8 touch-none place-items-center rounded-full border border-primary/40 bg-surface text-foreground shadow-md hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          style={{ transform: `rotate(${-(item.rotation ?? 0)}deg)` }}
+                          className="grid size-7 place-items-center rounded-full text-foreground hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <RotateCw className="size-4" />
                         </button>
-                      </>
+                      </div>
                     ) : null}
                     {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>

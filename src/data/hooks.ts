@@ -86,6 +86,7 @@ import type {
   VolunteerNeedPatch,
   PublicVolunteerSignupDraft,
   PublicDonationStatus,
+  PublicFloorplanPayload,
   SchoolGrade,
 } from "./entities";
 import type { PlanningBrief, PlanningPreviewBrief } from "./planner";
@@ -174,6 +175,7 @@ export const qk = {
 
   settings: ["settings"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
+  publicFloorplan: (token: string) => ["floorplan", "public", token] as const,
   history: (eventId: string) => ["history", eventId] as const,
   teamUpdates: (eventId: string) => ["teamUpdates", eventId] as const,
   roi: (eventId: string) => ["roi", eventId] as const,
@@ -1670,6 +1672,17 @@ export function useSaveFloorplan() {
     (a, vars: { id: string; eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.id, vars.draft),
     (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
   );
+}
+
+export function useShareFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.floorplan.share(vars.eventId, vars.id),
+    () => [],
+  );
+}
+
+export function usePublicFloorplan(token: string): UseQueryResult<PublicFloorplanPayload | null, Error> {
+  return useAdapterQuery(qk.publicFloorplan(token), (a) => a.floorplan.getPublic(token), { enabled: !!token });
 }
 
 export function useDeleteFloorplan() {

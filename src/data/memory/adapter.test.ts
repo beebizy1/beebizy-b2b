@@ -769,6 +769,21 @@ describe("floorplan", () => {
     expect(ballroom.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(110);
   });
 
+  it("shares exactly one read-only floorplan through its own token", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    const ballroom = plans.find((plan) => plan.name.startsWith("Ballroom"))!;
+    const terrace = plans.find((plan) => plan.id !== ballroom.id)!;
+    const shared = await memoryAdapter.floorplan.share("evt-gala", ballroom.id);
+    const repeated = await memoryAdapter.floorplan.share("evt-gala", ballroom.id);
+    await memoryAdapter.floorplan.save(ballroom.id, { name: "Updated ballroom", items: ballroom.items, room: ballroom.room });
+    const payload = await memoryAdapter.floorplan.getPublic(shared.shareToken);
+
+    expect(repeated).toEqual(shared);
+    expect(payload).toMatchObject({ eventTitle: "Annual Partner Gala & Fundraiser", floorplan: { id: ballroom.id, name: "Updated ballroom" } });
+    expect(payload?.floorplan.id).not.toBe(terrace.id);
+    expect(await memoryAdapter.floorplan.getPublic("not-a-token")).toBeNull();
+  });
+
   it("returns an empty list for an event with no rooms", async () => {
     expect(await memoryAdapter.floorplan.list("evt-cab")).toEqual([]);
   });

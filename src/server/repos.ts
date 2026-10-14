@@ -73,6 +73,7 @@ import type {
   PublicCheckInGuest,
   PublicCheckInStationPayload,
   PublicAttendanceDashboardPayload,
+  PublicFloorplanPayload,
   PublicRegistrationDraft,
   PublicRegistrationResult,
   PublicVolunteerSignupDraft,
@@ -950,6 +951,7 @@ export async function publicTickets(eventId: string) {
   return rows.map(map.toTicketType);
 }
 
+/** Read-only floorplans for an event already authorized by its public share token. */
 /** Public-safe volunteer openings. Names and contact details stay server-side. */
 export async function publicVolunteerNeeds(eventId: string) {
   const [needs, shifts] = await Promise.all([
@@ -4743,6 +4745,23 @@ export const floorplan = {
     return map.toFloorplan(saved[0]!);
   },
 
+  async share(ctx: RequestContext, eventId: string, id: string): Promise<{ shareToken: string }> {
+    const plan = await ownedFloorplan(ctx, id);
+    if (plan.eventId !== eventId) throw new HttpError(404, "That floorplan no longer exists.");
+    const candidateToken = crypto.randomUUID().replaceAll("-", "");
+    const [link] = await db.insert(s.floorplanShareLinks).values({
+      id: newId("floorplan-share"),
+      workspaceId: ctx.workspaceId,
+      eventId,
+      floorplanId: id,
+      publicToken: candidateToken,
+    }).onConflictDoUpdate({
+      target: s.floorplanShareLinks.floorplanId,
+      set: { updatedAt: new Date() },
+    }).returning({ publicToken: s.floorplanShareLinks.publicToken });
+    return { shareToken: link!.publicToken };
+  },
+
   async remove(ctx: RequestContext, id: string): Promise<void> {
     const before = await ownedFloorplan(ctx, id);
     await db.batch([
@@ -4760,6 +4779,32 @@ export const floorplan = {
     ]);
   },
 };
+
+/** Resolves one floorplan-specific capability token without exposing the event workspace. */
+export async function publicFloorplan(shareToken: string): Promise<PublicFloorplanPayload | null> {
+  const [row] = await db.select({ plan: s.floorplans, event: s.events })
+    .from(s.floorplanShareLinks)
+    .innerJoin(s.floorplans, and(
+      eq(s.floorplans.id, s.floorplanShareLinks.floorplanId),
+      eq(s.floorplans.eventId, s.floorplanShareLinks.eventId),
+      eq(s.floorplans.workspaceId, s.floorplanShareLinks.workspaceId),
+    ))
+    .innerJoin(s.events, and(
+      eq(s.events.id, s.floorplanShareLinks.eventId),
+      eq(s.events.workspaceId, s.floorplanShareLinks.workspaceId),
+    ))
+    .where(and(
+      eq(s.floorplanShareLinks.publicToken, shareToken),
+      isNull(s.floorplanShareLinks.revokedAt),
+    ))
+    .limit(1);
+  if (!row) return null;
+  return {
+    eventTitle: row.event.title,
+    eventDate: row.event.startsAt.toISOString(),
+    floorplan: map.toFloorplan(row.plan),
+  };
+}
 
 /* ----------------------------------------------------------------- members */
 

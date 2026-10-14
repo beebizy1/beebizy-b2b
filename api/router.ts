@@ -319,6 +319,10 @@ async function handlePublic(segments: string[], method: string, request: Request
     // agenda and tickets ride along because the guest has no session to fetch them with.
     return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
   }
+  if (segments[0] === "public" && segments[1] === "floorplans" && segments[2] && method === "GET") {
+    const shared = await repos.publicFloorplan(segments[2]);
+    return shared ? json(shared) : json({ error: "This floorplan link is no longer active." }, 404);
+  }
   if (
     segments[0] === "public" && segments[1] === "events" && segments[2] &&
     segments[3] === "ticket-orders" && segments[4] && method === "GET"
@@ -964,6 +968,9 @@ async function handleAuthed(
         if (b === "floorplans" && !c && method === "POST") {
           const draft = readFloorplanDraft(body);
           return json(await repos.floorplan.create(ctx, a, draft), 201);
+        }
+        if (b === "floorplans" && c && segments[4] === "share" && method === "POST") {
+          return json(await repos.floorplan.share(ctx, a, c));
         }
         if (b === "roi" && method === "GET") return json(await repos.roi.get(ctx, a));
         if (b === "roi" && method === "PUT") return json(await repos.roi.save(ctx, a, body));

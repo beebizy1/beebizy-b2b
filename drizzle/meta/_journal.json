@@ -498,6 +498,13 @@
       "when": 1791848281879,
       "tag": "0070_famous_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792012537749,
+      "tag": "0071_tough_jazinda",
+      "breakpoints": true
     }
   ]
 }
