@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Circle,
   Copy,
   GripVertical,
@@ -57,7 +58,8 @@ import {
   type FloorplanRoomShape,
   type FloorplanShape,
 } from "@/data/entities";
-import { floorplanRoomSquareFeet, parseFloorplanDraft } from "@/data/floorplan";
+import { floorplanRoomSquareFeet } from "@/data/floorplan";
+import { isRecoveredFloorplanCopy, recoveredFloorplanName, resolveFloorplanRecovery, type FloorplanRecoveryCandidate, type StoredFloorplanEditorDraft } from "@/data/floorplanRecovery";
 import { useDataMode } from "@/data/provider";
 import {
   DEFAULT_FLOORPLAN_ROOM,
@@ -125,29 +127,37 @@ function suppressNextClick(ref: { current: boolean }) {
 
 type FloorplanSaveStatus = "saved" | "unsaved" | "saving" | "error";
 
-interface StoredFloorplanEditorDraft {
-  editedAt: number;
-  draft: FloorplanDraft;
-}
-
 const floorplanDraftKey = (id: string) => `beebizy:floorplan-draft:${id}`;
 
-function readFloorplanEditorDraft(saved: Floorplan): FloorplanDraft | null {
+function readFloorplanEditorRecovery(saved: Floorplan): FloorplanRecoveryCandidate | null {
   try {
-    const raw = window.localStorage.getItem(floorplanDraftKey(saved.id));
-    if (!raw) return null;
-    const stored = JSON.parse(raw) as Partial<StoredFloorplanEditorDraft>;
-    if (typeof stored.editedAt !== "number" || stored.editedAt <= Date.parse(saved.updatedAt) || !stored.draft) return null;
-    return parseFloorplanDraft(stored.draft);
+    const key = floorplanDraftKey(saved.id);
+    const raw = window.localStorage.getItem(key);
+    const recovery = resolveFloorplanRecovery(saved, raw);
+    if (raw && recovery === null) window.localStorage.removeItem(key);
+    return recovery;
   } catch {
-    window.localStorage.removeItem(floorplanDraftKey(saved.id));
     return null;
   }
 }
 
-function writeFloorplanEditorDraft(id: string, draft: FloorplanDraft) {
-  const stored: StoredFloorplanEditorDraft = { editedAt: Date.now(), draft };
-  window.localStorage.setItem(floorplanDraftKey(id), JSON.stringify(stored));
+function writeFloorplanEditorDraft(id: string, draft: FloorplanDraft): boolean {
+  try {
+    const stored: StoredFloorplanEditorDraft = { editedAt: Date.now(), draft };
+    window.localStorage.setItem(floorplanDraftKey(id), JSON.stringify(stored));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearFloorplanEditorDraft(id: string): boolean {
+  try {
+    window.localStorage.removeItem(floorplanDraftKey(id));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const ROOM_SHAPE_OPTIONS: {
@@ -194,17 +204,18 @@ function openItemPosition(
  * One room's editor. Remounted per room by the panel below (via `key`), so the local
  * unsaved state cannot leak from the terrace layout into the ballroom's.
  */
-function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
+function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; plan: Floorplan; recoverAsNewRoom: (draft: FloorplanDraft) => Promise<Floorplan> }) {
   const savePlan = useSaveFloorplan();
   const shareFloorplan = useShareFloorplan();
   const uploadImage = useUploadAuctionImage();
   const { mode: dataMode } = useDataMode();
 
-  const recoveredDraftRef = useRef<FloorplanDraft | null>(readFloorplanEditorDraft(saved));
-  const [name, setName] = useState<string | null>(recoveredDraftRef.current?.name ?? null);
-  const [items, setItems] = useState<FloorplanItem[] | null>(recoveredDraftRef.current?.items ?? null);
-  const [room, setRoom] = useState<FloorplanRoom | null>(recoveredDraftRef.current?.room ?? null);
-  const [saveStatus, setSaveStatus] = useState<FloorplanSaveStatus>(recoveredDraftRef.current ? "unsaved" : "saved");
+  const [recoveryCandidate, setRecoveryCandidate] = useState<FloorplanRecoveryCandidate | null>(() => readFloorplanEditorRecovery(saved));
+  const [recoverySaving, setRecoverySaving] = useState(false);
+  const [name, setName] = useState<string | null>(null);
+  const [items, setItems] = useState<FloorplanItem[] | null>(null);
+  const [room, setRoom] = useState<FloorplanRoom | null>(null);
+  const [saveStatus, setSaveStatus] = useState<FloorplanSaveStatus>("saved");
   const [sharing, setSharing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
@@ -229,6 +240,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<number | null>(null);
   const editRevision = useRef(0);
+  const deviceDraftStored = useRef(true);
   const savePlanRef = useRef(savePlan);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   savePlanRef.current = savePlan;
@@ -268,7 +280,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     try {
       await request;
       if (editRevision.current === revision) {
-        if (dataMode === "live") window.localStorage.removeItem(floorplanDraftKey(saved.id));
+        if (dataMode === "live") clearFloorplanEditorDraft(saved.id);
         setSaveStatus("saved");
       }
       if (manual) toast({ title: "Floorplan saved" });
@@ -277,16 +289,18 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       if (editRevision.current === revision) setSaveStatus("error");
       toast({
         title: "Couldn't save",
-        description: `${error instanceof Error ? error.message : "Try again."} Your changes are still stored on this device.`,
+        description: deviceDraftStored.current
+          ? `${error instanceof Error ? error.message : "Try again."} Your changes are still stored on this device.`
+          : `${error instanceof Error ? error.message : "Try again."} Your changes are still visible in this tab. Keep it open and try again.`,
       });
       return false;
     }
   };
 
   useEffect(() => {
-    if (!hasLocalEdits) return;
+    if (!hasLocalEdits || recoveryCandidate) return;
     const draft = { name: workingName, items: workingItems, room: workingRoom };
-    writeFloorplanEditorDraft(saved.id, draft);
+    deviceDraftStored.current = writeFloorplanEditorDraft(saved.id, draft);
     const revision = editRevision.current + 1;
     editRevision.current = revision;
     setSaveStatus("unsaved");
@@ -298,12 +312,11 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     return () => {
       if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
     };
-  }, [event.id, hasLocalEdits, saved.id, workingItems, workingName, workingRoom]);
+  }, [event.id, hasLocalEdits, recoveryCandidate, saved.id, workingItems, workingName, workingRoom]);
 
   useEffect(() => {
-    if (!recoveredDraftRef.current) return;
-    toast({ title: "Recovered your floorplan edits", description: "Beebizy is saving them automatically." });
-  }, []);
+    setRecoveryCandidate((current) => current ? readFloorplanEditorRecovery(saved) : null);
+  }, [saved]);
 
   const updateItem = (id: string, patch: Partial<FloorplanItem>) => {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -311,6 +324,36 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   const normalizeLabel = (id: string, value: string, fallback: string) => {
     updateItem(id, { label: value.trim() || fallback });
+  };
+
+  const recoverDeviceCopy = async () => {
+    if (!recoveryCandidate) return;
+    setRecoverySaving(true);
+    try {
+      const recovered = await recoverAsNewRoom(recoveryCandidate.draft);
+      const cleared = clearFloorplanEditorDraft(saved.id);
+      setRecoveryCandidate(null);
+      toast({
+        title: "Device copy recovered as a separate room",
+        description: cleared
+          ? `${recoveryCandidate.itemCount} objects are now saved in “${recovered.name}.” The original room is unchanged.`
+          : `${recoveryCandidate.itemCount} objects are saved in “${recovered.name},” but this browser could not clear its old recovery prompt. Recovering again will reopen this room without creating a duplicate.`,
+      });
+    } catch (error) {
+      toast({ title: "Couldn't recover the device copy", description: error instanceof Error ? error.message : "Try again." });
+    } finally {
+      setRecoverySaving(false);
+    }
+  };
+
+  const keepServerVersion = () => {
+    if (!window.confirm("Discard the unsynced device copy and keep the current server room?")) return;
+    if (!clearFloorplanEditorDraft(saved.id)) {
+      toast({ title: "Couldn't discard the device copy", description: "Browser storage is unavailable." });
+      return;
+    }
+    setRecoveryCandidate(null);
+    toast({ title: "Server room kept", description: "The browser recovery copy was discarded." });
   };
 
   const updateItemPoint = (id: string, index: number, point: FloorplanPoint) => {
@@ -607,9 +650,12 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   // depending on `updateItem` (recreated each render) would do exactly that.
   const latest = useRef({ selected, workingItems, workingRoom });
   latest.current = { selected, workingItems, workingRoom };
+  const recoveryPending = useRef(Boolean(recoveryCandidate));
+  recoveryPending.current = Boolean(recoveryCandidate);
 
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
+      if (recoveryPending.current) return;
       const eventTarget = keyEvent.target as HTMLElement | null;
       if (eventTarget?.closest("input, textarea, select, button, [contenteditable='true']")) return;
       const { selected: target, workingItems: current, workingRoom: currentRoom } = latest.current;
@@ -711,7 +757,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             </Button>
             {saveStatus === "saving" ? <Pill tone="info">Saving…</Pill> : null}
             {saveStatus === "unsaved" ? <Pill tone="warning">Autosaving…</Pill> : null}
-            {saveStatus === "error" ? <Pill tone="danger">Saved on this device</Pill> : null}
+            {saveStatus === "error" ? <Pill tone="danger">{deviceDraftStored.current ? "Saved on this device" : "Not saved - keep this tab open"}</Pill> : null}
             {saveStatus === "saved" && hasLocalEdits ? <Pill tone="success">Saved automatically</Pill> : null}
             {hasLocalEdits ? (
               <Button
@@ -721,7 +767,10 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   const revision = editRevision.current + 1;
                   editRevision.current = revision;
                   if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
-                  window.localStorage.removeItem(floorplanDraftKey(saved.id));
+                  if (!clearFloorplanEditorDraft(saved.id)) {
+                    toast({ title: "Couldn't revert safely", description: "The browser recovery copy could not be cleared, so no changes were made." });
+                    return;
+                  }
                   setItems(null);
                   setName(null);
                   setRoom(null);
@@ -760,6 +809,33 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           </div>
         }
       />
+
+      {recoveryCandidate ? (
+        <div role="alert" className="mx-5 mt-4 flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-tint px-4 py-3 text-warning-text sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold">Unsynced floorplan copy found on this device</p>
+              <p data-numeric className="mt-0.5 text-xs">
+                It contains {recoveryCandidate.itemCount} objects from {new Date(recoveryCandidate.editedAt).toLocaleString()}. The current server room has {saved.items.length} objects. Recovering creates a separate room so neither version is overwritten.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={recoverySaving} onClick={keepServerVersion}>Keep server version</Button>
+            <Button type="button" size="sm" disabled={recoverySaving} onClick={() => void recoverDeviceCopy()}>
+              {recoverySaving ? "Recovering…" : "Recover device copy"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <fieldset
+        disabled={Boolean(recoveryCandidate)}
+        inert={recoveryCandidate ? true : undefined}
+        className={cn("m-0 min-w-0 border-0 p-0", recoveryCandidate && "pointer-events-none select-none opacity-60")}
+        aria-label={recoveryCandidate ? "Floorplan editing is paused until the recovery choice is made" : undefined}
+      >
 
       {sharing ? (
         <div className="absolute inset-0 z-50 grid cursor-wait place-items-center rounded-xl bg-surface/70 backdrop-blur-[1px]" aria-live="polite">
@@ -1431,6 +1507,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           ) : null}
         </>
       )}
+      </fieldset>
     </Panel>
   );
 }
@@ -1463,6 +1540,18 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         onError: (error) => toast({ title: "Couldn't add the room", description: error.message }),
       },
     );
+  };
+
+  const recoverRoom = async (draft: FloorplanDraft): Promise<Floorplan> => {
+    const existingCopy = rooms.find((room) => room.id !== current?.id && isRecoveredFloorplanCopy(room, draft));
+    if (existingCopy) {
+      setSelectedId(existingCopy.id);
+      return existingCopy;
+    }
+    const name = recoveredFloorplanName(draft.name, rooms.map((room) => room.name));
+    const created = await createPlan.mutateAsync({ eventId: event.id, draft: { ...draft, name } });
+    setSelectedId(created.id);
+    return created;
   };
 
   if (isLoading) {
@@ -1546,7 +1635,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         )}
       </div>
 
-      <RoomEditor key={current.id} event={event} plan={current} />
+      <RoomEditor key={current.id} event={event} plan={current} recoverAsNewRoom={recoverRoom} />
     </div>
   );
 }
