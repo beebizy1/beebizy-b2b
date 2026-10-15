@@ -164,6 +164,52 @@ function brandedEmail(input: {
 </html>`;
 }
 
+/** Operational event details sent privately to one booked vendor. */
+export async function notifyVendorEventPacket(input: {
+  requestId: string;
+  vendorId: string;
+  to: string;
+  vendorName: string;
+  senderName: string;
+  replyTo: string | null;
+  subject: string;
+  message: string;
+  eventTitle: string;
+  eventWhen: string;
+  eventLocation: string;
+  attachments: NonNullable<EmailMessage["attachments"]>;
+}): Promise<EmailOutcome> {
+  const attachmentSummary = input.attachments.length
+    ? `Attached: ${input.attachments.map((attachment) => attachment.filename).join(", ")}`
+    : "No documents are attached to this update.";
+  return sendEmail({
+    to: input.to,
+    fromName: input.senderName,
+    replyTo: input.replyTo,
+    idempotencyKey: `vendor-event-packet-${input.requestId}-${input.vendorId}`,
+    subject: emailSubjectPart(input.subject),
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      input.message,
+      "",
+      `Event: ${input.eventTitle}`,
+      `When: ${input.eventWhen}`,
+      `Location: ${input.eventLocation}`,
+      attachmentSummary,
+      "",
+      "Reply to this email if you have any questions for the event team.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: input.subject,
+      greeting: `Hi ${input.vendorName},`,
+      paragraphs: [input.message, attachmentSummary],
+      details: [["Event", input.eventTitle], ["When", input.eventWhen], ["Location", input.eventLocation]],
+    }),
+    attachments: input.attachments,
+  });
+}
+
 /** Sends one receipt after a free registration or confirmed Stripe payment. */
 export async function notifyTicketOrderConfirmation(input: {
   orderId: string;

@@ -790,6 +790,7 @@ export const HISTORY_RESOURCES = [
   "event",
   "registration",
   "vendor-booking",
+  "vendor-packet",
   "checklist",
   "check-in-station",
   "run-of-show",

@@ -108,6 +108,9 @@ vi.mock("./ticketInvitations", () => ({
   openTicketInvitation: vi.fn(),
   sendTicketInvitations: vi.fn(),
 }));
+vi.mock("./vendorEventPackets", () => ({
+  sendVendorEventPackets: vi.fn(),
+}));
 vi.mock("./fundraisingUx", () => ({
   createAuctionCategory: vi.fn(),
   extendAuctionItem: vi.fn(),
@@ -146,6 +149,7 @@ const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { deposits, vendorPaymentPlans, feedback, events, registrations, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
+const { sendVendorEventPackets } = await import("./vendorEventPackets");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
@@ -782,6 +786,38 @@ describe("workspace member ticket invitations", () => {
     const response = await handleRequest(new Request("http://localhost/api/events/event-gala/ticket-invitations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipients: [{ name: "Laila", email: "laila@beebizy.com" }], consentConfirmed: true, testOnly: true }) }));
     expect(response.status).toBe(201);
     expect(sendTicketInvitations).toHaveBeenCalledWith(expect.anything(), "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request), true);
+  });
+});
+
+describe("vendor event packet endpoint", () => {
+  it("validates and routes one private email per selected event vendor", async () => {
+    const context = {
+      userId: "user-laila", workspaceId: "workspace-school", email: "laila@beebizy.com", role: "member" as const,
+      eventScopeId: null,
+      access: { status: "beta" as const, plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(sendVendorEventPackets).mockResolvedValue({ sent: 1, failed: 0, skipped: 0, attachmentNames: ["packet.pdf"], deliveries: [] });
+    const draft = {
+      vendorIds: ["vendor-1"], subject: "Final details", message: "Please review.", includeRunOfShow: true,
+      floorplanIds: ["plan-1"], requestId: "66ee3482-cbea-4c20-a181-eddc7c9b7001", consentConfirmed: true, testEmail: null,
+    };
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/vendor-packets", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft),
+    }));
+    expect(response.status).toBe(201);
+    expect(sendVendorEventPackets).toHaveBeenCalledWith(context, "event-gala", draft);
+  });
+
+  it("requires a vendor unless this is a test email", async () => {
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/vendor-packets", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        vendorIds: [], subject: "Final details", message: "Please review.", includeRunOfShow: false,
+        floorplanIds: [], requestId: "66ee3482-cbea-4c20-a181-eddc7c9b7001", consentConfirmed: false, testEmail: null,
+      }),
+    }));
+    expect(response.status).toBe(400);
+    expect(sendVendorEventPackets).toHaveBeenCalledTimes(1);
   });
 });
 

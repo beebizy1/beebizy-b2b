@@ -99,6 +99,7 @@ import type {
 } from "../entities";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
+import type { VendorEventPacketResult } from "../vendorEventPackets";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -416,6 +417,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       replyPublic: async (token, content) => {
         await publicRequest(`/public/vendor-conversations/${token}`, { method: "POST", body: JSON.stringify({ content }) });
       },
+    },
+
+    vendorEventPackets: {
+      send: (eventId, draft) => client.post<VendorEventPacketResult>(`/events/${eventId}/vendor-packets`, draft),
     },
 
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],

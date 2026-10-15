@@ -94,6 +94,7 @@ import type {
 import type { PlanningBrief, PlanningPreviewBrief } from "./planner";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AssistantChatMessage } from "./assistantChat";
+import type { VendorEventPacketDraft } from "./vendorEventPackets";
 
 /* ---------------------------------------------------------------- query keys */
 
@@ -591,6 +592,13 @@ export function useRemoveEventVendor() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.eventVendors.remove(vars.eventId, vars.id),
     (vars) => [qk.eventVendors(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useSendVendorEventPacket() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VendorEventPacketDraft }) => a.vendorEventPackets.send(vars.eventId, vars.draft),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId), qk.vendors],
   );
 }
 

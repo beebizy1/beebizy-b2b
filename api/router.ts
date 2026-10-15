@@ -48,6 +48,7 @@ import {
   sendDueBidderBillReminders,
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
+import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
@@ -918,6 +919,23 @@ async function handleAuthed(
             return json(await sendTicketInvitations(ctx, a, input.recipients, input.consentConfirmed, request, input.testOnly), 201);
           }
           return notFound();
+        }
+        if (b === "vendor-packets" && !c && method === "POST") {
+          requireCapability(ctx, "vendorManagement");
+          const input = z.object({
+            vendorIds: z.array(z.string().trim().min(1).max(200)).max(200),
+            subject: z.string().trim().min(1).max(200),
+            message: z.string().trim().min(1).max(5_000),
+            includeRunOfShow: z.boolean(),
+            floorplanIds: z.array(z.string().trim().min(1).max(200)).max(20),
+            requestId: z.string().uuid(),
+            consentConfirmed: z.boolean(),
+            testEmail: z.string().trim().email().max(320).nullable().optional(),
+          }).refine((value) => Boolean(value.testEmail) || value.vendorIds.length > 0, {
+            message: "Choose at least one vendor.",
+            path: ["vendorIds"],
+          }).parse(body);
+          return json(await sendVendorEventPackets(ctx, a, input), 201);
         }
         if (b === "rfps") {
           requireCapability(ctx, "vendorManagement");

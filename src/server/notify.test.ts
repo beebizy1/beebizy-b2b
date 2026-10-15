@@ -10,6 +10,7 @@ import {
   notifyExperienceCertificate,
   notifyTeamUpdate,
   notifyVolunteerAssignment,
+  notifyVendorEventPacket,
   notifyWorkAssignment,
 } from "./notify";
 
@@ -241,6 +242,44 @@ describe("ticket and auction action emails", () => {
     expect(body.text).toContain("Property received: Private baking class");
     expect(body.text).toContain("No dollar value is stated");
     expect(body.text).not.toMatch(/fair market value|\$\d/i);
+  });
+});
+
+describe("vendor event packet email", () => {
+  it("sends one private operational email with both PDFs and a stable retry key", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyVendorEventPacket({
+      requestId: "packet-request-1",
+      vendorId: "vendor-1",
+      to: "catering@example.com",
+      vendorName: "Golden Gate Catering",
+      senderName: "Santa Clara University",
+      replyTo: "planner@example.com",
+      subject: "Final details for Demo Day",
+      message: "Please review the final event plan before arrival.",
+      eventTitle: "Demo Day",
+      eventWhen: "October 20, 2026 at 5:00 PM PDT",
+      eventLocation: "Mission Gardens",
+      attachments: [
+        { filename: "demo-day-run-of-show.pdf", content: "run-of-show-base64", content_type: "application/pdf" },
+        { filename: "demo-day-floorplans.pdf", content: "floorplan-base64", content_type: "application/pdf" },
+      ],
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      from: "Santa Clara University <events@beebizy.com>",
+      to: ["catering@example.com"],
+      reply_to: "planner@example.com",
+      subject: "Final details for Demo Day",
+    });
+    expect(body.text).toContain("Hi Golden Gate Catering,");
+    expect(body.text).toContain("When: October 20, 2026 at 5:00 PM PDT");
+    expect(body.text).toContain("Location: Mission Gardens");
+    expect(body.html).toContain('<html lang="en" dir="ltr">');
+    expect(body.attachments).toHaveLength(2);
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("vendor-event-packet-packet-request-1-vendor-1");
   });
 });
 

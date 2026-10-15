@@ -693,6 +693,60 @@ describe("raffle", () => {
 });
 
 describe("vendors", () => {
+  it("sends one private event packet per vendor and records the delivery", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    const base = {
+      subject: "Final gala details",
+      message: "Please review the attached plan.",
+      includeRunOfShow: true,
+      floorplanIds: plans.map((plan) => plan.id),
+      requestId: "packet-request-1",
+    };
+    await memoryAdapter.vendorEventPackets.send("evt-gala", {
+      ...base, vendorIds: [], testEmail: "demo@beebizy.com", consentConfirmed: false,
+    });
+    const result = await memoryAdapter.vendorEventPackets.send("evt-gala", {
+      ...base,
+      vendorIds: ["ven-goldengate", "ven-bloom"],
+      consentConfirmed: true,
+    });
+
+    expect(result.sent).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.attachmentNames).toEqual(expect.arrayContaining([
+      "annual-partner-gala-fundraiser-run-of-show.pdf",
+      "annual-partner-gala-fundraiser-floorplans.pdf",
+    ]));
+    expect((await memoryAdapter.vendorMessages.list("ven-goldengate")).at(-1)).toMatchObject({
+      eventId: "evt-gala", subject: "Final gala details", deliveryError: null,
+    });
+    const history = await memoryAdapter.history.list("evt-gala");
+    expect(history.filter((entry) => entry.resource === "vendor-packet" && entry.after?.test !== true)).toHaveLength(2);
+
+    const repeated = await memoryAdapter.vendorEventPackets.send("evt-gala", {
+      ...base, vendorIds: ["ven-goldengate", "ven-bloom"], consentConfirmed: true,
+    });
+    expect(repeated).toMatchObject({ sent: 0, skipped: 2 });
+    expect((await memoryAdapter.vendorMessages.list("ven-goldengate")).filter((message) => message.subject === "Final gala details")).toHaveLength(1);
+
+    const revised = { ...base, message: "Please review the revised plan." };
+    await memoryAdapter.vendorEventPackets.send("evt-gala", { ...revised, vendorIds: [], testEmail: "demo@beebizy.com", consentConfirmed: false });
+    const revisedResult = await memoryAdapter.vendorEventPackets.send("evt-gala", { ...revised, vendorIds: ["ven-goldengate", "ven-bloom"], consentConfirmed: true });
+    expect(revisedResult.sent).toBe(2);
+    expect((await memoryAdapter.vendorMessages.list("ven-goldengate")).filter((message) => message.subject === "Final gala details")).toHaveLength(2);
+  });
+
+  it("requires the signed-in test address and an exact successful test before a vendor send", async () => {
+    const draft = {
+      vendorIds: ["ven-goldengate"], subject: "Final details", message: "Version one", includeRunOfShow: false,
+      floorplanIds: [], requestId: "packet-request-privacy", consentConfirmed: true,
+    };
+    await expect(memoryAdapter.vendorEventPackets.send("evt-gala", { ...draft, vendorIds: [], testEmail: "someone@example.com", consentConfirmed: false })).rejects.toThrow(/signed-in email/i);
+    await expect(memoryAdapter.vendorEventPackets.send("evt-gala", draft)).rejects.toThrow(/successful test/i);
+    await memoryAdapter.vendorEventPackets.send("evt-gala", { ...draft, vendorIds: [], testEmail: "demo@beebizy.com", consentConfirmed: false });
+    await expect(memoryAdapter.vendorEventPackets.send("evt-gala", { ...draft, message: "Version two" })).rejects.toThrow(/successful test/i);
+  });
+
   it("recomputes the thread summary and unread count after a send", async () => {
     const before = (await memoryAdapter.vendors.get("ven-goldengate"))!;
     expect(before.unreadCount).toBeGreaterThan(0);

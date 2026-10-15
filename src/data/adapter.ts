@@ -166,6 +166,7 @@ import type { WorkspaceAccessStatus } from "./workspaceAccess";
 import type { AccountExperience } from "./accountExperience";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
+import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -234,6 +235,10 @@ export interface VendorMessagesRepository {
   markThreadRead(vendorId: string): Promise<void>;
   getPublic(token: string): Promise<PublicVendorConversation | null>;
   replyPublic(token: string, content: string): Promise<void>;
+}
+
+export interface VendorEventPacketsRepository {
+  send(eventId: string, draft: VendorEventPacketDraft): Promise<VendorEventPacketResult>;
 }
 
 export interface RaffleRepository extends EventScopedRepository<RaffleItem, RaffleItemDraft, RaffleItemPatch> {
@@ -529,6 +534,7 @@ export interface DataAdapter {
   checkInStations: EventScopedRepository<CheckInStation, CheckInStationDraft, CheckInStationPatch>;
   vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch>;
   vendorMessages: VendorMessagesRepository;
+  vendorEventPackets: VendorEventPacketsRepository;
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;

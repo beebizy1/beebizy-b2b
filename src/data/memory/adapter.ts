@@ -31,6 +31,7 @@ import type {
   TemplatesRepository,
   TicketsRepository,
   VendorMessagesRepository,
+  VendorEventPacketsRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
 import { platformFeeCents } from "../commerce";
@@ -143,6 +144,7 @@ import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
 import { normalizeAttendeeName } from "../attendanceReport";
+import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -1061,6 +1063,86 @@ const vendorMessages: VendorMessagesRepository = {
       if (message.vendorId === vendorId) message.isRead = true;
     }
     syncVendorThread(vendorId);
+  },
+};
+
+const vendorEventPackets: VendorEventPacketsRepository = {
+  async send(eventId, draft) {
+    await wait();
+    const event = requireEvent(eventId);
+    const selectedPlans = store().floorplans.filter((plan) => plan.eventId === eventId && draft.floorplanIds.includes(plan.id));
+    const attachmentNames = [
+      ...(draft.includeRunOfShow && store().runOfShow.some((cue) => cue.eventId === eventId) ? [`${vendorPacketFileSlug(event.title)}-run-of-show.pdf`] : []),
+      ...(selectedPlans.length ? [`${vendorPacketFileSlug(event.title)}-floorplans.pdf`] : []),
+    ];
+    const contentKey = JSON.stringify({
+      content: vendorPacketContentKey(draft),
+      event: { title: event.title, date: event.date, endDate: event.endDate, location: event.locationRecord?.name ?? event.location },
+      cues: store().runOfShow.filter((cue) => cue.eventId === eventId).sort((a, b) => a.id.localeCompare(b.id)),
+      plans: [...selectedPlans].sort((a, b) => a.id.localeCompare(b.id)),
+    });
+    if (draft.testEmail) {
+      if (draft.testEmail.toLowerCase() !== "demo@beebizy.com") throw new DataError("permission-denied", "Send the test to your signed-in email address.");
+      const createdAt = nowIso();
+      store().history.push({ id: newId("history"), eventId, actorId: DEMO_OWNER_ID, resource: "vendor-packet", resourceId: `${draft.requestId}:test`, action: "created", summary: "Vendor event packet test sent", before: null, after: { packetRequestId: draft.requestId, test: true, contentKey, status: "sent", email: draft.testEmail, sentBy: "demo@beebizy.com" }, createdAt });
+      return {
+        sent: 1,
+        failed: 0,
+        skipped: 0,
+        attachmentNames,
+        deliveries: [{ vendorId: null, vendorName: "Test recipient", email: draft.testEmail, status: "sent", reason: null }],
+      };
+    }
+
+    if (!draft.consentConfirmed) throw new DataError("invalid", "Confirm the recipient list before sending.");
+    const successfulTest = store().history.some((entry) => entry.eventId === eventId && entry.resource === "vendor-packet" && entry.resourceId === `${draft.requestId}:test` && entry.after?.status === "sent" && entry.after?.contentKey === contentKey);
+    if (!successfulTest) throw new DataError("conflict", "Send a successful test of this exact packet before emailing vendors.");
+
+    const selected = new Set(draft.vendorIds);
+    const seenEmails = new Set<string>();
+    const deliveries: VendorEventPacketDelivery[] = [];
+    for (const booking of store().eventVendors.filter((row) => row.eventId === eventId && selected.has(row.vendorId))) {
+      const vendor = store().vendors.find((row) => row.id === booking.vendorId);
+      const email = vendor?.contactEmail?.trim() ?? "";
+      if (!vendor || !isVendorPacketEmail(email)) {
+        deliveries.push({ vendorId: booking.vendorId, vendorName: vendor?.name ?? "Removed vendor", email, status: "skipped", reason: "No valid contact email" });
+        continue;
+      }
+      const normalized = email.toLowerCase();
+      if (seenEmails.has(normalized)) {
+        deliveries.push({ vendorId: vendor.id, vendorName: vendor.name, email, status: "skipped", reason: "Duplicate contact email" });
+        continue;
+      }
+      seenEmails.add(normalized);
+      const resourceId = `${draft.requestId}:${contentKey}:${vendor.id}`;
+      const alreadySent = store().history.some((entry) => entry.eventId === eventId && entry.resource === "vendor-packet" && entry.resourceId === resourceId && entry.after?.status === "sent");
+      if (alreadySent) {
+        deliveries.push({ vendorId: vendor.id, vendorName: vendor.name, email, status: "skipped", reason: "Already sent for this request" });
+        continue;
+      }
+      const createdAt = nowIso();
+      store().vendorMessages.push({
+        id: newId("vm"), vendorId: vendor.id, eventId, direction: "outbound", senderName: "Demo organiser",
+        subject: draft.subject, content: draft.message, isRead: true, deliveredAt: createdAt, deliveryError: null, createdAt,
+      });
+      syncVendorThread(vendor.id);
+      deliveries.push({ vendorId: vendor.id, vendorName: vendor.name, email, status: "sent", reason: null });
+      store().history.push({
+        id: newId("history"), eventId, actorId: DEMO_OWNER_ID, resource: "vendor-packet",
+        resourceId, action: "created",
+        summary: `Event packet sent to ${vendor.name}`,
+        before: null,
+        after: { packetRequestId: draft.requestId, vendorId: vendor.id, vendorName: vendor.name, email, status: "sent", subject: draft.subject, attachmentNames, sentBy: "demo@beebizy.com" },
+        createdAt,
+      });
+    }
+    return {
+      sent: deliveries.filter((delivery) => delivery.status === "sent").length,
+      failed: deliveries.filter((delivery) => delivery.status === "failed").length,
+      skipped: deliveries.filter((delivery) => delivery.status === "skipped").length,
+      attachmentNames,
+      deliveries,
+    };
   },
 };
 
@@ -2715,6 +2797,7 @@ export const memoryAdapter: DataAdapter = {
   checkInStations,
   vendors,
   vendorMessages,
+  vendorEventPackets,
   eventVendors,
   checklist,
   runOfShow,
