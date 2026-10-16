@@ -187,6 +187,10 @@ export interface EventScopedRepository<T, TDraft, TPatch> {
   remove(eventId: string, id: string): Promise<void>;
 }
 
+export interface RunOfShowRepository extends EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch> {
+  reorder(eventId: string, dayNumber: number, orderedIds: string[]): Promise<RunOfShowItem[]>;
+}
+
 export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft, EventPatch>, "list"> {
   list(filter?: EventFilter): Promise<Event[]>;
   /** Idempotent: returns the existing token if the event already has one. */
@@ -545,7 +549,7 @@ export interface DataAdapter {
   vendorEventPackets: VendorEventPacketsRepository;
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
-  runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
+  runOfShow: RunOfShowRepository;
   runOfShowDrafts: RunOfShowDraftRepository;
   volunteerNeeds: VolunteerNeedsRepository;
   volunteers: EventScopedRepository<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>;

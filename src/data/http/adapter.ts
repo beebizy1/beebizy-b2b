@@ -428,7 +428,11 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
     checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
-    runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
+    runOfShow: {
+      ...(eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"]),
+      reorder: (eventId, dayNumber, orderedIds) =>
+        client.patch<RunOfShowItem[]>(`/events/${eventId}/run-of-show-order`, { dayNumber, orderedIds }),
+    },
     runOfShowDrafts: {
       list: (eventId) => client.get<RunOfShowSyncedDraft[]>(`/events/${eventId}/run-of-show-drafts`),
       save: (eventId, draftKey, draft: RunOfShowEditorDraft, clientUpdatedAt) =>

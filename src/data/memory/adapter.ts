@@ -27,6 +27,7 @@ import type {
   VolunteerNeedsRepository,
   RfpsRepository,
   RunOfShowDraftRepository,
+  RunOfShowRepository,
   RoiRepository,
   SettingsRepository,
   TemplatesRepository,
@@ -39,6 +40,7 @@ import { platformFeeCents } from "../commerce";
 import { normalizeAuctionPageSettings } from "../auctionSettings";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
+import { validRunOfShowOrder } from "../runOfShowOrder";
 import { teamUpdateFromHistory } from "../teamUpdates";
 import type {
   Guest,
@@ -1210,7 +1212,7 @@ const checkInStations = eventScoped<CheckInStation, CheckInStationDraft, CheckIn
   "check-in-station",
 );
 
-const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>(
+const runOfShowBase = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>(
   () => store().runOfShow,
   "ros",
   (eventId, draft, sortOrder) => ({
@@ -1230,6 +1232,19 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
   "run-of-show",
   compareRunOfShowItems,
 );
+const runOfShow: RunOfShowRepository = {
+  ...runOfShowBase,
+  async reorder(eventId, dayNumber, orderedIds) {
+    await wait();
+    const rows = store().runOfShow.filter((cue) => cue.eventId === eventId && cue.dayNumber === dayNumber);
+    if (!validRunOfShowOrder(rows.map((cue) => cue.id), orderedIds)) {
+      throw new DataError("invalid", "The Run of Show changed while it was being reordered. Refresh and try again.");
+    }
+    const order = new Map(orderedIds.map((id, index) => [id, index + 1]));
+    for (const cue of rows) cue.sortOrder = order.get(cue.id)!;
+    return copy(rows.sort(compareRunOfShowItems));
+  },
+};
 
 const memoryRunOfShowDrafts = new Map<string, RunOfShowSyncedDraft>();
 const memoryRunOfShowDraftRevisions = new Map<string, number>();

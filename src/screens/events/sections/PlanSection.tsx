@@ -7,8 +7,24 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Link, useLocation } from "wouter";
-import { Check, Clock, History, ImagePlus, ListChecks, Mail, Pencil, Plus, RotateCcw, Save, Send, ShieldCheck, Sparkles, Store, Trash2, X } from "lucide-react";
+import { Check, Clock, GripVertical, History, ImagePlus, ListChecks, Mail, Pencil, Plus, RotateCcw, Save, Send, ShieldCheck, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,6 +56,7 @@ import {
   useRemoveChecklistItem,
   useRemoveMoodBoardImage,
   useRemoveRunOfShowItem,
+  useReorderRunOfShow,
   useDiscardRunOfShowDraft,
   useRunOfShow,
   useRunOfShowDrafts,
@@ -73,6 +90,7 @@ import {
   type RunOfShowHistoricalVersion,
   type ServerDeletedRunOfShowCue,
 } from "@/data/runOfShowRecovery";
+import { moveRunOfShowCue } from "@/data/runOfShowOrder";
 
 function readRunOfShowDraft(eventId: string, cueId: string) {
   if (typeof window === "undefined") return null;
@@ -642,6 +660,7 @@ function RunOfShowRow({
   serverDraft,
   onDeleted,
   onRestoreDeleted,
+  reorderDisabled,
 }: {
   eventId: string;
   cue: RunOfShowItem;
@@ -652,12 +671,27 @@ function RunOfShowRow({
   serverDraft: RunOfShowSyncedDraft | null;
   onDeleted: (cue: RunOfShowItem) => void;
   onRestoreDeleted: (cueId: string) => void;
+  reorderDisabled: boolean;
 }) {
   const update = useUpdateRunOfShowItem();
   const remove = useRemoveRunOfShowItem();
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [recoveredDraft, setRecoveredDraft] = useState(false);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: cue.id, disabled: editing || confirmingDelete || reorderDisabled });
+  const sortableStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+    opacity: isDragging ? 0.65 : 1,
+  };
   const assigneeOptions = runOfShowAssigneeOptions(members, volunteers);
   const currentDraft = () => ({
     dayNumber: cue.dayNumber,
@@ -729,7 +763,7 @@ function RunOfShowRow({
 
   if (editing) {
     return (
-      <li id={`run-of-show-cue-${cue.id}`} tabIndex={-1} className={cn("scroll-mt-24 bg-surface-sunken px-5 py-4", focused && "ring-2 ring-primary")}>
+      <li ref={setNodeRef} style={sortableStyle} id={`run-of-show-cue-${cue.id}`} tabIndex={-1} className={cn("relative scroll-mt-24 bg-surface-sunken px-5 py-4", focused && "ring-2 ring-primary")}>
         <form
           className="flex flex-wrap gap-2"
           onSubmit={(formEvent) => {
@@ -851,7 +885,17 @@ function RunOfShowRow({
   }
 
   return (
-    <li id={`run-of-show-cue-${cue.id}`} tabIndex={-1} className={cn("group flex scroll-mt-24 items-start gap-3 px-5 py-3", focused && "bg-primary-muted/60 ring-2 ring-inset ring-primary")}>
+    <li ref={setNodeRef} style={sortableStyle} id={`run-of-show-cue-${cue.id}`} tabIndex={-1} className={cn("group relative flex scroll-mt-24 items-start gap-2 px-4 py-3", isDragging && "rounded-lg bg-surface shadow-lg ring-2 ring-primary", focused && "bg-primary-muted/60 ring-2 ring-inset ring-primary")}>
+      <button
+        type="button"
+        aria-label={`Drag “${cue.title}” to reorder`}
+        disabled={reorderDisabled}
+        className="mt-[-2px] touch-none cursor-grab rounded p-1.5 text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-wait disabled:opacity-40"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-4" />
+      </button>
       <Checkbox
         checked={cue.completed}
         aria-label={`Mark “${cue.title}” ${cue.completed ? "incomplete" : "complete"}`}
@@ -864,7 +908,12 @@ function RunOfShowRow({
       <span data-numeric className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-xs font-semibold text-foreground">
         {formatClockTime(cue.startTime)}
       </span>
-      <span className="min-w-0 flex-1">
+      <button
+        type="button"
+        aria-label={`Edit text for cue “${cue.title}”`}
+        onClick={startEditing}
+        className="min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
         <span className={cn("block truncate text-sm", cue.completed ? "text-muted-foreground line-through" : "font-medium text-foreground")}>{cue.title}</span>
         {cue.description ? <span className="mt-0.5 block text-xs text-muted-foreground">{cue.description}</span> : null}
         {cue.responsible ? <span className="mt-1 block text-xs font-medium text-primary-text">Owner: {cue.responsible}</span> : null}
@@ -875,7 +924,7 @@ function RunOfShowRow({
             {draftSync.status === "device" ? "Saved on this device · server will retry" : draftSync.status === "synced" ? "Draft saved to Beebizy" : "Saved on this device · syncing to Beebizy…"}
           </Pill>
         ) : null}
-      </span>
+      </button>
       {cue.duration ? <span data-numeric className="shrink-0 pt-0.5 text-xs text-muted-foreground">{cue.duration}m</span> : null}
       <button
         type="button"
@@ -1046,6 +1095,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const { data: members } = useMembers();
   const { data: volunteers } = useVolunteers(event.id);
   const add = useAddRunOfShowItem();
+  const reorder = useReorderRunOfShow();
   const days = useMemo(
     () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(cues ?? []).map((cue) => cue.dayNumber))),
     [cues, event.date, event.endDate, timeZone],
@@ -1062,7 +1112,27 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const [newDraftRecovered, setNewDraftRecovered] = useState(false);
   const [deletedCues, setDeletedCues] = useState<DeletedRunOfShowCue[]>(() => readDeletedRunOfShowCues(event.id));
   const [recoveryOpen, setRecoveryOpen] = useState(false);
-  const dayCues = (cues ?? []).filter((cue) => cue.dayNumber === selectedDay);
+  const dayCues = useMemo(
+    () => (cues ?? []).filter((cue) => cue.dayNumber === selectedDay),
+    [cues, selectedDay],
+  );
+  const serverDayOrder = useMemo(() => dayCues.map((cue) => cue.id), [dayCues]);
+  const serverDayOrderKey = serverDayOrder.join("\u0000");
+  const [visibleDayOrder, setVisibleDayOrder] = useState<string[]>(serverDayOrder);
+  const orderedDayCues = useMemo(() => {
+    const byId = new Map(dayCues.map((cue) => [cue.id, cue]));
+    const ordered = visibleDayOrder.flatMap((id) => {
+      const cue = byId.get(id);
+      if (!cue) return [];
+      byId.delete(id);
+      return [cue];
+    });
+    return [...ordered, ...byId.values()];
+  }, [dayCues, visibleDayOrder]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const assigneeOptions = useMemo(() => runOfShowAssigneeOptions(members, volunteers), [members, volunteers]);
   const serverDeletedCues = useMemo(
     () => recoverableDeletedRunOfShowCues(eventHistory ?? [], cues ?? [], event.id),
@@ -1072,6 +1142,28 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
     () => recoverableRunOfShowVersions(eventHistory ?? [], cues ?? [], event.id),
     [cues, event.id, eventHistory],
   );
+
+  useEffect(() => {
+    setVisibleDayOrder(serverDayOrderKey ? serverDayOrderKey.split("\u0000") : []);
+  }, [event.id, selectedDay, serverDayOrderKey]);
+
+  const finishReorder = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id || reorder.isPending) return;
+    const patches = moveRunOfShowCue(orderedDayCues.map((cue) => cue.id), String(active.id), String(over.id));
+    const orderedIds = patches.map((patch) => patch.id);
+    if (orderedIds.length === 0) return;
+    setVisibleDayOrder(orderedIds);
+    reorder.mutate(
+      { eventId: event.id, dayNumber: selectedDay, orderedIds },
+      {
+        onSuccess: () => toast({ title: "Cue order saved", description: "The new order is stored in Beebizy." }),
+        onError: (error) => {
+          setVisibleDayOrder(serverDayOrder);
+          toast({ title: "Couldn't save cue order", description: `${error.message} The previous order was restored.` });
+        },
+      },
+    );
+  };
 
   useEffect(() => {
     if (!days.some((day) => day.dayNumber === selectedDay)) setSelectedDay(1);
@@ -1342,22 +1434,33 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
           }
         />
       ) : (
-        <ol className="divide-y divide-hairline">
-          {dayCues.map((cue) => (
-            <RunOfShowRow
-              key={cue.id}
-              eventId={event.id}
-              cue={cue}
-              days={days}
-              members={members}
-              volunteers={volunteers}
-              focused={focusedCueId === cue.id}
-              serverDraft={syncedDrafts?.find((draft) => draft.draftKey === cue.id) ?? null}
-              onDeleted={storeDeletedCue}
-              onRestoreDeleted={restoreDeletedCue}
-            />
-          ))}
-        </ol>
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface-sunken px-5 py-2 text-xs text-muted-foreground">
+            <span>Drag the handle to reorder. Click a cue's text to edit it right inside the list.</span>
+            {reorder.isPending ? <Pill tone="info"><Save className="mr-1 size-3" />Saving order to Beebizy…</Pill> : null}
+          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={finishReorder}>
+            <SortableContext items={orderedDayCues.map((cue) => cue.id)} strategy={verticalListSortingStrategy}>
+              <ol className="divide-y divide-hairline">
+                {orderedDayCues.map((cue) => (
+                  <RunOfShowRow
+                    key={cue.id}
+                    eventId={event.id}
+                    cue={cue}
+                    days={days}
+                    members={members}
+                    volunteers={volunteers}
+                    focused={focusedCueId === cue.id}
+                    serverDraft={syncedDrafts?.find((draft) => draft.draftKey === cue.id) ?? null}
+                    onDeleted={storeDeletedCue}
+                    onRestoreDeleted={restoreDeletedCue}
+                    reorderDisabled={reorder.isPending}
+                  />
+                ))}
+              </ol>
+            </SortableContext>
+          </DndContext>
+        </div>
       )}
       <RunOfShowRecoveryDialog
         eventId={event.id}

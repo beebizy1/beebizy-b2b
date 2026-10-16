@@ -54,19 +54,19 @@ describe("multi-day events", () => {
     )).toBe("2026-09-14T12:00:00.000Z");
   });
 
-  it("orders schedule cues by day, time, then their saved position", () => {
+  it("orders schedule cues by day and their saved drag position", () => {
     const cues = [
-      { dayNumber: 2, startTime: "09:00", sortOrder: 0 },
-      { dayNumber: 1, startTime: "10:00", sortOrder: 0 },
+      { dayNumber: 2, startTime: "09:00", sortOrder: 1 },
+      { dayNumber: 1, startTime: "10:00", sortOrder: 1 },
       { dayNumber: 1, startTime: "09:00", sortOrder: 2 },
-      { dayNumber: 1, startTime: "09:00", sortOrder: 1 },
+      { dayNumber: 1, startTime: "08:00", sortOrder: 3 },
     ];
 
     expect(cues.sort(compareRunOfShowItems)).toEqual([
-      { dayNumber: 1, startTime: "09:00", sortOrder: 1 },
+      { dayNumber: 1, startTime: "10:00", sortOrder: 1 },
       { dayNumber: 1, startTime: "09:00", sortOrder: 2 },
-      { dayNumber: 1, startTime: "10:00", sortOrder: 0 },
-      { dayNumber: 2, startTime: "09:00", sortOrder: 0 },
+      { dayNumber: 1, startTime: "08:00", sortOrder: 3 },
+      { dayNumber: 2, startTime: "09:00", sortOrder: 1 },
     ]);
   });
 });

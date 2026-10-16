@@ -38,7 +38,7 @@ vi.mock("./repos", () => {
     reopenPublicAssignment: vi.fn(),
     checklist: child,
     checkInStations: child,
-    runOfShow: child,
+    runOfShow: { ...child, reorder: vi.fn() },
     volunteerNeeds: child,
     volunteers: child,
     budget: child,
@@ -151,7 +151,7 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, vendorPaymentPlans, feedback, events, registrations, members, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
@@ -319,6 +319,26 @@ describe("run of show server drafts", () => {
     }));
     expect(response.status).toBe(200);
     expect(discardRunOfShowDraft).toHaveBeenCalledWith(context, "event-1", "cue-1", 2000);
+  });
+});
+
+describe("run of show ordering", () => {
+  it("routes one complete day order to the atomic reorder operation", async () => {
+    const context = {
+      userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+      eventScopeId: null,
+      access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(runOfShow.reorder).mockResolvedValue([]);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-order", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dayNumber: 2, orderedIds: ["cue-2", "cue-1"] }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runOfShow.reorder).toHaveBeenCalledWith(context, "event-1", 2, ["cue-2", "cue-1"]);
   });
 });
 

@@ -540,6 +540,13 @@
       "when": 1792178690182,
       "tag": "0076_mean_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792180588906,
+      "tag": "0077_preserve_run_of_show_manual_order",
+      "breakpoints": true
     }
   ]
 }
