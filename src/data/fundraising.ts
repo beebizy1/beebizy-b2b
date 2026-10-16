@@ -6,12 +6,23 @@
  */
 
 import type { Cents } from "./money";
-import { SCHOOL_GRADES, type FundraisingBroadcastAudience } from "./entities.ts";
+import { SCHOOL_GRADES, type AuctionReadinessStatus, type FundraisingBroadcastAudience, type ItemSubmissionStatus } from "./entities.ts";
 
 const STATIC_BROADCAST_AUDIENCES = new Set(["all", "remote", "in_room", "bidders", "outbid", "watchers"]);
 
 export function isFundraisingBroadcastAudience(value: string): value is FundraisingBroadcastAudience {
   return STATIC_BROADCAST_AUDIENCES.has(value) || (value.startsWith("grade:") && SCHOOL_GRADES.includes(value.slice("grade:".length) as (typeof SCHOOL_GRADES)[number]));
+}
+
+export function auctionStateForSubmissionStatus(status: ItemSubmissionStatus): { readinessStatus: AuctionReadinessStatus; isPublished: boolean } {
+  return {
+    readinessStatus: status === "approved" || status === "in_catalog" ? "published" : "incomplete",
+    isPublished: status === "approved" || status === "in_catalog",
+  };
+}
+
+export function submissionStatusPublishesCatalog(status: ItemSubmissionStatus): boolean {
+  return status === "approved" || status === "in_catalog";
 }
 
 /**

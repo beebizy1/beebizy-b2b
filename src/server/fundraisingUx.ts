@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { SCHOOL_GRADES, type DonationCampaign, type FundraisingBroadcastAudience, type FundraisingDashboard, type FundraisingOrganizationProfile, type FundraisingPledge, type FundraisingReports, type ItemSubmission, type PublicBidderProfile, type PublicDonationCampaign, type PublicItemIntakePayload, type PublicItemSubmissionDraft } from "../data/entities.ts";
-import { isFundraisingBroadcastAudience, suggestedStartingBidCents } from "../data/fundraising.ts";
+import { auctionStateForSubmissionStatus, isFundraisingBroadcastAudience, submissionStatusPublishesCatalog, suggestedStartingBidCents } from "../data/fundraising.ts";
 import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
@@ -359,17 +359,25 @@ export async function updateItemSubmission(
     eq(s.itemSubmissions.id, submissionId), eq(s.itemSubmissions.eventId, eventId), eq(s.itemSubmissions.workspaceId, ctx.workspaceId),
   )).limit(1);
   if (!current) throw new HttpError(404, "That item submission no longer exists.");
+  const [event] = await db.select({ auctionPage: s.events.auctionPage }).from(s.events).where(and(
+    eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId),
+  )).limit(1);
+  if (!event) throw new HttpError(404, "That event no longer exists.");
   const now = new Date();
+  const auctionPage = normalizeAuctionPageSettings(event.auctionPage);
   await db.batch([
     db.update(s.itemSubmissions).set({ status: input.status, requestedChanges: input.requestedChanges?.trim() || null, updatedAt: now })
       .where(eq(s.itemSubmissions.id, submissionId)),
     current.auctionItemId
       ? db.update(s.auctionItems).set({
-          readinessStatus: input.status === "approved" ? "ready" : input.status === "in_catalog" ? "published" : "incomplete",
-          isPublished: input.status === "in_catalog",
+          ...auctionStateForSubmissionStatus(input.status),
           updatedAt: now,
         }).where(eq(s.auctionItems.id, current.auctionItemId))
       : db.update(s.events).set({ updatedAt: now }).where(eq(s.events.id, eventId)),
+    db.update(s.events).set({
+      auctionPage: submissionStatusPublishesCatalog(input.status) ? { ...auctionPage, catalogPublished: true } : auctionPage,
+      updatedAt: now,
+    }).where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))),
   ]);
   if (input.status === "needs_info" && input.requestedChanges?.trim()) {
     const [donor] = current.donorId
