@@ -8,11 +8,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, Send, Sparkles, Store, Trash2, X } from "lucide-react";
+import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, RotateCcw, Save, Send, ShieldCheck, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToastAction } from "@/components/ui/toast";
 import { toast } from "@/hooks/use-toast";
 import ChecklistLibrarySheet from "./ChecklistLibrarySheet";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
@@ -49,6 +50,59 @@ import {
 } from "@/data/hooks";
 import type { ChecklistItem, Event, RunOfShowItem, Vendor, VolunteerShift, WorkspaceMember } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
+import {
+  parseDeletedRunOfShowCues,
+  parseRunOfShowDraft,
+  rememberDeletedRunOfShowCue,
+  runOfShowDeletedCueStorageKey,
+  runOfShowDraftFromCue,
+  runOfShowDraftStorageKey,
+  serializeRunOfShowDraft,
+  type DeletedRunOfShowCue,
+  type RunOfShowEditorDraft,
+} from "@/data/runOfShowRecovery";
+
+function readRunOfShowDraft(eventId: string, cueId: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    return parseRunOfShowDraft(window.localStorage.getItem(runOfShowDraftStorageKey(eventId, cueId)), eventId, cueId);
+  } catch {
+    return null;
+  }
+}
+
+function writeRunOfShowDraft(eventId: string, cueId: string, draft: RunOfShowEditorDraft): void {
+  try {
+    window.localStorage.setItem(runOfShowDraftStorageKey(eventId, cueId), serializeRunOfShowDraft(eventId, cueId, draft));
+  } catch {
+    // Database saves still work if private browsing or device policy blocks local storage.
+  }
+}
+
+function clearRunOfShowDraft(eventId: string, cueId: string): void {
+  try {
+    window.localStorage.removeItem(runOfShowDraftStorageKey(eventId, cueId));
+  } catch {
+    // Nothing else to clear when storage is unavailable.
+  }
+}
+
+function readDeletedRunOfShowCues(eventId: string): DeletedRunOfShowCue[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return parseDeletedRunOfShowCues(window.localStorage.getItem(runOfShowDeletedCueStorageKey(eventId)), eventId);
+  } catch {
+    return [];
+  }
+}
+
+function writeDeletedRunOfShowCues(eventId: string, deleted: DeletedRunOfShowCue[]): void {
+  try {
+    window.localStorage.setItem(runOfShowDeletedCueStorageKey(eventId), JSON.stringify(deleted));
+  } catch {
+    // Server history remains the final audit trail if local recovery storage is blocked.
+  }
+}
 
 /**
  * The teammate a typed name refers to, if any.
@@ -489,6 +543,8 @@ function RunOfShowRow({
   members,
   volunteers,
   focused,
+  onDeleted,
+  onRestoreDeleted,
 }: {
   eventId: string;
   cue: RunOfShowItem;
@@ -496,10 +552,15 @@ function RunOfShowRow({
   members: WorkspaceMember[] | undefined;
   volunteers: VolunteerShift[] | undefined;
   focused: boolean;
+  onDeleted: (cue: RunOfShowItem) => void;
+  onRestoreDeleted: (cueId: string) => void;
 }) {
   const update = useUpdateRunOfShowItem();
   const remove = useRemoveRunOfShowItem();
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [savedDraftAvailable, setSavedDraftAvailable] = useState(() => Boolean(readRunOfShowDraft(eventId, cue.id)));
+  const [recoveredDraft, setRecoveredDraft] = useState(false);
   const assigneeOptions = runOfShowAssigneeOptions(members, volunteers);
   const currentDraft = () => ({
     dayNumber: cue.dayNumber,
@@ -513,13 +574,36 @@ function RunOfShowRow({
 
   const cancelEditing = () => {
     setDraft(currentDraft());
+    clearRunOfShowDraft(eventId, cue.id);
+    setSavedDraftAvailable(false);
+    setRecoveredDraft(false);
     setEditing(false);
   };
 
   const startEditing = () => {
-    setDraft(currentDraft());
+    const stored = readRunOfShowDraft(eventId, cue.id);
+    setDraft(stored?.draft ?? currentDraft());
+    setRecoveredDraft(Boolean(stored));
     setEditing(true);
   };
+
+  const hasUnsavedEdit = draft.dayNumber !== cue.dayNumber
+    || draft.startTime !== cue.startTime
+    || draft.title !== cue.title
+    || draft.duration !== (cue.duration === null ? "" : String(cue.duration))
+    || draft.assignee !== (cue.assignedEmail ?? cue.responsible ?? "")
+    || draft.description !== (cue.description ?? "");
+
+  useEffect(() => {
+    if (!editing) return;
+    if (!hasUnsavedEdit) {
+      clearRunOfShowDraft(eventId, cue.id);
+      setSavedDraftAvailable(false);
+      return;
+    }
+    writeRunOfShowDraft(eventId, cue.id, draft);
+    setSavedDraftAvailable(true);
+  }, [cue.id, draft, editing, eventId, hasUnsavedEdit]);
 
   if (editing) {
     return (
@@ -547,7 +631,13 @@ function RunOfShowRow({
                 },
               },
               {
-                onSuccess: () => setEditing(false),
+                onSuccess: () => {
+                  clearRunOfShowDraft(eventId, cue.id);
+                  setSavedDraftAvailable(false);
+                  setRecoveredDraft(false);
+                  setEditing(false);
+                  toast({ title: "Cue saved", description: "This cue is stored in Beebizy." });
+                },
                 onError: (error) => toast({ title: "Couldn't update cue", description: error.message }),
               },
             );
@@ -557,6 +647,7 @@ function RunOfShowRow({
             <Select
               value={String(draft.dayNumber)}
               onValueChange={(value) => setDraft((current) => ({ ...current, dayNumber: Number(value) }))}
+              disabled={update.isPending}
             >
               <SelectTrigger aria-label={`Conference day for ${cue.title}`} className="w-[170px]">
                 <SelectValue />
@@ -572,6 +663,7 @@ function RunOfShowRow({
           ) : null}
           <Input
             type="time"
+            disabled={update.isPending}
             value={draft.startTime}
             onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
             aria-label={`Start time for ${cue.title}`}
@@ -579,6 +671,7 @@ function RunOfShowRow({
           />
           <Input
             value={draft.title}
+            disabled={update.isPending}
             onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
             aria-label="Cue title"
             className="min-w-[12rem] flex-1"
@@ -586,6 +679,7 @@ function RunOfShowRow({
           <Input
             type="number"
             min={0}
+            disabled={update.isPending}
             value={draft.duration}
             onChange={(event) => setDraft((current) => ({ ...current, duration: event.target.value }))}
             aria-label="Duration in minutes"
@@ -594,6 +688,7 @@ function RunOfShowRow({
           />
           <Input
             value={draft.assignee}
+            disabled={update.isPending}
             onChange={(event) => setDraft((current) => ({ ...current, assignee: event.target.value }))}
             aria-label="Cue owner name or email"
             placeholder="Choose an email or type an owner"
@@ -605,13 +700,15 @@ function RunOfShowRow({
           </datalist>
           <Input
             value={draft.description}
+            disabled={update.isPending}
             onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
             aria-label="Cue notes"
             placeholder="Notes, handoffs, or dependencies"
             className="min-w-[14rem] flex-[2]"
           />
           <div className="flex w-full justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={cancelEditing}>
+            {recoveredDraft ? <Pill tone="warning">Recovered unsaved changes</Pill> : null}
+            <Button type="button" variant="outline" size="sm" onClick={cancelEditing} disabled={update.isPending}>
               <X className="mr-1.5 size-3.5" />
               Cancel
             </Button>
@@ -644,6 +741,7 @@ function RunOfShowRow({
         {cue.description ? <span className="mt-0.5 block text-xs text-muted-foreground">{cue.description}</span> : null}
         {cue.responsible ? <span className="mt-1 block text-xs font-medium text-primary-text">Owner: {cue.responsible}</span> : null}
         {cue.assignedEmail ? <Pill tone="info" className="mt-1"><Mail className="mr-1 size-3" />Email notification enabled</Pill> : null}
+        {savedDraftAvailable ? <Pill tone="warning" className="mt-1"><Save className="mr-1 size-3" />Unsaved edit backed up on this device</Pill> : null}
       </span>
       {cue.duration ? <span data-numeric className="shrink-0 pt-0.5 text-xs text-muted-foreground">{cue.duration}m</span> : null}
       <button
@@ -654,19 +752,48 @@ function RunOfShowRow({
       >
         <Pencil className="size-3.5" />
       </button>
-      <button
-        type="button"
-        aria-label={`Delete cue “${cue.title}”`}
-        onClick={() =>
-          remove.mutate(
-            { eventId, id: cue.id },
-            { onError: (error) => toast({ title: "Couldn't delete", description: error.message }) },
-          )
-        }
-        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        <Trash2 className="size-3.5" />
-      </button>
+      {confirmingDelete ? (
+        <span className="flex shrink-0 items-center gap-1.5">
+          <Button type="button" variant="outline" size="sm" onClick={() => setConfirmingDelete(false)} disabled={remove.isPending}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(
+              { eventId, id: cue.id },
+              {
+                onSuccess: () => {
+                  clearRunOfShowDraft(eventId, cue.id);
+                  onDeleted(cue);
+                  toast({
+                    title: "Cue deleted",
+                    description: "It can still be recovered.",
+                    action: <ToastAction altText={`Undo deletion of ${cue.title}`} onClick={() => onRestoreDeleted(cue.id)}>Undo</ToastAction>,
+                  });
+                },
+                onError: (error) => {
+                  setConfirmingDelete(false);
+                  toast({ title: "Couldn't delete", description: error.message });
+                },
+              },
+            )}
+          >
+            {remove.isPending ? "Deleting…" : "Delete"}
+          </Button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label={`Delete cue “${cue.title}”`}
+          onClick={() => setConfirmingDelete(true)}
+          className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
     </li>
   );
 }
@@ -690,6 +817,8 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const [duration, setDuration] = useState("");
   const [assignee, setAssignee] = useState("");
   const [description, setDescription] = useState("");
+  const [newDraftRecovered, setNewDraftRecovered] = useState(false);
+  const [deletedCues, setDeletedCues] = useState<DeletedRunOfShowCue[]>(() => readDeletedRunOfShowCues(event.id));
   const dayCues = (cues ?? []).filter((cue) => cue.dayNumber === selectedDay);
   const assigneeOptions = useMemo(() => runOfShowAssigneeOptions(members, volunteers), [members, volunteers]);
 
@@ -700,6 +829,55 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   useEffect(() => {
     if (days.some((day) => day.dayNumber === requestedDay)) setSelectedDay(requestedDay);
   }, [days, requestedDay]);
+
+  useEffect(() => {
+    setDeletedCues(readDeletedRunOfShowCues(event.id));
+  }, [event.id]);
+
+  useEffect(() => {
+    const stored = readRunOfShowDraft(event.id, `new-${selectedDay}`);
+    setStartTime(stored?.draft.startTime ?? "09:00");
+    setTitle(stored?.draft.title ?? "");
+    setDuration(stored?.draft.duration ?? "");
+    setAssignee(stored?.draft.assignee ?? "");
+    setDescription(stored?.draft.description ?? "");
+    setNewDraftRecovered(Boolean(stored));
+  }, [event.id, selectedDay]);
+
+  const hasNewDraft = Boolean(title.trim() || duration.trim() || assignee.trim() || description.trim() || startTime !== "09:00");
+
+  useEffect(() => {
+    const cueId = `new-${selectedDay}`;
+    if (!hasNewDraft) {
+      clearRunOfShowDraft(event.id, cueId);
+      return;
+    }
+    const draft: RunOfShowEditorDraft = { dayNumber: selectedDay, startTime, title, duration, assignee, description };
+    writeRunOfShowDraft(event.id, cueId, draft);
+  }, [assignee, description, duration, event.id, hasNewDraft, selectedDay, startTime, title]);
+
+  const storeDeletedCue = (cue: RunOfShowItem) => {
+    const next = rememberDeletedRunOfShowCue(readDeletedRunOfShowCues(event.id), cue);
+    writeDeletedRunOfShowCues(event.id, next);
+    setDeletedCues(next);
+  };
+
+  const restoreDeletedCue = (cueId: string) => {
+    const deleted = readDeletedRunOfShowCues(event.id).find((entry) => entry.cue.id === cueId);
+    if (!deleted) return;
+    add.mutate(
+      { eventId: event.id, draft: runOfShowDraftFromCue(deleted.cue) },
+      {
+        onSuccess: () => {
+          const next = readDeletedRunOfShowCues(event.id).filter((entry) => entry.cue.id !== cueId);
+          writeDeletedRunOfShowCues(event.id, next);
+          setDeletedCues(next);
+          toast({ title: "Cue recovered", description: `${deleted.cue.title} is back in the Run of Show.` });
+        },
+        onError: (error) => toast({ title: "Couldn't recover cue", description: error.message }),
+      },
+    );
+  };
 
   const selectDay = (dayNumber: number) => {
     setSelectedDay(dayNumber);
@@ -739,10 +917,13 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
       },
       {
         onSuccess: () => {
+          clearRunOfShowDraft(event.id, `new-${selectedDay}`);
           setTitle("");
           setDuration("");
           setAssignee("");
           setDescription("");
+          setNewDraftRecovered(false);
+          toast({ title: "Cue added", description: "This cue is stored in Beebizy." });
         },
         onError: (error) => toast({ title: "Couldn't add cue", description: error.message }),
       },
@@ -753,8 +934,21 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
     <Panel>
       <PanelHeader
         title="Run of show"
-        description={`${days.length > 1 ? `${days.length}-day schedule · ` : ""}Cue times in ${timeZoneLabel}, the workspace\u2019s zone`}
+        description={`${days.length > 1 ? `${days.length}-day schedule · ` : ""}Cue times in ${timeZoneLabel}, the workspace\u2019s zone · Saved cues stay in Beebizy`}
       />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline bg-success-tint px-5 py-3 text-xs text-success-text">
+        <span className="flex items-center gap-2 font-medium">
+          <ShieldCheck className="size-4" />
+          Saved cues are stored immediately. Unsaved typing is backed up on this device.
+        </span>
+        {deletedCues.length > 0 ? (
+          <Button type="button" variant="outline" size="sm" disabled={add.isPending} onClick={() => restoreDeletedCue(deletedCues[0]!.cue.id)}>
+            <RotateCcw className="mr-1.5 size-3.5" />
+            Recover “{deletedCues[0]!.cue.title}”
+          </Button>
+        ) : null}
+      </div>
 
       {days.length > 1 ? (
         <div
@@ -806,6 +1000,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
         ) : null}
         <Input
           type="time"
+          disabled={add.isPending}
           value={startTime}
           onChange={(inputEvent) => setStartTime(inputEvent.target.value)}
           aria-label="Cue start time"
@@ -813,6 +1008,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
         />
         <Input
           value={title}
+          disabled={add.isPending}
           onChange={(inputEvent) => setTitle(inputEvent.target.value)}
           placeholder="What happens…"
           aria-label="Cue title"
@@ -821,6 +1017,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
         <Input
           type="number"
           min={0}
+          disabled={add.isPending}
           value={duration}
           onChange={(inputEvent) => setDuration(inputEvent.target.value)}
           placeholder="mins"
@@ -831,8 +1028,15 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
           <Plus className="mr-1.5 size-3.5" />
           Add
         </Button>
+        {hasNewDraft ? (
+          <Pill tone={newDraftRecovered ? "warning" : "info"}>
+            <Save className="mr-1 size-3" />
+            {newDraftRecovered ? "Recovered unsaved draft" : "Draft backed up on this device"}
+          </Pill>
+        ) : null}
         <Input
           value={assignee}
+          disabled={add.isPending}
           onChange={(inputEvent) => setAssignee(inputEvent.target.value)}
           placeholder="Choose an email or type an owner"
           aria-label="Cue owner name or email"
@@ -844,6 +1048,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
         </datalist>
         <Input
           value={description}
+          disabled={add.isPending}
           onChange={(inputEvent) => setDescription(inputEvent.target.value)}
           placeholder="Notes or dependencies"
           aria-label="Cue notes"
@@ -863,7 +1068,19 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
         />
       ) : (
         <ol className="divide-y divide-hairline">
-          {dayCues.map((cue) => <RunOfShowRow key={cue.id} eventId={event.id} cue={cue} days={days} members={members} volunteers={volunteers} focused={focusedCueId === cue.id} />)}
+          {dayCues.map((cue) => (
+            <RunOfShowRow
+              key={cue.id}
+              eventId={event.id}
+              cue={cue}
+              days={days}
+              members={members}
+              volunteers={volunteers}
+              focused={focusedCueId === cue.id}
+              onDeleted={storeDeletedCue}
+              onRestoreDeleted={restoreDeletedCue}
+            />
+          ))}
         </ol>
       )}
     </Panel>
