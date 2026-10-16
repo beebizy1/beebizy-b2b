@@ -688,6 +688,14 @@ export function useRemoveRunOfShowItem() {
   );
 }
 
+export function useReorderRunOfShow() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; dayNumber: number; orderedIds: string[] }) =>
+      a.runOfShow.reorder(vars.eventId, vars.dayNumber, vars.orderedIds),
+    (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
 export function useRunOfShowDrafts(eventId: string) {
   return useAdapterQuery(qk.runOfShowDrafts(eventId), (a) => a.runOfShowDrafts.list(eventId), { enabled: !!eventId });
 }

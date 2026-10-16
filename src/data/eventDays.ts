@@ -82,11 +82,11 @@ export function checklistDueDateBeforeEvent(startsAt: string, timeZone: string, 
   return due.toISOString();
 }
 
-/** Stable ordering shared by every in-memory run-of-show surface. */
+/** Stable manual ordering shared by every in-memory run-of-show surface. */
 export function compareRunOfShowItems(left: RunOfShowPosition, right: RunOfShowPosition): number {
   return (
     (left.dayNumber ?? 1) - (right.dayNumber ?? 1) ||
-    left.startTime.localeCompare(right.startTime) ||
-    (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+    (left.sortOrder ?? 0) - (right.sortOrder ?? 0) ||
+    left.startTime.localeCompare(right.startTime)
   );
 }

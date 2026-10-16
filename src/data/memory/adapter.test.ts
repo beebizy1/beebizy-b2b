@@ -174,7 +174,7 @@ describe("events", () => {
 });
 
 describe("run of show", () => {
-  it("stores a conference day and orders cues by day before time", async () => {
+  it("stores a conference day and keeps days separate", async () => {
     const dayTwo = await memoryAdapter.runOfShow.create("evt-cab", {
       dayNumber: 2,
       startTime: "08:00",
@@ -191,6 +191,14 @@ describe("run of show", () => {
       [dayOne.id, dayTwo.id].includes(cue.id),
     );
     expect(added.map((cue) => cue.id)).toEqual([dayOne.id, dayTwo.id]);
+  });
+
+  it("persists a complete drag order and rejects stale lists", async () => {
+    const first = await memoryAdapter.runOfShow.create("evt-cab", { dayNumber: 3, startTime: "09:00", title: "First" });
+    const second = await memoryAdapter.runOfShow.create("evt-cab", { dayNumber: 3, startTime: "08:00", title: "Second" });
+    const reordered = await memoryAdapter.runOfShow.reorder("evt-cab", 3, [second.id, first.id]);
+    expect(reordered.map((cue) => cue.id)).toEqual([second.id, first.id]);
+    await expect(memoryAdapter.runOfShow.reorder("evt-cab", 3, [first.id])).rejects.toBeInstanceOf(DataError);
   });
 });
 

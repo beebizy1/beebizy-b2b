@@ -808,6 +808,13 @@ async function handleAuthed(
         }
         return notFound();
       }
+      if (a && b === "run-of-show-order" && !c && method === "PATCH") {
+        const input = z.object({
+          dayNumber: z.number().int().min(1).max(365),
+          orderedIds: z.array(z.string().min(1).max(200)).max(2_000),
+        }).parse(body);
+        return json(await repos.runOfShow.reorder(ctx, a, input.dayNumber, input.orderedIds));
+      }
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]
       if (a && b) {
