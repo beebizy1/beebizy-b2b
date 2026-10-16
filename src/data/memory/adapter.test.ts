@@ -1219,11 +1219,26 @@ describe("product feedback", () => {
   });
 });
 
+describe("run of show server drafts", () => {
+  const draft = { dayNumber: 1, startTime: "09:00", title: "Doors open", duration: "15", assignee: "Mary", description: "Welcome guests" };
+
+  it("keeps the newest revision and lets a discard tombstone beat delayed saves", async () => {
+    await memoryAdapter.runOfShowDrafts.save("evt-gala", "new-1", draft, 2000);
+    await memoryAdapter.runOfShowDrafts.save("evt-gala", "new-1", { ...draft, title: "Stale title" }, 1000);
+    expect((await memoryAdapter.runOfShowDrafts.list("evt-gala"))[0]?.draft.title).toBe("Doors open");
+
+    await memoryAdapter.runOfShowDrafts.discard("evt-gala", "new-1", 3000);
+    await memoryAdapter.runOfShowDrafts.save("evt-gala", "new-1", { ...draft, title: "Delayed request" }, 2500);
+    expect(await memoryAdapter.runOfShowDrafts.list("evt-gala")).toEqual([]);
+  });
+});
+
 describe("event deletion", () => {
   it("cascades into rfps, deposits and team hours", async () => {
     await memoryAdapter.events.remove("evt-gala");
     expect(await memoryAdapter.rfps.list("evt-gala")).toEqual([]);
     expect(await memoryAdapter.deposits.list("evt-gala")).toEqual([]);
     expect(await memoryAdapter.teamHours.list("evt-gala")).toEqual([]);
+    expect(await memoryAdapter.runOfShowDrafts.list("evt-gala")).toEqual([]);
   });
 });

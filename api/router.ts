@@ -49,6 +49,7 @@ import {
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
+import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
@@ -794,6 +795,18 @@ async function handleAuthed(
       if (a && b === "save-as-template" && method === "POST") return json(await repos.events.saveAsTemplate(ctx, a, body), 201);
       if (a && b === "assignment-summaries" && method === "POST") {
         return json(await repos.events.sendAssignmentSummaries(ctx, a));
+      }
+
+      if (a && b === "run-of-show-drafts") {
+        if (!c && method === "GET") return json(await listRunOfShowDrafts(ctx, a));
+        if (c && method === "PUT") {
+          return json(await saveRunOfShowDraft(ctx, a, c, body.draft, body.clientUpdatedAt));
+        }
+        if (c && method === "PATCH" && body.discarded === true) {
+          await discardRunOfShowDraft(ctx, a, c, body.clientUpdatedAt);
+          return json({ ok: true });
+        }
+        return notFound();
       }
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]

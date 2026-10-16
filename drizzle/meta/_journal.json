@@ -533,6 +533,13 @@
       "when": 1792017763944,
       "tag": "0075_vendor_payment_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792178690182,
+      "tag": "0076_mean_silvermane",
+      "breakpoints": true
     }
   ]
 }

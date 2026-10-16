@@ -101,6 +101,7 @@ import type {
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
 import type { VendorEventPacketResult } from "../vendorEventPackets";
+import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRecovery";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -428,6 +429,14 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
     runOfShow: eventScoped<RunOfShowItem, never, never>(client, "run-of-show") as DataAdapter["runOfShow"],
+    runOfShowDrafts: {
+      list: (eventId) => client.get<RunOfShowSyncedDraft[]>(`/events/${eventId}/run-of-show-drafts`),
+      save: (eventId, draftKey, draft: RunOfShowEditorDraft, clientUpdatedAt) =>
+        client.put<RunOfShowSyncedDraft | null>(`/events/${eventId}/run-of-show-drafts/${encodeURIComponent(draftKey)}`, { draft, clientUpdatedAt }),
+      discard: async (eventId, draftKey, clientUpdatedAt) => {
+        await client.patch(`/events/${eventId}/run-of-show-drafts/${encodeURIComponent(draftKey)}`, { discarded: true, clientUpdatedAt });
+      },
+    },
     volunteerNeeds: {
       ...(eventScoped(client, "volunteer-needs") as DataAdapter["volunteerNeeds"]),
       signupPublic: (shareToken, draft) => publicRequest<VolunteerShift>(`/public/events/${shareToken}/volunteers`, {

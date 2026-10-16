@@ -168,6 +168,7 @@ import type { AccountExperience } from "./accountExperience";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
+import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowRecovery";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -372,6 +373,12 @@ export interface EventHistoryRepository {
   list(eventId: string): Promise<EventHistoryEntry[]>;
 }
 
+export interface RunOfShowDraftRepository {
+  list(eventId: string): Promise<RunOfShowSyncedDraft[]>;
+  save(eventId: string, draftKey: string, draft: RunOfShowEditorDraft, clientUpdatedAt: number): Promise<RunOfShowSyncedDraft | null>;
+  discard(eventId: string, draftKey: string, clientUpdatedAt: number): Promise<void>;
+}
+
 export interface TeamUpdatesRepository {
   list(eventId: string): Promise<TeamUpdate[]>;
   create(eventId: string, draft: TeamUpdateDraft): Promise<TeamUpdate>;
@@ -539,6 +546,7 @@ export interface DataAdapter {
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
+  runOfShowDrafts: RunOfShowDraftRepository;
   volunteerNeeds: VolunteerNeedsRepository;
   volunteers: EventScopedRepository<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>;
   budget: EventScopedRepository<BudgetItem, BudgetItemDraft, BudgetItemPatch>;
