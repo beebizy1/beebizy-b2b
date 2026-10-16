@@ -8,12 +8,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Check, Clock, ImagePlus, ListChecks, Mail, Pencil, Plus, RotateCcw, Save, Send, ShieldCheck, Sparkles, Store, Trash2, X } from "lucide-react";
+import { Check, Clock, History, ImagePlus, ListChecks, Mail, Pencil, Plus, RotateCcw, Save, Send, ShieldCheck, Sparkles, Store, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToastAction } from "@/components/ui/toast";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import ChecklistLibrarySheet from "./ChecklistLibrarySheet";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
@@ -39,13 +40,17 @@ import {
   useRemoveChecklistItem,
   useRemoveMoodBoardImage,
   useRemoveRunOfShowItem,
+  useDiscardRunOfShowDraft,
   useRunOfShow,
+  useRunOfShowDrafts,
+  useSaveRunOfShowDraft,
   useUpdateChecklistItem,
   useMembers,
   useUpdateRunOfShowItem,
   useVolunteers,
   useVendors,
   useEventVendors,
+  useEventHistory,
   useSendVendorMessage,
 } from "@/data/hooks";
 import type { ChecklistItem, Event, RunOfShowItem, Vendor, VolunteerShift, WorkspaceMember } from "@/data/entities";
@@ -53,13 +58,20 @@ import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/dat
 import {
   parseDeletedRunOfShowCues,
   parseRunOfShowDraft,
+  preferredRunOfShowDraft,
+  recoverableDeletedRunOfShowCues,
+  recoverableRunOfShowVersions,
   rememberDeletedRunOfShowCue,
   runOfShowDeletedCueStorageKey,
   runOfShowDraftFromCue,
+  runOfShowDraftDiscardStorageKey,
   runOfShowDraftStorageKey,
   serializeRunOfShowDraft,
   type DeletedRunOfShowCue,
   type RunOfShowEditorDraft,
+  type RunOfShowSyncedDraft,
+  type RunOfShowHistoricalVersion,
+  type ServerDeletedRunOfShowCue,
 } from "@/data/runOfShowRecovery";
 
 function readRunOfShowDraft(eventId: string, cueId: string) {
@@ -71,20 +83,92 @@ function readRunOfShowDraft(eventId: string, cueId: string) {
   }
 }
 
-function writeRunOfShowDraft(eventId: string, cueId: string, draft: RunOfShowEditorDraft): void {
+function readRunOfShowDraftDiscardedAt(eventId: string, cueId: string): number {
   try {
-    window.localStorage.setItem(runOfShowDraftStorageKey(eventId, cueId), serializeRunOfShowDraft(eventId, cueId, draft));
+    const value = Number(window.localStorage.getItem(runOfShowDraftDiscardStorageKey(eventId, cueId)) ?? 0);
+    return Number.isSafeInteger(value) ? value : 0;
   } catch {
-    // Database saves still work if private browsing or device policy blocks local storage.
+    return 0;
   }
 }
 
-function clearRunOfShowDraft(eventId: string, cueId: string): void {
+function writeRunOfShowDraft(
+  eventId: string,
+  cueId: string,
+  draft: RunOfShowEditorDraft,
+  savedAt = Date.now(),
+): number {
+  try {
+    window.localStorage.setItem(runOfShowDraftStorageKey(eventId, cueId), serializeRunOfShowDraft(eventId, cueId, draft, savedAt));
+    window.localStorage.removeItem(runOfShowDraftDiscardStorageKey(eventId, cueId));
+  } catch {
+    // Database saves still work if private browsing or device policy blocks local storage.
+  }
+  return savedAt;
+}
+
+function markRunOfShowDraftDiscarded(eventId: string, cueId: string, discardedAt: number): void {
   try {
     window.localStorage.removeItem(runOfShowDraftStorageKey(eventId, cueId));
+    window.localStorage.setItem(runOfShowDraftDiscardStorageKey(eventId, cueId), String(discardedAt));
   } catch {
-    // Nothing else to clear when storage is unavailable.
+    // The server tombstone is still retried when local storage is unavailable.
   }
+}
+
+type DraftSyncStatus = "idle" | "saving" | "synced" | "device";
+
+function useRunOfShowDraftSync(
+  eventId: string,
+  draftKey: string,
+  draft: RunOfShowEditorDraft,
+  active: boolean,
+  serverCopyExists: boolean,
+) {
+  const saveServerDraft = useSaveRunOfShowDraft();
+  const discardServerDraft = useDiscardRunOfShowDraft();
+  const saveServerDraftMutation = saveServerDraft.mutate;
+  const latestRevision = useRef(0);
+  const [status, setStatus] = useState<DraftSyncStatus>(serverCopyExists ? "synced" : "idle");
+
+  useEffect(() => {
+    if (serverCopyExists && !active) setStatus("synced");
+  }, [active, serverCopyExists]);
+
+  useEffect(() => {
+    if (!active) return;
+    const revision = Math.max(Date.now(), latestRevision.current + 1);
+    latestRevision.current = revision;
+    writeRunOfShowDraft(eventId, draftKey, draft, revision);
+    setStatus("saving");
+    const timer = window.setTimeout(() => {
+      saveServerDraftMutation(
+        { eventId, draftKey, draft, clientUpdatedAt: revision },
+        {
+          onSuccess: () => {
+            if (latestRevision.current === revision) setStatus("synced");
+          },
+          onError: () => {
+            if (latestRevision.current === revision) setStatus("device");
+          },
+        },
+      );
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [active, draft, draftKey, eventId, saveServerDraftMutation]);
+
+  const discard = () => {
+    const revision = Math.max(Date.now(), latestRevision.current + 1);
+    latestRevision.current = revision;
+    markRunOfShowDraftDiscarded(eventId, draftKey, revision);
+    setStatus("idle");
+    discardServerDraft.mutate(
+      { eventId, draftKey, clientUpdatedAt: revision },
+      { onError: () => setStatus("device") },
+    );
+  };
+
+  return { status, discard };
 }
 
 function readDeletedRunOfShowCues(eventId: string): DeletedRunOfShowCue[] {
@@ -543,6 +627,7 @@ function RunOfShowRow({
   members,
   volunteers,
   focused,
+  serverDraft,
   onDeleted,
   onRestoreDeleted,
 }: {
@@ -552,6 +637,7 @@ function RunOfShowRow({
   members: WorkspaceMember[] | undefined;
   volunteers: VolunteerShift[] | undefined;
   focused: boolean;
+  serverDraft: RunOfShowSyncedDraft | null;
   onDeleted: (cue: RunOfShowItem) => void;
   onRestoreDeleted: (cueId: string) => void;
 }) {
@@ -559,7 +645,6 @@ function RunOfShowRow({
   const remove = useRemoveRunOfShowItem();
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [savedDraftAvailable, setSavedDraftAvailable] = useState(() => Boolean(readRunOfShowDraft(eventId, cue.id)));
   const [recoveredDraft, setRecoveredDraft] = useState(false);
   const assigneeOptions = runOfShowAssigneeOptions(members, volunteers);
   const currentDraft = () => ({
@@ -570,19 +655,31 @@ function RunOfShowRow({
     assignee: cue.assignedEmail ?? cue.responsible ?? "",
     description: cue.description ?? "",
   });
-  const [draft, setDraft] = useState(currentDraft);
+  const initialDeviceDraft = readRunOfShowDraft(eventId, cue.id);
+  const initialRecoveredDraft = preferredRunOfShowDraft(
+    initialDeviceDraft,
+    serverDraft,
+    readRunOfShowDraftDiscardedAt(eventId, cue.id),
+  );
+  const [savedDraftAvailable, setSavedDraftAvailable] = useState(Boolean(initialRecoveredDraft));
+  const [draft, setDraft] = useState(() => initialRecoveredDraft?.draft ?? currentDraft());
 
   const cancelEditing = () => {
     setDraft(currentDraft());
-    clearRunOfShowDraft(eventId, cue.id);
+    draftSync.discard();
     setSavedDraftAvailable(false);
     setRecoveredDraft(false);
     setEditing(false);
   };
 
   const startEditing = () => {
-    const stored = readRunOfShowDraft(eventId, cue.id);
+    const stored = preferredRunOfShowDraft(
+      readRunOfShowDraft(eventId, cue.id),
+      serverDraft,
+      readRunOfShowDraftDiscardedAt(eventId, cue.id),
+    );
     setDraft(stored?.draft ?? currentDraft());
+    setSavedDraftAvailable(Boolean(stored));
     setRecoveredDraft(Boolean(stored));
     setEditing(true);
   };
@@ -593,17 +690,24 @@ function RunOfShowRow({
     || draft.duration !== (cue.duration === null ? "" : String(cue.duration))
     || draft.assignee !== (cue.assignedEmail ?? cue.responsible ?? "")
     || draft.description !== (cue.description ?? "");
+  const draftSync = useRunOfShowDraftSync(
+    eventId,
+    cue.id,
+    draft,
+    (editing || savedDraftAvailable) && hasUnsavedEdit,
+    Boolean(serverDraft),
+  );
 
   useEffect(() => {
-    if (!editing) return;
-    if (!hasUnsavedEdit) {
-      clearRunOfShowDraft(eventId, cue.id);
-      setSavedDraftAvailable(false);
-      return;
-    }
-    writeRunOfShowDraft(eventId, cue.id, draft);
+    const recovered = preferredRunOfShowDraft(
+      readRunOfShowDraft(eventId, cue.id),
+      serverDraft,
+      readRunOfShowDraftDiscardedAt(eventId, cue.id),
+    );
+    if (!recovered || editing) return;
+    setDraft(recovered.draft);
     setSavedDraftAvailable(true);
-  }, [cue.id, draft, editing, eventId, hasUnsavedEdit]);
+  }, [cue.id, editing, eventId, serverDraft]);
 
   if (editing) {
     return (
@@ -632,7 +736,7 @@ function RunOfShowRow({
               },
               {
                 onSuccess: () => {
-                  clearRunOfShowDraft(eventId, cue.id);
+                  draftSync.discard();
                   setSavedDraftAvailable(false);
                   setRecoveredDraft(false);
                   setEditing(false);
@@ -708,6 +812,12 @@ function RunOfShowRow({
           />
           <div className="flex w-full justify-end gap-2">
             {recoveredDraft ? <Pill tone="warning">Recovered unsaved changes</Pill> : null}
+            {hasUnsavedEdit ? (
+              <Pill tone={draftSync.status === "device" ? "warning" : draftSync.status === "synced" ? "success" : "info"}>
+                <Save className="mr-1 size-3" />
+                {draftSync.status === "device" ? "Saved on this device · server will retry" : draftSync.status === "synced" ? "Draft saved to Beebizy" : "Saved on this device · syncing to Beebizy…"}
+              </Pill>
+            ) : null}
             <Button type="button" variant="outline" size="sm" onClick={cancelEditing} disabled={update.isPending}>
               <X className="mr-1.5 size-3.5" />
               Cancel
@@ -741,7 +851,12 @@ function RunOfShowRow({
         {cue.description ? <span className="mt-0.5 block text-xs text-muted-foreground">{cue.description}</span> : null}
         {cue.responsible ? <span className="mt-1 block text-xs font-medium text-primary-text">Owner: {cue.responsible}</span> : null}
         {cue.assignedEmail ? <Pill tone="info" className="mt-1"><Mail className="mr-1 size-3" />Email notification enabled</Pill> : null}
-        {savedDraftAvailable ? <Pill tone="warning" className="mt-1"><Save className="mr-1 size-3" />Unsaved edit backed up on this device</Pill> : null}
+        {savedDraftAvailable ? (
+          <Pill tone={draftSync.status === "device" ? "warning" : draftSync.status === "synced" ? "success" : "info"} className="mt-1">
+            <Save className="mr-1 size-3" />
+            {draftSync.status === "device" ? "Saved on this device · server will retry" : draftSync.status === "synced" ? "Draft saved to Beebizy" : "Saved on this device · syncing to Beebizy…"}
+          </Pill>
+        ) : null}
       </span>
       {cue.duration ? <span data-numeric className="shrink-0 pt-0.5 text-xs text-muted-foreground">{cue.duration}m</span> : null}
       <button
@@ -766,7 +881,7 @@ function RunOfShowRow({
               { eventId, id: cue.id },
               {
                 onSuccess: () => {
-                  clearRunOfShowDraft(eventId, cue.id);
+                  draftSync.discard();
                   onDeleted(cue);
                   toast({
                     title: "Cue deleted",
@@ -798,10 +913,118 @@ function RunOfShowRow({
   );
 }
 
+function RunOfShowRecoveryDialog({
+  eventId,
+  open,
+  onOpenChange,
+  deleted,
+  versions,
+}: {
+  eventId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  deleted: ServerDeletedRunOfShowCue[];
+  versions: RunOfShowHistoricalVersion[];
+}) {
+  const add = useAddRunOfShowItem();
+  const update = useUpdateRunOfShowItem();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Run of Show recovery</DialogTitle>
+          <DialogDescription>
+            Restore deleted cues or roll a saved cue back to an earlier server version. This history is available from any device.
+          </DialogDescription>
+        </DialogHeader>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">Deleted cues</h3>
+          {deleted.length === 0 ? <p className="text-sm text-muted-foreground">No deleted cues need recovery.</p> : (
+            <div className="divide-y divide-hairline rounded-xl border border-hairline">
+              {deleted.map((entry) => (
+                <div key={entry.historyId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{entry.cue.title}</p>
+                    <p className="text-xs text-muted-foreground">Day {entry.cue.dayNumber} · {formatClockTime(entry.cue.startTime)} · deleted {new Date(entry.deletedAt).toLocaleString()}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={add.isPending}
+                    onClick={() => add.mutate(
+                      { eventId, draft: runOfShowDraftFromCue(entry.cue) },
+                      {
+                        onSuccess: () => toast({ title: "Cue restored", description: `${entry.cue.title} is back in the Run of Show.` }),
+                        onError: (error) => toast({ title: "Couldn't restore cue", description: error.message }),
+                      },
+                    )}
+                  >
+                    <RotateCcw className="mr-1.5 size-3.5" />
+                    Restore cue
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">Previous saved versions</h3>
+          {versions.length === 0 ? <p className="text-sm text-muted-foreground">Previous versions will appear after a saved cue is edited.</p> : (
+            <div className="divide-y divide-hairline rounded-xl border border-hairline">
+              {versions.map((entry) => (
+                <div key={entry.historyId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{entry.cue.title}</p>
+                    <p className="text-xs text-muted-foreground">Day {entry.cue.dayNumber} · {formatClockTime(entry.cue.startTime)} · saved {new Date(entry.recordedAt).toLocaleString()}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={update.isPending}
+                    onClick={() => update.mutate(
+                      {
+                        eventId,
+                        id: entry.cue.id,
+                        patch: {
+                          dayNumber: entry.cue.dayNumber,
+                          startTime: entry.cue.startTime,
+                          duration: entry.cue.duration,
+                          title: entry.cue.title,
+                          description: entry.cue.description,
+                          responsible: entry.cue.responsible,
+                          assignedEmail: entry.cue.assignedEmail,
+                          completed: entry.cue.completed,
+                        },
+                      },
+                      {
+                        onSuccess: () => toast({ title: "Version restored", description: `${entry.cue.title} was restored to this saved version.` }),
+                        onError: (error) => toast({ title: "Couldn't restore version", description: error.message }),
+                      },
+                    )}
+                  >
+                    <History className="mr-1.5 size-3.5" />
+                    Restore version
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event: Event; selectedDay?: number }) {
   const [location, navigate] = useLocation();
   const { timeZone, timeZoneLabel } = usePreferences();
   const { data: cues, isLoading } = useRunOfShow(event.id);
+  const { data: syncedDrafts } = useRunOfShowDrafts(event.id);
+  const { data: eventHistory } = useEventHistory(event.id);
   const { data: members } = useMembers();
   const { data: volunteers } = useVolunteers(event.id);
   const add = useAddRunOfShowItem();
@@ -812,6 +1035,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const [focusedCueId] = useState(() => new URLSearchParams(window.location.search).get("cue"));
   const [selectedDay, setSelectedDay] = useState(requestedDay);
   const hasFocusedCue = useRef(false);
+  const hydratedNewDraftKey = useRef<string | null>(null);
   const [startTime, setStartTime] = useState("09:00");
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState("");
@@ -819,8 +1043,17 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const [description, setDescription] = useState("");
   const [newDraftRecovered, setNewDraftRecovered] = useState(false);
   const [deletedCues, setDeletedCues] = useState<DeletedRunOfShowCue[]>(() => readDeletedRunOfShowCues(event.id));
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const dayCues = (cues ?? []).filter((cue) => cue.dayNumber === selectedDay);
   const assigneeOptions = useMemo(() => runOfShowAssigneeOptions(members, volunteers), [members, volunteers]);
+  const serverDeletedCues = useMemo(
+    () => recoverableDeletedRunOfShowCues(eventHistory ?? [], cues ?? [], event.id),
+    [cues, event.id, eventHistory],
+  );
+  const previousVersions = useMemo(
+    () => recoverableRunOfShowVersions(eventHistory ?? [], cues ?? [], event.id),
+    [cues, event.id, eventHistory],
+  );
 
   useEffect(() => {
     if (!days.some((day) => day.dayNumber === selectedDay)) setSelectedDay(1);
@@ -835,26 +1068,38 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   }, [event.id]);
 
   useEffect(() => {
-    const stored = readRunOfShowDraft(event.id, `new-${selectedDay}`);
+    const draftKey = `new-${selectedDay}`;
+    const scopedDraftKey = `${event.id}:${draftKey}`;
+    if (hydratedNewDraftKey.current === scopedDraftKey) return;
+    const deviceDraft = readRunOfShowDraft(event.id, draftKey);
+    if (!deviceDraft && syncedDrafts === undefined) return;
+    const stored = preferredRunOfShowDraft(
+      deviceDraft,
+      syncedDrafts?.find((draft) => draft.draftKey === draftKey) ?? null,
+      readRunOfShowDraftDiscardedAt(event.id, draftKey),
+    );
     setStartTime(stored?.draft.startTime ?? "09:00");
     setTitle(stored?.draft.title ?? "");
     setDuration(stored?.draft.duration ?? "");
     setAssignee(stored?.draft.assignee ?? "");
     setDescription(stored?.draft.description ?? "");
     setNewDraftRecovered(Boolean(stored));
-  }, [event.id, selectedDay]);
+    hydratedNewDraftKey.current = scopedDraftKey;
+  }, [event.id, selectedDay, syncedDrafts]);
 
   const hasNewDraft = Boolean(title.trim() || duration.trim() || assignee.trim() || description.trim() || startTime !== "09:00");
-
-  useEffect(() => {
-    const cueId = `new-${selectedDay}`;
-    if (!hasNewDraft) {
-      clearRunOfShowDraft(event.id, cueId);
-      return;
-    }
-    const draft: RunOfShowEditorDraft = { dayNumber: selectedDay, startTime, title, duration, assignee, description };
-    writeRunOfShowDraft(event.id, cueId, draft);
-  }, [assignee, description, duration, event.id, hasNewDraft, selectedDay, startTime, title]);
+  const newDraft = useMemo<RunOfShowEditorDraft>(
+    () => ({ dayNumber: selectedDay, startTime, title, duration, assignee, description }),
+    [assignee, description, duration, selectedDay, startTime, title],
+  );
+  const newDraftKey = `new-${selectedDay}`;
+  const newDraftSync = useRunOfShowDraftSync(
+    event.id,
+    newDraftKey,
+    newDraft,
+    hasNewDraft,
+    Boolean(syncedDrafts?.some((draft) => draft.draftKey === newDraftKey)),
+  );
 
   const storeDeletedCue = (cue: RunOfShowItem) => {
     const next = rememberDeletedRunOfShowCue(readDeletedRunOfShowCues(event.id), cue);
@@ -917,7 +1162,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
       },
       {
         onSuccess: () => {
-          clearRunOfShowDraft(event.id, `new-${selectedDay}`);
+          newDraftSync.discard();
           setTitle("");
           setDuration("");
           setAssignee("");
@@ -940,14 +1185,20 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline bg-success-tint px-5 py-3 text-xs text-success-text">
         <span className="flex items-center gap-2 font-medium">
           <ShieldCheck className="size-4" />
-          Saved cues are stored immediately. Unsaved typing is backed up on this device.
+          Every keystroke is backed up on this device and synced automatically to Beebizy.
         </span>
-        {deletedCues.length > 0 ? (
-          <Button type="button" variant="outline" size="sm" disabled={add.isPending} onClick={() => restoreDeletedCue(deletedCues[0]!.cue.id)}>
-            <RotateCcw className="mr-1.5 size-3.5" />
-            Recover “{deletedCues[0]!.cue.title}”
+        <span className="flex flex-wrap items-center gap-2">
+          {deletedCues.length > 0 ? (
+            <Button type="button" variant="outline" size="sm" disabled={add.isPending} onClick={() => restoreDeletedCue(deletedCues[0]!.cue.id)}>
+              <RotateCcw className="mr-1.5 size-3.5" />
+              Recover “{deletedCues[0]!.cue.title}”
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={() => setRecoveryOpen(true)}>
+            <History className="mr-1.5 size-3.5" />
+            Recovery & versions{serverDeletedCues.length > 0 ? ` (${serverDeletedCues.length})` : ""}
           </Button>
-        ) : null}
+        </span>
       </div>
 
       {days.length > 1 ? (
@@ -1029,9 +1280,15 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
           Add
         </Button>
         {hasNewDraft ? (
-          <Pill tone={newDraftRecovered ? "warning" : "info"}>
+          <Pill tone={newDraftSync.status === "device" ? "warning" : newDraftSync.status === "synced" ? "success" : "info"}>
             <Save className="mr-1 size-3" />
-            {newDraftRecovered ? "Recovered unsaved draft" : "Draft backed up on this device"}
+            {newDraftSync.status === "device"
+              ? "Saved on this device · server will retry"
+              : newDraftSync.status === "synced"
+                ? "Draft saved to Beebizy"
+                : newDraftRecovered
+                  ? "Recovered draft · syncing to Beebizy…"
+                  : "Saved on this device · syncing to Beebizy…"}
           </Pill>
         ) : null}
         <Input
@@ -1077,12 +1334,20 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
               members={members}
               volunteers={volunteers}
               focused={focusedCueId === cue.id}
+              serverDraft={syncedDrafts?.find((draft) => draft.draftKey === cue.id) ?? null}
               onDeleted={storeDeletedCue}
               onRestoreDeleted={restoreDeletedCue}
             />
           ))}
         </ol>
       )}
+      <RunOfShowRecoveryDialog
+        eventId={event.id}
+        open={recoveryOpen}
+        onOpenChange={setRecoveryOpen}
+        deleted={serverDeletedCues}
+        versions={previousVersions}
+      />
     </Panel>
   );
 }

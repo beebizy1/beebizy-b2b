@@ -26,6 +26,7 @@ import type {
   RegistrationsRepository,
   VolunteerNeedsRepository,
   RfpsRepository,
+  RunOfShowDraftRepository,
   RoiRepository,
   SettingsRepository,
   TemplatesRepository,
@@ -145,6 +146,7 @@ import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
 import { normalizeAttendeeName } from "../attendanceReport";
 import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
+import type { RunOfShowSyncedDraft } from "../runOfShowRecovery";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -447,6 +449,12 @@ const events: EventsRepository = {
     }
     state.roi = state.roi.filter((r) => r.eventId !== id);
     state.floorplans = state.floorplans.filter((plan) => plan.eventId !== id);
+    for (const key of memoryRunOfShowDrafts.keys()) {
+      if (key.startsWith(`${id}:`)) memoryRunOfShowDrafts.delete(key);
+    }
+    for (const key of memoryRunOfShowDraftRevisions.keys()) {
+      if (key.startsWith(`${id}:`)) memoryRunOfShowDraftRevisions.delete(key);
+    }
     // Boards outlive their event — they were concepting work before it existed — so
     // detach rather than delete.
     for (const board of state.canvases) {
@@ -1222,6 +1230,39 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
   "run-of-show",
   compareRunOfShowItems,
 );
+
+const memoryRunOfShowDrafts = new Map<string, RunOfShowSyncedDraft>();
+const memoryRunOfShowDraftRevisions = new Map<string, number>();
+const runOfShowDraftKey = (eventId: string, draftKey: string) => `${eventId}:${draftKey}`;
+const runOfShowDrafts: RunOfShowDraftRepository = {
+  async list(eventId) {
+    await wait();
+    return [...memoryRunOfShowDrafts.entries()]
+      .filter(([key]) => key.startsWith(`${eventId}:`))
+      .map(([, draft]) => copy(draft));
+  },
+  async save(eventId, draftKey, draft, clientUpdatedAt) {
+    await wait();
+    const key = runOfShowDraftKey(eventId, draftKey);
+    if ((memoryRunOfShowDraftRevisions.get(key) ?? 0) > clientUpdatedAt) return copy(memoryRunOfShowDrafts.get(key) ?? null);
+    const saved: RunOfShowSyncedDraft = {
+      draftKey,
+      draft: copy(draft),
+      clientUpdatedAt,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryRunOfShowDraftRevisions.set(key, clientUpdatedAt);
+    memoryRunOfShowDrafts.set(key, saved);
+    return copy(saved);
+  },
+  async discard(eventId, draftKey, clientUpdatedAt) {
+    await wait();
+    const key = runOfShowDraftKey(eventId, draftKey);
+    if ((memoryRunOfShowDraftRevisions.get(key) ?? 0) > clientUpdatedAt) return;
+    memoryRunOfShowDraftRevisions.set(key, clientUpdatedAt);
+    memoryRunOfShowDrafts.delete(key);
+  },
+};
 
 const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>(
   () => store().volunteers,
@@ -2801,6 +2842,7 @@ export const memoryAdapter: DataAdapter = {
   eventVendors,
   checklist,
   runOfShow,
+  runOfShowDrafts,
   volunteerNeeds,
   volunteers,
   budget,

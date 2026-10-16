@@ -111,6 +111,11 @@ vi.mock("./ticketInvitations", () => ({
 vi.mock("./vendorEventPackets", () => ({
   sendVendorEventPackets: vi.fn(),
 }));
+vi.mock("./runOfShowDrafts", () => ({
+  discardRunOfShowDraft: vi.fn(),
+  listRunOfShowDrafts: vi.fn(),
+  saveRunOfShowDraft: vi.fn(),
+}));
 vi.mock("./fundraisingUx", () => ({
   createAuctionCategory: vi.fn(),
   extendAuctionItem: vi.fn(),
@@ -150,6 +155,7 @@ const { deposits, vendorPaymentPlans, feedback, events, registrations, members, 
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
+const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await import("./runOfShowDrafts");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
@@ -281,6 +287,38 @@ describe("workspace role changes", () => {
     }));
     expect(invalid.status).toBe(400);
     expect(members.setRole).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("run of show server drafts", () => {
+  const context = {
+    userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+    eventScopeId: null,
+    access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+  };
+  const draft = { dayNumber: 1, startTime: "09:00", title: "Doors open", duration: "15", assignee: "Mary", description: "Welcome guests" };
+
+  it("lists and saves a user-scoped draft", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(listRunOfShowDrafts).mockResolvedValue([]);
+    expect((await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-drafts"))).status).toBe(200);
+    expect(listRunOfShowDrafts).toHaveBeenCalledWith(context, "event-1");
+
+    vi.mocked(saveRunOfShowDraft).mockResolvedValue({ draftKey: "new-1", draft, clientUpdatedAt: 1000, updatedAt: "2026-10-16T12:00:00.000Z" });
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-drafts/new-1", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ draft, clientUpdatedAt: 1000 }),
+    }));
+    expect(response.status).toBe(200);
+    expect(saveRunOfShowDraft).toHaveBeenCalledWith(context, "event-1", "new-1", draft, 1000);
+  });
+
+  it("writes a discard tombstone so a delayed save cannot resurrect a cleared draft", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-drafts/cue-1", {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ discarded: true, clientUpdatedAt: 2000 }),
+    }));
+    expect(response.status).toBe(200);
+    expect(discardRunOfShowDraft).toHaveBeenCalledWith(context, "event-1", "cue-1", 2000);
   });
 });
 
