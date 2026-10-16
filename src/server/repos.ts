@@ -132,6 +132,7 @@ import { auctionCatalogReadiness } from "../data/commerce.ts";
 import { bidIncrementCents } from "../data/fundraising.ts";
 import { allocateAuctionBidder } from "./auctionBidderAllocation.ts";
 import { errorMessages } from "./errorMessage.ts";
+import { roleChangeOwnerGuard, roleRemovalOwnerGuard } from "./workspaceMemberRoleGuards.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -5287,12 +5288,7 @@ export const members = {
             and active_role_notice.user_id = ${userId}
             and active_role_notice.status = 'processing'
         )`,
-        sql`${role === "owner"} or ${s.workspaceMembers.role} <> 'owner' or exists (
-          select 1 from workspace_members owner_guard
-          where owner_guard.workspace_id = ${ctx.workspaceId}
-            and owner_guard.role = 'owner'
-            and owner_guard.user_id <> ${userId}
-        )`,
+        roleChangeOwnerGuard(ctx.workspaceId, userId, role as "member"),
       ))
       .returning();
     const supersedeOlderNotifications = db.update(s.memberRoleNotifications).set({
@@ -5375,12 +5371,7 @@ export const members = {
             and active_role_notice.user_id = ${userId}
             and active_role_notice.status = 'processing'
         )`,
-        sql`${s.workspaceMembers.role} <> 'owner' or exists (
-          select 1 from workspace_members owner_guard
-          where owner_guard.workspace_id = ${ctx.workspaceId}
-            and owner_guard.role = 'owner'
-            and owner_guard.user_id <> ${userId}
-        )`,
+        roleRemovalOwnerGuard(ctx.workspaceId, userId),
       ))
       .returning({ userId: s.workspaceMembers.userId });
     const supersedeNotifications = db.update(s.memberRoleNotifications).set({ status: "superseded", lockedAt: null, leaseToken: null, updatedAt: new Date() }).where(and(
