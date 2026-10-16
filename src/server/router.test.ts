@@ -111,6 +111,9 @@ vi.mock("./ticketInvitations", () => ({
 vi.mock("./vendorEventPackets", () => ({
   sendVendorEventPackets: vi.fn(),
 }));
+vi.mock("./memberRoleNotifications", () => ({
+  processDueMemberRoleNotifications: vi.fn(),
+}));
 vi.mock("./fundraisingUx", () => ({
   createAuctionCategory: vi.fn(),
   extendAuctionItem: vi.fn(),
@@ -150,6 +153,7 @@ const { deposits, vendorPaymentPlans, feedback, events, registrations, members, 
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
+const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
@@ -164,6 +168,18 @@ describe("fundraising maintenance", () => {
     const response = await handleRequest(new Request("http://localhost/api/fundraising/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, eventsChecked: 3, reminders: { sent: 2, failed: 0 }, yearEndStatements: { sent: 1, failed: 0 } });
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("notification maintenance", () => {
+  it("requires the cron secret and retries due role notifications", async () => {
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/notifications/maintenance"))).status).toBe(401);
+    vi.mocked(processDueMemberRoleNotifications).mockResolvedValue({ processed: 2, sent: 1, queued: 1, superseded: 0 });
+    const response = await handleRequest(new Request("http://localhost/api/notifications/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, roleNotifications: { processed: 2, sent: 1, queued: 1, superseded: 0 } });
     vi.unstubAllEnvs();
   });
 });

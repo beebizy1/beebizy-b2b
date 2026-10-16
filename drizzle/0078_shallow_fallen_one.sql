@@ -1,0 +1,1 @@
+ALTER TABLE "member_role_notifications" ADD COLUMN "lease_token" text;

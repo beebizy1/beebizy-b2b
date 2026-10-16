@@ -49,6 +49,7 @@ import {
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
+import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
@@ -278,6 +279,14 @@ async function handlePublic(segments: string[], method: string, request: Request
     if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
     const [eventsChecked, reminders, yearEndStatements] = await Promise.all([sendAllDueClosingAlerts(), sendDueBidderBillReminders(), sendDueYearEndStatements()]);
     return json({ ok: true, eventsChecked, reminders, yearEndStatements });
+  }
+
+  if (segments[0] === "notifications" && segments[1] === "maintenance") {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) return json({ error: "Notification maintenance is not configured." }, 503);
+    if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+    return json({ ok: true, roleNotifications: await processDueMemberRoleNotifications() });
   }
 
   if (segments[0] === "billing" && segments[1] === "webhook") {

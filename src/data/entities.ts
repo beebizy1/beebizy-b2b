@@ -1949,6 +1949,7 @@ export interface MemberRoleChangeResult {
   /** False when the role was unchanged or the notification could not be delivered. */
   emailSent: boolean;
   roleChanged: boolean;
+  notificationStatus: "sent" | "queued" | "not-needed";
 }
 
 /* ----------------------------------------------------------------- team hours */

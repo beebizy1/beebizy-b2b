@@ -117,8 +117,8 @@ import {
   notifyAuctionOutbid,
   notifyAuctionDonorThankYou,
   notifyCombinedFundraisingReceipt,
-  notifyWorkspaceRoleChanged,
 } from "./notify.ts";
+import { deliverMemberRoleNotification } from "./memberRoleNotifications.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
@@ -4960,6 +4960,7 @@ async function claimInviteForExistingAccount(
     .values({
       workspaceId: invite.workspaceId,
       userId: account.userId,
+      email: account.email,
       role: invite.role,
       eventScopeId: invite.eventScopeId,
     })
@@ -5011,12 +5012,20 @@ export const members = {
 
     // One call for the whole page rather than one per member.
     const directory = await lookupUsers(rows.map((row) => row.member.userId));
+    const emailBackfills = rows.flatMap((row) => {
+      const verifiedEmail = directory.get(row.member.userId)?.email ?? null;
+      if (!verifiedEmail || verifiedEmail === row.member.email) return [];
+      return [db.update(s.workspaceMembers).set({ email: verifiedEmail }).where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, row.member.userId),
+      ))];
+    });
+    if (emailBackfills.length) await Promise.all(emailBackfills);
     const active: WorkspaceMember[] = rows.map((row) => ({
       userId: row.member.userId,
       role: row.member.role,
       status: "active",
       name: directory.get(row.member.userId)?.name ?? null,
-      email: directory.get(row.member.userId)?.email ?? null,
+      email: directory.get(row.member.userId)?.email ?? row.member.email,
       isSelf: row.member.userId === ctx.userId,
       joinedAt: row.member.createdAt.toISOString(),
       eventScopeId: row.member.eventScopeId,
@@ -5230,6 +5239,40 @@ export const members = {
       throw new HttpError(409, "Event-only collaborators must remain members. Remove the event restriction before granting workspace-wide Admin or Owner access.");
     }
 
+    const [directory, [workspace]] = await Promise.all([
+      lookupUsers([userId]),
+      db.select({ name: s.workspaces.name }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
+    ]);
+    const account = directory.get(userId);
+    const memberFrom = (row: typeof current): WorkspaceMember => ({
+      userId,
+      role: row.role,
+      status: "active",
+      name: account?.name ?? null,
+      email: account?.email ?? row.email,
+      isSelf: userId === ctx.userId,
+      joinedAt: row.createdAt.toISOString(),
+      eventScopeId: row.eventScopeId,
+      eventScopeTitle: null,
+    });
+    if (current.role === role) {
+      const member = memberFrom(current);
+      member.eventScopeTitle = current.eventScopeId ? (await events.get(ctx, current.eventScopeId))?.title ?? null : null;
+      const [existingNotification] = await db.select({ id: s.memberRoleNotifications.id, status: s.memberRoleNotifications.status })
+        .from(s.memberRoleNotifications).where(and(
+          eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+          eq(s.memberRoleNotifications.userId, userId),
+          eq(s.memberRoleNotifications.changeId, changeId),
+          eq(s.memberRoleNotifications.newRole, role as "member"),
+        )).limit(1);
+      if (!existingNotification) return { member, emailSent: false, roleChanged: false, notificationStatus: "not-needed" };
+      const delivery = await deliverMemberRoleNotification(existingNotification.id).catch(() => "queued" as const);
+      const sent = delivery === "sent" || delivery === "already-sent";
+      return { member, emailSent: sent, roleChanged: false, notificationStatus: sent ? "sent" : "queued" };
+    }
+    const notificationId = newId("role-notify");
+    const recipientEmail = account?.email ?? current.email;
+
     const ownerLock = db.select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
       .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
     const roleUpdate = db
@@ -5238,6 +5281,12 @@ export const members = {
       .where(and(
         eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
         eq(s.workspaceMembers.userId, userId),
+        sql`not exists (
+          select 1 from member_role_notifications active_role_notice
+          where active_role_notice.workspace_id = ${ctx.workspaceId}
+            and active_role_notice.user_id = ${userId}
+            and active_role_notice.status = 'processing'
+        )`,
         sql`${role === "owner"} or ${s.workspaceMembers.role} <> 'owner' or exists (
           select 1 from workspace_members owner_guard
           where owner_guard.workspace_id = ${ctx.workspaceId}
@@ -5246,37 +5295,65 @@ export const members = {
         )`,
       ))
       .returning();
-    const [, updatedRows] = await db.batch([ownerLock, roleUpdate]);
+    const supersedeOlderNotifications = db.update(s.memberRoleNotifications).set({
+      status: "superseded",
+      lockedAt: null,
+      leaseToken: null,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+      eq(s.memberRoleNotifications.userId, userId),
+      inArray(s.memberRoleNotifications.status, ["pending", "processing"]),
+      or(ne(s.memberRoleNotifications.changeId, changeId), ne(s.memberRoleNotifications.newRole, role as "member")),
+      sql`exists (
+        select 1 from workspace_members member_after_role_change
+        where member_after_role_change.workspace_id = ${ctx.workspaceId}
+          and member_after_role_change.user_id = ${userId}
+          and member_after_role_change.role = ${role}::workspace_role
+      )`,
+    ));
+    const notificationInsert = db.execute(sql`
+      insert into member_role_notifications (
+        id, workspace_id, user_id, change_id, recipient_email, member_name, workspace_name, new_role
+      )
+      select
+        ${notificationId}, ${ctx.workspaceId}, ${userId}, ${changeId}, ${recipientEmail},
+        ${account?.name ?? recipientEmail ?? "team member"}, ${workspace?.name ?? "Beebizy"}, ${role}::workspace_role
+      from workspace_members member_after_role_change
+      where member_after_role_change.workspace_id = ${ctx.workspaceId}
+        and member_after_role_change.user_id = ${userId}
+        and member_after_role_change.role = ${role}::workspace_role
+      on conflict (workspace_id, user_id, change_id, new_role) do nothing
+    `);
+    const [, updatedRows] = await db.batch([ownerLock, roleUpdate, supersedeOlderNotifications, notificationInsert]);
     const updated = updatedRows[0];
-    if (!updated) throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    if (!updated) {
+      const [sending] = await db.select({ id: s.memberRoleNotifications.id }).from(s.memberRoleNotifications).where(and(
+        eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+        eq(s.memberRoleNotifications.userId, userId),
+        eq(s.memberRoleNotifications.status, "processing"),
+      )).limit(1);
+      if (sending) throw new HttpError(409, "A role notification is being sent. Wait a few seconds, then change this person's role again.");
+      throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    }
 
-    const [directory, [workspace]] = await Promise.all([
-      lookupUsers([userId]),
-      db.select({ name: s.workspaces.name }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
-    ]);
-    const account = directory.get(userId);
-    const member: WorkspaceMember = {
-      userId,
-      role: updated.role,
-      status: "active",
-      name: account?.name ?? null,
-      email: account?.email ?? null,
-      isSelf: userId === ctx.userId,
-      joinedAt: updated.createdAt.toISOString(),
-      eventScopeId: updated.eventScopeId,
-      eventScopeTitle: updated.eventScopeId ? (await events.get(ctx, updated.eventScopeId))?.title ?? null : null,
-    };
-    if (current.role === role) return { member, emailSent: false, roleChanged: false };
-    const outcome = account?.email ? await notifyWorkspaceRoleChanged({
-      changeId,
-      workspaceId: ctx.workspaceId,
-      workspaceName: workspace?.name ?? "Beebizy",
-      userId,
-      to: account.email,
-      memberName: account.name ?? "team member",
-      newRole: updated.role,
-    }) : null;
-    return { member, emailSent: outcome?.status === "sent", roleChanged: true };
+    const member = memberFrom(updated);
+    const [queuedNotification] = await db.select({ id: s.memberRoleNotifications.id }).from(s.memberRoleNotifications).where(and(
+      eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+      eq(s.memberRoleNotifications.userId, userId),
+      eq(s.memberRoleNotifications.changeId, changeId),
+      eq(s.memberRoleNotifications.newRole, role as "member"),
+    )).limit(1);
+    if (!queuedNotification) throw new HttpError(500, "The role changed, but its notification could not be queued.");
+    let delivery: Awaited<ReturnType<typeof deliverMemberRoleNotification>> = "queued";
+    try {
+      delivery = await deliverMemberRoleNotification(queuedNotification.id);
+    } catch (error) {
+      // The outbox row committed with the role change. Cron will retry even if this
+      // request lost its connection while making the immediate delivery attempt.
+      console.warn("ROLE_NOTIFICATION_IMMEDIATE_ATTEMPT_FAILED", queuedNotification.id, error instanceof Error ? error.message : String(error));
+    }
+    return { member, emailSent: delivery === "sent" || delivery === "already-sent", roleChanged: true, notificationStatus: delivery === "sent" || delivery === "already-sent" ? "sent" : "queued" };
   },
 
   async remove(ctx: RequestContext, userId: string): Promise<void> {
@@ -5292,6 +5369,12 @@ export const members = {
       .where(and(
         eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
         eq(s.workspaceMembers.userId, userId),
+        sql`not exists (
+          select 1 from member_role_notifications active_role_notice
+          where active_role_notice.workspace_id = ${ctx.workspaceId}
+            and active_role_notice.user_id = ${userId}
+            and active_role_notice.status = 'processing'
+        )`,
         sql`${s.workspaceMembers.role} <> 'owner' or exists (
           select 1 from workspace_members owner_guard
           where owner_guard.workspace_id = ${ctx.workspaceId}
@@ -5300,9 +5383,25 @@ export const members = {
         )`,
       ))
       .returning({ userId: s.workspaceMembers.userId });
-    const [, removed] = await db.batch([ownerLock, memberDelete]);
-    if (removed.length === 0 && current.role === "owner") {
-      throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    const supersedeNotifications = db.update(s.memberRoleNotifications).set({ status: "superseded", lockedAt: null, leaseToken: null, updatedAt: new Date() }).where(and(
+      eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+      eq(s.memberRoleNotifications.userId, userId),
+      inArray(s.memberRoleNotifications.status, ["pending", "processing"]),
+      sql`not exists (
+        select 1 from workspace_members remaining_member
+        where remaining_member.workspace_id = ${ctx.workspaceId}
+          and remaining_member.user_id = ${userId}
+      )`,
+    ));
+    const [, removed] = await db.batch([ownerLock, memberDelete, supersedeNotifications]);
+    if (removed.length === 0) {
+      const [sending] = await db.select({ id: s.memberRoleNotifications.id }).from(s.memberRoleNotifications).where(and(
+        eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+        eq(s.memberRoleNotifications.userId, userId),
+        eq(s.memberRoleNotifications.status, "processing"),
+      )).limit(1);
+      if (sending) throw new HttpError(409, "A role notification is being sent. Wait a few seconds, then remove this person.");
+      if (current.role === "owner") throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
     }
   },
 };

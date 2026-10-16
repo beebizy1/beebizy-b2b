@@ -140,6 +140,8 @@ export const workspaceMembers = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     /** Clerk user id. */
     userId: text("user_id").notNull(),
+    /** Last verified primary email, persisted so notification retries do not depend on Clerk uptime. */
+    email: text("email"),
     role: workspaceRole("role").notNull().default("member"),
     /**
      * Null grants the normal workspace-wide seat. A value limits this seat to one
@@ -189,6 +191,39 @@ export const workspaceInvites = pgTable(
       .where(sql`${table.acceptedAt} is null`),
     index("workspace_invites_workspace_idx").on(table.workspaceId),
     index("workspace_invites_event_scope_idx").on(table.eventScopeId),
+  ],
+);
+
+/** Durable transactional outbox for role notifications. Role writes and this row commit together. */
+export const memberRoleNotifications = pgTable(
+  "member_role_notifications",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    changeId: text("change_id").notNull(),
+    recipientEmail: text("recipient_email"),
+    memberName: text("member_name").notNull(),
+    workspaceName: text("workspace_name").notNull(),
+    newRole: workspaceRole("new_role").notNull(),
+    status: text("status").notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    /** Fences stale workers after a processing lease is reclaimed. */
+    leaseToken: text("lease_token"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("member_role_notifications_due_idx").on(table.status, table.nextAttemptAt),
+    index("member_role_notifications_workspace_idx").on(table.workspaceId, table.createdAt),
+    uniqueIndex("member_role_notifications_change_idx").on(table.workspaceId, table.userId, table.changeId, table.newRole),
+    check("member_role_notifications_status_check", sql`${table.status} in ('pending', 'processing', 'sent', 'superseded')`),
   ],
 );
 
