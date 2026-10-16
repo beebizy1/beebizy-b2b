@@ -128,6 +128,7 @@ function useRunOfShowDraftSync(
   const saveServerDraft = useSaveRunOfShowDraft();
   const discardServerDraft = useDiscardRunOfShowDraft();
   const saveServerDraftMutation = saveServerDraft.mutate;
+  const discardServerDraftMutation = discardServerDraft.mutate;
   const latestRevision = useRef(0);
   const [status, setStatus] = useState<DraftSyncStatus>(serverCopyExists ? "synced" : "idle");
 
@@ -136,7 +137,18 @@ function useRunOfShowDraftSync(
   }, [active, serverCopyExists]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      if (latestRevision.current === 0) return;
+      const revision = Math.max(Date.now(), latestRevision.current + 1);
+      latestRevision.current = 0;
+      markRunOfShowDraftDiscarded(eventId, draftKey, revision);
+      setStatus("idle");
+      discardServerDraftMutation(
+        { eventId, draftKey, clientUpdatedAt: revision },
+        { onError: () => setStatus("device") },
+      );
+      return;
+    }
     const revision = Math.max(Date.now(), latestRevision.current + 1);
     latestRevision.current = revision;
     writeRunOfShowDraft(eventId, draftKey, draft, revision);
@@ -155,14 +167,14 @@ function useRunOfShowDraftSync(
       );
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [active, draft, draftKey, eventId, saveServerDraftMutation]);
+  }, [active, discardServerDraftMutation, draft, draftKey, eventId, saveServerDraftMutation]);
 
   const discard = () => {
     const revision = Math.max(Date.now(), latestRevision.current + 1);
-    latestRevision.current = revision;
+    latestRevision.current = 0;
     markRunOfShowDraftDiscarded(eventId, draftKey, revision);
     setStatus("idle");
-    discardServerDraft.mutate(
+    discardServerDraftMutation(
       { eventId, draftKey, clientUpdatedAt: revision },
       { onError: () => setStatus("device") },
     );
@@ -697,6 +709,12 @@ function RunOfShowRow({
     (editing || savedDraftAvailable) && hasUnsavedEdit,
     Boolean(serverDraft),
   );
+
+  useEffect(() => {
+    if (!editing || hasUnsavedEdit) return;
+    setSavedDraftAvailable(false);
+    setRecoveredDraft(false);
+  }, [editing, hasUnsavedEdit]);
 
   useEffect(() => {
     const recovered = preferredRunOfShowDraft(
