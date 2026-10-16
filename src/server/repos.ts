@@ -64,6 +64,7 @@ import type {
   CheckInStation,
   ChecklistItem,
   InviteResult,
+  MemberRoleChangeResult,
   ImportedSpreadsheetField,
   RunOfShowItem,
   VolunteerShift,
@@ -116,6 +117,7 @@ import {
   notifyAuctionOutbid,
   notifyAuctionDonorThankYou,
   notifyCombinedFundraisingReceipt,
+  notifyWorkspaceRoleChanged,
 } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
@@ -5212,54 +5214,98 @@ export const members = {
     await revokeInvitationEmail(email);
   },
 
-  async setRole(ctx: RequestContext, userId: string, role: string): Promise<WorkspaceMember> {
+  async setRole(ctx: RequestContext, userId: string, role: string, changeId: string): Promise<MemberRoleChangeResult> {
     requireRole(ctx, ["owner"]);
     if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
       throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
     }
-    await guardLastOwner(ctx, userId, role === "owner" ? "keep" : "drop");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(changeId)) {
+      throw new HttpError(400, "A valid role-change request id is required.");
+    }
+    const [current] = await db.select().from(s.workspaceMembers).where(and(
+      eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId),
+    )).limit(1);
+    if (!current) throw new HttpError(404, "That person is not in this workspace.");
+    if (current.eventScopeId && role !== "member") {
+      throw new HttpError(409, "Event-only collaborators must remain members. Remove the event restriction before granting workspace-wide Admin or Owner access.");
+    }
 
-    const updated = await db
+    const ownerLock = db.select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
+      .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const roleUpdate = db
       .update(s.workspaceMembers)
       .set({ role: role as "member" })
-      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)))
+      .where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
+        eq(s.workspaceMembers.userId, userId),
+        sql`${role === "owner"} or ${s.workspaceMembers.role} <> 'owner' or exists (
+          select 1 from workspace_members owner_guard
+          where owner_guard.workspace_id = ${ctx.workspaceId}
+            and owner_guard.role = 'owner'
+            and owner_guard.user_id <> ${userId}
+        )`,
+      ))
       .returning();
-    if (updated.length === 0) throw new HttpError(404, "That person is not in this workspace.");
+    const [, updatedRows] = await db.batch([ownerLock, roleUpdate]);
+    const updated = updatedRows[0];
+    if (!updated) throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
 
-    const directory = await lookupUsers([userId]);
-    return {
+    const [directory, [workspace]] = await Promise.all([
+      lookupUsers([userId]),
+      db.select({ name: s.workspaces.name }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
+    ]);
+    const account = directory.get(userId);
+    const member: WorkspaceMember = {
       userId,
-      role: updated[0]!.role,
+      role: updated.role,
       status: "active",
-      name: directory.get(userId)?.name ?? null,
-      email: directory.get(userId)?.email ?? null,
+      name: account?.name ?? null,
+      email: account?.email ?? null,
       isSelf: userId === ctx.userId,
-      joinedAt: updated[0]!.createdAt.toISOString(),
-      eventScopeId: updated[0]!.eventScopeId,
-      eventScopeTitle: updated[0]!.eventScopeId ? (await events.get(ctx, updated[0]!.eventScopeId))?.title ?? null : null,
+      joinedAt: updated.createdAt.toISOString(),
+      eventScopeId: updated.eventScopeId,
+      eventScopeTitle: updated.eventScopeId ? (await events.get(ctx, updated.eventScopeId))?.title ?? null : null,
     };
+    if (current.role === role) return { member, emailSent: false, roleChanged: false };
+    const outcome = account?.email ? await notifyWorkspaceRoleChanged({
+      changeId,
+      workspaceId: ctx.workspaceId,
+      workspaceName: workspace?.name ?? "Beebizy",
+      userId,
+      to: account.email,
+      memberName: account.name ?? "team member",
+      newRole: updated.role,
+    }) : null;
+    return { member, emailSent: outcome?.status === "sent", roleChanged: true };
   },
 
   async remove(ctx: RequestContext, userId: string): Promise<void> {
     requireRole(ctx, ["owner"]);
-    await guardLastOwner(ctx, userId, "drop");
-    await db
+    const [current] = await db.select({ role: s.workspaceMembers.role }).from(s.workspaceMembers).where(and(
+      eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId),
+    )).limit(1);
+    if (!current) return;
+    const ownerLock = db.select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
+      .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const memberDelete = db
       .delete(s.workspaceMembers)
-      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)));
+      .where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
+        eq(s.workspaceMembers.userId, userId),
+        sql`${s.workspaceMembers.role} <> 'owner' or exists (
+          select 1 from workspace_members owner_guard
+          where owner_guard.workspace_id = ${ctx.workspaceId}
+            and owner_guard.role = 'owner'
+            and owner_guard.user_id <> ${userId}
+        )`,
+      ))
+      .returning({ userId: s.workspaceMembers.userId });
+    const [, removed] = await db.batch([ownerLock, memberDelete]);
+    if (removed.length === 0 && current.role === "owner") {
+      throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    }
   },
 };
-
-/** Refuses a change that would leave the workspace with no owner. */
-async function guardLastOwner(ctx: RequestContext, userId: string, intent: "keep" | "drop"): Promise<void> {
-  if (intent === "keep") return;
-  const owners = await db
-    .select({ userId: s.workspaceMembers.userId })
-    .from(s.workspaceMembers)
-    .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.role, "owner")));
-  if (owners.length <= 1 && owners.some((owner) => owner.userId === userId)) {
-    throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
-  }
-}
 
 export const history = {
   async list(ctx: RequestContext, eventId: string): Promise<EventHistoryEntry[]> {

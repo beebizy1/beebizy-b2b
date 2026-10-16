@@ -123,6 +123,7 @@ import type {
   RegistrationDraft,
   RegistrationDetailsPatch,
   InviteResult,
+  MemberRoleChangeResult,
   WorkspaceMember,
   WorkspaceRole,
   RegistrationStatus,
@@ -428,7 +429,7 @@ export interface MembersRepository {
   /** Grants a seat to someone who has never signed in, and emails them a sign-in link. */
   invite(email: string, role: WorkspaceRole, eventId?: string | null): Promise<InviteResult>;
   revokeInvite(email: string): Promise<void>;
-  setRole(userId: string, role: WorkspaceRole): Promise<WorkspaceMember>;
+  setRole(userId: string, role: WorkspaceRole, changeId: string): Promise<MemberRoleChangeResult>;
   remove(userId: string): Promise<void>;
 }
 

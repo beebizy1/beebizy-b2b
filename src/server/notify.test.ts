@@ -11,6 +11,7 @@ import {
   notifyTeamUpdate,
   notifyVolunteerAssignment,
   notifyVendorEventPacket,
+  notifyWorkspaceRoleChanged,
   notifyWorkAssignment,
 } from "./notify";
 
@@ -280,6 +281,33 @@ describe("vendor event packet email", () => {
     expect(body.html).toContain('<html lang="en" dir="ltr">');
     expect(body.attachments).toHaveLength(2);
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("vendor-event-packet-packet-request-1-vendor-1");
+  });
+});
+
+describe("workspace role-change email", () => {
+  it("notifies the member without resending an invitation or sign-in link", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyWorkspaceRoleChanged({
+      changeId: "role-change-1",
+      workspaceId: "workspace-1",
+      workspaceName: "Beebizy",
+      userId: "user-1",
+      to: "member@example.com",
+      memberName: "Veenamayani",
+      newRole: "owner",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      to: ["member@example.com"],
+      subject: "Your Beebizy role changed to Owner",
+    });
+    expect(body.text).toContain("Your role in Beebizy is now Owner.");
+    expect(body.text).not.toContain("Previous role");
+    expect(body.text).not.toMatch(/https?:\/\//i);
+    expect(body.text).not.toMatch(/invitation|invite link|sign-in link/i);
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("workspace-role-change-workspace-1-user-1-owner-role-change-1");
   });
 });
 

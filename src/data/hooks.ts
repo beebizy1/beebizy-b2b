@@ -1670,7 +1670,7 @@ export function useRevokeInvite() {
 
 export function useSetMemberRole() {
   return useAdapterMutation(
-    (a, vars: { userId: string; role: WorkspaceRole }) => a.members.setRole(vars.userId, vars.role),
+    (a, vars: { userId: string; role: WorkspaceRole; changeId: string }) => a.members.setRole(vars.userId, vars.role, vars.changeId),
     () => [qk.members],
   );
 }

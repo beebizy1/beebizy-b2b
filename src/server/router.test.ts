@@ -63,7 +63,7 @@ vi.mock("./repos", () => {
     vendors: { list: vi.fn() },
     registrations: { ...child, importGuests: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
-    members: { list: vi.fn().mockResolvedValue([]) },
+    members: { list: vi.fn().mockResolvedValue([]), setRole: vi.fn(), remove: vi.fn() },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
     analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
     feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn(), notify: vi.fn() },
@@ -146,7 +146,7 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, vendorPaymentPlans, feedback, events, registrations, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
@@ -257,6 +257,30 @@ describe("single-event collaborator routing", () => {
         new URL("http://localhost/api/vendors/vendor-gala/messages"),
       ),
     ).not.toThrow();
+  });
+});
+
+describe("workspace role changes", () => {
+  it("requires a request id and routes one role change without creating another invitation", async () => {
+    const context = {
+      userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+      eventScopeId: null,
+      access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    const changeId = "66ee3482-cbea-4c20-a181-eddc7c9b7001";
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(members.setRole).mockResolvedValue({ member: { userId: "user-2", role: "owner" }, emailSent: true, roleChanged: true } as never);
+    const response = await handleRequest(new Request("http://localhost/api/members/user-2", {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: "owner", changeId }),
+    }));
+    expect(response.status).toBe(200);
+    expect(members.setRole).toHaveBeenCalledWith(context, "user-2", "owner", changeId);
+
+    const invalid = await handleRequest(new Request("http://localhost/api/members/user-2", {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: "admin", changeId: "not-valid" }),
+    }));
+    expect(invalid.status).toBe(400);
+    expect(members.setRole).toHaveBeenCalledTimes(1);
   });
 });
 

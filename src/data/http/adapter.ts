@@ -95,6 +95,7 @@ import type {
   VendorMessage,
   VolunteerShift,
   InviteResult,
+  MemberRoleChangeResult,
   WorkspaceMember,
 } from "../entities";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
@@ -627,7 +628,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       revokeInvite: async (email) => {
         await client.del(`/invites/${encodeURIComponent(email)}`);
       },
-      setRole: (userId, role) => client.patch<WorkspaceMember>(`/members/${userId}`, { role }),
+      setRole: (userId, role, changeId) => client.patch<MemberRoleChangeResult>(`/members/${userId}`, { role, changeId }),
       remove: async (userId) => {
         await client.del(`/members/${userId}`);
       },

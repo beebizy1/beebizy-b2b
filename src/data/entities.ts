@@ -1944,6 +1944,13 @@ export interface InviteResult {
   emailSent: boolean;
 }
 
+export interface MemberRoleChangeResult {
+  member: WorkspaceMember;
+  /** False when the role was unchanged or the notification could not be delivered. */
+  emailSent: boolean;
+  roleChanged: boolean;
+}
+
 /* ----------------------------------------------------------------- team hours */
 
 /** Staff time booked against an event, the labour half of what an event really cost. */

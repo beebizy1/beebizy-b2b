@@ -164,6 +164,29 @@ function brandedEmail(input: {
 </html>`;
 }
 
+/** A role update is not a new invitation. It intentionally contains no sign-in link. */
+export async function notifyWorkspaceRoleChanged(input: {
+  changeId: string;
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  to: string;
+  memberName: string;
+  newRole: "owner" | "admin" | "member";
+}): Promise<EmailOutcome> {
+  const role = `${input.newRole[0]!.toUpperCase()}${input.newRole.slice(1)}`;
+  const title = `Your Beebizy role changed to ${role}`;
+  const message = `Your role in Beebizy is now ${role}.`;
+  return sendEmail({
+    to: input.to,
+    fromName: input.workspaceName,
+    idempotencyKey: `workspace-role-change-${input.workspaceId}-${input.userId}-${input.newRole}-${input.changeId}`,
+    subject: title,
+    text: [`Hi ${input.memberName || "team member"},`, "", message].join("\n"),
+    html: brandedEmail({ title, greeting: `Hi ${input.memberName || "team member"},`, paragraphs: [message], details: [["Role", role]] }),
+  });
+}
+
 /** Operational event details sent privately to one booked vendor. */
 export async function notifyVendorEventPacket(input: {
   requestId: string;

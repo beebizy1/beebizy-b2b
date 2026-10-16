@@ -1056,7 +1056,10 @@ async function handleAuthed(
     case "members": {
       if (!a && method === "GET") return json(await repos.members.list(ctx));
       requireCapability(ctx, "collaboration");
-      if (a && method === "PATCH") return json(await repos.members.setRole(ctx, a, String(body.role ?? "")));
+      if (a && method === "PATCH") {
+        const input = z.object({ role: z.enum(["owner", "admin", "member"]), changeId: z.string().uuid() }).parse(body);
+        return json(await repos.members.setRole(ctx, a, input.role, input.changeId));
+      }
       if (a && method === "DELETE") {
         await repos.members.remove(ctx, a);
         return new Response(null, { status: 204 });
