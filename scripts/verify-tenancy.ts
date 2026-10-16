@@ -121,7 +121,13 @@ async function main() {
   check("Bob sees no events of Alice's", (await repos.events.list(bob)).length === 0);
   check("Bob cannot read Alice's event by id", (await repos.events.get(bob, event.id)) === null);
   check("Bob sees no venues of Alice's", (await repos.locations.list(bob)).length === 0);
-  check("Bob sees no checklist rows of Alice's", (await repos.checklist.list(bob, event.id)).length === 0);
+  let checklistHidden = false;
+  try {
+    await repos.checklist.list(bob, event.id);
+  } catch (error) {
+    checklistHidden = (error as { status?: number }).status === 404;
+  }
+  check("Bob sees no checklist rows of Alice's", checklistHidden);
 
   let denied = false;
   try {
@@ -176,6 +182,7 @@ async function main() {
   check("unique index refuses a duplicate registration", duplicate);
 
   /* Raffle allocation is guarded inside the UPDATE, not by read-then-write. */
+  await db.update(s.workspaces).set({ raffleEnabled: true, raffleRegistrationConfirmed: true }).where(eq(s.workspaces.id, alice.workspaceId));
   const raffle = await repos.raffle.create(alice, event.id, { name: "Bike", ticketPriceCents: 5000, totalTickets: 3 });
   await repos.raffle.sellTickets(alice, event.id, raffle.id, { buyerName: "A", buyerEmail: "a@example.com", quantity: 2 });
   let oversold = false;

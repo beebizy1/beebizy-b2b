@@ -16,6 +16,16 @@ import type {
   Guest,
   AttentionItem,
   AuctionItem,
+  AuctionDonor,
+  AuctionBidder,
+  AuctionBid,
+  AuctionOrder,
+  AuctionPageSettings,
+  PublicAuctionPayload,
+  PublicAuctionBidResult,
+  PublicAuctionDonorPayload,
+  PublicBidderProfile,
+  FundraisingPledge,
   BudgetItem,
   Canvas,
   CanvasCard,
@@ -23,12 +33,26 @@ import type {
   CheckInStation,
   CustomReportRow,
   Deposit,
+  VendorPaymentPlan,
   Event,
   AssignmentSummaryResult,
   EventHealth,
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  FundraisingDashboard,
+  FundraisingOrganizationProfile,
+  ItemSubmission,
+  PublicItemIntakePayload,
+  AuctionCategory,
+  PublicBidderBill,
+  FundraisingReceipt,
+  DonationCampaign,
+  PublicDonationCampaign,
+  DonationCheckoutResult,
+  PublicDonationStatus,
+  PublicExperienceCertificate,
+  FundraisingReports,
   MoodBoardImage,
   EventRoi,
   EventVendor,
@@ -39,6 +63,7 @@ import type {
   PortfolioSummary,
   ProductFeedback,
   PublicEventPayload,
+  PublicFloorplanPayload,
   PublicRegistrationResult,
   PublicRfpPayload,
   PublicVendorConversation,
@@ -58,16 +83,24 @@ import type {
   TemplateContents,
   TemplateDetail,
   TicketType,
+  TicketCheckoutResult,
+  TicketOrder,
+  TicketInvitation,
+  TicketInvitationBatchResult,
+  PublicTicketOrderStatus,
+  StripeConnectStatus,
   TicketTypeWithEvent,
   UserSettings,
   Vendor,
   VendorMessage,
   VolunteerShift,
   InviteResult,
+  MemberRoleChangeResult,
   WorkspaceMember,
 } from "../entities";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
+import type { VendorEventPacketResult } from "../vendorEventPackets";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -108,7 +141,7 @@ function createClient({ getToken, getOrgId, baseUrl = "/api" }: HttpAdapterOptio
       response = await fetch(`${baseUrl}${path}`, {
         ...init,
         headers: {
-          "content-type": "application/json",
+          ...(init.body instanceof FormData ? {} : { "content-type": "application/json" }),
           authorization: `Bearer ${token}`,
           ...(orgId ? { "x-clerk-org-id": orgId } : {}),
           ...init.headers,
@@ -143,6 +176,7 @@ function createClient({ getToken, getOrgId, baseUrl = "/api" }: HttpAdapterOptio
     patch: <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
     put: <T>(path: string, body: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
     del: (path: string) => request<{ ok: true }>(path, { method: "DELETE" }),
+    upload: <T>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
   };
 }
 
@@ -182,6 +216,25 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     }
     return payload as T;
   };
+  const publicUpload = async <T>(path: string, file: File): Promise<T> => {
+    const form = new FormData();
+    form.set("file", file);
+    let response: Response;
+    try {
+      response = await fetch(`${options.baseUrl ?? "/api"}${path}`, { method: "POST", body: form });
+    } catch {
+      throw new DataError("unavailable", "Couldn't reach the server. Check your connection.");
+    }
+    const text = await response.text();
+    const payload = text ? (JSON.parse(text) as unknown) : null;
+    if (!response.ok) {
+      const message = payload && typeof payload === "object" && "error" in payload
+        ? String((payload as { error: unknown }).error)
+        : `Request failed with ${response.status}.`;
+      throw new DataError(codeFor(response.status), message);
+    }
+    return payload as T;
+  };
 
   return {
     kind: "postgres",
@@ -192,6 +245,71 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     billing: {
       checkout: (interval) => client.post<{ url: string }>("/billing/checkout", { interval }),
       portal: () => client.post<{ url: string }>("/billing/portal"),
+      connectStatus: () => client.get<StripeConnectStatus>("/billing/connect"),
+      startConnectOnboarding: (returnTo) => client.post<StripeConnectStatus>("/billing/connect/onboarding", { returnTo }),
+    },
+
+    fundraising: {
+      getProfile: () => client.get<FundraisingOrganizationProfile>("/fundraising/profile"),
+      updateProfile: (profile) => client.patch<FundraisingOrganizationProfile>("/fundraising/profile", profile),
+      listCategories: () => client.get<AuctionCategory[]>("/fundraising/categories"),
+      createCategory: (name) => client.post<AuctionCategory>("/fundraising/categories", { name }),
+      listSubmissions: (eventId) => client.get<ItemSubmission[]>(`/events/${eventId}/item-submissions`),
+      updateSubmission: (eventId, submissionId, patch) => client.patch<ItemSubmission>(`/events/${eventId}/item-submissions/${submissionId}`, patch),
+      dashboard: (eventId) => client.get<FundraisingDashboard>(`/events/${eventId}/fundraising-dashboard`),
+      extendItem: (eventId, itemId, minutes, notify = true) => client.post<{ closesAt: string; extensionMinutes: number }>(`/events/${eventId}/auction/${itemId}/extend`, { minutes, notify }),
+      extendItems: (eventId, itemIds, minutes, notify = true) => client.post<{ extended: number }>(`/events/${eventId}/auction/extend-many`, { itemIds, minutes, notify }),
+      reopenItem: (eventId, itemId, minutes) => client.post<{ closesAt: string; status: "open" }>(`/events/${eventId}/auction/${itemId}/reopen`, { minutes }),
+      getPublicIntake: async (auctionToken, priorDonorToken) => {
+        try {
+          const query = priorDonorToken ? `?prior=${encodeURIComponent(priorDonorToken)}` : "";
+          return await publicRequest<PublicItemIntakePayload>(`/public/auctions/${auctionToken}/intake${query}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      submitPublicItem: (auctionToken, draft) => publicRequest<PublicItemIntakePayload>(`/public/auctions/${auctionToken}/intake`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
+      uploadPublicItemImage: async (auctionToken, file) =>
+        (await publicUpload<{ url: string }>(`/public/auctions/${auctionToken}/intake/upload`, file)).url,
+      reinvitePastDonors: (eventId) => client.post<{ sent: number; failed: number }>(`/events/${eventId}/item-donor-reinvites`),
+      mergeItems: (eventId, itemIds, title) => client.post<{ packageItemId: string }>(`/events/${eventId}/auction-packages`, { itemIds, title }),
+      buildBills: (eventId) => client.post<{ created: number; bills: PublicBidderBill[] }>(`/events/${eventId}/bidder-bills/build`),
+      sendBills: (eventId) => client.post<{ sent: number; autoCharged: number; failed: number }>(`/events/${eventId}/bidder-bills/send`),
+      refundBill: (eventId, billId) => client.post<PublicBidderBill>(`/events/${eventId}/bidder-bills/${billId}/refund`),
+      getPublicBill: async (token) => {
+        try { return await publicRequest<PublicBidderBill>(`/public/bills/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      payPublicBill: (token, coverFees) => publicRequest<{ url: string }>(`/public/bills/${token}/checkout`, { method: "POST", body: JSON.stringify({ coverFees }) }),
+      getPublicReceipt: async (token) => {
+        try { return await publicRequest<{ receipt: FundraisingReceipt; organization: { legalName: string; ein: string; orgType: string }; eventTitle: string | null }>(`/public/receipts/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      listCampaigns: (eventId) => client.get<DonationCampaign[]>(`/fundraising/campaigns${eventId ? `?eventId=${encodeURIComponent(eventId)}` : ""}`),
+      createCampaign: (draft) => client.post<DonationCampaign>("/fundraising/campaigns", draft),
+      getPublicCampaign: async (token) => {
+        try { return await publicRequest<PublicDonationCampaign>(`/public/donations/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      createDonationCheckout: (token, draft) => publicRequest<DonationCheckoutResult>(`/public/donations/${token}/checkout`, { method: "POST", body: JSON.stringify(draft) }),
+      getDonationStatus: async (token, donationId) => {
+        try { return await publicRequest<PublicDonationStatus>(`/public/donations/${token}/status/${encodeURIComponent(donationId)}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      getPublicCertificate: async (token) => {
+        try { return await publicRequest<PublicExperienceCertificate>(`/public/certificates/${token}`); }
+        catch (error) { if (error instanceof DataError && error.code === "not-found") return null; throw error; }
+      },
+      previewBroadcast: (eventId, draft) => client.post<{ recipients: number }>(`/events/${eventId}/fundraising-broadcasts/preview`, draft),
+      sendBroadcast: (eventId, draft) => client.post<{ recipients: number; sent: number; failed: number }>(`/events/${eventId}/fundraising-broadcasts/send`, draft),
+      recordLiveSale: (eventId, itemId, paddleNumbers, amountCents) => client.post<{ winners: number }>(`/events/${eventId}/auction/${itemId}/live-sale`, { paddleNumbers, amountCents }),
+      undoLiveSale: (eventId, itemId) => client.post<{ reopened: true }>(`/events/${eventId}/auction/${itemId}/undo-sale`),
+      reports: (eventId) => client.get<FundraisingReports>(`/events/${eventId}/fundraising-reports`),
+      sendYearEndStatements: (taxYear) => client.post<{ sent: number; failed: number }>("/fundraising/year-end-statements/send", { taxYear }),
     },
 
     assistant: {
@@ -302,6 +420,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       },
     },
 
+    vendorEventPackets: {
+      send: (eventId, draft) => client.post<VendorEventPacketResult>(`/events/${eventId}/vendor-packets`, draft),
+    },
+
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
     checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
@@ -317,7 +439,74 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     budget: eventScoped<BudgetItem, never, never>(client, "budget") as DataAdapter["budget"],
     menu: eventScoped<MenuItem, never, never>(client, "menu") as DataAdapter["menu"],
     moodBoard: eventScoped<MoodBoardImage, never, never>(client, "mood-board") as DataAdapter["moodBoard"],
-    auction: eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"],
+    auction: {
+      ...(eventScoped<AuctionItem, never, never>(client, "auction") as DataAdapter["auction"]),
+      listDonors: (eventId) => client.get<AuctionDonor[]>(`/events/${eventId}/auction-donors`),
+      createDonor: (eventId, draft) => client.post<AuctionDonor>(`/events/${eventId}/auction-donors`, draft),
+      updateDonor: (eventId, donorId, patch) => client.patch<AuctionDonor>(`/events/${eventId}/auction-donors/${donorId}`, patch),
+      removeDonor: async (eventId, donorId) => {
+        await client.del(`/events/${eventId}/auction-donors/${donorId}`);
+      },
+      sendDonorThankYou: (eventId, donorId) => client.post<AuctionDonor>(`/events/${eventId}/auction-donors/${donorId}/thank-you`),
+      share: (eventId) => client.post<{ auctionPublicToken: string }>(`/events/${eventId}/auction-share`),
+      updateSettings: (eventId, settings) => client.patch<AuctionPageSettings>(`/events/${eventId}/auction-settings`, settings),
+      publishItem: (eventId, itemId, published) => client.post<AuctionItem>(`/events/${eventId}/auction/${itemId}/publish`, { published }),
+      listBidders: (eventId) => client.get<AuctionBidder[]>(`/events/${eventId}/auction-bidders`),
+      listBids: (eventId) => client.get<AuctionBid[]>(`/events/${eventId}/auction-bids`),
+      getPublic: async (token) => {
+        try {
+          return await publicRequest<PublicAuctionPayload>(`/public/auctions/${token}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      registerPublic: (token, draft) => publicRequest<AuctionBidder>(`/public/auctions/${token}/bidders`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }),
+      placePublicBid: (token, bidderToken, itemId, maximumAmountCents) =>
+        publicRequest<PublicAuctionBidResult>(`/public/auctions/${token}/bidders/${bidderToken}/items/${itemId}/bids`, {
+          method: "POST",
+          body: JSON.stringify({ maximumAmountCents }),
+        }),
+      uploadImage: async (file) => {
+        const form = new FormData();
+        form.set("file", file);
+        return (await client.upload<{ url: string }>("/uploads/auction-image", form)).url;
+      },
+      getPublicDonor: async (token) => {
+        try {
+          return await publicRequest<PublicAuctionDonorPayload>(`/public/auction-donors/${token}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      uploadPublicDonorImage: async (token, file) =>
+        (await publicUpload<{ url: string }>(`/public/auction-donors/${token}/upload`, file)).url,
+      submitPublicDonation: (token, draft) =>
+        publicRequest<PublicAuctionDonorPayload>(`/public/auction-donors/${token}/donations`, {
+          method: "POST",
+          body: JSON.stringify(draft),
+        }),
+      closeItem: (eventId, itemId) => client.post<{ status: "closed-no-bids" | "winner-notified"; paymentUrl: string | null }>(`/events/${eventId}/auction/${itemId}/close`),
+      offerSecondChance: (eventId, itemId) => client.post<{ status: "winner-notified"; paymentUrl: string | null }>(`/events/${eventId}/auction/${itemId}/second-chance`),
+      listOrders: (eventId) => client.get<AuctionOrder[]>(`/events/${eventId}/auction-orders`),
+      refundOrder: (eventId, orderId) => client.post<AuctionOrder>(`/events/${eventId}/auction-orders/${orderId}/refund`),
+      getBidderProfile: async (token, bidderToken) => {
+        try {
+          return await publicRequest<PublicBidderProfile>(`/public/auctions/${token}/bidders/${bidderToken}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      setupBidderWallet: (token, bidderToken) => publicRequest<{ url: string }>(`/public/auctions/${token}/bidders/${bidderToken}/wallet`, { method: "POST" }),
+      setWatch: (token, bidderToken, itemId, watched) => publicRequest<{ watched: boolean }>(`/public/auctions/${token}/bidders/${bidderToken}/watches/${itemId}`, { method: "POST", body: JSON.stringify({ watched }) }),
+      createPledge: (token, bidderToken, amountCents, channel) => publicRequest<FundraisingPledge>(`/public/auctions/${token}/bidders/${bidderToken}/pledges`, { method: "POST", body: JSON.stringify({ amountCents, channel }) }),
+      buyNow: (token, bidderToken, itemId) => publicRequest<{ won: true; amountCents: number }>(`/public/auctions/${token}/bidders/${bidderToken}/items/${itemId}/buy-now`, { method: "POST" }),
+    },
     sponsorships: eventScoped<Sponsorship, never, never>(client, "sponsorships") as DataAdapter["sponsorships"],
 
     // `list` returns each RFP with its responses attached, matching the memory adapter,
@@ -342,6 +531,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     deposits: eventScoped<Deposit, never, never>(client, "deposits") as DataAdapter["deposits"],
+    vendorPaymentPlans: eventScoped<VendorPaymentPlan, never, never>(client, "vendor-payment-plans") as DataAdapter["vendorPaymentPlans"],
     teamHours: eventScoped<TeamHoursEntry, never, never>(client, "team-hours") as DataAdapter["teamHours"],
     teamUpdates: {
       list: (eventId) => client.get<TeamUpdate[]>(`/events/${eventId}/updates`),
@@ -351,8 +541,35 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     tickets: {
       ...(eventScoped<TicketType, never, never>(client, "ticket-types") as DataAdapter["tickets"]),
       listAll: () => client.get<TicketTypeWithEvent[]>("/tickets"),
-      purchase: async () => {
-        throw new DataError("unavailable", "Ticket checkout isn't connected yet.");
+      purchase: (shareToken, ticketTypeId, buyer) =>
+        publicRequest<TicketCheckoutResult>(`/public/events/${shareToken}/tickets/checkout`, {
+          method: "POST",
+          body: JSON.stringify({
+            ticketTypeId,
+            buyerName: buyer.name,
+            buyerEmail: buyer.contact,
+            buyerPhone: buyer.phone,
+            gradeTags: buyer.grades ?? [],
+            quantity: buyer.quantity,
+            guestNames: buyer.guestNames ?? [],
+            donationAddOnCents: buyer.donationAddOnCents ?? 0,
+            benefitsDeclined: buyer.benefitsDeclined === true,
+            autoChargeOptIn: buyer.autoChargeOptIn === true,
+          }),
+        }),
+      listOrders: (eventId) => client.get<TicketOrder[]>(`/events/${eventId}/ticket-orders`),
+      refundOrder: (eventId, orderId) =>
+        client.post<TicketOrder>(`/events/${eventId}/ticket-orders/${orderId}/refund`),
+      listInvitations: (eventId) => client.get<TicketInvitation[]>(`/events/${eventId}/ticket-invitations`),
+      sendInvitations: (eventId, recipients, options) =>
+        client.post<TicketInvitationBatchResult>(`/events/${eventId}/ticket-invitations`, { recipients, consentConfirmed: options.consentConfirmed, testOnly: options.testOnly === true }),
+      getPublicOrderStatus: async (shareToken, orderId) => {
+        try {
+          return await publicRequest<PublicTicketOrderStatus>(`/public/events/${shareToken}/ticket-orders/${orderId}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
       },
     },
 
@@ -391,6 +608,15 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       list: (eventId) => client.get<Floorplan[]>(`/events/${eventId}/floorplans`),
       create: (eventId, draft) => client.post<Floorplan>(`/events/${eventId}/floorplans`, draft),
       save: (id, draft) => client.put<Floorplan>(`/floorplans/${id}`, draft),
+      share: (eventId, id) => client.post<{ shareToken: string }>(`/events/${eventId}/floorplans/${id}/share`),
+      getPublic: async (shareToken) => {
+        try {
+          return await publicRequest<PublicFloorplanPayload>(`/public/floorplans/${shareToken}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
       remove: async (id) => {
         await client.del(`/floorplans/${id}`);
       },
@@ -402,7 +628,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       revokeInvite: async (email) => {
         await client.del(`/invites/${encodeURIComponent(email)}`);
       },
-      setRole: (userId, role) => client.patch<WorkspaceMember>(`/members/${userId}`, { role }),
+      setRole: (userId, role, changeId) => client.patch<MemberRoleChangeResult>(`/members/${userId}`, { role, changeId }),
       remove: async (userId) => {
         await client.del(`/members/${userId}`);
       },

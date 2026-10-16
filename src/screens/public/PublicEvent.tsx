@@ -8,7 +8,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
-import { CalendarDays, Check, ExternalLink, HeartHandshake, MapPin, Ticket, Users } from "lucide-react";
+import { CalendarDays, Check, ExternalLink, Gavel, HeartHandshake, MapPin, Minus, Plus, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,10 +16,11 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { BrandLogo } from "@/components/BrandLogo";
-import { useEventByShareToken, usePublicRegistration, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
+import { useEventByShareToken, usePublicRegistration, usePublicTicketOrderStatus, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
-import type { Event, PublicRegistrationResult } from "@/data/entities";
+import { SCHOOL_GRADES, type Event, type PublicRegistrationResult, type SchoolGrade } from "@/data/entities";
+import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
@@ -132,6 +133,8 @@ export function PublicEventPage({ token }: { token: string }) {
   }
   if (!event) return <EventNotFound />;
   const registrationPage = normalizeRegistrationPage(event.registrationPage);
+  const auctionPage = normalizeAuctionPageSettings(event.auctionPage);
+  const bidderExperienceOpen = Boolean(event.auctionPublicToken) && (auctionPage.registrationOpen || auctionPage.catalogPublished);
 
   const maxScheduledDay = Math.max(1, ...(agenda ?? []).map((cue) => cue.dayNumber));
   const eventDays = eventDayOptions(event.date, event.endDate, timeZone, maxScheduledDay);
@@ -180,6 +183,22 @@ export function PublicEventPage({ token }: { token: string }) {
                 <a href={registrationPage.paymentUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="mr-1.5 size-4" />Continue to payment
                 </a>
+              </Button>
+            </div>
+          </Panel>
+        ) : null}
+
+        {bidderExperienceOpen && event.auctionPublicToken ? (
+          <Panel className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{auctionPage.catalogPublished ? "Auction and mobile bidding" : "Bidder registration is open"}</p>
+                <p className="text-xs text-muted-foreground">{auctionPage.catalogPublished ? "Browse auction items, save favorites, get a paddle, and bid from your phone." : "Get your paddle now. Auction items will appear here when the organizer publishes the catalog."}</p>
+              </div>
+              <Button asChild>
+                <Link href={`/auction/${event.auctionPublicToken}`}>
+                  <Gavel className="mr-1.5 size-4" />{auctionPage.catalogPublished ? "Open auction" : "Get a bidder paddle"}
+                </Link>
               </Button>
             </div>
           </Panel>
@@ -261,7 +280,7 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !selectedSegment) return <EventNotFound />;
   if (result) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><p className="mt-3 text-sm text-muted-foreground">{result.confirmationEmailStatus === "sent" ? `A confirmation email was sent to ${email.trim()}.` : `Your place is confirmed, but we could not send the confirmation email to ${email.trim()}. Please save this event link.`}</p><div className="mt-4 flex flex-wrap justify-center gap-2">{settings.paymentUrl ? <Button asChild size="sm"><a href={settings.paymentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Continue to payment</a></Button> : null}<Button asChild variant="outline" size="sm"><Link href={`/e/${token}`}>Back to the event</Link></Button></div></Panel></PublicFrame>;
-  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment } }, { onSuccess: setResult, onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Organization<Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Optional" /></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
+  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment } }, { onSuccess: setResult, onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Company, school, or organization <span className="font-normal text-muted-foreground">(optional)</span><Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Example: Cedar Grove School or Acme Inc." /><span className="block text-xs font-normal text-muted-foreground">This helps the event organizer understand who you are attending with. Leave it blank if it does not apply.</span></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
 }
 
 export function PublicVolunteerSignupPage({ token }: { token: string }) {
@@ -337,7 +356,20 @@ export function PublicTicketsPage({ token }: { token: string }) {
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
+  const [grades, setGrades] = useState<SchoolGrade[]>([]);
+  const [guestNames, setGuestNames] = useState<string[]>([""]);
+  const [donationAddOn, setDonationAddOn] = useState("");
+  const [benefitsDeclined, setBenefitsDeclined] = useState(false);
+  const [autoChargeOptIn, setAutoChargeOptIn] = useState(false);
   const [done, setDone] = useState(false);
+  const [freeOrderId, setFreeOrderId] = useState<string | null>(null);
+  const checkoutOrderId = typeof window === "undefined"
+    ? null
+    : new URLSearchParams(window.location.search).get("checkout") === "success"
+      ? new URLSearchParams(window.location.search).get("order")
+      : null;
+  const { data: checkoutOrder, isLoading: checkoutOrderLoading } = usePublicTicketOrderStatus(token, checkoutOrderId ?? freeOrderId);
 
   const onSale = useMemo(
     () => (tickets ?? []).filter((ticket) => ticket.isActive),
@@ -345,6 +377,26 @@ export function PublicTicketsPage({ token }: { token: string }) {
   );
   const chosen = onSale.find((ticket) => ticket.id === selected) ?? null;
   const remaining = chosen === null ? null : chosen.quantityTotal === 0 ? null : chosen.quantityTotal - chosen.quantitySold;
+  const chosenSoldOut = chosen !== null && remaining !== null && remaining <= 0;
+  const maxPerOrder = chosen?.maxPerOrder ?? 10;
+  const quantityLimit = chosen ? Math.max(1, Math.min(remaining ?? maxPerOrder, maxPerOrder)) : 1;
+  const quantityHelp = chosenSoldOut
+    ? "This ticket option is sold out. Choose another available option."
+    : chosen && remaining !== null && remaining <= quantity
+    ? remaining === 1
+      ? "Only 1 ticket remains for this option, so another guest cannot be added."
+      : `This order includes all ${remaining} remaining tickets for this option.`
+    : chosen && quantity >= maxPerOrder
+      ? `This ticket option allows up to ${maxPerOrder} tickets per order.`
+      : "Use + to add a spouse or guest, then enter each person's full name below.";
+  const changeQuantity = (requested: number) => {
+    const nextQuantity = Math.max(1, Math.min(requested, quantityLimit));
+    setQuantity(nextQuantity);
+    setGuestNames((current) => Array.from(
+      { length: nextQuantity },
+      (_, index) => current[index] ?? (index === 0 ? name : ""),
+    ));
+  };
 
   if (isLoading) {
     return (
@@ -355,7 +407,8 @@ export function PublicTicketsPage({ token }: { token: string }) {
   }
   if (!event) return <EventNotFound />;
 
-  if (done) {
+  if (done || checkoutOrder?.registrationConfirmed) {
+    const confirmedQuantity = checkoutOrder?.quantity ?? quantity;
     return (
       <PublicFrame event={event}>
         <Panel className="p-8 text-center">
@@ -364,11 +417,35 @@ export function PublicTicketsPage({ token }: { token: string }) {
           </span>
           <h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {quantity} {quantity === 1 ? "ticket" : "tickets"} for {event.title}. A confirmation goes to {contact}.
+            Your {confirmedQuantity === 1 ? "ticket is" : `${confirmedQuantity} tickets are`} confirmed for {event.title}.
+            {contact ? ` A confirmation goes to ${contact}.` : checkoutOrder?.buyerEmailMasked ? ` A receipt is on its way to ${checkoutOrder.buyerEmailMasked}.` : " A receipt is on its way to the buyer's email."}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-4">
             <Link href={`/e/${token}`}>Back to the event</Link>
           </Button>
+          {checkoutOrder?.auctionAccessUrl ? <Button className="ml-2 mt-4" onClick={() => window.location.assign(checkoutOrder.auctionAccessUrl!)}>Open auction and view paddle</Button> : null}
+        </Panel>
+      </PublicFrame>
+    );
+  }
+
+  if (checkoutOrderId) {
+    const failed = !checkoutOrderLoading && (!checkoutOrder || ["failed", "refunded"].includes(checkoutOrder.status));
+    return (
+      <PublicFrame event={event}>
+        <Panel className="p-8 text-center">
+          <span className={`mx-auto grid size-11 place-items-center rounded-xl ${failed ? "bg-danger-tint text-danger-text" : "bg-primary-muted text-primary"}`}>
+            <Ticket className="size-5" aria-hidden="true" />
+          </span>
+          <h1 className="mt-3 text-lg font-semibold text-foreground">{failed ? "Payment was not completed" : "Confirming your registration"}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {failed
+              ? "No registration was created. Return to the ticket page when you are ready to try again."
+              : checkoutOrderLoading || checkoutOrder?.status === "pending"
+                ? "Stripe is confirming the payment. This page updates automatically and will show your ticket only after the signed payment confirmation arrives."
+                : "We are finishing the guest registration now. This page updates automatically."}
+          </p>
+          {failed ? <Button className="mt-4" onClick={() => window.location.assign(`/e/${token}/tickets`)}>Return to tickets</Button> : null}
         </Panel>
       </PublicFrame>
     );
@@ -393,24 +470,47 @@ export function PublicTicketsPage({ token }: { token: string }) {
             className="space-y-6"
             onSubmit={(formEvent) => {
               formEvent.preventDefault();
-              if (!chosen || !name.trim() || !contact.trim()) return;
+              if (!chosen || !name.trim() || !contact.trim() || phone.replace(/\D/g, "").length < 10) {
+                toast({ title: "Add your mobile number", description: "A mobile number is required for auction access and event updates." });
+                return;
+              }
+              const names = chosen.collectGuestNames
+                ? Array.from({ length: quantity }, (_, index) => (guestNames[index] || (index === 0 ? name : "")).trim())
+                : [name.trim()];
+              if (chosen.collectGuestNames && names.some((guestName) => !guestName)) {
+                toast({ title: "Add every ticket holder", description: `Enter a full name for all ${quantity} tickets.` });
+                return;
+              }
+              const donationAddOnCents = donationAddOn.trim() ? Math.max(0, Math.round(Number(donationAddOn) * 100)) : 0;
               purchase.mutate(
                 {
                   shareToken: token,
                   ticketTypeId: chosen.id,
                   name: name.trim(),
                   contact: contact.trim(),
+                  phone: phone.trim(),
+                  grades,
                   quantity,
+                  guestNames: names,
+                  donationAddOnCents,
+                  benefitsDeclined,
+                  autoChargeOptIn,
                 },
                 {
-                  onSuccess: () => setDone(true),
+                  onSuccess: (result) => {
+                    if (result.checkoutUrl) window.location.assign(result.checkoutUrl);
+                    else {
+                      setFreeOrderId(result.orderId);
+                      setDone(true);
+                    }
+                  },
                   onError: (error) => toast({ title: "Couldn't complete", description: error.message }),
                 },
               );
             }}
           >
             <Panel>
-              <PanelHeader title="Choose a ticket" />
+              <PanelHeader title="Select a ticket option" description="Choose one option below. You will select the household quantity and enter every ticket holder next." />
               <ul className="divide-y divide-hairline">
                 {onSale.map((ticket) => {
                   const left = ticket.quantityTotal === 0 ? null : ticket.quantityTotal - ticket.quantitySold;
@@ -433,6 +533,7 @@ export function PublicTicketsPage({ token }: { token: string }) {
                           onChange={() => {
                             setSelected(ticket.id);
                             setQuantity(1);
+                            setGuestNames([name]);
                           }}
                           className="mt-1 size-4 accent-[hsl(var(--primary))]"
                         />
@@ -468,7 +569,14 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   <Input
                     id="buyer-name"
                     value={name}
-                    onChange={(inputEvent) => setName(inputEvent.target.value)}
+                    onChange={(inputEvent) => {
+                      const nextName = inputEvent.target.value;
+                      setGuestNames((current) => [
+                        !current[0] || current[0] === name ? nextName : current[0],
+                        ...current.slice(1),
+                      ]);
+                      setName(nextName);
+                    }}
                     required
                     autoComplete="name"
                   />
@@ -485,32 +593,80 @@ export function PublicTicketsPage({ token }: { token: string }) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="buyer-quantity">How many</Label>
-                  <Input
-                    id="buyer-quantity"
-                    type="number"
-                    min={1}
-                    max={remaining ?? undefined}
-                    value={quantity}
-                    onChange={(inputEvent) => setQuantity(Math.max(1, Number.parseInt(inputEvent.target.value, 10) || 1))}
-                  />
+                  <Label htmlFor="buyer-phone">Mobile phone</Label>
+                  <Input id="buyer-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required autoComplete="tel" placeholder="(408) 555-0123" />
+                  <p className="text-xs text-muted-foreground">Used for auction access and important event updates.</p>
+                </div>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">School connection (optional)</legend>
+                  <div className="flex flex-wrap gap-2">{SCHOOL_GRADES.map((grade) => <label key={grade} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs ${grades.includes(grade) ? "border-primary bg-primary-muted font-semibold" : "border-hairline bg-background"}`}><input type="checkbox" className="sr-only" checked={grades.includes(grade)} onChange={() => setGrades((current) => current.includes(grade) ? current.filter((item) => item !== grade) : current.length < 5 ? [...current, grade] : current)} />{grade}</label>)}</div>
+                  <p className="text-xs text-muted-foreground">Choose up to five grades or community groups.</p>
+                </fieldset>
+                <div className="space-y-1.5">
+                  <Label htmlFor="buyer-quantity">Number of tickets</Label>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="icon" variant="outline" aria-label="Remove one ticket" disabled={!chosen || quantity <= 1} onClick={() => changeQuantity(quantity - 1)}><Minus className="size-4" /></Button>
+                    <Input id="buyer-quantity" type="number" min={1} max={quantityLimit} value={quantity} onChange={(inputEvent) => changeQuantity(Number.parseInt(inputEvent.target.value, 10) || 1)} className="w-20 text-center font-semibold" />
+                    <Button type="button" size="icon" variant="outline" aria-label="Add one ticket" disabled={!chosen || quantity >= quantityLimit} onClick={() => changeQuantity(quantity + 1)}><Plus className="size-4" /></Button>
+                  </div>
+                  <p className={cn("text-xs", chosenSoldOut || (remaining !== null && remaining <= quantity) ? "text-warning-text" : "text-muted-foreground")}>{quantityHelp}</p>
                   {remaining !== null ? (
                     <p data-numeric className="text-xs text-muted-foreground">
                       {remaining} available
                     </p>
                   ) : null}
                 </div>
+                {chosen?.collectGuestNames ? (
+                  <div className="space-y-3 sm:col-span-2">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Ticket holder names</p>
+                      <p className="text-xs text-muted-foreground">Enter the full name that should appear on each guest record.</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {Array.from({ length: quantity }, (_, index) => (
+                        <div key={index} className="space-y-1.5">
+                          <Label htmlFor={`ticket-holder-${index}`}>Ticket {index + 1}</Label>
+                          <Input
+                            id={`ticket-holder-${index}`}
+                            value={guestNames[index] ?? (index === 0 ? name : "")}
+                            onChange={(inputEvent) => setGuestNames((current) => Array.from(
+                              { length: quantity },
+                              (_, guestIndex) => guestIndex === index
+                                ? inputEvent.target.value
+                                : current[guestIndex] ?? (guestIndex === 0 ? name : ""),
+                            ))}
+                            required
+                            autoComplete={index === 0 ? "name" : "off"}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {chosen ? (
+                  <div className="space-y-3 sm:col-span-2">
+                    {chosen.priceCents > 0 ? (
+                      <div className="rounded-lg bg-surface-sunken p-3 text-sm text-muted-foreground">
+                        <p><strong>Value of benefits:</strong> {formatMoney((chosen.fairMarketValueCents ?? 0) * quantity)}{chosen.benefitsDescription ? ` - ${chosen.benefitsDescription}` : ""}</p>
+                        <p><strong>Estimated deductible ticket portion:</strong> {formatMoney(benefitsDeclined ? chosen.priceCents * quantity : Math.max(0, (chosen.priceCents - (chosen.fairMarketValueCents ?? 0)) * quantity))}</p>
+                      </div>
+                    ) : null}
+                    <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={benefitsDeclined} onChange={(event) => setBenefitsDeclined(event.target.checked)} className="mt-1" /><span>I decline the meal, entertainment, or other ticket benefits. The organizer will treat the ticket payment as fully deductible where allowed.</span></label>
+                    <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={autoChargeOptIn} onChange={(event) => setAutoChargeOptIn(event.target.checked)} className="mt-1" /><span>If I bid or give, I authorize the organizer to charge this saved payment method for my combined event bill. My card will not be charged unless I win or give.</span></label>
+                    <div className="space-y-1.5"><Label htmlFor="ticket-donation-add-on">Add a fully deductible donation (optional)</Label><Input id="ticket-donation-add-on" inputMode="decimal" value={donationAddOn} onChange={(event) => setDonationAddOn(event.target.value)} placeholder="0.00" /></div>
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-5 py-4">
                 <p className="text-sm text-muted-foreground">
                   Total{" "}
                   <span data-numeric className="text-base font-semibold text-foreground">
-                    {chosen ? formatMoney(chosen.priceCents * quantity) : formatMoney(0)}
+                    {chosen ? formatMoney(chosen.priceCents * quantity + (Math.round(Number(donationAddOn || 0) * 100) || 0)) : formatMoney(0)}
                   </span>
                 </p>
-                <Button type="submit" disabled={!chosen || !name.trim() || !contact.trim() || purchase.isPending}>
+                <Button type="submit" disabled={!chosen || chosenSoldOut || !name.trim() || !contact.trim() || purchase.isPending}>
                   <Ticket className="mr-1.5 size-4" />
-                  Confirm
+                  {purchase.isPending ? "Reserving…" : chosen && chosen.priceCents > 0 ? "Continue to secure payment" : "Confirm registration"}
                 </Button>
               </div>
             </Panel>

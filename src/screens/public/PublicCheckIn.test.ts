@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PublicCheckInGuest } from "@/data/entities";
 import { PublicCheckInGuestActions } from "./PublicCheckIn";
+import { printBadgeBeforeCompletion } from "./printBadgeFlow";
 import { publicCheckInArrivalAction } from "./publicCheckInPolicy";
 
 const founder = {
@@ -23,6 +24,7 @@ function render(guest: PublicCheckInGuest) {
     savingId: null,
     removingId: null,
     onPrint: vi.fn(),
+    onEditBadge: vi.fn(),
     onSetCheckedIn: vi.fn(),
     onRemove: vi.fn(),
   }));
@@ -35,6 +37,7 @@ describe("PublicCheckInGuestActions", () => {
     expect(publicCheckInArrivalAction(founder)).toMatchObject({ label: "Check in", kind: "check-in" });
     expect(html).toContain("Check in");
     expect(html).toContain("Print badge");
+    expect(html).toContain("Edit badge");
     expect(html).not.toContain("Print badge &amp; check in");
   });
 
@@ -47,6 +50,7 @@ describe("PublicCheckInGuestActions", () => {
       kind: "badge-editor",
     });
     expect(html).toContain("Print badge &amp; check in");
+    expect(html).toContain("Edit badge");
   });
 
   it("keeps undo and reprint available after a founder is checked in", () => {
@@ -54,5 +58,33 @@ describe("PublicCheckInGuestActions", () => {
 
     expect(html).toContain("Reprint badge");
     expect(html).toContain("Undo");
+  });
+});
+
+describe("printBadgeBeforeCompletion", () => {
+  it("opens the browser print flow before waiting for check-in persistence", async () => {
+    const order: string[] = [];
+
+    await printBadgeBeforeCompletion(
+      () => {
+        order.push("print");
+        return true;
+      },
+      async () => { order.push("check-in"); },
+    );
+
+    expect(order).toEqual(["print", "check-in"]);
+  });
+
+  it("does not mark the guest checked in when the browser never starts printing", async () => {
+    const complete = vi.fn();
+
+    const started = await printBadgeBeforeCompletion(
+      () => false,
+      complete,
+    );
+
+    expect(started).toBe(false);
+    expect(complete).not.toHaveBeenCalled();
   });
 });

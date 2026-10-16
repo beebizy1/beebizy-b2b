@@ -1,5 +1,6 @@
 import type { TeamUpdateKind } from "../data/entities.ts";
 import { formatInZone, timeZoneLabel } from "../lib/datetime.ts";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 /**
  * Outbound email.
@@ -20,12 +21,23 @@ export type EmailOutcome = { status: "sent" } | { status: "skipped"; reason: str
 export interface EmailMessage {
   to: string;
   subject: string;
-  /** Plain text. No HTML template until there is a design worth templating. */
+  /** Plain-text alternative is required even when a branded HTML version is present. */
   text: string;
+  html?: string;
   /** A monitored address so the internal team can answer the person directly. */
   replyTo?: string | null;
   /** Stable business-event key. Resend uses it to collapse uncertain retries. */
   idempotencyKey?: string;
+  /** Customer-facing sender name while the verified Beebizy sending address remains unchanged. */
+  fromName?: string | null;
+  attachments?: Array<{ filename: string; content: string; content_type?: string }>;
+}
+
+function senderWithDisplayName(configuredFrom: string, displayName: string | null | undefined): string {
+  const safeName = displayName?.replace(/[\r\n<>"\\]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
+  if (!safeName) return configuredFrom;
+  const address = configuredFrom.match(/<([^<>]+)>\s*$/)?.[1] ?? configuredFrom;
+  return `${safeName} <${address.trim()}>`;
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
@@ -44,11 +56,13 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
         ...(message.idempotencyKey ? { "Idempotency-Key": message.idempotencyKey } : {}),
       },
       body: JSON.stringify({
-        from,
+        from: senderWithDisplayName(from, message.fromName),
         to: [message.to],
         subject: message.subject,
         text: message.text,
+        ...(message.html ? { html: message.html } : {}),
         ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -59,6 +73,473 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
   } catch (error) {
     return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function pdfSafeText(value: string): string {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "?");
+}
+
+function drawCenteredPdfText(page: PDFPage, font: PDFFont, text: string, y: number, size: number, color = rgb(0.09, 0.08, 0.04)): void {
+  const safe = pdfSafeText(text);
+  page.drawText(safe, { x: Math.max(36, (page.getWidth() - font.widthOfTextAtSize(safe, size)) / 2), y, size, font, color });
+}
+
+function drawCenteredWrappedPdfText(page: PDFPage, font: PDFFont, text: string, startY: number, size: number, maxWidth: number): number {
+  const words = pdfSafeText(text).split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  for (const word of words) {
+    const next = lines.length ? `${lines[lines.length - 1]} ${word}` : word;
+    if (lines.length && font.widthOfTextAtSize(next, size) > maxWidth) lines.push(word);
+    else if (lines.length) lines[lines.length - 1] = next;
+    else lines.push(word);
+  }
+  lines.slice(0, 3).forEach((line, index) => drawCenteredPdfText(page, font, line, startY - index * (size + 4), size, rgb(0.28, 0.28, 0.28)));
+  return startY - Math.min(lines.length, 3) * (size + 4);
+}
+
+async function experienceCertificatePdf(input: { organizationName: string; winnerName: string; eventTitle: string; itemTitle: string; deliveryDetails?: string | null; restrictions?: string | null; expiresAt?: string | null }): Promise<string> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([792, 612]);
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  page.drawRectangle({ x: 22, y: 22, width: 748, height: 568, borderColor: rgb(0.95, 0.75, 0), borderWidth: 5 });
+  drawCenteredPdfText(page, bold, input.organizationName, 535, 16, rgb(0.55, 0.42, 0));
+  drawCenteredPdfText(page, bold, "AUCTION EXPERIENCE CERTIFICATE", 475, 20);
+  drawCenteredPdfText(page, regular, "Presented to", 415, 16, rgb(0.35, 0.35, 0.35));
+  drawCenteredPdfText(page, bold, input.winnerName, 365, 34);
+  drawCenteredPdfText(page, regular, "for", 320, 16, rgb(0.35, 0.35, 0.35));
+  const itemSize = bold.widthOfTextAtSize(pdfSafeText(input.itemTitle), 28) > 700 ? 20 : 28;
+  drawCenteredPdfText(page, bold, input.itemTitle, 270, itemSize);
+  drawCenteredPdfText(page, regular, `Won at ${input.eventTitle}`, 220, 15, rgb(0.35, 0.35, 0.35));
+  let detailY = 185;
+  if (input.deliveryDetails) detailY = drawCenteredWrappedPdfText(page, regular, `Redemption: ${input.deliveryDetails}`, detailY, 11, 660);
+  if (input.restrictions) detailY = drawCenteredWrappedPdfText(page, regular, `Restrictions: ${input.restrictions}`, detailY - 2, 11, 660);
+  if (input.expiresAt) drawCenteredPdfText(page, bold, `Expires: ${new Date(input.expiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}`, Math.max(105, detailY - 2), 11, rgb(0.28, 0.28, 0.28));
+  drawCenteredPdfText(page, regular, `Issued by ${input.organizationName} - Powered by Beebizy`, 75, 11, rgb(0.4, 0.4, 0.4));
+  return Buffer.from(await document.save()).toString("base64");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
+function brandedEmail(input: {
+  title: string;
+  greeting: string;
+  paragraphs: string[];
+  details: Array<[string, string]>;
+  action?: { label: string; url: string };
+}): string {
+  const details = input.details.map(([label, value]) => `
+    <tr>
+      <th scope="row" style="padding:8px 12px;text-align:left;color:#665c35;font-size:14px;font-weight:600;vertical-align:top">${escapeHtml(label)}</th>
+      <td style="padding:8px 12px;color:#171717;font-size:14px">${escapeHtml(value)}</td>
+    </tr>`).join("");
+  return `<!doctype html>
+<html lang="en" dir="ltr">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(input.title)}</title></head>
+  <body lang="en" dir="ltr" style="margin:0;background:#fffaf0;color:#171717;font-family:Arial,sans-serif">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fffaf0;padding:24px 12px">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #eadfbc;border-radius:16px;overflow:hidden">
+          <tr><td style="background:#ffd700;padding:18px 24px;font-size:20px;font-weight:800">beebizy</td></tr>
+          <tr><td style="padding:28px 24px">
+            <h1 style="margin:0 0 18px;font-size:24px;line-height:1.25">${escapeHtml(input.title)}</h1>
+            <p style="margin:0 0 14px;font-size:16px;line-height:1.55">${escapeHtml(input.greeting)}</p>
+            ${input.paragraphs.map((paragraph) => `<p style="margin:0 0 14px;font-size:16px;line-height:1.55">${escapeHtml(paragraph)}</p>`).join("")}
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;background:#fffaf0;border-radius:10px">${details}</table>
+            ${input.action ? `<p style="margin:22px 0 0"><a href="${escapeHtml(input.action.url)}" style="display:inline-block;background:#17130a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700">${escapeHtml(input.action.label)}</a></p>` : ""}
+          </td></tr>
+          <tr><td style="padding:18px 24px;color:#665c35;font-size:13px;line-height:1.5">Questions? Reply to this email and the event team will help.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+/** A role update is not a new invitation. It intentionally contains no sign-in link. */
+export async function notifyWorkspaceRoleChanged(input: {
+  changeId: string;
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  to: string;
+  memberName: string;
+  newRole: "owner" | "admin" | "member";
+}): Promise<EmailOutcome> {
+  const role = `${input.newRole[0]!.toUpperCase()}${input.newRole.slice(1)}`;
+  const title = `Your Beebizy role changed to ${role}`;
+  const message = `Your role in Beebizy is now ${role}.`;
+  return sendEmail({
+    to: input.to,
+    fromName: input.workspaceName,
+    idempotencyKey: `workspace-role-change-${input.workspaceId}-${input.userId}-${input.newRole}-${input.changeId}`,
+    subject: title,
+    text: [`Hi ${input.memberName || "team member"},`, "", message].join("\n"),
+    html: brandedEmail({ title, greeting: `Hi ${input.memberName || "team member"},`, paragraphs: [message], details: [["Role", role]] }),
+  });
+}
+
+/** Operational event details sent privately to one booked vendor. */
+export async function notifyVendorEventPacket(input: {
+  requestId: string;
+  vendorId: string;
+  to: string;
+  vendorName: string;
+  senderName: string;
+  replyTo: string | null;
+  subject: string;
+  message: string;
+  eventTitle: string;
+  eventWhen: string;
+  eventLocation: string;
+  attachments: NonNullable<EmailMessage["attachments"]>;
+}): Promise<EmailOutcome> {
+  const attachmentSummary = input.attachments.length
+    ? `Attached: ${input.attachments.map((attachment) => attachment.filename).join(", ")}`
+    : "No documents are attached to this update.";
+  return sendEmail({
+    to: input.to,
+    fromName: input.senderName,
+    replyTo: input.replyTo,
+    idempotencyKey: `vendor-event-packet-${input.requestId}-${input.vendorId}`,
+    subject: emailSubjectPart(input.subject),
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      input.message,
+      "",
+      `Event: ${input.eventTitle}`,
+      `When: ${input.eventWhen}`,
+      `Location: ${input.eventLocation}`,
+      attachmentSummary,
+      "",
+      "Reply to this email if you have any questions for the event team.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: input.subject,
+      greeting: `Hi ${input.vendorName},`,
+      paragraphs: [input.message, attachmentSummary],
+      details: [["Event", input.eventTitle], ["When", input.eventWhen], ["Location", input.eventLocation]],
+    }),
+    attachments: input.attachments,
+  });
+}
+
+/** Sends one receipt after a free registration or confirmed Stripe payment. */
+export async function notifyTicketOrderConfirmation(input: {
+  orderId: string;
+  to: string;
+  buyerName: string;
+  eventTitle: string;
+  ticketName: string;
+  quantity: number;
+  amountCents: number;
+  applicationFeeCents: number;
+  startsAt: string;
+  timeZone: string;
+}): Promise<EmailOutcome> {
+  const when = formatInZone(input.startsAt, input.timeZone, "full");
+  const total = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
+  const subject = `Tickets confirmed - ${emailSubjectPart(input.eventTitle)}`;
+  const details: Array<[string, string]> = [
+    ["Event", input.eventTitle],
+    ["When", `${when} ${timeZoneLabel(input.timeZone, new Date(input.startsAt))}`],
+    ["Ticket", input.ticketName],
+    ["Quantity", String(input.quantity)],
+    ["Total paid", total],
+    ["Order", input.orderId],
+  ];
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `ticket-order-confirmation-${input.orderId}`,
+    subject,
+    text: [
+      `Hi ${input.buyerName},`,
+      "",
+      `Your tickets for ${input.eventTitle} are confirmed.`,
+      ...details.map(([label, value]) => `${label}: ${value}`),
+      "",
+      "Questions? Reply to this email and the event team will help.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Your tickets are confirmed",
+      greeting: `Hi ${input.buyerName},`,
+      paragraphs: [`Your tickets for ${input.eventTitle} are confirmed.`],
+      details,
+    }),
+  });
+  if (outcome.status !== "sent") {
+    console.warn("TICKET_CONFIRMATION_EMAIL_NOT_SENT", input.orderId, outcome.status, outcome.reason);
+  }
+  return outcome;
+}
+
+/** A direct invitation to a specific event, kept separate from promotional campaigns. */
+export async function notifyTicketInvitation(input: {
+  invitationId: string;
+  to: string;
+  recipientName: string;
+  eventTitle: string;
+  startsAt: string;
+  timeZone: string;
+  invitationUrl: string;
+  organizationName: string;
+  headline?: string;
+  welcomeMessage?: string;
+  designedHtml?: string;
+  deliveryAttemptKey?: string;
+}): Promise<EmailOutcome> {
+  const when = `${formatInZone(input.startsAt, input.timeZone, "full")} ${timeZoneLabel(input.timeZone, new Date(input.startsAt))}`;
+  const subject = `You're invited - ${emailSubjectPart(input.headline || input.eventTitle)}`;
+  const details: Array<[string, string]> = [["Event", input.eventTitle], ["When", when]];
+  const text = [
+    `Hi ${input.recipientName},`,
+    "",
+    input.welcomeMessage || `You are invited to ${input.eventTitle}.`,
+    `When: ${when}`,
+    "",
+    `View ticket options and RSVP: ${input.invitationUrl}`,
+    "",
+    `This invitation was sent by ${input.organizationName} using Beebizy. Questions? Reply to this email.`,
+  ].join("\n");
+  const html = input.designedHtml ?? brandedEmail({
+    title: `You're invited to ${input.eventTitle}`,
+    greeting: `Hi ${input.recipientName},`,
+    paragraphs: [`You are invited to ${input.eventTitle}.`],
+    details,
+    action: { label: "View tickets & RSVP", url: input.invitationUrl },
+  });
+  const outcome = await sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `ticket-invitation-${input.invitationId}${input.deliveryAttemptKey ? `-${input.deliveryAttemptKey}` : ""}`,
+    subject,
+    text,
+    html,
+    fromName: input.organizationName,
+  });
+  if (outcome.status !== "sent") {
+    console.warn("TICKET_INVITATION_EMAIL_NOT_SENT", input.invitationId, outcome.status, outcome.reason);
+  }
+  return outcome;
+}
+
+export async function notifyAuctionOutbid(input: {
+  bidId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  itemTitle: string;
+  currentBidCents: number;
+  auctionUrl: string;
+}): Promise<EmailOutcome> {
+  const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.currentBidCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-outbid-${input.bidId}-${input.to.toLowerCase()}`,
+    subject: `You've been outbid - ${emailSubjectPart(input.itemTitle)}`,
+    text: [
+      `Hi ${input.bidderName},`, "", `Another bidder is leading ${input.itemTitle} at ${amount}.`,
+      `Return to ${input.eventTitle}: ${input.auctionUrl}`,
+    ].join("\n"),
+    html: brandedEmail({
+      title: "You've been outbid",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [`Another bidder is leading ${input.itemTitle} at ${amount}.`],
+      details: [["Auction", input.eventTitle], ["Item", input.itemTitle], ["Current bid", amount]],
+      action: { label: "Return to the auction", url: input.auctionUrl },
+    }),
+  });
+}
+
+export async function notifyAuctionWinner(input: {
+  orderId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  itemTitle: string;
+  amountCents: number;
+  paymentUrl: string | null;
+}): Promise<EmailOutcome> {
+  const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-winner-${input.orderId}`,
+    subject: `You won ${emailSubjectPart(input.itemTitle)}`,
+    text: [
+      `Hi ${input.bidderName},`, "", `You won ${input.itemTitle} for ${amount} at ${input.eventTitle}.`,
+      input.paymentUrl ? `Complete payment securely: ${input.paymentUrl}` : "This item was added to your single end-of-night event bill.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "You won!",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [`You won ${input.itemTitle} at ${input.eventTitle}.`],
+      details: [["Winning item", input.itemTitle], ["Winning bid", amount]],
+      action: input.paymentUrl ? { label: "Complete secure payment", url: input.paymentUrl } : undefined,
+    }),
+  });
+}
+
+export async function notifyAuctionPaymentConfirmation(input: {
+  orderId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  itemTitle: string;
+  amountCents: number;
+  deliveryDetails: string | null;
+}): Promise<EmailOutcome> {
+  const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.amountCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-payment-confirmation-${input.orderId}`,
+    subject: `Payment confirmed - ${emailSubjectPart(input.itemTitle)}`,
+    text: [
+      `Hi ${input.bidderName},`, "", `Your ${amount} payment for ${input.itemTitle} is confirmed.`,
+      input.deliveryDetails ? `Fulfillment: ${input.deliveryDetails}` : "The event team will contact you about pickup or delivery.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Auction payment confirmed",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [
+        `Your ${amount} payment for ${input.itemTitle} at ${input.eventTitle} is confirmed.`,
+        input.deliveryDetails || "The event team will contact you about pickup or delivery.",
+      ],
+      details: [["Item", input.itemTitle], ["Amount paid", amount], ["Order", input.orderId]],
+    }),
+  });
+}
+
+export async function notifyAuctionDonorThankYou(input: {
+  donorId: string;
+  to: string;
+  contactName: string;
+  donorName: string;
+  eventTitle: string;
+  itemTitles: string[];
+  receivedDate: string;
+}): Promise<EmailOutcome> {
+  const itemSummary = input.itemTitles.length > 0 ? input.itemTitles.join(", ") : "your auction donation";
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-donor-thank-you-${input.donorId}`,
+    subject: `Thank you for supporting ${emailSubjectPart(input.eventTitle)}`,
+    text: [
+      `Hi ${input.contactName},`, "", `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
+      `Property received: ${itemSummary}`,
+      `Date received: ${input.receivedDate}`,
+      "No goods or services were provided in exchange for this donated property.",
+      "No dollar value is stated. The donor is responsible for valuing the contribution and should consult a tax professional about deductibility.",
+      "",
+      "Your contribution helps make this event possible.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Thank you for your auction donation",
+      greeting: `Hi ${input.contactName},`,
+      paragraphs: [
+        `Thank you to ${input.donorName} for supporting ${input.eventTitle}.`,
+        "No goods or services were provided in exchange for this donated property.",
+        "No dollar value is stated. The donor is responsible for valuing the contribution and should consult a tax professional about deductibility.",
+        "Your contribution helps make this event possible.",
+      ],
+      details: [["Event", input.eventTitle], ["Property received", itemSummary], ["Date received", input.receivedDate]],
+    }),
+  });
+}
+
+export async function notifyBidderBill(input: {
+  billId: string;
+  to: string;
+  bidderName: string;
+  eventTitle: string;
+  totalCents: number;
+  billUrl: string;
+}): Promise<EmailOutcome> {
+  const total = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.totalCents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `bidder-bill-${input.billId}`,
+    subject: `Your event bill - ${emailSubjectPart(input.eventTitle)}`,
+    text: [`Hi ${input.bidderName},`, "", `Your combined bill for ${input.eventTitle} is ${total}.`, `Review and pay: ${input.billUrl}`].join("\n"),
+    html: brandedEmail({
+      title: "Your combined event bill",
+      greeting: `Hi ${input.bidderName},`,
+      paragraphs: [`Your auction items and Fund-a-Need gifts for ${input.eventTitle} are together in one bill.`],
+      details: [["Total", total]],
+      action: { label: "Review and pay", url: input.billUrl },
+    }),
+  });
+}
+
+export async function notifyCombinedFundraisingReceipt(input: {
+  receiptId: string;
+  to: string;
+  payerName: string;
+  organizationName: string;
+  eventTitle: string;
+  receiptNumber: string;
+  amountCents: number;
+  deductibleCents: number;
+  receiptUrl: string;
+  corrected: boolean;
+}): Promise<EmailOutcome> {
+  const money = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `fundraising-receipt-${input.receiptId}`,
+    subject: `${input.corrected ? "Corrected receipt" : "Receipt"} ${input.receiptNumber} - ${emailSubjectPart(input.eventTitle)}`,
+    text: [
+      `Hi ${input.payerName},`, "", `${input.organizationName} issued ${input.corrected ? "a corrected" : "your"} receipt for ${input.eventTitle}.`,
+      `Amount paid: ${money(input.amountCents)}`, `Tax-deductible amount: ${money(input.deductibleCents)}`,
+      `View and download: ${input.receiptUrl}`,
+    ].join("\n"),
+    html: brandedEmail({
+      title: input.corrected ? "Corrected fundraising receipt" : "Your fundraising receipt",
+      greeting: `Hi ${input.payerName},`,
+      paragraphs: [`${input.organizationName} issued this receipt for ${input.eventTitle}.`],
+      details: [["Receipt", input.receiptNumber], ["Amount paid", money(input.amountCents)], ["Tax-deductible amount", money(input.deductibleCents)]],
+      action: { label: "View and download receipt", url: input.receiptUrl },
+    }),
+  });
+}
+
+export async function notifyExperienceCertificate(input: {
+  orderId: string;
+  to: string;
+  winnerName: string;
+  eventTitle: string;
+  itemTitle: string;
+  organizationName: string;
+  deliveryDetails?: string | null;
+  restrictions?: string | null;
+  expiresAt?: string | null;
+  certificateUrl: string;
+}): Promise<EmailOutcome> {
+  const pdf = await experienceCertificatePdf(input);
+  return sendEmail({
+    to: input.to,
+    replyTo: "hello@beebizy.com",
+    idempotencyKey: `auction-certificate-${input.orderId}`,
+    subject: `Your certificate - ${emailSubjectPart(input.itemTitle)}`,
+    text: `Hi ${input.winnerName},\n\nYour experience certificate for ${input.itemTitle} at ${input.eventTitle} is attached as a PDF.\n\nYou can also view it online: ${input.certificateUrl}`,
+    html: brandedEmail({ title: "Your auction certificate", greeting: `Hi ${input.winnerName},`, paragraphs: [`Your experience certificate for ${input.itemTitle} at ${input.eventTitle} is ready.`], details: [["Experience", input.itemTitle], ["Event", input.eventTitle]], action: { label: "View certificate", url: input.certificateUrl } }),
+    attachments: [{ filename: `${pdfSafeText(input.itemTitle).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 80) || "auction-experience"}-certificate.pdf`, content: pdf, content_type: "application/pdf" }],
+  });
 }
 
 const FEEDBACK_NOTIFICATION_EMAIL = "hello@beebizy.com";
@@ -119,6 +600,8 @@ export async function notifyRegistrationConfirmation(input: {
   timeZone: string;
   location: string | null;
   eventUrl: string;
+  auctionAccessUrl?: string | null;
+  paddleNumber?: number | null;
 }): Promise<EmailOutcome> {
   const start = formatInZone(input.startsAt, input.timeZone, "full");
   const end = input.endsAt ? formatInZone(input.endsAt, input.timeZone, "full") : null;
@@ -137,6 +620,7 @@ export async function notifyRegistrationConfirmation(input: {
       input.location ? `Where: ${input.location}` : null,
       "",
       `View the event: ${input.eventUrl}`,
+      input.auctionAccessUrl ? `Open your private bidder paddle${input.paddleNumber ? ` ${input.paddleNumber}` : ""}: ${input.auctionAccessUrl}` : null,
       "",
       "If you have questions, reply to this email and the Beebizy team will help.",
     ].filter((line): line is string => line !== null).join("\n"),

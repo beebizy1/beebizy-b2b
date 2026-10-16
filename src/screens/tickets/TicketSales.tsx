@@ -9,7 +9,8 @@
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Search, Ticket } from "lucide-react";
+import { CheckCircle2, CreditCard, ExternalLink, Search, Ticket } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,12 +25,16 @@ import {
 } from "@/components/primitives";
 import { usePreferences } from "@/app/preferences";
 import { formatMoney, sumCents } from "@/data/money";
-import { useAllTickets } from "@/data/hooks";
+import { useAllTickets, useMe, useStartStripeConnect, useStripeConnectStatus } from "@/data/hooks";
+import { toast } from "@/hooks/use-toast";
 
 export default function TicketSales() {
   const { date: formatDate } = usePreferences();
   const [search, setSearch] = useState("");
   const { data: tickets, isLoading, isError, error, refetch } = useAllTickets();
+  const { data: identity } = useMe();
+  const { data: connect, isLoading: connectLoading, isError: connectError, refetch: refetchConnect } = useStripeConnectStatus();
+  const startConnect = useStartStripeConnect();
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -47,6 +52,42 @@ export default function TicketSales() {
   return (
     <div className="space-y-6">
       <PageHeader title="Ticket Sales" description="Every ticket type across every event, and how it is selling." />
+
+      <Panel className="flex flex-wrap items-center gap-4 p-5">
+        <span className={`grid size-11 place-items-center rounded-xl ${connect?.ready ? "bg-success-tint text-success-text" : "bg-primary-muted text-primary"}`}>
+          {connect?.ready ? <CheckCircle2 className="size-5" aria-hidden="true" /> : <CreditCard className="size-5" aria-hidden="true" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">
+            {connect?.ready ? "Ticket payouts are ready" : "Connect ticket payouts"}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {connect?.ready
+              ? "Stripe sends ticket proceeds to your organization. Beebizy keeps exactly 2% of each paid order."
+              : connectError
+                ? "Payment status could not be checked."
+                : "Complete Stripe's secure setup before selling paid tickets. Free tickets work without it."}
+          </p>
+        </div>
+        {connectError ? (
+          <Button variant="outline" onClick={() => void refetchConnect()}>Retry</Button>
+        ) : !connect?.ready && identity?.role === "owner" ? (
+          <Button
+            disabled={connectLoading || startConnect.isPending}
+            onClick={() => startConnect.mutate(undefined, {
+              onSuccess: (status) => {
+                if (status.onboardingUrl) window.location.assign(status.onboardingUrl);
+              },
+              onError: (mutationError) => toast({ title: "Couldn't open Stripe setup", description: mutationError.message }),
+            })}
+          >
+            <ExternalLink className="mr-1.5 size-4" aria-hidden="true" />
+            {startConnect.isPending ? "Opening…" : connect?.accountId ? "Continue setup" : "Connect Stripe"}
+          </Button>
+        ) : !connect?.ready ? (
+          <span className="text-sm text-muted-foreground">A workspace owner must finish setup.</span>
+        ) : null}
+      </Panel>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatTile label="Tickets sold" value={String(sold)} icon={Ticket} />

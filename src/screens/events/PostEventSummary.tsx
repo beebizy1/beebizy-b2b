@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  Download,
   DollarSign,
   FileText,
   MapPin,
@@ -32,6 +33,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePreferences } from "@/app/preferences";
 import { formatMoney, sumCents } from "@/data/money";
+import { attendanceNamesCsv, buildUniqueAttendanceReport, type UniqueAttendeeRecord } from "@/data/attendanceReport";
 import {
   useBudget,
   useChecklist,
@@ -72,32 +74,33 @@ export default function PostEventSummary({ id }: { id: string }) {
     );
   }
 
-  const totalReg = (registrations ?? [])
-    .filter((row) => row.status !== "cancelled")
-    .reduce((total, row) => total + row.quantity, 0);
-  const confirmed = (registrations ?? [])
-    .filter((row) => row.status === "confirmed")
-    .reduce((total, row) => total + row.quantity, 0);
-  const arrived = (registrations ?? [])
-    .filter((row) => row.status === "confirmed" && row.checkedInAt !== null)
-    .reduce((total, row) => total + row.quantity, 0);
-  /*
-   * Only a confirmed registration can be a no-show.
-   *
-   * Someone who never RSVP'd was never expected through the door, and counting them as
-   * absent inflates the one number the organizer is trying to act on.
-   */
-  const noShows = Math.max(0, confirmed - arrived);
-  /*
-   * Attendance is reported only when the door was actually worked.
-   *
-   * This tile used to read "fill rate" and divide confirmed registrations by capacity,
-   * which answered "how many signed up" while being labelled as though it answered "how
-   * many came" - the exact number that hides a no-show problem. Attendance replaces it,
-   * but an event with no check-in records has no attendance truth: 0% would read as
-   * "nobody came" rather than "nobody scanned", so that case says so instead.
-   */
-  const attendanceRate = arrived > 0 && confirmed > 0 ? Math.round((arrived / confirmed) * 100) : null;
+  const attendance = buildUniqueAttendanceReport(registrations ?? []);
+  const { summary: attendanceSummary } = attendance;
+  const noShows = Math.max(0, attendanceSummary.uniqueRegistered - attendanceSummary.uniqueCheckedIn);
+  const attendanceRate = attendanceSummary.uniqueCheckedIn > 0 ? attendanceSummary.attendanceRate : null;
+
+  const countBy = (read: (row: UniqueAttendeeRecord) => string | null) =>
+    [...attendance.attendees.reduce((counts, row) => {
+      const label = read(row)?.trim() || "Not specified";
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>())]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  const guestTypes = countBy((row) => row.guestType);
+  const sources = countBy((row) => row.registrationSource);
+  const maxGuestType = Math.max(1, ...guestTypes.map(([, count]) => count));
+  const maxSource = Math.max(1, ...sources.map(([, count]) => count));
+
+  const downloadAttendanceCsv = () => {
+    const rows = attendance.attendees;
+    const url = URL.createObjectURL(new Blob([attendanceNamesCsv(rows)], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    const eventName = event.title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "event";
+    anchor.href = url;
+    anchor.download = `beebizy-${eventName}-unique-attendee-names.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   const expenses = (budget ?? []).filter((line) => line.type === "expense");
   const estimated = sumCents(expenses.map((line) => line.estimatedCents));
@@ -154,16 +157,21 @@ export default function PostEventSummary({ id }: { id: string }) {
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{event.description}</p>
             ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">Generated {formatDate(new Date(), "dayMonthYear")}</p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="button" size="sm" onClick={downloadAttendanceCsv} disabled={attendance.attendees.length === 0}>
+              <Download className="mr-1.5 size-3.5" />Download full names
+            </Button>
+            <p className="basis-full text-right text-xs text-muted-foreground">Generated {formatDate(new Date(), "dayMonthYear")}</p>
+          </div>
         </div>
       </header>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile
-          label="Registrations"
-          value={String(totalReg)}
+          label="Unique registrations"
+          value={String(attendanceSummary.uniqueRegistered)}
           icon={Users}
-          sublabel={event.capacity ? `of ${event.capacity} capacity` : undefined}
+          sublabel={`${attendanceSummary.registrationRows} registration rows`}
         />
         <StatTile
           label="Attended"
@@ -173,7 +181,7 @@ export default function PostEventSummary({ id }: { id: string }) {
           sublabel={
             attendanceRate === null
               ? "No check-in data"
-              : `${arrived} of ${confirmed} confirmed · ${noShows} no-show${noShows === 1 ? "" : "s"}`
+              : `${attendanceSummary.uniqueCheckedIn} unique attendees · ${noShows} no-show${noShows === 1 ? "" : "s"}`
           }
         />
         <StatTile
@@ -190,6 +198,69 @@ export default function PostEventSummary({ id }: { id: string }) {
           sublabel={revenue > 0 ? `${formatMoney(revenue)} revenue` : "Cost-only event"}
         />
       </div>
+
+      <Panel className="overflow-hidden">
+        <PanelHeader
+          title="Attendance dashboard"
+          description="Unique totals only. Repeated names are consolidated before these figures are calculated."
+        />
+        <div className="grid gap-px bg-hairline sm:grid-cols-2 lg:grid-cols-4">
+          <div className="bg-card px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unique attendees</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{attendanceSummary.uniqueCheckedIn}</p>
+            <p className="mt-1 text-xs text-muted-foreground">From {attendanceSummary.checkedInRows} check-in records</p>
+          </div>
+          <div className="bg-card px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">No-shows</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{noShows}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Registered but not checked in</p>
+          </div>
+          <div className="bg-card px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Duplicates consolidated</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{attendanceSummary.duplicateCheckedInRows}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Not counted twice in this dashboard</p>
+          </div>
+          <div className="bg-card px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attendance rate</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{attendanceRate === null ? "—" : `${attendanceRate}%`}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{noShows} registered people did not check in</p>
+          </div>
+        </div>
+        <div className="grid gap-6 border-t border-hairline p-5 lg:grid-cols-2">
+          <div>
+            <h2 className="text-sm font-bold text-foreground">Attendees by guest type</h2>
+            <div className="mt-4 space-y-3">
+              {guestTypes.map(([label, count]) => (
+                <div key={label}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                    <span className="font-medium text-foreground">{label}</span>
+                    <span className="tabular-nums text-muted-foreground">{count}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-sunken">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, (count / maxGuestType) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-foreground">Where attendance records came from</h2>
+            <div className="mt-4 space-y-3">
+              {sources.map(([label, count]) => (
+                <div key={label}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                    <span className="font-medium text-foreground">{label}</span>
+                    <span className="tabular-nums text-muted-foreground">{count}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-sunken">
+                    <div className="h-full rounded-full bg-info" style={{ width: `${Math.max(2, (count / maxSource) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Panel>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel className="overflow-hidden">

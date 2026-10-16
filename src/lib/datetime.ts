@@ -73,6 +73,20 @@ function parse(iso: string | Date | null | undefined): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+/** Formats an instant for `<input type="datetime-local">` in the browser's wall time. */
+export function toDateTimeLocalInput(iso: string | null | undefined): string {
+  const date = parse(iso);
+  if (!date) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function fromDateTimeLocalInput(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 /**
  * What the calendar in `timeZone` says on this instant.
  *

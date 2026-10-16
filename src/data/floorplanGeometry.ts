@@ -25,12 +25,33 @@ const CUSTOM_POINTS: FloorplanPoint[] = [
   { x: 4, y: 55 },
 ];
 
+/** A deliberately irregular starter polygon so a custom object reads as editable. */
+export const DEFAULT_CUSTOM_OBJECT_POINTS: FloorplanPoint[] = [
+  { x: 8, y: 18 },
+  { x: 72, y: 6 },
+  { x: 94, y: 42 },
+  { x: 78, y: 92 },
+  { x: 18, y: 84 },
+];
+
 export const DEFAULT_FLOORPLAN_ROOM: FloorplanRoom = {
   shape: "rectangle",
   widthFeet: 80,
   lengthFeet: 50,
   points: RECTANGLE_POINTS,
 };
+
+/** Shared selected-item overlay geometry so edit handles stay usable around the toolbar. */
+export const FLOORPLAN_ITEM_OVERLAY = {
+  toolbarGapPx: 18,
+  toolbarZIndex: 30,
+  cornerHandleZIndex: 40,
+} as const;
+
+export function floorplanItemToolbarPlacement(itemY: number): { top?: string; bottom?: string } {
+  const offset = `calc(100% + ${FLOORPLAN_ITEM_OVERLAY.toolbarGapPx}px)`;
+  return itemY < 15 ? { top: offset } : { bottom: offset };
+}
 
 export function roomPointsForShape(shape: FloorplanRoomShape): FloorplanPoint[] {
   if (shape === "l-shape") return L_SHAPE_POINTS.map((point) => ({ ...point }));
@@ -41,6 +62,40 @@ export function roomPointsForShape(shape: FloorplanRoomShape): FloorplanPoint[] 
 export function roomClipPath(room: FloorplanRoom): string {
   if (room.shape === "oval") return "ellipse(48% 48% at 50% 50%)";
   return `polygon(${room.points.map((point) => `${point.x}% ${point.y}%`).join(", ")})`;
+}
+
+/** Builds a closed, smooth SVG path through a set of custom-shape points. */
+export function smoothClosedPath(points: FloorplanPoint[]): string {
+  if (points.length < 3) return "";
+  const midpoint = (start: FloorplanPoint, end: FloorplanPoint) => ({
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  });
+  const last = points.at(-1)!;
+  const first = points[0]!;
+  const start = midpoint(last, first);
+  const commands = [`M ${start.x.toFixed(2)} ${start.y.toFixed(2)}`];
+
+  for (let index = 0; index < points.length; index += 1) {
+    const control = points[index]!;
+    const next = points[(index + 1) % points.length]!;
+    const end = midpoint(control, next);
+    commands.push(`Q ${control.x.toFixed(2)} ${control.y.toFixed(2)} ${end.x.toFixed(2)} ${end.y.toFixed(2)}`);
+  }
+  commands.push("Z");
+  return commands.join(" ");
+}
+
+/** Converts pointer movement around an object's center into a wrapped 0-359° rotation. */
+export function rotationFromPointerAngles(
+  startRotation: number,
+  startPointerAngle: number,
+  currentPointerAngle: number,
+): number {
+  let delta = currentPointerAngle - startPointerAngle;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return ((Math.round(startRotation + delta) % 360) + 360) % 360;
 }
 
 function pointInPolygon(points: FloorplanPoint[], x: number, y: number): boolean {

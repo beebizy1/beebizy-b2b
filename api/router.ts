@@ -23,8 +23,68 @@ import { feedbackDraftSchema, feedbackValidationMessage } from "../src/data/feed
 import { isBeebizyOperator } from "../src/lib/internalAccess.ts";
 import { effectivePlan, planHasCapability, type PlanCapability } from "../src/data/plans.ts";
 import { createCheckoutSession, createPortalSession, handleStripeWebhook } from "../src/server/billing.ts";
+import {
+  createPublicTicketCheckout,
+  createBidderWalletSetup,
+  createStripeConnectOnboarding,
+  getStripeConnectStatus,
+  listTicketOrders,
+  refundTicketOrder,
+  closeAuctionItem,
+  offerAuctionSecondChance,
+  settleDueAuctionItems,
+  listAuctionOrders,
+  refundAuctionOrder,
+  getPublicTicketOrderStatus,
+  buildBidderBills,
+  sendBidderBills,
+  publicBidderBill,
+  createBidderBillCheckout,
+  refundBidderBill,
+  publicFundraisingReceipt,
+  createDonationCheckout,
+  publicDonationStatus,
+  publicExperienceCertificate,
+  sendDueBidderBillReminders,
+} from "../src/server/commercePayments.ts";
+import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
+import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
 import { z, ZodError } from "zod";
+import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
+import {
+  createAuctionCategory,
+  extendAuctionItem,
+  extendAuctionItems,
+  reopenAuctionItem,
+  fundraisingDashboard,
+  getFundraisingOrganizationProfile,
+  listAuctionCategories,
+  listItemSubmissions,
+  mergeAuctionItems,
+  parseFundraisingBroadcastAudience,
+  publicItemIntake,
+  reinvitePastItemDonors,
+  submitPublicItem,
+  updateFundraisingOrganizationProfile,
+  updateItemSubmission,
+  publicBidderProfile,
+  toggleAuctionWatch,
+  createPublicPledge,
+  createDonationCampaign,
+  listDonationCampaigns,
+  publicDonationCampaign,
+  fundraisingReports,
+  previewFundraisingBroadcast,
+  sendFundraisingBroadcast,
+  sendDueClosingAlerts,
+  sendAllDueClosingAlerts,
+  sendDueYearEndStatements,
+  sendYearEndStatements,
+  recordLiveAuctionSale,
+  undoLiveAuctionSale,
+  buyNowAuctionItem,
+} from "../src/server/fundraisingUx.ts";
 
 export const config = { runtime: "nodejs", api: { bodyParser: false } };
 
@@ -211,6 +271,15 @@ async function handlePublic(segments: string[], method: string, request: Request
     return handleLead(request);
   }
 
+  if (segments[0] === "fundraising" && segments[1] === "maintenance") {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) return json({ error: "Fundraising maintenance is not configured." }, 503);
+    if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+    const [eventsChecked, reminders, yearEndStatements] = await Promise.all([sendAllDueClosingAlerts(), sendDueBidderBillReminders(), sendDueYearEndStatements()]);
+    return json({ ok: true, eventsChecked, reminders, yearEndStatements });
+  }
+
   if (segments[0] === "billing" && segments[1] === "webhook") {
     if (method !== "POST") return json({ error: "Method not allowed" }, 405);
     return json(await handleStripeWebhook(request));
@@ -220,6 +289,21 @@ async function handlePublic(segments: string[], method: string, request: Request
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "POST") {
     if (segments[3] === "registrations") return json(await repos.publicRegistration(segments[2], await readBody(request)), 201);
     if (segments[3] === "volunteers") return json(await repos.publicVolunteerSignup(segments[2], await readBody(request)), 201);
+    if (segments[3] === "tickets" && segments[4] === "checkout") {
+      const input = z.object({
+        ticketTypeId: z.string().min(1).max(100),
+        buyerName: z.string().trim().min(1).max(160),
+        buyerEmail: z.string().trim().email().max(320),
+        buyerPhone: z.string().trim().min(10).max(40),
+        gradeTags: z.array(z.enum(["TK", "K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "Alumni", "Faculty/Staff", "Friend of school"])).max(5).default([]),
+        quantity: z.number().int().min(1).max(100),
+        guestNames: z.array(z.string().trim().min(1).max(160)).max(100),
+        donationAddOnCents: z.number().int().min(0).max(10_000_000).default(0),
+        benefitsDeclined: z.boolean().default(false),
+        autoChargeOptIn: z.boolean().default(false),
+      }).parse(await readBody(request));
+      return json(await createPublicTicketCheckout(segments[2], input, request), 201);
+    }
   }
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "GET" && !segments[3]) {
     const shared = await eventByShareToken(segments[2]);
@@ -235,6 +319,153 @@ async function handlePublic(segments: string[], method: string, request: Request
     // bids are not in this payload at all, rather than filtered out in the client. The
     // agenda and tickets ride along because the guest has no session to fetch them with.
     return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
+  }
+  if (segments[0] === "public" && segments[1] === "floorplans" && segments[2] && method === "GET") {
+    const shared = await repos.publicFloorplan(segments[2]);
+    return shared ? json(shared) : json({ error: "This floorplan link is no longer active." }, 404);
+  }
+  if (
+    segments[0] === "public" && segments[1] === "events" && segments[2] &&
+    segments[3] === "ticket-orders" && segments[4] && method === "GET"
+  ) {
+    const status = await getPublicTicketOrderStatus(segments[2], segments[4]);
+    return status ? json(status) : json({ error: "This ticket order is not available." }, 404);
+  }
+
+  if (segments[0] === "public" && segments[1] === "attendance" && segments[2] && segments.length === 3) {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const dashboard = await repos.publicAttendanceDashboard(segments[2]);
+    return dashboard ? json(dashboard) : json({ error: "This attendance dashboard link is no longer active." }, 404);
+  }
+
+  if (segments[0] === "public" && segments[1] === "auctions" && segments[2]) {
+    if (segments[3] === "intake" && segments.length === 4 && method === "GET") {
+      const intake = await publicItemIntake(segments[2], new URL(request.url).searchParams.get("prior"));
+      return intake ? json(intake) : json({ error: "This donation link is no longer active." }, 404);
+    }
+    if (segments[3] === "intake" && segments.length === 4 && method === "POST") {
+      return json(await submitPublicItem(segments[2], await readBody(request) as never), 201);
+    }
+    if (segments[3] === "intake" && segments[4] === "upload" && segments.length === 5 && method === "POST") {
+      if (!await publicItemIntake(segments[2])) return json({ error: "This donation link is no longer active." }, 404);
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Auction image storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
+      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB each.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
+      const blob = await put(`auction/intake/${segments[2]}/${safeName}`, file, { access: "public", addRandomSuffix: true, contentType: file.type });
+      return json({ url: blob.url });
+    }
+    if (method === "GET" && segments.length === 3) {
+      await sendDueClosingAlerts(segments[2]);
+      await settleDueAuctionItems(segments[2], request);
+      const auction = await repos.publicAuction(segments[2]);
+      return auction ? json(auction) : json({ error: "This auction link is no longer active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "bidders" && segments.length === 4) {
+      return json(await repos.registerPublicAuctionBidder(segments[2], await readBody(request)), 201);
+    }
+    if (segments[3] === "bidders" && segments[4] && segments.length === 5 && method === "GET") {
+      const bidder = await publicBidderProfile(segments[2], segments[4]);
+      return bidder ? json(bidder) : json({ error: "This bidder registration is not available." }, 404);
+    }
+    if (segments[3] === "bidders" && segments[4] && segments[5] === "wallet" && segments.length === 6 && method === "POST") {
+      return json(await createBidderWalletSetup(segments[2], segments[4], request), 201);
+    }
+    if (segments[3] === "bidders" && segments[4] && segments[5] === "watches" && segments[6] && segments.length === 7 && method === "POST") {
+      const body = await readBody(request);
+      return json(await toggleAuctionWatch(segments[2], segments[4], segments[6], body.watched !== false));
+    }
+    if (segments[3] === "bidders" && segments[4] && segments[5] === "pledges" && segments.length === 6 && method === "POST") {
+      const body = await readBody(request);
+      return json(await createPublicPledge(
+        segments[2], segments[4], Number(body.amountCents ?? 0), body.channel === "in_room" ? "in_room" : "remote",
+      ), 201);
+    }
+    if (
+      method === "POST" && segments[3] === "bidders" && segments[4] &&
+      segments[5] === "items" && segments[6] && segments[7] === "bids" && segments.length === 8
+    ) {
+      const body = await readBody(request);
+      if (typeof body.maximumAmountCents !== "number") throw new HttpError(400, "maximumAmountCents is required.");
+      return json(await repos.placePublicAuctionBid(
+        segments[2],
+        segments[4],
+        segments[6],
+        body.maximumAmountCents,
+      ), 201);
+    }
+    if (method === "POST" && segments[3] === "bidders" && segments[4] && segments[5] === "items" && segments[6] && segments[7] === "buy-now" && segments.length === 8) {
+      return json(await buyNowAuctionItem(segments[2], segments[4], segments[6]), 201);
+    }
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  if (segments[0] === "public" && segments[1] === "auction-donors" && segments[2]) {
+    const donor = await repos.publicAuctionDonor(segments[2]);
+    if (!donor) return json({ error: "This donation link is no longer active." }, 404);
+    if (method === "GET" && segments.length === 3) return json(donor);
+    if (method === "POST" && segments[3] === "donations" && segments.length === 4) {
+      return json(await repos.submitPublicAuctionDonation(segments[2], await readBody(request)), 201);
+    }
+    if (method === "POST" && segments[3] === "upload" && segments.length === 4) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Auction image storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
+      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
+      const blob = await put(`auction/donors/${segments[2]}/${safeName}`, file, {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: file.type,
+      });
+      return json({ url: blob.url });
+    }
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  if (segments[0] === "public" && segments[1] === "ticket-invitations" && segments[2] && segments.length === 3) {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const location = await openTicketInvitation(segments[2]);
+    return location
+      ? Response.redirect(new URL(location, request.url), 302)
+      : json({ error: "This invitation link is no longer active." }, 404);
+  }
+
+  if (segments[0] === "public" && segments[1] === "bills" && segments[2]) {
+    if (method === "GET" && segments.length === 3) {
+      const bill = await publicBidderBill(segments[2]);
+      return bill ? json(bill) : json({ error: "This bidder bill is not available." }, 404);
+    }
+    if (method === "POST" && segments[3] === "checkout" && segments.length === 4) {
+      const body = await readBody(request);
+      return json(await createBidderBillCheckout(segments[2], body.coverFees === true, request), 201);
+    }
+  }
+  if (segments[0] === "public" && segments[1] === "receipts" && segments[2] && segments.length === 3 && method === "GET") {
+    const receipt = await publicFundraisingReceipt(segments[2]);
+    return receipt ? json(receipt) : json({ error: "This receipt is not available." }, 404);
+  }
+  if (segments[0] === "public" && segments[1] === "certificates" && segments[2] && segments.length === 3 && method === "GET") {
+    const certificate = await publicExperienceCertificate(segments[2]);
+    return certificate ? json(certificate) : json({ error: "This certificate is not available." }, 404);
+  }
+  if (segments[0] === "public" && segments[1] === "donations" && segments[2]) {
+    if (method === "GET" && segments.length === 3) {
+      const campaign = await publicDonationCampaign(segments[2]);
+      return campaign ? json(campaign) : json({ error: "This donation campaign is not active." }, 404);
+    }
+    if (method === "POST" && segments[3] === "checkout" && segments.length === 4) {
+      return json(await createDonationCheckout(segments[2], await readBody(request) as never, request), 201);
+    }
+    if (method === "GET" && segments[3] === "status" && segments[4] && segments.length === 5) {
+      const status = await publicDonationStatus(segments[2], segments[4]);
+      return status ? json(status) : json({ error: "This donation is not available." }, 404);
+    }
   }
 
   if (segments[0] === "public" && segments[1] === "assignments" && segments[2]) {
@@ -385,7 +616,7 @@ async function handleAuthed(
   url: URL,
 ): Promise<Response> {
   const [resource, a, b, c] = segments;
-  const body = await readBody(request);
+  const body = resource === "uploads" ? {} : await readBody(request);
   requireScopedRoute(ctx, segments, method, body, url);
 
   switch (resource) {
@@ -406,6 +637,23 @@ async function handleAuthed(
       });
       }
 
+    case "uploads": {
+      if (a !== "auction-image" || method !== "POST") return notFound();
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Auction image storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
+      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
+      const blob = await put(`auction/${ctx.workspaceId}/${safeName}`, file, {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: file.type,
+      });
+      return json({ url: blob.url });
+    }
+
     /* ---------------------------------------------------------------- billing */
     case "billing": {
       if (a === "checkout" && method === "POST") {
@@ -413,6 +661,21 @@ async function handleAuthed(
         return json(await createCheckoutSession(ctx, "month", request));
       }
       if (a === "portal" && method === "POST") return json(await createPortalSession(ctx, request));
+      if (a === "connect" && method === "GET") return json(await getStripeConnectStatus(ctx));
+      if (a === "connect" && b === "onboarding" && method === "POST") {
+        return json(await createStripeConnectOnboarding(ctx, request, body.returnTo));
+      }
+      return notFound();
+    }
+
+    case "fundraising": {
+      if (a === "profile" && method === "GET") return json(await getFundraisingOrganizationProfile(ctx));
+      if (a === "profile" && method === "PATCH") return json(await updateFundraisingOrganizationProfile(ctx, body as never));
+      if (a === "categories" && method === "GET") return json(await listAuctionCategories(ctx.workspaceId));
+      if (a === "categories" && method === "POST") return json(await createAuctionCategory(ctx, String(body.name ?? "")), 201);
+      if (a === "campaigns" && method === "GET") return json(await listDonationCampaigns(ctx, typeof url.searchParams.get("eventId") === "string" ? url.searchParams.get("eventId")! : undefined));
+      if (a === "campaigns" && method === "POST") return json(await createDonationCampaign(ctx, body as never), 201);
+      if (a === "year-end-statements" && b === "send" && method === "POST") return json(await sendYearEndStatements(Number(body.taxYear), ctx.workspaceId));
       return notFound();
     }
 
@@ -535,6 +798,145 @@ async function handleAuthed(
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]
       if (a && b) {
+        if (b === "auction-donors") {
+          if (!c && method === "GET") return json(await repos.auctionDonors.list(ctx, a));
+          if (!c && method === "POST") return json(await repos.auctionDonors.create(ctx, a, body), 201);
+          if (c && segments[4] === "thank-you" && method === "POST") {
+            return json(await repos.auctionManagement.sendDonorThankYou(ctx, a, c));
+          }
+          if (c && method === "PATCH") return json(await repos.auctionDonors.update(ctx, a, c, body));
+          if (c && method === "DELETE") {
+            await repos.auctionDonors.remove(ctx, a, c);
+            return json({ ok: true });
+          }
+          return notFound();
+        }
+        if (b === "auction-share" && !c && method === "POST") {
+          return json(await repos.auctionManagement.share(ctx, a));
+        }
+        if (b === "auction-settings" && !c && method === "PATCH") {
+          return json(await repos.auctionManagement.updateSettings(ctx, a, body as never));
+        }
+        if (b === "auction-bidders" && !c && method === "GET") {
+          return json(await repos.auctionManagement.listBidders(ctx, a));
+        }
+        if (b === "auction-bids" && !c && method === "GET") {
+          return json(await repos.auctionManagement.listBids(ctx, a));
+        }
+        if (b === "auction-orders") {
+          if (!c && method === "GET") return json(await listAuctionOrders(ctx, a));
+          if (c && segments[4] === "refund" && method === "POST") {
+            return json(await refundAuctionOrder(ctx, a, c));
+          }
+          return notFound();
+        }
+        if (b === "item-submissions") {
+          if (!c && method === "GET") return json(await listItemSubmissions(ctx, a));
+          if (c && method === "PATCH") {
+            return json(await updateItemSubmission(ctx, a, c, {
+              status: String(body.status ?? "submitted") as never,
+              requestedChanges: typeof body.requestedChanges === "string" ? body.requestedChanges : null,
+            }));
+          }
+          return notFound();
+        }
+        if (b === "item-donor-reinvites" && !c && method === "POST") return json(await reinvitePastItemDonors(ctx, a));
+        if (b === "auction-packages" && !c && method === "POST") return json(await mergeAuctionItems(ctx, a, Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [], String(body.title ?? "")), 201);
+        if (b === "fundraising-dashboard" && !c && method === "GET") {
+          return json(await fundraisingDashboard(ctx, a));
+        }
+        if (b === "fundraising-reports" && !c && method === "GET") {
+          return json(await fundraisingReports(ctx, a));
+        }
+        if (b === "fundraising-broadcasts") {
+          if (c === "preview" && method === "POST") return json(await previewFundraisingBroadcast(ctx, a, {
+            audience: parseFundraisingBroadcastAudience(String(body.audience ?? "all")),
+            itemIds: Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [],
+          }));
+          if (c === "send" && method === "POST") return json(await sendFundraisingBroadcast(ctx, a, {
+            audience: parseFundraisingBroadcastAudience(String(body.audience ?? "all")),
+            itemIds: Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [],
+            channels: Array.isArray(body.channels) ? body.channels.filter((value): value is string => typeof value === "string") : ["email"],
+            message: String(body.message ?? ""),
+          }));
+          return notFound();
+        }
+        if (b === "bidder-bills") {
+          if (!c && method === "GET") return json(await buildBidderBills(ctx, a));
+          if (c === "build" && method === "POST") return json(await buildBidderBills(ctx, a));
+          if (c === "send" && method === "POST") return json(await sendBidderBills(ctx, a));
+          if (c && segments[4] === "refund" && method === "POST") return json(await refundBidderBill(ctx, a, c));
+          return notFound();
+        }
+        if (b === "auction" && c && segments[4] === "publish" && method === "POST") {
+          return json(await repos.auctionManagement.publishItem(ctx, a, c, body.published !== false));
+        }
+        if (b === "auction" && c && segments[4] === "close" && method === "POST") {
+          return json(await closeAuctionItem(ctx, a, c, request));
+        }
+        if (b === "auction" && c && segments[4] === "second-chance" && method === "POST") {
+          return json(await offerAuctionSecondChance(ctx, a, c, request));
+        }
+        if (b === "auction" && c && segments[4] === "extend" && method === "POST") {
+          return json(await extendAuctionItem(ctx, a, c, Number(body.minutes ?? 0), body.notify !== false));
+        }
+        if (b === "auction" && c === "extend-many" && method === "POST") {
+          return json(await extendAuctionItems(ctx, a, Array.isArray(body.itemIds) ? body.itemIds.filter((value): value is string => typeof value === "string") : [], Number(body.minutes ?? 0), body.notify !== false));
+        }
+        if (b === "auction" && c && segments[4] === "reopen" && method === "POST") {
+          return json(await reopenAuctionItem(ctx, a, c, Number(body.minutes ?? 5)));
+        }
+        if (b === "auction" && c && segments[4] === "live-sale" && method === "POST") {
+          return json(await recordLiveAuctionSale(
+            ctx,
+            a,
+            c,
+            Array.isArray(body.paddleNumbers) ? body.paddleNumbers.map(Number) : [],
+            Number(body.amountCents ?? 0),
+          ));
+        }
+        if (b === "auction" && c && segments[4] === "undo-sale" && method === "POST") {
+          return json(await undoLiveAuctionSale(ctx, a, c));
+        }
+        if (b === "ticket-orders") {
+          if (!c && method === "GET") return json(await listTicketOrders(ctx, a));
+          if (c && segments[4] === "refund" && method === "POST") {
+            return json(await refundTicketOrder(ctx, a, c));
+          }
+          return notFound();
+        }
+        if (b === "ticket-invitations") {
+          if (!c && method === "GET") return json(await listTicketInvitations(ctx, a));
+          if (!c && method === "POST") {
+            const input = z.object({
+              recipients: z.array(z.object({
+                name: z.string().trim().min(1).max(160),
+                email: z.string().trim().email().max(320),
+              })).min(1).max(500),
+              consentConfirmed: z.boolean(),
+              testOnly: z.boolean().optional().default(false),
+            }).parse(body);
+            return json(await sendTicketInvitations(ctx, a, input.recipients, input.consentConfirmed, request, input.testOnly), 201);
+          }
+          return notFound();
+        }
+        if (b === "vendor-packets" && !c && method === "POST") {
+          requireCapability(ctx, "vendorManagement");
+          const input = z.object({
+            vendorIds: z.array(z.string().trim().min(1).max(200)).max(200),
+            subject: z.string().trim().min(1).max(200),
+            message: z.string().trim().min(1).max(5_000),
+            includeRunOfShow: z.boolean(),
+            floorplanIds: z.array(z.string().trim().min(1).max(200)).max(20),
+            requestId: z.string().uuid(),
+            consentConfirmed: z.boolean(),
+            testEmail: z.string().trim().email().max(320).nullable().optional(),
+          }).refine((value) => Boolean(value.testEmail) || value.vendorIds.length > 0, {
+            message: "Choose at least one vendor.",
+            path: ["vendorIds"],
+          }).parse(body);
+          return json(await sendVendorEventPackets(ctx, a, input), 201);
+        }
         if (b === "rfps") {
           requireCapability(ctx, "vendorManagement");
           const action = segments[4];
@@ -584,6 +986,9 @@ async function handleAuthed(
         if (b === "floorplans" && !c && method === "POST") {
           const draft = readFloorplanDraft(body);
           return json(await repos.floorplan.create(ctx, a, draft), 201);
+        }
+        if (b === "floorplans" && c && segments[4] === "share" && method === "POST") {
+          return json(await repos.floorplan.share(ctx, a, c));
         }
         if (b === "roi" && method === "GET") return json(await repos.roi.get(ctx, a));
         if (b === "roi" && method === "PUT") return json(await repos.roi.save(ctx, a, body));
@@ -651,7 +1056,10 @@ async function handleAuthed(
     case "members": {
       if (!a && method === "GET") return json(await repos.members.list(ctx));
       requireCapability(ctx, "collaboration");
-      if (a && method === "PATCH") return json(await repos.members.setRole(ctx, a, String(body.role ?? "")));
+      if (a && method === "PATCH") {
+        const input = z.object({ role: z.enum(["owner", "admin", "member"]), changeId: z.string().uuid() }).parse(body);
+        return json(await repos.members.setRole(ctx, a, input.role, input.changeId));
+      }
       if (a && method === "DELETE") {
         await repos.members.remove(ctx, a);
         return new Response(null, { status: 204 });
@@ -816,6 +1224,7 @@ const eventChildren: Record<
   volunteers: repos.volunteers,
   budget: repos.budget,
   deposits: repos.deposits,
+  "vendor-payment-plans": repos.vendorPaymentPlans,
   menu: repos.menu,
   "mood-board": repos.moodBoard,
   auction: repos.auction,

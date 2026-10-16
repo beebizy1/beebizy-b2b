@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Gavel, Pencil, Plus, SkipForward, Trophy } from "lucide-react";
+import { ExternalLink, Gavel, Pencil, Plus, RotateCcw, SkipForward, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +29,7 @@ import { EmptyState, ErrorNotice, Panel, Pill, StatTile } from "@/components/pri
 import { usePreferences } from "@/app/preferences";
 import { centsFromInput, formatMoney, sumCents } from "@/data/money";
 import { bidIncrementCents } from "@/data/fundraising";
-import { useAddAuctionItem, useAuctionItems, useUpdateAuctionItem } from "@/data/hooks";
+import { useAddAuctionItem, useAuctionBidders, useAuctionBids, useAuctionItems, useRecordLiveAuctionSale, useUndoLiveAuctionSale, useUpdateAuctionItem } from "@/data/hooks";
 import type { AuctionItem, Event } from "@/data/entities";
 
 /** Lot order is the running order; unnumbered lots go last, oldest first. */
@@ -45,6 +45,10 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
   const { data: allLots, isLoading, isError, error, refetch } = useAuctionItems(event.id);
   const add = useAddAuctionItem();
   const update = useUpdateAuctionItem();
+  const { data: bidders } = useAuctionBidders(event.id);
+  const { data: bidHistory } = useAuctionBids(event.id);
+  const recordSale = useRecordLiveAuctionSale();
+  const undoSale = useUndoLiveAuctionSale();
 
   const [ask, setAsk] = useState<Record<string, number>>({});
   const [sold, setSold] = useState<{ item: AuctionItem; winner: string; amount: string } | null>(null);
@@ -66,6 +70,7 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
 
   const currentAsk = active ? (ask[active.id] ?? active.currentBidCents ?? active.startingBidCents ?? 0) : 0;
   const step = bidIncrementCents(currentAsk);
+  const activeRemoteBids = active ? (bidHistory ?? []).filter((bid) => bid.itemId === active.id && bid.channel !== "in_room").sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 6) : [];
 
   const bump = (delta: number) => {
     if (!active) return;
@@ -95,6 +100,7 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
             Run lots in order — open a lot, call bids, mark it sold.
           </p>
         </div>
+        {event.auctionPublicToken ? <Button asChild variant="outline"><a href={`/auction/${event.auctionPublicToken}/display`} target="_blank" rel="noreferrer"><ExternalLink className="mr-1.5 size-4" />Open projector display</a></Button> : null}
       </div>
 
       {lots.length > 0 ? (
@@ -134,7 +140,10 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
             {active.description ? (
               <p className="mt-1 text-sm text-muted-foreground">{active.description}</p>
             ) : null}
+            <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">{active.fairMarketValueCents != null ? <span data-numeric>Value {formatMoney(active.fairMarketValueCents)}</span> : null}{active.restrictions ? <span>Restrictions: {active.restrictions}</span> : null}{active.donorName ? <span>Donated by {active.donorName}</span> : null}</div>
           </div>
+
+          {activeRemoteBids.length > 0 ? <div className="rounded-xl border border-primary/20 bg-background p-3"><p className="text-xs font-bold uppercase tracking-wide text-primary-text">Remote bids</p><ul className="mt-2 space-y-2">{activeRemoteBids.map((remoteBid) => { const remoteBidder = (bidders ?? []).find((candidate) => candidate.id === remoteBid.bidderId); return <li key={remoteBid.id} className="flex items-center justify-between text-sm"><span data-numeric>Remote: Paddle {remoteBidder?.paddleNumber ?? "-"} · {remoteBidder?.name ?? "Bidder"}</span><strong data-numeric>{formatMoney(remoteBid.amountCents)}</strong></li>; })}</ul></div> : null}
 
           <div className="flex flex-wrap items-center gap-3">
             <div>
@@ -226,6 +235,7 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
                     {lot.status === "won" ? formatMoney(lot.currentBidCents) : "—"}
                   </span>
                   <Pill tone={lot.status === "won" ? "success" : "neutral"}>{lot.status}</Pill>
+                  {lot.status === "won" ? <Button size="sm" variant="outline" disabled={undoSale.isPending} onClick={() => undoSale.mutate({ eventId: event.id, itemId: lot.id }, { onSuccess: () => toast({ title: "Last sale undone and lot reopened" }), onError: (error) => toast({ title: "Couldn't undo sale", description: error.message }) })}><RotateCcw className="mr-1.5 size-3.5" />Undo</Button> : null}
                 </div>
               </li>
             ))}
@@ -293,15 +303,16 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
 
           <div className="space-y-4 py-1">
             <div className="space-y-1.5">
-              <Label htmlFor="sold-winner">Winner name</Label>
+              <Label htmlFor="sold-winner">Winning paddle number(s)</Label>
               <Input
                 id="sold-winner"
                 value={sold?.winner ?? ""}
                 onChange={(inputEvent) =>
                   setSold((current) => (current ? { ...current, winner: inputEvent.target.value } : current))
                 }
-                placeholder="Priya Raghunathan"
+                placeholder="214 or 214, 305, 411"
               />
+              {sold?.winner.trim() ? <p className="text-xs text-muted-foreground">{sold.winner.split(",").map((value) => Number(value.trim())).filter(Number.isFinite).map((paddle) => { const bidder = (bidders ?? []).find((candidate) => candidate.paddleNumber === paddle); return bidder ? `Paddle ${paddle}: ${bidder.name}` : `Paddle ${paddle}: not found`; }).join(" · ")}</p> : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="sold-amount">Winning bid</Label>
@@ -324,10 +335,8 @@ export default function LiveAuctionPanel({ event }: { event: Event }) {
               disabled={!sold?.winner.trim() || centsFromInput(sold?.amount ?? "") == null}
               onClick={() => {
                 if (!sold) return;
-                settle(sold.item, "won", {
-                  winnerName: sold.winner.trim(),
-                  currentBidCents: centsFromInput(sold.amount),
-                });
+                const paddleNumbers = sold.winner.split(",").map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0);
+                recordSale.mutate({ eventId: event.id, itemId: sold.item.id, paddleNumbers, amountCents: centsFromInput(sold.amount)! }, { onSuccess: (result) => toast({ title: `${result.winners} winner${result.winners === 1 ? "" : "s"} recorded` }), onError: (error) => toast({ title: "Couldn't record sale", description: error.message }) });
                 setSold(null);
               }}
             >

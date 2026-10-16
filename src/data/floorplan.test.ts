@@ -4,7 +4,7 @@ import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
   it("supports Santa Clara site features and individual seating", () => {
-    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row"]));
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row", "image", "text"]));
   });
 
   it("calculates usable square footage for rectangular, oval and traced rooms", () => {
@@ -51,6 +51,66 @@ describe("parseFloorplanDraft", () => {
     expect(parseFloorplanDraft({ name: "Main room", items: [item] }).items[0]).toEqual(item);
   });
 
+  it("preserves rotation and editable corners for custom objects", () => {
+    const item = {
+      id: "custom-1",
+      shape: "custom-shape" as const,
+      label: "Curved exhibit wall",
+      x: 50,
+      y: 50,
+      seats: null,
+      width: 30,
+      height: 18,
+      rotation: 45,
+      customShapeMode: "curved" as const,
+      points: [
+        { x: 5, y: 10 },
+        { x: 95, y: 5 },
+        { x: 80, y: 90 },
+        { x: 15, y: 80 },
+      ],
+    };
+    expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("preserves uploaded floorplan images and their rotation", () => {
+    const item = {
+      id: "image-1",
+      shape: "image" as const,
+      label: "Sponsor logo",
+      x: 50,
+      y: 50,
+      seats: null,
+      width: 24,
+      height: 18,
+      rotation: 90,
+      imageUrl: "https://example.com/sponsor-logo.png",
+    };
+
+    expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("preserves standalone floorplan text and its rotation", () => {
+    const item = {
+      id: "text-1",
+      shape: "text" as const,
+      label: "Silent auction",
+      x: 50,
+      y: 20,
+      seats: null,
+      width: 28,
+      height: 8,
+      rotation: 15,
+    };
+
+    expect(parseFloorplanDraft({ name: "Expo", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("requires an uploaded image URL for image objects", () => {
+    const item = { id: "image-1", shape: "image", label: "Logo", x: 42, y: 58, seats: null };
+    expect(() => parseFloorplanDraft({ name: "Expo", items: [item] })).toThrow(/image URL/i);
+  });
+
   it("validates and preserves physical room dimensions and a custom outline", () => {
     const room = {
       shape: "custom" as const,
@@ -86,10 +146,33 @@ describe("parseFloorplanDraft", () => {
     { field: "seats", value: 1.5 },
     { field: "width", value: 101 },
     { field: "height", value: 0 },
+    { field: "rotation", value: 360 },
   ])("rejects an invalid $field", ({ field, value }) => {
     const item = { id: "table-1", shape: "round-table", label: "Table 1", x: 42, y: 58, seats: 10 };
     expect(() =>
       parseFloorplanDraft({ name: "Ballroom", items: [{ ...item, [field]: value }] }),
     ).toThrow();
+  });
+
+  it("requires a polygon for custom objects", () => {
+    const item = { id: "custom-1", shape: "custom-shape", label: "Wall", x: 42, y: 58, seats: null };
+    expect(() => parseFloorplanDraft({ name: "Expo", items: [item] })).toThrow(/corner points/i);
+  });
+
+  it("allows detailed freehand outlines but keeps editable corner shapes manageable", () => {
+    const points = Array.from({ length: 100 }, (_, index) => ({
+      x: index % 100,
+      y: (index * 3) % 100,
+    }));
+    const item = { id: "custom-1", shape: "custom-shape", label: "Sketch", x: 42, y: 58, seats: null, points };
+
+    expect(() => parseFloorplanDraft({
+      name: "Expo",
+      items: [{ ...item, customShapeMode: "freehand" }],
+    })).not.toThrow();
+    expect(() => parseFloorplanDraft({
+      name: "Expo",
+      items: [{ ...item, customShapeMode: "curved" }],
+    })).toThrow(/24 editable corners/i);
   });
 });

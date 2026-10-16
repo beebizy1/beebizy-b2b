@@ -13,6 +13,7 @@ import {
   useAddCheckInStation,
   useAddChecklistItem,
   useAddDeposit,
+  useAddVendorPaymentPlan,
   useAddMenuItem,
   useAddMoodBoardImage,
   useAddRaffleItem,
@@ -31,6 +32,8 @@ import {
   useAddVolunteerNeed,
   useLoadGoogleSheet,
   usePostTeamUpdate,
+  useUpdateVendorPaymentPlan,
+  useVendorPaymentPlans,
 } from "@/data/hooks";
 import {
   buildEventImportPlan,
@@ -175,6 +178,9 @@ export default function SpreadsheetImporter({
   const addSponsorship = useAddSponsorship();
   const addRfp = useAddRfp();
   const addDeposit = useAddDeposit();
+  const addVendorPaymentPlan = useAddVendorPaymentPlan();
+  const updateVendorPaymentPlan = useUpdateVendorPaymentPlan();
+  const paymentPlansQuery = useVendorPaymentPlans(existingEvent?.id ?? "");
   const addTeamHours = useAddTeamHours();
   const postTeamUpdate = usePostTeamUpdate();
   const createFloorplan = useCreateFloorplan();
@@ -228,6 +234,14 @@ export default function SpreadsheetImporter({
     setIsCreating(true);
     try {
       const created = existingEvent ?? await createEvent.mutateAsync(plan.event);
+      const existingPaymentPlans = existingEvent
+        ? (paymentPlansQuery.data ?? (await paymentPlansQuery.refetch()).data ?? [])
+        : [];
+      const depositGroups = new Map<string, typeof plan.deposits>();
+      for (const deposit of plan.deposits) {
+        const key = deposit.vendorName.trim().toLocaleLowerCase();
+        depositGroups.set(key, [...(depositGroups.get(key) ?? []), deposit]);
+      }
       const writes: Array<() => Promise<unknown>> = [
         ...plan.budget.map((draft) => () => addBudget.mutateAsync({ eventId: created.id, draft })),
         ...plan.checklist.map((draft) => () => addChecklist.mutateAsync({ eventId: created.id, draft })),
@@ -256,7 +270,18 @@ export default function SpreadsheetImporter({
         ...plan.raffle.map((draft) => () => addRaffleItem.mutateAsync({ eventId: created.id, draft })),
         ...plan.sponsorships.map((draft) => () => addSponsorship.mutateAsync({ eventId: created.id, draft })),
         ...plan.rfps.map((draft) => () => addRfp.mutateAsync({ eventId: created.id, draft })),
-        ...plan.deposits.map((draft) => () => addDeposit.mutateAsync({ eventId: created.id, draft })),
+        ...Array.from(depositGroups.values()).map((vendorDeposits) => async () => {
+          const source = vendorDeposits.find((deposit) => deposit.totalAmountCents != null && deposit.balanceDueDate);
+          if (!source || source.totalAmountCents == null || !source.balanceDueDate) {
+            const current = existingPaymentPlans?.find((candidate) => candidate.vendorName.trim().toLocaleLowerCase() === vendorDeposits[0]!.vendorName.trim().toLocaleLowerCase());
+            return Promise.all(vendorDeposits.map((draft) => addDeposit.mutateAsync({ eventId: created.id, draft: { ...draft, paymentPlanId: current?.id ?? null, vendorName: current?.vendorName ?? draft.vendorName } })));
+          }
+          const current = existingPaymentPlans?.find((candidate) => candidate.vendorName.trim().toLocaleLowerCase() === source.vendorName.trim().toLocaleLowerCase());
+          const paymentPlan = current
+            ? await updateVendorPaymentPlan.mutateAsync({ eventId: created.id, id: current.id, patch: { totalAmountCents: source.totalAmountCents, balanceDueDate: source.balanceDueDate } })
+            : await addVendorPaymentPlan.mutateAsync({ eventId: created.id, draft: { vendorName: source.vendorName, totalAmountCents: source.totalAmountCents, balanceDueDate: source.balanceDueDate } });
+          return Promise.all(vendorDeposits.map((draft) => addDeposit.mutateAsync({ eventId: created.id, draft: { ...draft, paymentPlanId: paymentPlan.id, vendorName: paymentPlan.vendorName } })));
+        }),
         ...plan.teamHours.map((draft) => () => addTeamHours.mutateAsync({ eventId: created.id, draft })),
         ...plan.teamUpdates.map((draft) => () => postTeamUpdate.mutateAsync({ eventId: created.id, draft })),
         ...plan.floorplans.map((draft) => () => createFloorplan.mutateAsync({ eventId: created.id, draft })),

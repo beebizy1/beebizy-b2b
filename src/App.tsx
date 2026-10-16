@@ -65,10 +65,20 @@ import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
 import FeedbackInbox from "@/screens/FeedbackInbox";
 import { PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
+import PublicAuctionPage from "@/screens/public/PublicAuction";
+import PublicAuctionDonationPage from "@/screens/public/PublicAuctionDonation";
+import PublicItemIntakePage from "@/screens/public/PublicItemIntake";
+import PublicBidderBillPage from "@/screens/public/PublicBidderBill";
+import PublicFundraisingReceiptPage from "@/screens/public/PublicFundraisingReceipt";
+import PublicExperienceCertificatePage from "@/screens/public/PublicExperienceCertificate";
+import PublicDonationCampaignPage from "@/screens/public/PublicDonationCampaign";
+import PublicAuctionDisplayPage from "@/screens/public/PublicAuctionDisplay";
 import PublicAssignment from "@/screens/public/PublicAssignment";
 import PublicCheckIn from "@/screens/public/PublicCheckIn";
 import PublicRfp from "@/screens/public/PublicRfp";
 import PublicVendorConversation from "@/screens/public/PublicVendorConversation";
+import PublicAttendanceDashboard from "@/screens/public/PublicAttendanceDashboard";
+import PublicFloorplan from "@/screens/public/PublicFloorplan";
 import { isDemoSession } from "@/app/demo";
 import { isPrivateBetaHost, privateBetaUrl } from "@/lib/privateBetaHost";
 import { INVITATION_ACCEPTANCE_PATH } from "@/lib/invitation";
@@ -191,11 +201,21 @@ function Routes() {
 
       {/* Guest-facing pages for a shared event. No session required. */}
       <Route path="/e/:token/tickets">{(params) => <PublicTicketsPage token={params.token} />}</Route>
+      <Route path="/auction/:token/display">{(params) => <PublicAuctionDisplayPage token={params.token} />}</Route>
+      <Route path="/auction/:token">{(params) => <PublicAuctionPage token={params.token} />}</Route>
+      <Route path="/donate/:token">{(params) => <PublicAuctionDonationPage token={params.token} />}</Route>
+      <Route path="/donate/event/:token">{(params) => <PublicItemIntakePage token={params.token} />}</Route>
+      <Route path="/bill/:token">{(params) => <PublicBidderBillPage token={params.token} />}</Route>
+      <Route path="/receipt/:token">{(params) => <PublicFundraisingReceiptPage token={params.token} />}</Route>
+      <Route path="/certificate/:token">{(params) => <PublicExperienceCertificatePage token={params.token} />}</Route>
+      <Route path="/give/:token">{(params) => <PublicDonationCampaignPage token={params.token} />}</Route>
       <Route path="/e/:token/register/:segment">{(params) => <PublicRegistrationPage token={params.token} segment={params.segment} />}</Route>
       <Route path="/e/:token/volunteer">{(params) => <PublicVolunteerSignupPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>
       <Route path="/assignment/:token">{(params) => <PublicAssignment token={params.token} />}</Route>
       <Route path="/check-in/:token">{(params) => <PublicCheckIn token={params.token} />}</Route>
+      <Route path="/attendance/:token">{(params) => <PublicAttendanceDashboard token={params.token} />}</Route>
+      <Route path="/floorplan/:token">{(params) => <PublicFloorplan token={params.token} />}</Route>
       <Route path="/rfp/:token">{(params) => <PublicRfp token={params.token} />}</Route>
       <Route path="/vendor-conversation/:token">{(params) => <PublicVendorConversation token={params.token} />}</Route>
 

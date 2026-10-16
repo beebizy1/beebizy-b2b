@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { ArrowLeft, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,12 +21,16 @@ import {
   useCreateEventFromTemplate,
   useEvent,
   useLocations,
+  useShareAuction,
   useTemplates,
   useUpdateEvent,
 } from "@/data/hooks";
 import { EVENT_CATEGORIES, EVENT_STATUSES, type EventDraft, type EventStatus } from "@/data/entities";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AccountExperience } from "@/data/accountExperience";
+import { eventDetailsReturnTarget, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
+import EventLaunchContextBar from "./EventLaunchContextBar";
+import { useEventLaunchProgress } from "./useEventLaunchProgress";
 
 const NO_VENUE = "__none__";
 const NO_TEMPLATE = "__blank__";
@@ -84,6 +88,7 @@ const EMPTY: FormState = {
 export default function EventForm({ id }: { id?: string }) {
   const isEdit = Boolean(id);
   const [, navigate] = useLocation();
+  const search = useSearch();
   const { experience, canSwitchExperience } = useAccountExperience();
   const { data: locations } = useLocations();
   const { data: templates } = useTemplates();
@@ -92,9 +97,16 @@ export default function EventForm({ id }: { id?: string }) {
   const createEvent = useCreateEvent();
   const createFromTemplate = useCreateEventFromTemplate();
   const updateEvent = useUpdateEvent();
+  const shareAuction = useShareAuction();
 
   const [form, setForm] = useState<FormState>(() => ({ ...EMPTY, experience }));
   const [touched, setTouched] = useState(false);
+  const [fundraiserHasAuction, setFundraiserHasAuction] = useState<boolean | null>(null);
+  const launchProgress = useEventLaunchProgress(existing);
+  const returnTarget = isEdit && id
+    ? eventDetailsReturnTarget(id, search)
+    : { href: "/app/events", label: "All events" as const };
+  const guidedLaunchEdit = isEdit && returnTarget.label === "Back to launch guide";
 
   useEffect(() => {
     if (!existing) return;
@@ -111,6 +123,7 @@ export default function EventForm({ id }: { id?: string }) {
       category: existing.category,
       templateId: NO_TEMPLATE,
     });
+    setFundraiserHasAuction(existing.category === "Fundraiser" && existing.auctionPublicToken ? true : null);
   }, [existing]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -133,7 +146,7 @@ export default function EventForm({ id }: { id?: string }) {
 
   const submit = () => {
     setTouched(true);
-    if (Object.keys(problems).length > 0) return;
+    if (Object.keys(problems).length > 0 || (form.category === "Fundraiser" && fundraiserHasAuction === null)) return;
 
     const startIso = fromLocalInput(form.start);
     if (!startIso) return;
@@ -155,9 +168,18 @@ export default function EventForm({ id }: { id?: string }) {
       updateEvent.mutate(
         { id, patch: draft },
         {
-          onSuccess: () => {
+          onSuccess: async () => {
+            if (form.category === "Fundraiser" && fundraiserHasAuction && !existing?.auctionPublicToken) {
+              try {
+                await shareAuction.mutateAsync(id);
+              } catch (linkError) {
+                toast({ title: "Event saved, but the donor link needs another try", description: linkError instanceof Error ? linkError.message : "Open Fundraising to create it." });
+              }
+            }
             toast({ title: "Saved", description: `“${draft.title}” is up to date.` });
-            navigate(`/app/events/${id}`);
+            navigate(form.category === "Fundraiser" && fundraiserHasAuction
+              ? `/app/events/${id}/fundraising?setup=auction`
+              : returnTarget.href);
           },
           onError: (mutationError) => toast({ title: "Couldn't save", description: mutationError.message }),
         },
@@ -165,9 +187,22 @@ export default function EventForm({ id }: { id?: string }) {
       return;
     }
 
-    const onCreated = (created: { id: string; title: string }) => {
-      toast({ title: "Event created", description: `“${created.title}” is ready to plan.` });
-      navigate(`/app/events/${created.id}`);
+    const onCreated = async (created: { id: string; title: string }) => {
+      const auctionSetup = form.category === "Fundraiser" && fundraiserHasAuction;
+      if (auctionSetup) {
+        try {
+          await shareAuction.mutateAsync(created.id);
+        } catch (linkError) {
+          toast({ title: "Event created, but the donor link needs another try", description: linkError instanceof Error ? linkError.message : "Open Fundraising to create it." });
+        }
+      }
+      toast({
+        title: "Event created",
+        description: auctionSetup
+          ? `Next, add auction items or copy the donor link for “${created.title}”.`
+          : `Next, build the invite list for “${created.title}”.`,
+      });
+      navigate(auctionSetup ? `/app/events/${created.id}/fundraising?setup=auction` : `/app/events/${created.id}/share`);
     };
 
     if (form.templateId !== NO_TEMPLATE) {
@@ -187,33 +222,52 @@ export default function EventForm({ id }: { id?: string }) {
     });
   };
 
-  const saving = createEvent.isPending || createFromTemplate.isPending || updateEvent.isPending;
+  const saving = createEvent.isPending || createFromTemplate.isPending || updateEvent.isPending || shareAuction.isPending;
   const showProblem = (key: keyof FormState) => (touched ? problems[key] : undefined);
+  const selectLaunchStep = (step: EventLaunchStepId) => {
+    if (!id || !launchProgress.unlocked[step]) return;
+    navigate(eventLaunchStepHref(id, step));
+  };
 
   if (isEdit && isLoading) return <LoadingRows rows={5} />;
   if (isEdit && isError) return <ErrorNotice error={error} title="Couldn't load this event" />;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <Link
-        href={isEdit && id ? `/app/events/${id}` : "/app/events"}
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden="true" />
-        {isEdit ? "Back to event" : "All events"}
-      </Link>
-
-      <PageHeader
-        title={isEdit ? (existing?.title ?? "Edit event") : "Plan an event"}
-        description={
-          isEdit
-            ? "Changes apply immediately. Moving the venue updates the event's venue snapshot."
-            : "Start blank, or from a template that brings its checklist, run of show and budget with it."
-        }
-      />
+      {guidedLaunchEdit && existing ? (
+        <EventLaunchContextBar
+          activeStep={1}
+          eventTitle={existing.title}
+          backHref={returnTarget.href}
+          completion={launchProgress.completion}
+          unlocked={launchProgress.unlocked}
+          onStepSelect={selectLaunchStep}
+        />
+      ) : (
+        <>
+          <Link
+            href={returnTarget.href}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            {returnTarget.label}
+          </Link>
+          <PageHeader
+            title={isEdit ? (existing?.title ?? "Edit event") : "Plan an event"}
+            description={
+              isEdit
+                ? "Changes apply immediately. Moving the venue updates the event's venue snapshot."
+                : "Start blank, or from a template that brings its checklist, run of show and budget with it."
+            }
+          />
+        </>
+      )}
 
       <Panel>
-        <PanelHeader title="Details" />
+        <PanelHeader
+          title={guidedLaunchEdit ? "Step 1. Event details" : "Details"}
+          description={guidedLaunchEdit ? "Set the basics, then save to return to the checklist and continue." : undefined}
+        />
         <form
           className="space-y-5 p-5"
           onSubmit={(formEvent) => {
@@ -335,7 +389,10 @@ export default function EventForm({ id }: { id?: string }) {
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="category">Category</Label>
-              <Select value={form.category} onValueChange={(value) => set("category", value)}>
+              <Select value={form.category} onValueChange={(value) => {
+                set("category", value);
+                if (value !== "Fundraiser") setFundraiserHasAuction(null);
+              }}>
                 <SelectTrigger id="category">
                   <SelectValue />
                 </SelectTrigger>
@@ -377,9 +434,21 @@ export default function EventForm({ id }: { id?: string }) {
             </div>
           </div>
 
+          {form.category === "Fundraiser" ? (
+            <fieldset className="rounded-xl border border-primary/25 bg-primary-muted/25 p-4">
+              <legend className="px-1 text-sm font-semibold text-foreground">Will this fundraiser include an auction?</legend>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">If yes, Beebizy will take you directly to auction setup after you save the event.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" variant={fundraiserHasAuction === true ? "default" : "outline"} onClick={() => setFundraiserHasAuction(true)}>Yes, set up an auction</Button>
+                <Button type="button" variant={fundraiserHasAuction === false ? "default" : "outline"} onClick={() => setFundraiserHasAuction(false)}>No auction</Button>
+              </div>
+              {touched && fundraiserHasAuction === null ? <p className="mt-2 text-xs text-danger-text">Choose whether this fundraiser includes an auction.</p> : null}
+            </fieldset>
+          ) : null}
+
           <div className="flex items-center justify-end gap-2 border-t border-hairline pt-4">
             <Button asChild variant="outline" type="button">
-              <Link href={isEdit && id ? `/app/events/${id}` : "/app/events"}>Cancel</Link>
+              <Link href={returnTarget.href}>Cancel</Link>
             </Button>
             <Button type="submit" disabled={saving}>
               <Save className="mr-1.5 size-4" />

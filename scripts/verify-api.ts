@@ -80,6 +80,10 @@ async function main() {
 
     /* --- A first-time user gets a workspace. */
     const aliceMe = await api(alice, "/me");
+    if (aliceMe.status === 403 && /does not have access/i.test(String(aliceMe.body?.error ?? ""))) {
+      check("uninvited users fail closed under the private-beta allowlist", true);
+      return;
+    }
     check(
       "first request bootstraps a workspace",
       aliceMe.status === 200 && Boolean(aliceMe.body.workspaceId) && aliceMe.body.role === "owner",

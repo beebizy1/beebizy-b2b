@@ -142,6 +142,42 @@
     max-width: 88mm;
     white-space: nowrap;
   }
+
+  .check-in-badge-connected {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 25mm;
+    align-items: center;
+    gap: 4mm;
+    width: 88mm;
+    max-width: 88mm;
+    transform: translateX(-11mm) rotate(90deg);
+  }
+
+  .check-in-badge-connected .check-in-badge-artwork {
+    width: auto;
+    max-width: 58mm;
+    transform: none;
+  }
+
+  .check-in-badge-connected .check-in-badge-line {
+    max-width: 58mm;
+  }
+
+  .check-in-badge-qr {
+    display: grid;
+    justify-items: center;
+    gap: 1mm;
+    color: #000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .check-in-badge-qr img {
+    width: 23mm;
+    height: 23mm;
+  }
 }
 
 .badge-name-preview {

@@ -70,6 +70,6 @@ describe("founder feedback regressions", () => {
     expect(safe.paymentUrl).toBe("https://payments.example.com/scu-demo-day");
     expect(unsafe.paymentUrl).toBeNull();
     expect(html).toContain("Continue to payment");
-    expect(html).toContain("Powered by Beebizy");
+    expect(html).toContain("using Beebizy");
   });
 });

@@ -16,6 +16,7 @@ import {
   ArrowUp,
   CalendarClock,
   Copy,
+  FileText,
   MailCheck,
   MapPin,
   Pencil,
@@ -84,6 +85,7 @@ import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
 import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel, selectedEventDay } from "@/data/eventDays";
 import { useAccountExperience } from "@/app/useAccountExperience";
+import { eventDetailsReturnTarget, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
@@ -100,6 +102,8 @@ import { ChecklistPanel, MoodBoardPanel, RunOfShowPanel } from "./sections/PlanS
 import { MenuPanel, VendorCoveragePanel, VendorsPanel } from "./sections/VendorsSection";
 import EventLiveUpdates from "./EventLiveUpdates";
 import EventSpreadsheetImportDialog from "./EventSpreadsheetImportDialog";
+import EventLaunchContextBar from "./EventLaunchContextBar";
+import { useEventLaunchProgress } from "./useEventLaunchProgress";
 import {
   AuctionPanel,
   BudgetPanel,
@@ -440,8 +444,8 @@ function WorkspaceHeader({
         All events
       </Link>
 
-      <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
-        <div className="min-w-0 space-y-3">
+      <div className="flex flex-col gap-5">
+        <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="display-md text-foreground">{event.title}</h1>
             <EventStatusBadge status={event.status} />
@@ -496,7 +500,7 @@ function WorkspaceHeader({
                 Edit
               </Link>
             </Button>
-            {experience === "standard" ? (
+            {experience === "standard" && active !== "share" ? (
               <Button asChild size="sm">
                 <Link href={eventSectionHref(event.id, "share")}>
                   <Share2 className="mr-1.5 size-3.5" />
@@ -505,21 +509,29 @@ function WorkspaceHeader({
               </Button>
             ) : null}
 
-            <EventSpreadsheetImportDialog event={event} />
+            {active === "share" ? <Button asChild variant="outline" size="sm"><Link href={`/app/events/${event.id}`}>Back to event workspace</Link></Button> : <>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/app/events/${event.id}/summary`}>
+                  <FileText className="mr-1.5 size-3.5" />
+                  Attendance dashboard
+                </Link>
+              </Button>
 
-            {canManageAccess ? <EventAccessDialog event={event} /> : null}
+              <EventSpreadsheetImportDialog event={event} />
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              title="Send one consolidated responsibility email to each assigned person"
-              disabled={sendAssignmentSummaries.isPending}
-              onClick={emailResponsibilities}
-            >
-              <MailCheck className="mr-1.5 size-3.5" />
-              {sendAssignmentSummaries.isPending ? "Sending..." : "Email assignments"}
-            </Button>
+              {canManageAccess ? <EventAccessDialog event={event} /> : null}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title="Send one consolidated responsibility email to each assigned person"
+                disabled={sendAssignmentSummaries.isPending}
+                onClick={emailResponsibilities}
+              >
+                <MailCheck className="mr-1.5 size-3.5" />
+                {sendAssignmentSummaries.isPending ? "Sending..." : "Email assignments"}
+              </Button>
 
             {experience === "standard" ? <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -584,6 +596,7 @@ function WorkspaceHeader({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            </>}
           </div>
         </div>
       </div>
@@ -591,7 +604,7 @@ function WorkspaceHeader({
       {health && experience === "standard" ? <RiskStrip health={health} eventId={event.id} /> : null}
       </div>
 
-      <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
+      {active !== "share" ? <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
         <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} />
         <div className="flex items-center gap-2 overflow-x-auto border-t border-hairline py-2" aria-label="Event days">
           {days.map((day) => (
@@ -613,7 +626,7 @@ function WorkspaceHeader({
           </Button>
           <span className="shrink-0 text-xs text-muted-foreground">Event-wide sections stay shared. Schedules and shifts follow the selected day.</span>
         </div>
-      </div>
+      </div> : null}
     </section>
   );
 }
@@ -712,14 +725,21 @@ function ContingencyWorkspace({ event }: { event: Event }) {
 }
 
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
+  const [, navigate] = useLocation();
   const search = useSearch();
   const { data: event, isLoading, isError, error, refetch } = useEvent(id);
+  const launchProgress = useEventLaunchProgress(event);
   const { data: health } = useEventHealth(id);
   const { data: identity } = useMe();
   const { experience } = useAccountExperience();
   const { timeZone } = usePreferences();
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
+  const returnTarget = eventDetailsReturnTarget(id, search);
+  const selectLaunchStep = (step: EventLaunchStepId) => {
+    if (!launchProgress.unlocked[step]) return;
+    navigate(eventLaunchStepHref(id, step));
+  };
 
   if (isLoading) {
     return (
@@ -765,18 +785,31 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
 
   const days = eventDayOptions(event.date, event.endDate, timeZone);
   const selectedDay = selectedEventDay(search, days);
+  const guidedInviteList = active === "registrations" && returnTarget.label === "Back to launch guide";
+  const launchWorkspace = active === "share";
 
   return (
-    <div className="space-y-6">
-      <WorkspaceHeader
-        event={event}
-        health={health}
-        active={active}
-        plan={plan}
-        experience={experience}
-        canManageAccess={identity?.role === "owner"}
-      />
-      <EventLiveUpdates event={event} />
+    <div className={cn("space-y-6", (guidedInviteList || launchWorkspace) && "mx-auto max-w-6xl")}>
+      {guidedInviteList ? (
+        <EventLaunchContextBar
+          activeStep={2}
+          eventTitle={event.title}
+          backHref={returnTarget.href}
+          completion={launchProgress.completion}
+          unlocked={launchProgress.unlocked}
+          onStepSelect={selectLaunchStep}
+        />
+      ) : !launchWorkspace ? (
+        <WorkspaceHeader
+          event={event}
+          health={health}
+          active={active}
+          plan={plan}
+          experience={experience}
+          canManageAccess={identity?.role === "owner"}
+        />
+      ) : null}
+      {!guidedInviteList && !launchWorkspace ? <EventLiveUpdates event={event} /> : null}
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}

@@ -3,8 +3,15 @@ import {
   notifyAssignmentSummary,
   notifyFeedbackSubmission,
   notifyRegistrationConfirmation,
+  notifyTicketOrderConfirmation,
+  notifyTicketInvitation,
+  notifyAuctionOutbid,
+  notifyAuctionDonorThankYou,
+  notifyExperienceCertificate,
   notifyTeamUpdate,
   notifyVolunteerAssignment,
+  notifyVendorEventPacket,
+  notifyWorkspaceRoleChanged,
   notifyWorkAssignment,
 } from "./notify";
 
@@ -127,6 +134,183 @@ describe("product feedback email", () => {
   });
 });
 
+describe("ticket order confirmation email", () => {
+  it("sends an accessible branded receipt with a plain-text alternative and stable key", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyTicketOrderConfirmation({
+      orderId: "tord-123",
+      to: "buyer@example.com",
+      buyerName: "Tarang Goyal",
+      eventTitle: "School Gala",
+      ticketName: "General admission",
+      quantity: 2,
+      amountCents: 20_000,
+      applicationFeeCents: 400,
+      startsAt: "2026-11-01T01:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("Total paid: $200.00");
+    expect(body.html).toContain('<html lang="en" dir="ltr">');
+    expect(body.html).toContain('role="presentation"');
+    expect(body.html).toContain("Your tickets are confirmed");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-order-confirmation-tord-123");
+  });
+});
+
+describe("ticket and auction action emails", () => {
+  it("attaches a generated PDF to an experience certificate email", async () => {
+    const fetch = configureDelivery();
+    await notifyExperienceCertificate({
+      orderId: "order-certificate-1",
+      to: "winner@example.com",
+      winnerName: "Diego Rivera",
+      eventTitle: "School Gala",
+      itemTitle: "Tahoe Weekend",
+      organizationName: "Cedar Grove School",
+      certificateUrl: "https://beebizy.test/certificate/one",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("attached as a PDF");
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments[0]).toMatchObject({ filename: "Tahoe-Weekend-certificate.pdf" });
+    expect(body.attachments[0].content).toMatch(/^JVBER/);
+  });
+
+  it("sends an accessible ticket invitation with a descriptive action", async () => {
+    const fetch = configureDelivery();
+    await notifyTicketInvitation({
+      invitationId: "invite-1", to: "guest@example.com", recipientName: "Ada",
+      eventTitle: "School Gala", startsAt: "2026-11-01T01:00:00.000Z",
+      timeZone: "America/Los_Angeles", invitationUrl: "https://beebizy.test/invite/one",
+      organizationName: "Cedar Grove School",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.from).toBe("Cedar Grove School <events@beebizy.com>");
+    expect(body.html).toContain(">View tickets &amp; RSVP</a>");
+    expect(body.text).toContain("View ticket options and RSVP");
+    expect(body.text).toContain("sent by Cedar Grove School using Beebizy");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-1");
+  });
+
+  it("sends the saved invitation design and permits an intentional resend", async () => {
+    const fetch = configureDelivery();
+    await notifyTicketInvitation({
+      invitationId: "invite-2", to: "laila@example.com", recipientName: "Laila",
+      eventTitle: "School Gala", startsAt: "2026-11-01T01:00:00.000Z",
+      timeZone: "America/Los_Angeles", invitationUrl: "https://beebizy.test/invite/two",
+      organizationName: "Cedar Grove School",
+      headline: "An evening under the stars", welcomeMessage: "Join our school community.",
+      designedHtml: "<html><body><h1>Designed invitation</h1></body></html>",
+      deliveryAttemptKey: "attempt-2",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.subject).toContain("An evening under the stars");
+    expect(body.text).toContain("Join our school community.");
+    expect(body.html).toContain("Designed invitation");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-2-attempt-2");
+  });
+
+  it("uses the bid event as the idempotency key for outbid alerts", async () => {
+    const fetch = configureDelivery();
+    await notifyAuctionOutbid({
+      bidId: "bid-2", to: "bidder@example.com", bidderName: "Grace", eventTitle: "Gala",
+      itemTitle: "Dinner", currentBidCents: 8_500, auctionUrl: "https://beebizy.test/auction/one",
+    });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("$85.00");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("auction-outbid-bid-2-bidder@example.com");
+  });
+
+  it("acknowledges donated property without assigning a dollar value", async () => {
+    const fetch = configureDelivery();
+    await notifyAuctionDonorThankYou({
+      donorId: "donor-1",
+      to: "donor@example.com",
+      contactName: "Ada",
+      donorName: "Ada's Bakery",
+      eventTitle: "School Gala",
+      itemTitles: ["Private baking class"],
+      receivedDate: "October 12, 2026",
+    });
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.text).toContain("Property received: Private baking class");
+    expect(body.text).toContain("No dollar value is stated");
+    expect(body.text).not.toMatch(/fair market value|\$\d/i);
+  });
+});
+
+describe("vendor event packet email", () => {
+  it("sends one private operational email with both PDFs and a stable retry key", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyVendorEventPacket({
+      requestId: "packet-request-1",
+      vendorId: "vendor-1",
+      to: "catering@example.com",
+      vendorName: "Golden Gate Catering",
+      senderName: "Santa Clara University",
+      replyTo: "planner@example.com",
+      subject: "Final details for Demo Day",
+      message: "Please review the final event plan before arrival.",
+      eventTitle: "Demo Day",
+      eventWhen: "October 20, 2026 at 5:00 PM PDT",
+      eventLocation: "Mission Gardens",
+      attachments: [
+        { filename: "demo-day-run-of-show.pdf", content: "run-of-show-base64", content_type: "application/pdf" },
+        { filename: "demo-day-floorplans.pdf", content: "floorplan-base64", content_type: "application/pdf" },
+      ],
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      from: "Santa Clara University <events@beebizy.com>",
+      to: ["catering@example.com"],
+      reply_to: "planner@example.com",
+      subject: "Final details for Demo Day",
+    });
+    expect(body.text).toContain("Hi Golden Gate Catering,");
+    expect(body.text).toContain("When: October 20, 2026 at 5:00 PM PDT");
+    expect(body.text).toContain("Location: Mission Gardens");
+    expect(body.html).toContain('<html lang="en" dir="ltr">');
+    expect(body.attachments).toHaveLength(2);
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("vendor-event-packet-packet-request-1-vendor-1");
+  });
+});
+
+describe("workspace role-change email", () => {
+  it("notifies the member without resending an invitation or sign-in link", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyWorkspaceRoleChanged({
+      changeId: "role-change-1",
+      workspaceId: "workspace-1",
+      workspaceName: "Beebizy",
+      userId: "user-1",
+      to: "member@example.com",
+      memberName: "Veenamayani",
+      newRole: "owner",
+    })).toEqual({ status: "sent" });
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      to: ["member@example.com"],
+      subject: "Your Beebizy role changed to Owner",
+    });
+    expect(body.text).toContain("Your role in Beebizy is now Owner.");
+    expect(body.text).not.toContain("Previous role");
+    expect(body.text).not.toMatch(/https?:\/\//i);
+    expect(body.text).not.toMatch(/invitation|invite link|sign-in link/i);
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("workspace-role-change-workspace-1-user-1-owner-role-change-1");
+  });
+});
+
 describe("registration confirmation email", () => {
   it("sends event details and a stable delivery key to the registered guest", async () => {
     const fetch = configureDelivery();
@@ -142,6 +326,8 @@ describe("registration confirmation email", () => {
       timeZone: "America/Los_Angeles",
       location: "Mission Hall, Santa Clara",
       eventUrl: "https://beebizy.test/e/demo-day",
+      auctionAccessUrl: "https://beebizy.test/auction/demo?bidder=private",
+      paddleNumber: 214,
     })).toEqual({ status: "sent" });
 
     const request = fetch.mock.calls[0]?.[1] as RequestInit;
@@ -155,6 +341,7 @@ describe("registration confirmation email", () => {
     expect(body.text).toContain("Guest type: Investor");
     expect(body.text).toContain("Mission Hall, Santa Clara");
     expect(body.text).toContain("https://beebizy.test/e/demo-day");
+    expect(body.text).toContain("private bidder paddle 214");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("registration-confirmation-reg-123");
   });
 });

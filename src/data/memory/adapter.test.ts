@@ -435,6 +435,19 @@ describe("registrations", () => {
     expect((await memoryAdapter.guests.list()).some((guest) => guest.contact === "capacity.walkin@example.com")).toBe(false);
   });
 
+  it("refuses a second walk-in record for the same normalized full name", async () => {
+    await memoryAdapter.registrations.createWalkIn("evt-atlas", {
+      name: "Toby Hsu",
+      contact: "toby.first@example.com",
+    });
+    await expect(
+      memoryAdapter.registrations.createWalkIn("evt-atlas", {
+        name: "  toby   HSU ",
+        contact: "toby.second@example.com",
+      }),
+    ).rejects.toThrow(/already.*guest list/i);
+  });
+
   it("refuses a duplicate registration", async () => {
     const existing = (await memoryAdapter.registrations.listForEvent("evt-cab")).find((row) => row.status === "confirmed")!;
     await expect(
@@ -602,6 +615,7 @@ describe("tickets", () => {
     await memoryAdapter.tickets.purchase(shareToken, ticket!.id, {
       name: "Sam Buyer",
       contact: "sam.buyer@example.com",
+      phone: "408-555-0101",
       quantity: 2,
     });
 
@@ -620,6 +634,7 @@ describe("tickets", () => {
     await memoryAdapter.tickets.purchase(shareToken, ticket!.id, {
       name: known.name,
       contact: known.contact!.toUpperCase(),
+      phone: "408-555-0102",
       quantity: 1,
     });
     expect((await memoryAdapter.guests.list()).length).toBe(countBefore);
@@ -634,6 +649,7 @@ describe("tickets", () => {
       memoryAdapter.tickets.purchase(shareToken, table.id, {
         name: "Greedy",
         contact: "greedy@example.com",
+        phone: "408-555-0103",
         quantity: remaining + 1,
       }),
     ).rejects.toThrow(new RegExp(`Only ${remaining} left`));
@@ -642,7 +658,7 @@ describe("tickets", () => {
   it("refuses an unknown or revoked share token", async () => {
     const [ticket] = await memoryAdapter.tickets.list("evt-gala");
     await expect(
-      memoryAdapter.tickets.purchase("not-a-token", ticket!.id, { name: "A", contact: "a@b.c", quantity: 1 }),
+      memoryAdapter.tickets.purchase("not-a-token", ticket!.id, { name: "A", contact: "a@b.c", phone: "408-555-0104", quantity: 1 }),
     ).rejects.toThrow(/no longer active/i);
   });
 
@@ -677,6 +693,60 @@ describe("raffle", () => {
 });
 
 describe("vendors", () => {
+  it("sends one private event packet per vendor and records the delivery", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    const base = {
+      subject: "Final gala details",
+      message: "Please review the attached plan.",
+      includeRunOfShow: true,
+      floorplanIds: plans.map((plan) => plan.id),
+      requestId: "packet-request-1",
+    };
+    await memoryAdapter.vendorEventPackets.send("evt-gala", {
+      ...base, vendorIds: [], testEmail: "demo@beebizy.com", consentConfirmed: false,
+    });
+    const result = await memoryAdapter.vendorEventPackets.send("evt-gala", {
+      ...base,
+      vendorIds: ["ven-goldengate", "ven-bloom"],
+      consentConfirmed: true,
+    });
+
+    expect(result.sent).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.attachmentNames).toEqual(expect.arrayContaining([
+      "annual-partner-gala-fundraiser-run-of-show.pdf",
+      "annual-partner-gala-fundraiser-floorplans.pdf",
+    ]));
+    expect((await memoryAdapter.vendorMessages.list("ven-goldengate")).at(-1)).toMatchObject({
+      eventId: "evt-gala", subject: "Final gala details", deliveryError: null,
+    });
+    const history = await memoryAdapter.history.list("evt-gala");
+    expect(history.filter((entry) => entry.resource === "vendor-packet" && entry.after?.test !== true)).toHaveLength(2);
+
+    const repeated = await memoryAdapter.vendorEventPackets.send("evt-gala", {
+      ...base, vendorIds: ["ven-goldengate", "ven-bloom"], consentConfirmed: true,
+    });
+    expect(repeated).toMatchObject({ sent: 0, skipped: 2 });
+    expect((await memoryAdapter.vendorMessages.list("ven-goldengate")).filter((message) => message.subject === "Final gala details")).toHaveLength(1);
+
+    const revised = { ...base, message: "Please review the revised plan." };
+    await memoryAdapter.vendorEventPackets.send("evt-gala", { ...revised, vendorIds: [], testEmail: "demo@beebizy.com", consentConfirmed: false });
+    const revisedResult = await memoryAdapter.vendorEventPackets.send("evt-gala", { ...revised, vendorIds: ["ven-goldengate", "ven-bloom"], consentConfirmed: true });
+    expect(revisedResult.sent).toBe(2);
+    expect((await memoryAdapter.vendorMessages.list("ven-goldengate")).filter((message) => message.subject === "Final gala details")).toHaveLength(2);
+  });
+
+  it("requires the signed-in test address and an exact successful test before a vendor send", async () => {
+    const draft = {
+      vendorIds: ["ven-goldengate"], subject: "Final details", message: "Version one", includeRunOfShow: false,
+      floorplanIds: [], requestId: "packet-request-privacy", consentConfirmed: true,
+    };
+    await expect(memoryAdapter.vendorEventPackets.send("evt-gala", { ...draft, vendorIds: [], testEmail: "someone@example.com", consentConfirmed: false })).rejects.toThrow(/signed-in email/i);
+    await expect(memoryAdapter.vendorEventPackets.send("evt-gala", draft)).rejects.toThrow(/successful test/i);
+    await memoryAdapter.vendorEventPackets.send("evt-gala", { ...draft, vendorIds: [], testEmail: "demo@beebizy.com", consentConfirmed: false });
+    await expect(memoryAdapter.vendorEventPackets.send("evt-gala", { ...draft, message: "Version two" })).rejects.toThrow(/successful test/i);
+  });
+
   it("recomputes the thread summary and unread count after a send", async () => {
     const before = (await memoryAdapter.vendors.get("ven-goldengate"))!;
     expect(before.unreadCount).toBeGreaterThan(0);
@@ -751,6 +821,21 @@ describe("floorplan", () => {
     expect(ballroom.items.length).toBeGreaterThan(10);
     // Eleven ten-seat tables in the seed.
     expect(ballroom.items.reduce((total, item) => total + (item.seats ?? 0), 0)).toBe(110);
+  });
+
+  it("shares exactly one read-only floorplan through its own token", async () => {
+    const plans = await memoryAdapter.floorplan.list("evt-gala");
+    const ballroom = plans.find((plan) => plan.name.startsWith("Ballroom"))!;
+    const terrace = plans.find((plan) => plan.id !== ballroom.id)!;
+    const shared = await memoryAdapter.floorplan.share("evt-gala", ballroom.id);
+    const repeated = await memoryAdapter.floorplan.share("evt-gala", ballroom.id);
+    await memoryAdapter.floorplan.save(ballroom.id, { name: "Updated ballroom", items: ballroom.items, room: ballroom.room });
+    const payload = await memoryAdapter.floorplan.getPublic(shared.shareToken);
+
+    expect(repeated).toEqual(shared);
+    expect(payload).toMatchObject({ eventTitle: "Annual Partner Gala & Fundraiser", floorplan: { id: ballroom.id, name: "Updated ballroom" } });
+    expect(payload?.floorplan.id).not.toBe(terrace.id);
+    expect(await memoryAdapter.floorplan.getPublic("not-a-token")).toBeNull();
   });
 
   it("returns an empty list for an event with no rooms", async () => {
@@ -1025,9 +1110,12 @@ describe("deposits", () => {
   it("creates, updates and removes a deposit", async () => {
     const created = await memoryAdapter.deposits.create("evt-gala", {
       vendorName: "Bloom & Vine",
+      totalAmountCents: 500_000,
       amountCents: 120_000,
+      balanceDueDate: "2026-11-01T12:00:00.000Z",
     });
     expect(created.status).toBe("pending");
+    expect(created).toMatchObject({ totalAmountCents: 500_000, balanceDueDate: "2026-11-01T12:00:00.000Z" });
 
     const paid = await memoryAdapter.deposits.update("evt-gala", created.id, {
       status: "paid",
@@ -1039,6 +1127,62 @@ describe("deposits", () => {
     await memoryAdapter.deposits.remove("evt-gala", created.id);
     const remaining = await memoryAdapter.deposits.list("evt-gala");
     expect(remaining.map((deposit) => deposit.id)).not.toContain(created.id);
+  });
+
+  it("tracks one vendor plan across multiple paid deposits", async () => {
+    const plan = await memoryAdapter.vendorPaymentPlans.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      totalAmountCents: 500_000,
+      balanceDueDate: "2026-11-01T12:00:00.000Z",
+    });
+    const firstPayment = await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      amountCents: 120_000,
+      status: "paid",
+    });
+    await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Bloom & Vine",
+      amountCents: 80_000,
+      status: "paid",
+    });
+
+    const updated = await memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, {
+      totalAmountCents: 450_000,
+    });
+    expect(firstPayment.paymentPlanId).toBe(plan.id);
+    expect(updated.totalAmountCents).toBe(450_000);
+    await expect(
+      memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, { totalAmountCents: 199_999 }),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("does not let paid deposits exceed the vendor total", async () => {
+    await memoryAdapter.vendorPaymentPlans.create("evt-gala", {
+      vendorName: "Balance Guard Vendor",
+      totalAmountCents: 100_000,
+      balanceDueDate: "2026-11-01T12:00:00.000Z",
+    });
+    await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Balance Guard Vendor",
+      amountCents: 75_000,
+      status: "paid",
+    });
+    await expect(
+      memoryAdapter.deposits.create("evt-gala", {
+        vendorName: "Balance Guard Vendor",
+        amountCents: 30_000,
+        status: "paid",
+      }),
+    ).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("rejects a payment plan from another event", async () => {
+    await expect(memoryAdapter.deposits.create("evt-gala", {
+      paymentPlanId: "vpp-kickoff-venue",
+      vendorName: "Moscone Center West",
+      amountCents: 10_000,
+      status: "paid",
+    })).rejects.toBeInstanceOf(DataError);
   });
 });
 

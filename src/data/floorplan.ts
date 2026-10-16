@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   FLOORPLAN_ROOM_SHAPES,
   FLOORPLAN_SHAPES,
+  FLOORPLAN_CUSTOM_SHAPE_MODES,
   type FloorplanDraft,
   type FloorplanItem,
   type FloorplanRoom,
@@ -18,6 +19,35 @@ const floorplanItemSchema = z.object({
   locked: z.boolean().optional(),
   width: z.number().finite().min(1).max(100).optional(),
   height: z.number().finite().min(1).max(100).optional(),
+  rotation: z.number().finite().min(0).max(359).optional(),
+  imageUrl: z.string().url().optional(),
+  customShapeMode: z.enum(FLOORPLAN_CUSTOM_SHAPE_MODES).optional(),
+  points: z.array(z.object({
+    x: z.number().finite().min(0).max(100),
+    y: z.number().finite().min(0).max(100),
+  })).min(3).max(256).optional(),
+}).superRefine((item, context) => {
+  if (item.shape === "custom-shape" && !item.points) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Custom floorplan shapes need at least three corner points.",
+      path: ["points"],
+    });
+  }
+  if (item.shape === "custom-shape" && item.customShapeMode !== "freehand" && (item.points?.length ?? 0) > 24) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Straight and curved custom shapes can have at most 24 editable corners.",
+      path: ["points"],
+    });
+  }
+  if (item.shape === "image" && !item.imageUrl) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Floorplan image objects need an uploaded image URL.",
+      path: ["imageUrl"],
+    });
+  }
 });
 
 const floorplanPointSchema = z.object({

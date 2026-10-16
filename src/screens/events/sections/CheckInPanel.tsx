@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CircleUserRound,
   DoorOpen,
+  Download,
   Laptop,
   Pencil,
   Plus,
@@ -71,6 +72,7 @@ import {
   type VolunteerShift,
 } from "@/data/entities";
 import { ALPHABETICAL_CHECK_IN_LANES, guestMatchesLane, parseAlphabeticalLane } from "@/data/checkInLanes";
+import { attendanceNamesCsv, buildUniqueAttendanceReport } from "@/data/attendanceReport";
 
 const CHECK_IN_STARTER = [
   ["Assign check-in stations and leads", "Name a lead and backup for every entrance or desk."],
@@ -245,11 +247,9 @@ export function CheckInPanel({ event }: { event: Event }) {
       .sort((a, b) => (a.guest?.name ?? "").localeCompare(b.guest?.name ?? "")),
     [data],
   );
-  const confirmedRows = rows.filter((row) => row.status === "confirmed");
-  const expected = confirmedRows.reduce((total, row) => total + row.quantity, 0);
-  const arrived = confirmedRows
-    .filter((row) => row.checkedInAt !== null)
-    .reduce((total, row) => total + row.quantity, 0);
+  const attendanceReport = useMemo(() => buildUniqueAttendanceReport(rows), [rows]);
+  const expected = attendanceReport.summary.uniqueRegistered;
+  const arrived = attendanceReport.summary.uniqueCheckedIn;
   const pending = rows
     .filter((row) => row.status === "pending")
     .reduce((total, row) => total + row.quantity, 0);
@@ -290,6 +290,21 @@ export function CheckInPanel({ event }: { event: Event }) {
     if (printer) void printer.close();
   }, []);
   const displayed = visible.slice(0, visibleLimit);
+
+  const downloadAttendanceCsv = () => {
+    const attendees = attendanceReport.attendees;
+    const url = URL.createObjectURL(new Blob([attendanceNamesCsv(attendees)], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    const eventName = event.title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "event";
+    anchor.href = url;
+    anchor.download = `beebizy-${eventName}-unique-attendee-names.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast({
+      title: `${attendees.length} unique attendee names exported`,
+      description: `${attendanceReport.summary.duplicateCheckedInRows} duplicate check-in row${attendanceReport.summary.duplicateCheckedInRows === 1 ? " was" : "s were"} consolidated. The file contains full names only.`,
+    });
+  };
 
   const existingTasks = new Set((checklist ?? []).map((item) => item.title.trim().toLowerCase()));
   const missingTasks = CHECK_IN_STARTER.filter(([title]) => !existingTasks.has(title.toLowerCase()));
@@ -333,7 +348,11 @@ export function CheckInPanel({ event }: { event: Event }) {
     return caught instanceof Error ? caught.message : "The Brother printer could not be reached.";
   };
 
-  const printNameDirectly = async (layout: BadgeNameLayout, allowConnectionPrompt = true) => {
+  const bidderAccessUrl = (row?: RegistrationWithGuest) => event.auctionPublicToken && row?.bidderAccess
+    ? `${window.location.origin}/auction/${event.auctionPublicToken}?bidder=${encodeURIComponent(row.bidderAccess.publicToken)}`
+    : null;
+
+  const printNameDirectly = async (layout: BadgeNameLayout, allowConnectionPrompt = true, accessUrl?: string | null) => {
     const name = normalizeBadgeName(`${layout.line1} ${layout.line2}`);
     try {
       let printer = brotherPrinterRef.current;
@@ -347,9 +366,9 @@ export function CheckInPanel({ event }: { event: Event }) {
         brotherPrinterRef.current = printer;
       }
       setBrotherPrinterState("printing");
-      await printBrotherNameLabel(printer, layout);
+      await printBrotherNameLabel(printer, layout, {}, accessUrl);
       setBrotherPrinterState("connected");
-      toast({ title: "Badge sent to Brother QL-800", description: `${name.trim()} is centered on one label.` });
+      toast({ title: "Badge sent to Brother QL-800", description: accessUrl ? `${name.trim()} and their private bidder QR are on one label.` : `${name.trim()} is centered on one label.` });
     } catch (caught) {
       const printer = brotherPrinterRef.current;
       brotherPrinterRef.current = null;
@@ -368,7 +387,7 @@ export function CheckInPanel({ event }: { event: Event }) {
         if (!saved) return;
       }
       setBadgeEditor(null);
-      setPrintJob({ kind: "badge", row: badgeEditor.row, layout });
+      setPrintJob({ kind: "badge", row: badgeEditor.row, layout, bidderAccessUrl: bidderAccessUrl(badgeEditor.row) });
       return;
     }
     if (badgeEditor.destination === "test-system") {
@@ -377,7 +396,7 @@ export function CheckInPanel({ event }: { event: Event }) {
       return;
     }
     setBadgeEditor(null);
-    await printNameDirectly(layout, badgeEditor.allowConnectionPrompt ?? true);
+    await printNameDirectly(layout, badgeEditor.allowConnectionPrompt ?? true, bidderAccessUrl(badgeEditor.row));
   };
 
   const addStarter = async () => {
@@ -467,7 +486,7 @@ export function CheckInPanel({ event }: { event: Event }) {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Expected" value={expected} icon={UsersRound} sublabel={`${pending} awaiting RSVP`} loading={isLoading} />
-        <StatTile label="Checked in" value={arrived} icon={UserCheck} tone="success" loading={isLoading} />
+        <StatTile label="Unique checked in" value={arrived} icon={UserCheck} tone="success" sublabel={`${attendanceReport.summary.checkedInRows} check-in records`} loading={isLoading} />
         <StatTile label={eventFinished ? "No-shows" : "Still expected"} value={remaining} icon={DoorOpen} tone={remaining > 0 ? "warning" : "success"} loading={isLoading} />
         <StatTile label="Arrival rate" value={expected ? `${Math.round((arrived / expected) * 100)}%` : "0%"} loading={isLoading} />
       </div>
@@ -495,6 +514,7 @@ export function CheckInPanel({ event }: { event: Event }) {
             if (printBadge) openBadgeEditor(row.guest?.name ?? "Guest", {
               destination: "brother",
               allowConnectionPrompt: false,
+              row,
             });
           }}
         />
@@ -630,11 +650,16 @@ export function CheckInPanel({ event }: { event: Event }) {
       <Panel className="overflow-hidden">
         <PanelHeader
           title="Guest arrivals"
-          description={`Check-ins use the workspace time zone (${timeZoneLabel}). Cancelled registrations are excluded.`}
+          description={`${attendanceReport.summary.checkedInRows} check-in records become ${attendanceReport.summary.uniqueCheckedIn} unique attendees. Times use ${timeZoneLabel}.`}
           actions={
-            <Button asChild variant="outline" size="sm">
-              <Link href={eventTabHref(event.id, "registrations")}>Manage registrations</Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={downloadAttendanceCsv} disabled={attendanceReport.attendees.length === 0}>
+                <Download className="mr-1.5 size-3.5" />Full names CSV
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href={eventTabHref(event.id, "registrations")}>Manage registrations</Link>
+              </Button>
+            </div>
           }
         />
         <div className="flex flex-col gap-3 border-b border-hairline p-4 lg:flex-row lg:items-center">

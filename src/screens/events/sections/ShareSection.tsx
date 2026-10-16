@@ -1,7 +1,8 @@
 /** The organizer-facing builder for the event's public registration site. */
 
-import { useState, type CSSProperties } from "react";
-import { Check, Copy, ExternalLink, Eye, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { useLocation, useSearch } from "wouter";
+import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useShareEvent, useTickets, useUpdateEvent } from "@/data/hooks";
+import { useShareEvent, useTickets, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
+import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import {
   REGISTRATION_PAGE_TEMPLATES,
   normalizeRegistrationPage,
@@ -19,6 +21,18 @@ import {
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
 import type { Event } from "@/data/entities";
+import { EVENT_LAUNCH_STEP_IDS, eventLaunchPath, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
+import EventLaunchGuide from "./EventLaunchGuide";
+import EventLaunchContextBar from "../EventLaunchContextBar";
+import { useEventLaunchProgress } from "../useEventLaunchProgress";
+import TicketInvitationBuilder from "./TicketInvitationBuilder";
+import GuidedTicketPricing from "./GuidedTicketPricing";
+
+const REGISTRATION_TYPE_PRESETS = [
+  { label: "School gala", types: ["Parent/Guardian", "Alumni", "Faculty/Staff", "Friend of school"] },
+  { label: "Open event", types: ["Guest"] },
+  { label: "Professional", types: ["Attendee", "Sponsor", "Speaker", "Staff"] },
+] as const;
 
 function absoluteUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
@@ -107,17 +121,27 @@ function RegistrationPreview({ event, settings }: { event: Event; settings: Regi
 }
 
 export default function ShareSection({ event }: { event: Event }) {
+  const [, navigate] = useLocation();
+  const search = useSearch();
   const share = useShareEvent();
   const update = useUpdateEvent();
+  const uploadImage = useUploadAuctionImage();
   const { data: tickets } = useTickets(event.id);
-  const [draft, setDraft] = useState<RegistrationPageSettings>(() => normalizeRegistrationPage(event.registrationPage));
+  const [activeWorkspace, setActiveWorkspace] = useState<"design" | "pricing" | "sender" | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
   const [guestTypesInput, setGuestTypesInput] = useState(() => normalizeRegistrationPage(event.registrationPage).registrationTypes.join(", "));
+  const progress = useEventLaunchProgress(event);
+  const requestedStep = EVENT_LAUNCH_STEP_IDS.find((step) => step === new URLSearchParams(search).get("step")) ?? null;
+  const requestedStepUnlocked = requestedStep ? progress.unlocked[requestedStep] : false;
   const onSale = (tickets ?? []).filter((ticket) => ticket.isActive);
   const eventUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}`) : null;
   const ticketUrl = event.shareToken ? absoluteUrl(`/e/${event.shareToken}/tickets`) : null;
+  const auctionUrl = event.auctionPublicToken ? absoluteUrl(`/auction/${event.auctionPublicToken}`) : null;
+  const auctionPage = normalizeAuctionPageSettings(event.auctionPage);
   const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
-    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister here: ${eventUrl}${published.paymentUrl ? `\n\nPayment link: ${published.paymentUrl}` : ""}\n\nPowered by Beebizy`
+    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister and choose tickets here: ${eventUrl}\n\nPowered by Beebizy`
     : "";
   const inviteHtml = eventUrl
     ? registrationInvitationHtml(published, event.title, event.description, eventUrl)
@@ -125,7 +149,7 @@ export default function ShareSection({ event }: { event: Event }) {
 
   const publish = async () => {
     try {
-      const registrationPage = normalizeRegistrationPage({ ...draft, registrationTypes: guestTypesInput.split(",") });
+      const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
       setDraft(registrationPage);
       setGuestTypesInput(registrationPage.registrationTypes.join(", "));
       await update.mutateAsync({ id: event.id, patch: { registrationPage } });
@@ -136,23 +160,90 @@ export default function ShareSection({ event }: { event: Event }) {
     }
   };
 
-  const save = () => {
-    const registrationPage = normalizeRegistrationPage({ ...draft, registrationTypes: guestTypesInput.split(",") });
+  const returnToLaunchGuide = () => {
+    navigate(eventLaunchPath(event.id), { replace: true });
+    setActiveWorkspace(null);
+    setShowDetails(false);
+    window.requestAnimationFrame(() => document.getElementById("event-launch-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const save = (returnAfterSave = false) => {
+    const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
     setDraft(registrationPage);
     setGuestTypesInput(registrationPage.registrationTypes.join(", "));
     update.mutate(
       { id: event.id, patch: { registrationPage } },
       {
-        onSuccess: () => toast({ title: "Registration site saved", description: "The public page now uses this design." }),
+        onSuccess: () => {
+          toast({ title: "Registration site saved", description: "The public page now uses this design." });
+          if (returnAfterSave) returnToLaunchGuide();
+        },
         onError: (error) => toast({ title: "Couldn't save the registration site", description: error.message }),
       },
     );
   };
 
+  const revealInvitationDesign = () => {
+    setActiveWorkspace("design");
+    setShowDetails(true);
+    window.requestAnimationFrame(() => document.getElementById("registration-site-builder")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const revealInvitationSender = () => {
+    setActiveWorkspace("sender");
+    setShowDetails(false);
+    window.requestAnimationFrame(() => document.getElementById("guided-invitation-sender")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const revealTicketPricing = () => {
+    setActiveWorkspace("pricing");
+    setShowDetails(false);
+    window.requestAnimationFrame(() => document.getElementById("guided-ticket-pricing")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  useEffect(() => {
+    if (!requestedStep || !requestedStepUnlocked) return;
+    if (requestedStep === "invite-design") {
+      setActiveWorkspace("design");
+      setShowDetails(true);
+    } else if (requestedStep === "tickets") {
+      setActiveWorkspace("pricing");
+      setShowDetails(false);
+    } else if (requestedStep === "send") {
+      setActiveWorkspace("sender");
+      setShowDetails(false);
+    } else {
+      setActiveWorkspace(null);
+      setShowDetails(false);
+    }
+  }, [requestedStep, requestedStepUnlocked]);
+
+  const selectLaunchStep = (step: EventLaunchStepId) => {
+    if (!progress.unlocked[step]) return;
+    navigate(eventLaunchStepHref(event.id, step));
+  };
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
+    <div className="space-y-6">
+      {activeWorkspace === null ? (
+        <div id="event-launch-guide"><EventLaunchGuide event={event} focusStep={requestedStep} publishing={share.isPending || update.isPending} onDesignInvite={revealInvitationDesign} onPublishInvite={() => void publish()} onSendInvites={revealInvitationSender} onPriceTickets={revealTicketPricing} /></div>
+      ) : (
+        <EventLaunchContextBar
+          activeStep={activeWorkspace === "design" ? 3 : activeWorkspace === "pricing" ? 4 : 6}
+          eventTitle={event.title}
+          onBack={returnToLaunchGuide}
+          completion={progress.completion}
+          unlocked={progress.unlocked}
+          onStepSelect={selectLaunchStep}
+        />
+      )}
+      {activeWorkspace === "pricing" ? <div id="guided-ticket-pricing"><GuidedTicketPricing event={event} onDone={returnToLaunchGuide} /></div> : null}
+      {activeWorkspace === "sender" ? <div id="guided-invitation-sender"><TicketInvitationBuilder event={event} guided onDone={returnToLaunchGuide} /></div> : null}
+      {activeWorkspace === null || activeWorkspace === "design" ? <details className="rounded-xl border border-hairline bg-background" open={showDetails} onToggle={(event) => { setShowDetails(event.currentTarget.open); if (!event.currentTarget.open && activeWorkspace === "design") setActiveWorkspace(null); }}>
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">{activeWorkspace === "design" ? "Invitation design and preview" : "Advanced public links and settings"}</summary>
+        <div id="registration-site-builder" className="grid gap-6 border-t border-hairline p-5 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
       <div className="space-y-6">
-        <Panel>
+        {activeWorkspace === "design" ? <Panel>
           <PanelHeader title="Registration site builder" description="Choose a starting point, then make the guest page match this event" actions={<Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill>} />
           <div className="space-y-6 p-5">
             <fieldset>
@@ -181,19 +272,24 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={600} rows={4} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="registration-hero">Hero image URL</Label>
-                <Input id="registration-hero" type="url" value={draft.heroImageUrl ?? ""} placeholder="https://example.com/event-photo.jpg" onChange={(e) => setDraft((current) => ({ ...current, heroImageUrl: e.target.value || null }))} />
-                <p className="text-xs text-muted-foreground">Use a public HTTPS image link. This image is separate from the internal mood board.</p>
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="registration-payment">External payment link (optional)</Label>
-                <Input id="registration-payment" type="url" value={draft.paymentUrl ?? ""} placeholder="https://your-checkout-provider.com/event" onChange={(e) => setDraft((current) => ({ ...current, paymentUrl: e.target.value || null }))} />
-                <p className="text-xs text-muted-foreground">Use the organizer's existing HTTPS checkout. Beebizy links guests there but does not process or deduct the payment.</p>
+                <Label>Invitation image or logo</Label>
+                <div className="flex flex-wrap items-center gap-3">
+                  {draft.heroImageUrl ? <img src={draft.heroImageUrl} alt="Invitation" className="h-20 w-32 rounded-lg border border-hairline object-cover" /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><Image className="size-5 text-muted-foreground" /></div>}
+                  <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-surface-sunken">
+                    <Image className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.heroImageUrl ? "Replace image" : "Upload image"}
+                    <input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(inputEvent) => { const file = inputEvent.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, heroImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload image", description: error.message }) }); }} />
+                  </label>
+                  {draft.heroImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, heroImageUrl: null }))}>Remove</Button> : null}
+                </div>
+                <p className="text-xs text-muted-foreground">Upload a banner photo or organization logo. It appears in the invitation email and registration page.</p>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-types">Guest types</Label>
                 <Input id="registration-types" value={guestTypesInput} placeholder="General, VIP, Speaker" onChange={(e) => setGuestTypesInput(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Separate each type with a comma. Guests choose one when they register, and it appears in the segmented list.</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {REGISTRATION_TYPE_PRESETS.map((preset) => <Button key={preset.label} type="button" size="sm" variant="outline" onClick={() => setGuestTypesInput(preset.types.join(", "))}>{preset.label}</Button>)}
+                </div>
+                <p className="text-xs text-muted-foreground">These labels are customer-facing. Choose a preset or enter client-specific types separated by commas. Guests select one when they register.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="registration-color">Brand color</Label>
@@ -203,25 +299,25 @@ export default function ShareSection({ event }: { event: Event }) {
                 </div>
               </div>
               <div className="space-y-3 rounded-lg border border-hairline p-3">
-                <label className="flex items-center justify-between gap-3 text-sm"><span>Ask for organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label>
+                <div><label className="flex items-center justify-between gap-3 text-sm"><span>Ask for company, school, or organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label><p className="mt-1 pr-12 text-xs text-muted-foreground">Adds an optional field so guests can name the business, school, nonprofit, or group they represent.</p></div>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show public agenda</span><Switch checked={draft.showAgenda} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showAgenda: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-hairline pt-4">
-              <Button onClick={save} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save design"}</Button>
+              <Button onClick={() => save(true)} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save design and continue"}</Button>
               {eventUrl ? <Button asChild variant="outline"><a href={eventUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Open live page</a></Button> : null}
             </div>
           </div>
-        </Panel>
+        </Panel> : null}
 
-        {event.shareToken && eventUrl ? (
+        {activeWorkspace !== "design" ? <>{event.shareToken && eventUrl ? (
           <Panel>
             <PanelHeader title="Invite guests" description="The registration link works without a Beebizy login" actions={<Pill tone="success">Live</Pill>} />
             <div className="divide-y divide-hairline">
               <CopyRow label="Registration site" url={eventUrl} hint="Event details and registration" />
-              {onSale.length > 0 && ticketUrl && !published.paymentUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
-              {published.paymentUrl ? <CopyRow label="External payment" url={published.paymentUrl} hint="Organizer-owned checkout" /> : null}
+              {onSale.length > 0 && ticketUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
+              {auctionUrl ? <CopyRow label="Bidder auction" url={auctionUrl} hint="Public mobile bidding" /> : null}
             </div>
             <div className="border-t border-hairline p-5">
               <Label htmlFor="invite-copy">Ready-to-send invitation</Label>
@@ -244,6 +340,11 @@ export default function ShareSection({ event }: { event: Event }) {
           </Panel>
         )}
 
+        <Panel>
+          <PanelHeader title="Bidder-facing auction" description="This is the mobile page guests use to get a paddle, browse items, and bid" actions={auctionUrl ? <Pill tone={auctionPage.catalogPublished ? "success" : "warning"}>{auctionPage.catalogPublished ? "Live" : "Preview ready"}</Pill> : <Pill>Not created</Pill>} />
+          {auctionUrl ? <div className="divide-y divide-hairline"><CopyRow label="Public bidder page" url={auctionUrl} hint={auctionPage.catalogPublished ? "No organizer login required" : "Registration open; catalog still hidden"} /><div className="px-5 py-4 text-xs text-muted-foreground">{auctionPage.catalogPublished ? "This link also appears on the public event page as “Open auction.”" : "Guests can receive a paddle now. Unpublished auction items remain hidden until the catalog is ready."}</div></div> : <EmptyState icon={Gavel} title="The bidder page has not been created" description="Open Fundraising and create the donor and bidder links. Beebizy will then place the auction button on this public registration site." action={<Button asChild><a href={`/app/events/${event.id}/fundraising`}><Gavel className="mr-1.5 size-4" />Open fundraising setup</a></Button>} />}
+        </Panel>
+
         {onSale.length > 0 ? (
           <Panel>
             <PanelHeader title="Ticket options" description="These appear automatically on the registration site" />
@@ -251,20 +352,22 @@ export default function ShareSection({ event }: { event: Event }) {
               {onSale.map((ticket) => <li key={ticket.id} className="flex items-center gap-3 px-5 py-3"><Ticket className="size-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{ticket.name}</p><p className="truncate text-xs text-muted-foreground">{ticket.description || "Registration option"}</p></div><span data-numeric className="text-sm font-semibold">{formatMoney(ticket.priceCents)}</span></li>)}
             </ul>
           </Panel>
-        ) : null}
+        ) : null}</> : null}
       </div>
 
       <div className="space-y-6">
-        <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} /></div></Panel>
-        <Panel>
+        {activeWorkspace === "design" ? <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} /></div></Panel> : null}
+        {activeWorkspace !== "design" ? <Panel>
           <PanelHeader title="What guests can access" description="Only the public event experience" />
           <div className="space-y-3 px-5 py-4 text-sm">
-            <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-success-text" /><p><span className="font-medium">Visible:</span> registration branding, event details, registration form, selected agenda, volunteer openings, and tickets on sale.</p></div>
+            <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-success-text" /><p><span className="font-medium">Visible:</span> registration branding, event details, registration form, selected agenda, volunteer openings, tickets on sale, and the bidder auction when it is live.</p></div>
             <div className="flex items-start gap-2.5"><Eye className="mt-0.5 size-4 shrink-0 text-danger-text" /><p><span className="font-medium">Never visible:</span> budgets, vendor fees, guest contact details, internal checklists, sponsorship amounts, or bids.</p></div>
             <p className="border-t border-hairline pt-3 text-xs text-muted-foreground">Every submission is added directly to this event's registration list, ready for filtering and check-in.</p>
           </div>
-        </Panel>
+        </Panel> : null}
       </div>
+        </div>
+      </details> : null}
     </div>
   );
 }

@@ -24,6 +24,9 @@ export default tseslint.config(
       ".agents/**",
       // Captured production assets are immutable browser bundles, not source files.
       "public/**/*.js",
+      // HyperFrames projects include generated browser bundles and a local Python runtime.
+      // They have their own validation pipeline and are not application source.
+      "videos/**",
     ],
   },
   js.configs.recommended,

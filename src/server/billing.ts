@@ -16,6 +16,20 @@ import { db } from "./db.ts";
 import { HttpError, type RequestContext } from "./auth.ts";
 import { annualEventQuotaRank, workspaceFitsSoloSeatLimit } from "./entitlements.ts";
 import { eventQuotaSlots, events, workspaces } from "./schema.ts";
+import {
+  completeTicketCheckoutSession,
+  completeAuctionCheckoutSession,
+  completeBidderWalletSession,
+  completeBidderBillSession,
+  completeDonationCheckoutSession,
+  completeRecurringDonationInvoice,
+  syncRecurringDonationSubscription,
+  failAuctionCheckoutSession,
+  failBidderBillSession,
+  failDonationCheckoutSession,
+  failTicketCheckoutSession,
+  syncStripeConnectedAccount,
+} from "./commercePayments.ts";
 
 function stripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -580,46 +594,80 @@ async function syncInvoiceSubscription(stripe: Stripe, invoice: Stripe.Invoice, 
 }
 
 export async function handleStripeWebhook(request: Request): Promise<{ received: true }> {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) throw new HttpError(503, "Stripe webhooks are not configured yet.");
+  const secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET]
+    .map((secret) => secret?.trim())
+    .filter((secret): secret is string => Boolean(secret));
+  if (secrets.length === 0) throw new HttpError(503, "Stripe webhooks are not configured yet.");
   const signature = request.headers.get("stripe-signature");
   if (!signature) throw new HttpError(400, "Missing Stripe signature.");
 
   const stripe = stripeClient();
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(await request.text(), signature, secret);
-  } catch {
-    throw new HttpError(400, "Invalid Stripe signature.");
+  const payload = await request.text();
+  let event: Stripe.Event | null = null;
+  for (const secret of secrets) {
+    try {
+      event = stripe.webhooks.constructEvent(payload, signature, secret);
+      break;
+    } catch {
+      // A platform webhook and a Connect webhook sign with different secrets.
+    }
   }
+  if (!event) throw new HttpError(400, "Invalid Stripe signature.");
 
   switch (event.type) {
     case "checkout.session.completed":
-    case "checkout.session.async_payment_succeeded":
-      await syncCheckoutSession(stripe, event.data.object, event.created);
-      break;
-    case "checkout.session.async_payment_failed": {
+    case "checkout.session.async_payment_succeeded": {
       const session = event.data.object;
-      const subscriptionId = checkoutSubscriptionId(session);
-      if (subscriptionId) {
-        await syncStripeSubscription(await stripe.subscriptions.retrieve(subscriptionId), event.created);
-      }
-      await releaseCheckoutSession(session);
+      if (session.metadata?.kind === "ticket-order") await completeTicketCheckoutSession(session, event.account);
+      else if (session.metadata?.kind === "auction-order") await completeAuctionCheckoutSession(session, event.account);
+      else if (session.metadata?.kind === "bidder-wallet") await completeBidderWalletSession(session, event.account);
+      else if (session.metadata?.kind === "bidder-bill") await completeBidderBillSession(session, event.account);
+      else if (session.metadata?.kind === "donation") await completeDonationCheckoutSession(session, event.account);
+      else await syncCheckoutSession(stripe, session, event.created);
       break;
     }
-    case "checkout.session.expired":
-      await releaseCheckoutSession(event.data.object);
+    case "checkout.session.async_payment_failed": {
+      const session = event.data.object;
+      if (session.metadata?.kind === "ticket-order") await failTicketCheckoutSession(session, event.account);
+      else if (session.metadata?.kind === "auction-order") await failAuctionCheckoutSession(session, event.account);
+      else if (session.metadata?.kind === "bidder-bill") await failBidderBillSession(session, event.account);
+      else if (session.metadata?.kind === "donation") await failDonationCheckoutSession(session, event.account);
+      else {
+        const subscriptionId = checkoutSubscriptionId(session);
+        if (subscriptionId) {
+          await syncStripeSubscription(await stripe.subscriptions.retrieve(subscriptionId), event.created);
+        }
+        await releaseCheckoutSession(session);
+      }
+      break;
+    }
+    case "checkout.session.expired": {
+      const session = event.data.object;
+      if (session.metadata?.kind === "ticket-order") await failTicketCheckoutSession(session, event.account);
+      else if (session.metadata?.kind === "auction-order") await failAuctionCheckoutSession(session, event.account);
+      else if (session.metadata?.kind === "bidder-bill") await failBidderBillSession(session, event.account);
+      else if (session.metadata?.kind === "donation") await failDonationCheckoutSession(session, event.account);
+      else await releaseCheckoutSession(session);
+      break;
+    }
+    case "account.updated":
+      await syncStripeConnectedAccount(event.data.object);
       break;
     case "customer.subscription.created":
     case "customer.subscription.updated":
-      await syncStripeSubscription(await stripe.subscriptions.retrieve(event.data.object.id), event.created);
+      if (event.account) await syncRecurringDonationSubscription(event.data.object, event.account);
+      else await syncStripeSubscription(await stripe.subscriptions.retrieve(event.data.object.id), event.created);
       break;
     case "customer.subscription.deleted":
-      await syncStripeSubscription(event.data.object, event.created);
+      if (event.account) await syncRecurringDonationSubscription(event.data.object, event.account);
+      else await syncStripeSubscription(event.data.object, event.created);
       break;
     case "invoice.paid":
+      if (event.account) await completeRecurringDonationInvoice(stripe, event.data.object, event.account);
+      else await syncInvoiceSubscription(stripe, event.data.object, event.created);
+      break;
     case "invoice.payment_failed":
-      await syncInvoiceSubscription(stripe, event.data.object, event.created);
+      if (!event.account) await syncInvoiceSubscription(stripe, event.data.object, event.created);
       break;
   }
 

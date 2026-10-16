@@ -69,6 +69,8 @@ import type {
   RfpResponseStatus,
   DepositDraft,
   DepositPatch,
+  VendorPaymentPlanDraft,
+  VendorPaymentPlanPatch,
   TeamHoursDraft,
   TeamHoursPatch,
   TeamUpdateDraft,
@@ -85,10 +87,14 @@ import type {
   VolunteerNeedDraft,
   VolunteerNeedPatch,
   PublicVolunteerSignupDraft,
+  PublicDonationStatus,
+  PublicFloorplanPayload,
+  SchoolGrade,
 } from "./entities";
 import type { PlanningBrief, PlanningPreviewBrief } from "./planner";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AssistantChatMessage } from "./assistantChat";
+import type { VendorEventPacketDraft } from "./vendorEventPackets";
 
 /* ---------------------------------------------------------------- query keys */
 
@@ -132,13 +138,37 @@ export const qk = {
 
   tickets: (eventId: string) => ["tickets", eventId] as const,
   allTickets: ["tickets", "all"] as const,
+  ticketOrders: (eventId: string) => ["tickets", eventId, "orders"] as const,
+  stripeConnect: ["billing", "stripe-connect"] as const,
+  ticketInvitations: (eventId: string) => ["tickets", eventId, "invitations"] as const,
+  publicTicketOrder: (shareToken: string, orderId: string) => ["tickets", "public-order", shareToken, orderId] as const,
 
   auction: (eventId: string) => ["auction", eventId] as const,
+  auctionDonors: (eventId: string) => ["auction", eventId, "donors"] as const,
+  auctionBidders: (eventId: string) => ["auction", eventId, "bidders"] as const,
+  auctionBids: (eventId: string) => ["auction", eventId, "bids"] as const,
+  auctionOrders: (eventId: string) => ["auction", eventId, "orders"] as const,
+  publicAuction: (token: string) => ["auction", "public", token] as const,
+  publicAuctionDonor: (token: string) => ["auction", "donor", token] as const,
+  fundraisingProfile: ["fundraising", "profile"] as const,
+  auctionCategories: ["fundraising", "categories"] as const,
+  itemSubmissions: (eventId: string) => ["fundraising", eventId, "submissions"] as const,
+  fundraisingDashboard: (eventId: string) => ["fundraising", eventId, "dashboard"] as const,
+  publicItemIntake: (token: string) => ["fundraising", "intake", token] as const,
+  publicBidderProfile: (token: string, bidderToken: string) => ["auction", "bidder", token, bidderToken] as const,
+  publicBidderBill: (token: string) => ["fundraising", "bill", token] as const,
+  publicFundraisingReceipt: (token: string) => ["fundraising", "receipt", token] as const,
+  donationCampaigns: (eventId?: string) => ["fundraising", "campaigns", eventId ?? "all"] as const,
+  publicDonationCampaign: (token: string) => ["fundraising", "campaign", token] as const,
+  publicDonationStatus: (token: string, donationId: string | null) => ["fundraising", "donation", token, donationId] as const,
+  publicCertificate: (token: string) => ["fundraising", "certificate", token] as const,
+  fundraisingReports: (eventId: string) => ["fundraising", eventId, "reports"] as const,
   raffle: (eventId: string) => ["raffle", eventId] as const,
   raffleTickets: (eventId: string, raffleItemId: string) => ["raffle", eventId, raffleItemId, "tickets"] as const,
   sponsorships: (eventId: string) => ["sponsorships", eventId] as const,
   rfps: (eventId: string) => ["rfps", eventId] as const,
   deposits: (eventId: string) => ["deposits", eventId] as const,
+  vendorPaymentPlans: (eventId: string) => ["vendorPaymentPlans", eventId] as const,
   teamHours: (eventId: string) => ["teamHours", eventId] as const,
 
   templates: ["templates"] as const,
@@ -149,6 +179,7 @@ export const qk = {
 
   settings: ["settings"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
+  publicFloorplan: (token: string) => ["floorplan", "public", token] as const,
   history: (eventId: string) => ["history", eventId] as const,
   teamUpdates: (eventId: string) => ["teamUpdates", eventId] as const,
   roi: (eventId: string) => ["roi", eventId] as const,
@@ -564,6 +595,13 @@ export function useRemoveEventVendor() {
   );
 }
 
+export function useSendVendorEventPacket() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VendorEventPacketDraft }) => a.vendorEventPackets.send(vars.eventId, vars.draft),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId), qk.vendors],
+  );
+}
+
 /* ---------------------------------------------------------- check-in stations */
 
 export function useCheckInStations(eventId: string) {
@@ -821,6 +859,48 @@ export function useAllTickets() {
   return useAdapterQuery(qk.allTickets, (a) => a.tickets.listAll());
 }
 
+export function useStripeConnectStatus() {
+  return useAdapterQuery(qk.stripeConnect, (a) => a.billing.connectStatus());
+}
+
+export function useStartStripeConnect() {
+  return useAdapterMutation(
+    (a, returnTo: string | undefined) => a.billing.startConnectOnboarding(returnTo),
+    () => [qk.stripeConnect],
+  );
+}
+
+export function useTicketOrders(eventId: string) {
+  return useAdapterQuery(qk.ticketOrders(eventId), (a) => a.tickets.listOrders(eventId), { enabled: !!eventId });
+}
+
+export function useRefundTicketOrder() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; orderId: string }) => a.tickets.refundOrder(vars.eventId, vars.orderId),
+    (vars) => [qk.ticketOrders(vars.eventId), qk.tickets(vars.eventId), qk.allTickets, ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useTicketInvitations(eventId: string) {
+  return useAdapterQuery(qk.ticketInvitations(eventId), (a) => a.tickets.listInvitations(eventId), { enabled: !!eventId });
+}
+
+export function useSendTicketInvitations() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; recipients: Array<{ name: string; email: string }>; consentConfirmed: boolean; testOnly?: boolean }) =>
+      a.tickets.sendInvitations(vars.eventId, vars.recipients, { consentConfirmed: vars.consentConfirmed, testOnly: vars.testOnly }),
+    (vars) => [qk.ticketInvitations(vars.eventId)],
+  );
+}
+
+export function usePublicTicketOrderStatus(shareToken: string, orderId: string | null) {
+  return useAdapterQuery(
+    qk.publicTicketOrder(shareToken, orderId ?? "none"),
+    (a) => orderId ? a.tickets.getPublicOrderStatus(shareToken, orderId) : Promise.resolve(null),
+    { enabled: Boolean(shareToken && orderId), refetchInterval: 2_000 },
+  );
+}
+
 export function useAddTicketType() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: TicketTypeDraft }) => a.tickets.create(vars.eventId, vars.draft),
@@ -845,11 +925,17 @@ export function useRemoveTicketType() {
 
 export function usePurchaseTickets() {
   return useAdapterMutation(
-    (a, vars: { shareToken: string; ticketTypeId: string; name: string; contact: string; quantity: number }) =>
+    (a, vars: { shareToken: string; ticketTypeId: string; name: string; contact: string; phone: string; grades: SchoolGrade[]; quantity: number; guestNames: string[]; donationAddOnCents: number; benefitsDeclined: boolean; autoChargeOptIn: boolean }) =>
       a.tickets.purchase(vars.shareToken, vars.ticketTypeId, {
         name: vars.name,
         contact: vars.contact,
+        phone: vars.phone,
+        grades: vars.grades,
         quantity: vars.quantity,
+        guestNames: vars.guestNames,
+        donationAddOnCents: vars.donationAddOnCents,
+        benefitsDeclined: vars.benefitsDeclined,
+        autoChargeOptIn: vars.autoChargeOptIn,
       }),
     // `["tickets"]` as a prefix, not `qk.allTickets`: the public page reads
     // `qk.tickets(eventId)`, so invalidating only the portfolio key left the buyer
@@ -862,6 +948,372 @@ export function usePurchaseTickets() {
 
 export function useAuctionItems(eventId: string) {
   return useAdapterQuery(qk.auction(eventId), (a) => a.auction.list(eventId), { enabled: !!eventId });
+}
+
+export function useAuctionDonors(eventId: string) {
+  return useAdapterQuery(qk.auctionDonors(eventId), (a) => a.auction.listDonors(eventId), { enabled: !!eventId });
+}
+
+export function useAuctionBidders(eventId: string) {
+  return useAdapterQuery(qk.auctionBidders(eventId), (a) => a.auction.listBidders(eventId), { enabled: !!eventId, refetchInterval: 10_000 });
+}
+
+export function useAuctionBids(eventId: string) {
+  return useAdapterQuery(qk.auctionBids(eventId), (a) => a.auction.listBids(eventId), { enabled: !!eventId, refetchInterval: 5_000 });
+}
+
+export function useAddAuctionDonor() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: Parameters<DataAdapter["auction"]["createDonor"]>[1] }) =>
+      a.auction.createDonor(vars.eventId, vars.draft),
+    (vars) => [qk.auctionDonors(vars.eventId)],
+  );
+}
+
+export function useUpdateAuctionDonor() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; donorId: string; patch: Parameters<DataAdapter["auction"]["updateDonor"]>[2] }) =>
+      a.auction.updateDonor(vars.eventId, vars.donorId, vars.patch),
+    (vars) => [qk.auctionDonors(vars.eventId)],
+  );
+}
+
+export function useRemoveAuctionDonor() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; donorId: string }) => a.auction.removeDonor(vars.eventId, vars.donorId),
+    (vars) => [qk.auctionDonors(vars.eventId), qk.auction(vars.eventId)],
+  );
+}
+
+export function useSendAuctionDonorThankYou() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; donorId: string }) => a.auction.sendDonorThankYou(vars.eventId, vars.donorId),
+    (vars) => [qk.auctionDonors(vars.eventId)],
+  );
+}
+
+export function useShareAuction() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.auction.share(eventId),
+    (eventId) => [qk.event(eventId), qk.auction(eventId)],
+  );
+}
+
+export function useUpdateAuctionSettings() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; settings: Parameters<DataAdapter["auction"]["updateSettings"]>[1] }) =>
+      a.auction.updateSettings(vars.eventId, vars.settings),
+    (vars) => [qk.event(vars.eventId), qk.auction(vars.eventId)],
+  );
+}
+
+export function usePublishAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string; published: boolean }) =>
+      a.auction.publishItem(vars.eventId, vars.itemId, vars.published),
+    (vars) => [qk.auction(vars.eventId), qk.publicAuction(vars.eventId)],
+  );
+}
+
+export function useUploadAuctionImage() {
+  return useAdapterMutation(
+    (a, file: File) => a.auction.uploadImage(file),
+    () => [],
+  );
+}
+
+export function useCloseAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string }) => a.auction.closeItem(vars.eventId, vars.itemId),
+    (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.auctionBids(vars.eventId)],
+  );
+}
+
+export function useOfferAuctionSecondChance() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string }) => a.auction.offerSecondChance(vars.eventId, vars.itemId),
+    (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.auctionBids(vars.eventId)],
+  );
+}
+
+export function useAuctionOrders(eventId: string) {
+  return useAdapterQuery(qk.auctionOrders(eventId), (a) => a.auction.listOrders(eventId), { enabled: !!eventId, refetchInterval: 10_000 });
+}
+
+export function useRefundAuctionOrder() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; orderId: string }) => a.auction.refundOrder(vars.eventId, vars.orderId),
+    (vars) => [qk.auctionOrders(vars.eventId), qk.auction(vars.eventId)],
+  );
+}
+
+export function usePublicAuction(token: string) {
+  return useAdapterQuery(qk.publicAuction(token), (a) => a.auction.getPublic(token), { enabled: !!token, refetchInterval: 5_000 });
+}
+
+export function useRegisterAuctionBidder() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: Parameters<DataAdapter["auction"]["registerPublic"]>[1] }) =>
+      a.auction.registerPublic(vars.token, vars.draft),
+    (vars) => [qk.publicAuction(vars.token)],
+  );
+}
+
+export function usePlaceAuctionBid() {
+  return useAdapterMutation(
+    (a, vars: { token: string; bidderToken: string; itemId: string; maximumAmountCents: number }) =>
+      a.auction.placePublicBid(vars.token, vars.bidderToken, vars.itemId, vars.maximumAmountCents),
+    (vars) => [qk.publicAuction(vars.token)],
+  );
+}
+
+export function usePublicAuctionDonor(token: string) {
+  return useAdapterQuery(qk.publicAuctionDonor(token), (a) => a.auction.getPublicDonor(token), { enabled: !!token });
+}
+
+export function useUploadPublicAuctionDonorImage() {
+  return useAdapterMutation(
+    (a, vars: { token: string; file: File }) => a.auction.uploadPublicDonorImage(vars.token, vars.file),
+    () => [],
+  );
+}
+
+export function useSubmitPublicAuctionDonation() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: Parameters<DataAdapter["auction"]["submitPublicDonation"]>[1] }) =>
+      a.auction.submitPublicDonation(vars.token, vars.draft),
+    (vars) => [qk.publicAuctionDonor(vars.token)],
+  );
+}
+
+export function useFundraisingOrganizationProfile() {
+  return useAdapterQuery(qk.fundraisingProfile, (a) => a.fundraising.getProfile());
+}
+
+export function useUpdateFundraisingOrganizationProfile() {
+  return useAdapterMutation((a, profile: Parameters<DataAdapter["fundraising"]["updateProfile"]>[0]) => a.fundraising.updateProfile(profile), () => [qk.fundraisingProfile]);
+}
+
+export function useAuctionCategories() {
+  return useAdapterQuery(qk.auctionCategories, (a) => a.fundraising.listCategories());
+}
+
+export function useCreateAuctionCategory() {
+  return useAdapterMutation((a, name: string) => a.fundraising.createCategory(name), () => [qk.auctionCategories]);
+}
+
+export function useItemSubmissions(eventId: string) {
+  return useAdapterQuery(qk.itemSubmissions(eventId), (a) => a.fundraising.listSubmissions(eventId), { enabled: !!eventId, refetchInterval: 10_000 });
+}
+
+export function useUpdateItemSubmission() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; submissionId: string; patch: Parameters<DataAdapter["fundraising"]["updateSubmission"]>[2] }) => a.fundraising.updateSubmission(vars.eventId, vars.submissionId, vars.patch),
+    (vars) => [qk.itemSubmissions(vars.eventId), qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function useFundraisingDashboard(eventId: string) {
+  return useAdapterQuery(qk.fundraisingDashboard(eventId), (a) => a.fundraising.dashboard(eventId), { enabled: !!eventId, refetchInterval: 10_000 });
+}
+
+export function useExtendAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string; minutes: number; notify?: boolean }) => a.fundraising.extendItem(vars.eventId, vars.itemId, vars.minutes, vars.notify),
+    (vars) => [qk.auction(vars.eventId), qk.publicAuction(vars.eventId)],
+  );
+}
+
+export function useExtendAuctionItems() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemIds: string[]; minutes: number; notify?: boolean }) => a.fundraising.extendItems(vars.eventId, vars.itemIds, vars.minutes, vars.notify),
+    (vars) => [qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function useReopenAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string; minutes: number }) => a.fundraising.reopenItem(vars.eventId, vars.itemId, vars.minutes),
+    (vars) => [qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function usePublicItemIntake(token: string) {
+  const priorDonorToken = new URLSearchParams(window.location.search).get("prior");
+  return useAdapterQuery([...qk.publicItemIntake(token), priorDonorToken ?? "new"], (a) => a.fundraising.getPublicIntake(token, priorDonorToken), { enabled: !!token });
+}
+
+export function useSubmitPublicItem() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: Parameters<DataAdapter["fundraising"]["submitPublicItem"]>[1] }) => a.fundraising.submitPublicItem(vars.token, vars.draft),
+    (vars) => [qk.publicItemIntake(vars.token)],
+  );
+}
+
+export function useUploadPublicItemImage() {
+  return useAdapterMutation(
+    (a, vars: { token: string; file: File }) => a.fundraising.uploadPublicItemImage(vars.token, vars.file),
+    () => [],
+  );
+}
+
+export function useReinvitePastItemDonors() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.fundraising.reinvitePastDonors(eventId),
+    () => [],
+  );
+}
+
+export function useMergeAuctionItems() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemIds: string[]; title: string }) => a.fundraising.mergeItems(vars.eventId, vars.itemIds, vars.title),
+    (vars) => [qk.itemSubmissions(vars.eventId), qk.auction(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function usePublicBidderProfile(token: string, bidderToken: string | null) {
+  return useAdapterQuery(
+    qk.publicBidderProfile(token, bidderToken ?? "none"),
+    (a) => bidderToken ? a.auction.getBidderProfile(token, bidderToken) : Promise.resolve(null),
+    { enabled: Boolean(token && bidderToken), refetchInterval: 5_000 },
+  );
+}
+
+export function useSetupBidderWallet() {
+  return useAdapterMutation(
+    (a, vars: { token: string; bidderToken: string }) => a.auction.setupBidderWallet(vars.token, vars.bidderToken),
+    (vars) => [qk.publicBidderProfile(vars.token, vars.bidderToken)],
+  );
+}
+
+export function useSetAuctionWatch() {
+  return useAdapterMutation(
+    (a, vars: { token: string; bidderToken: string; itemId: string; watched: boolean }) => a.auction.setWatch(vars.token, vars.bidderToken, vars.itemId, vars.watched),
+    (vars) => [qk.publicBidderProfile(vars.token, vars.bidderToken), qk.publicAuction(vars.token)],
+  );
+}
+
+export function useCreateFundraisingPledge() {
+  return useAdapterMutation(
+    (a, vars: { token: string; bidderToken: string; amountCents: number; channel: "in_room" | "remote" }) => a.auction.createPledge(vars.token, vars.bidderToken, vars.amountCents, vars.channel),
+    (vars) => [qk.publicBidderProfile(vars.token, vars.bidderToken)],
+  );
+}
+
+export function useBuyNowAuctionItem() {
+  return useAdapterMutation(
+    (a, vars: { token: string; bidderToken: string; itemId: string }) => a.auction.buyNow(vars.token, vars.bidderToken, vars.itemId),
+    (vars) => [qk.publicAuction(vars.token), qk.publicBidderProfile(vars.token, vars.bidderToken)],
+  );
+}
+
+export function useBuildBidderBills() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.fundraising.buildBills(eventId),
+    (eventId) => [qk.fundraisingDashboard(eventId), qk.auctionOrders(eventId)],
+  );
+}
+
+export function useSendBidderBills() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.fundraising.sendBills(eventId),
+    (eventId) => [qk.fundraisingDashboard(eventId), qk.auctionOrders(eventId)],
+  );
+}
+
+export function useRefundBidderBill() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; billId: string }) => a.fundraising.refundBill(vars.eventId, vars.billId),
+    (vars) => [qk.fundraisingDashboard(vars.eventId), qk.fundraisingReports(vars.eventId)],
+  );
+}
+
+export function usePublicBidderBill(token: string) {
+  return useAdapterQuery(qk.publicBidderBill(token), (a) => a.fundraising.getPublicBill(token), { enabled: !!token, refetchInterval: 3_000 });
+}
+
+export function usePayPublicBidderBill() {
+  return useAdapterMutation(
+    (a, vars: { token: string; coverFees: boolean }) => a.fundraising.payPublicBill(vars.token, vars.coverFees),
+    (vars) => [qk.publicBidderBill(vars.token)],
+  );
+}
+
+export function usePublicFundraisingReceipt(token: string) {
+  return useAdapterQuery(qk.publicFundraisingReceipt(token), (a) => a.fundraising.getPublicReceipt(token), { enabled: !!token });
+}
+
+export function useDonationCampaigns(eventId?: string) {
+  return useAdapterQuery(qk.donationCampaigns(eventId), (a) => a.fundraising.listCampaigns(eventId));
+}
+
+export function useCreateDonationCampaign() {
+  return useAdapterMutation(
+    (a, draft: Parameters<DataAdapter["fundraising"]["createCampaign"]>[0]) => a.fundraising.createCampaign(draft),
+    (draft) => [qk.donationCampaigns(draft.eventId ?? undefined)],
+  );
+}
+
+export function usePublicDonationCampaign(token: string) {
+  return useAdapterQuery(qk.publicDonationCampaign(token), (a) => a.fundraising.getPublicCampaign(token), { enabled: !!token, refetchInterval: 10_000 });
+}
+
+export function useCreateDonationCheckout() {
+  return useAdapterMutation(
+    (a, vars: { token: string; draft: Parameters<DataAdapter["fundraising"]["createDonationCheckout"]>[1] }) => a.fundraising.createDonationCheckout(vars.token, vars.draft),
+    (vars) => [qk.publicDonationCampaign(vars.token)],
+  );
+}
+
+export function usePublicDonationStatus(token: string, donationId: string | null) {
+  return useAdapterQuery<PublicDonationStatus | null>(
+    qk.publicDonationStatus(token, donationId),
+    (a) => a.fundraising.getDonationStatus(token, donationId!),
+    { enabled: !!token && !!donationId, refetchInterval: 2_000 },
+  );
+}
+
+export function usePublicExperienceCertificate(token: string) {
+  return useAdapterQuery(qk.publicCertificate(token), (a) => a.fundraising.getPublicCertificate(token), { enabled: !!token });
+}
+
+export function usePreviewFundraisingBroadcast() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; audience: import("./entities").FundraisingBroadcastAudience; itemIds: string[] }) => a.fundraising.previewBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds }),
+    () => [],
+  );
+}
+
+export function useSendFundraisingBroadcast() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; audience: import("./entities").FundraisingBroadcastAudience; itemIds: string[]; channels: string[]; message: string }) => a.fundraising.sendBroadcast(vars.eventId, { audience: vars.audience, itemIds: vars.itemIds, channels: vars.channels, message: vars.message }),
+    (vars) => [qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function useRecordLiveAuctionSale() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string; paddleNumbers: number[]; amountCents: number }) => a.fundraising.recordLiveSale(vars.eventId, vars.itemId, vars.paddleNumbers, vars.amountCents),
+    (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function useUndoLiveAuctionSale() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; itemId: string }) => a.fundraising.undoLiveSale(vars.eventId, vars.itemId),
+    (vars) => [qk.auction(vars.eventId), qk.auctionOrders(vars.eventId), qk.fundraisingDashboard(vars.eventId)],
+  );
+}
+
+export function useFundraisingReports(eventId: string) {
+  return useAdapterQuery(qk.fundraisingReports(eventId), (a) => a.fundraising.reports(eventId), { enabled: !!eventId, refetchInterval: 15_000 });
+}
+
+export function useSendYearEndStatements() {
+  return useAdapterMutation(
+    (a, taxYear: number) => a.fundraising.sendYearEndStatements(taxYear),
+    () => [],
+  );
 }
 
 export function useAddAuctionItem() {
@@ -1067,6 +1519,37 @@ export function useRemoveDeposit() {
   );
 }
 
+export function useVendorPaymentPlans(eventId: string) {
+  return useAdapterQuery(
+    qk.vendorPaymentPlans(eventId),
+    (a) => a.vendorPaymentPlans.list(eventId),
+    { enabled: !!eventId },
+  );
+}
+
+export function useAddVendorPaymentPlan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; draft: VendorPaymentPlanDraft }) =>
+      a.vendorPaymentPlans.create(vars.eventId, vars.draft),
+    (vars) => [qk.vendorPaymentPlans(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useUpdateVendorPaymentPlan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string; patch: VendorPaymentPlanPatch }) =>
+      a.vendorPaymentPlans.update(vars.eventId, vars.id, vars.patch),
+    (vars) => [qk.vendorPaymentPlans(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
+export function useRemoveVendorPaymentPlan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.vendorPaymentPlans.remove(vars.eventId, vars.id),
+    (vars) => [qk.vendorPaymentPlans(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
 /* ---------------------------------------------------------------- team hours */
 
 export function useTeamHours(eventId: string) {
@@ -1187,7 +1670,7 @@ export function useRevokeInvite() {
 
 export function useSetMemberRole() {
   return useAdapterMutation(
-    (a, vars: { userId: string; role: WorkspaceRole }) => a.members.setRole(vars.userId, vars.role),
+    (a, vars: { userId: string; role: WorkspaceRole; changeId: string }) => a.members.setRole(vars.userId, vars.role, vars.changeId),
     () => [qk.members],
   );
 }
@@ -1231,6 +1714,17 @@ export function useSaveFloorplan() {
     (a, vars: { id: string; eventId: string; draft: FloorplanDraft }) => a.floorplan.save(vars.id, vars.draft),
     (vars) => [qk.floorplan(vars.eventId), qk.history(vars.eventId)],
   );
+}
+
+export function useShareFloorplan() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; id: string }) => a.floorplan.share(vars.eventId, vars.id),
+    () => [],
+  );
+}
+
+export function usePublicFloorplan(token: string): UseQueryResult<PublicFloorplanPayload | null, Error> {
+  return useAdapterQuery(qk.publicFloorplan(token), (a) => a.floorplan.getPublic(token), { enabled: !!token });
 }
 
 export function useDeleteFloorplan() {

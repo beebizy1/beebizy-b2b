@@ -41,6 +41,7 @@ import type {
   CustomReportRow,
   Event,
   Deposit,
+  VendorPaymentPlan,
   AssignmentSummaryResult,
   EventHealth,
   EventHistoryChange,
@@ -63,6 +64,7 @@ import type {
   CheckInStation,
   ChecklistItem,
   InviteResult,
+  MemberRoleChangeResult,
   ImportedSpreadsheetField,
   RunOfShowItem,
   VolunteerShift,
@@ -72,11 +74,21 @@ import type {
   PublicAssignmentPayload,
   PublicCheckInGuest,
   PublicCheckInStationPayload,
+  PublicAttendanceDashboardPayload,
+  PublicFloorplanPayload,
   PublicRegistrationDraft,
   PublicRegistrationResult,
   PublicVolunteerSignupDraft,
   PublicRfpPayload,
   PublicVendorConversation,
+  AuctionDonor,
+  AuctionBidder,
+  AuctionBid,
+  AuctionPageSettings,
+  PublicAuctionPayload,
+  PublicAuctionItem,
+  PublicAuctionBidResult,
+  PublicAuctionDonorPayload,
   Rfp,
   RfpWithResponses,
 } from "../data/entities.ts";
@@ -102,6 +114,10 @@ import {
   notifyVendorMessage,
   notifyVolunteerAssignment,
   notifyWorkAssignment,
+  notifyAuctionOutbid,
+  notifyAuctionDonorThankYou,
+  notifyCombinedFundraisingReceipt,
+  notifyWorkspaceRoleChanged,
 } from "./notify.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
@@ -110,6 +126,13 @@ import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/re
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
 import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
+import { buildUniqueAttendanceReport, normalizeAttendeeName, type UniqueAttendeeRecord } from "../data/attendanceReport.ts";
+import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
+import { auctionCatalogReadiness } from "../data/commerce.ts";
+import { bidIncrementCents } from "../data/fundraising.ts";
+import { allocateAuctionBidder } from "./auctionBidderAllocation.ts";
+import { errorMessages } from "./errorMessage.ts";
+import { roleChangeOwnerGuard, roleRemovalOwnerGuard } from "./workspaceMemberRoleGuards.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -932,6 +955,7 @@ export async function publicTickets(eventId: string) {
   return rows.map(map.toTicketType);
 }
 
+/** Read-only floorplans for an event already authorized by its public share token. */
 /** Public-safe volunteer openings. Names and contact details stay server-side. */
 export async function publicVolunteerNeeds(eventId: string) {
   const [needs, shifts] = await Promise.all([
@@ -1008,6 +1032,31 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   }
   const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
   const registration = map.toRegistration(row!, event.title);
+  let bidderAccessUrl: string | null = null;
+  let bidderPaddle: number | null = null;
+  if (event.auctionPublicToken) {
+    const [existingBidder] = await db.select({ paddleNumber: s.auctionBidders.paddleNumber, publicToken: s.auctionBidders.publicToken }).from(s.auctionBidders).where(and(
+      eq(s.auctionBidders.eventId, event.id), eq(s.auctionBidders.email, draft.email),
+    )).limit(1);
+    const bidder = existingBidder ?? await allocateAuctionBidder({
+      workspaceId: event.workspaceId,
+      eventId: event.id,
+      name: draft.name,
+      email: draft.email,
+      phone: null,
+      householdId: null,
+      attendeeId: guest.id,
+      paymentMethodId: null,
+      stripeCustomerId: null,
+      autoChargeOptIn: false,
+      checkedInAt: null,
+      participantType: "gala",
+      publicToken: crypto.randomUUID(),
+      updateExisting: false,
+    });
+    bidderPaddle = bidder.paddleNumber;
+    bidderAccessUrl = `${appOrigin()}/auction/${encodeURIComponent(event.auctionPublicToken)}?bidder=${encodeURIComponent(bidder.publicToken)}`;
+  }
   const shared = await eventByShareToken(token);
   const publicEvent = shared?.event;
   const location = publicEvent?.locationRecord
@@ -1029,6 +1078,8 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     timeZone: shared?.timeZone ?? "UTC",
     location,
     eventUrl: `${appOrigin()}/e/${encodeURIComponent(token)}`,
+    auctionAccessUrl: bidderAccessUrl,
+    paddleNumber: bidderPaddle,
   });
   return { ...registration, confirmationEmailStatus: email.status };
 }
@@ -1318,6 +1369,72 @@ export async function publicCheckInStation(token: string): Promise<PublicCheckIn
   };
 }
 
+/**
+ * Aggregate-only post-event attendance, shared by one unguessable dashboard link.
+ *
+ * The server reads names to consolidate repeated walk-ins, but the public contract never
+ * returns names, emails, guest ids, registration ids, notes or check-in timestamps.
+ */
+export async function publicAttendanceDashboard(token: string): Promise<PublicAttendanceDashboardPayload | null> {
+  const [link] = await db.select().from(s.eventHistory)
+    .where(and(
+      eq(s.eventHistory.resource, "attendance-dashboard-link"),
+      eq(s.eventHistory.resourceId, token),
+      eq(s.eventHistory.action, "created"),
+    ))
+    .limit(1);
+  if (!link) return null;
+
+  const [eventRow] = await db.select({ event: s.events, timeZone: s.workspaces.timeZone })
+    .from(s.events)
+    .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
+    .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId)))
+    .limit(1);
+  if (!eventRow) return null;
+
+  const rows = await db.select({ registration: s.registrations, guest: s.guests })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+    ));
+  const registrations: RegistrationWithGuest[] = rows.map(({ registration, guest }) => ({
+    ...map.toRegistration(registration, eventRow.event.title),
+    guest: map.toGuest(guest),
+  }));
+  const report = buildUniqueAttendanceReport(registrations);
+  const counts = (read: (row: UniqueAttendeeRecord) => string | null) =>
+    [...report.attendees.reduce((groups, attendee) => {
+      const label = read(attendee)?.trim() || "Not specified";
+      groups.set(label, (groups.get(label) ?? 0) + 1);
+      return groups;
+    }, new Map<string, number>())]
+      .map(([label, total]) => ({ label, count: total }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const displayTitle = typeof link.after?.displayTitle === "string" && link.after.displayTitle.trim()
+    ? link.after.displayTitle.trim()
+    : eventRow.event.title;
+
+  return {
+    eventTitle: displayTitle,
+    eventDate: eventRow.event.startsAt.toISOString(),
+    timeZone: eventRow.timeZone,
+    generatedAt: new Date().toISOString(),
+    summary: {
+      registrationRows: report.summary.registrationRows,
+      uniqueRegistered: report.summary.uniqueRegistered,
+      checkedInRows: report.summary.checkedInRows,
+      uniqueCheckedIn: report.summary.uniqueCheckedIn,
+      duplicateCheckedInRows: report.summary.duplicateCheckedInRows,
+      noShows: Math.max(0, report.summary.uniqueRegistered - report.summary.uniqueCheckedIn),
+      attendanceRate: report.summary.attendanceRate,
+    },
+    guestTypes: counts((row) => row.guestType),
+    registrationSources: counts((row) => row.registrationSource),
+  };
+}
+
 /** Checks in or undoes one in-range guest and records the volunteer identity in history. */
 export async function setPublicCheckIn(
   token: string,
@@ -1341,6 +1458,7 @@ export async function setPublicCheckIn(
 
   const checkedInAt = checkedIn ? new Date() : null;
   const before = toPublicCheckInGuest(current.registration, current.guest);
+  if (Boolean(current.registration.checkedInAt) === checkedIn) return before;
   const update = db.update(s.registrations)
     .set({
       checkedInAt,
@@ -1391,6 +1509,20 @@ export async function createPublicWalkIn(
   if (name.length > 120) throw new HttpError(400, "The guest name must be 120 characters or fewer.");
 
   const { link, shift, station } = access;
+  const normalizedName = normalizeAttendeeName(name);
+  const [existingName] = await db.select({ name: s.guests.name })
+    .from(s.registrations)
+    .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .where(and(
+      eq(s.registrations.eventId, link.eventId),
+      eq(s.registrations.workspaceId, link.workspaceId),
+      sql`${s.registrations.status} <> 'cancelled'`,
+      sql`lower(regexp_replace(trim(${s.guests.name}), '\\s+', ' ', 'g')) = ${normalizedName}`,
+    ))
+    .limit(1);
+  if (existingName) {
+    throw new HttpError(409, `${existingName.name} is already on the guest list. Search for the existing guest and check them in instead.`);
+  }
   const [eventRow] = await db.select({ capacity: s.events.capacity }).from(s.events).where(and(
     eq(s.events.id, link.eventId),
     eq(s.events.workspaceId, link.workspaceId),
@@ -1742,15 +1874,23 @@ export const guests = {
 
 async function joinRegistrations(where: ReturnType<typeof and>): Promise<RegistrationWithGuest[]> {
   const rows = await db
-    .select({ registration: s.registrations, guest: s.guests, eventTitle: s.events.title })
+    .select({ registration: s.registrations, guest: s.guests, eventTitle: s.events.title, paddleNumber: s.auctionBidders.paddleNumber, bidderToken: s.auctionBidders.publicToken })
     .from(s.registrations)
     .innerJoin(s.events, eq(s.registrations.eventId, s.events.id))
     .leftJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+    .leftJoin(s.auctionBidders, and(
+      eq(s.auctionBidders.eventId, s.registrations.eventId),
+      or(
+        eq(s.auctionBidders.attendeeId, s.guests.id),
+        and(isNotNull(s.guests.contact), eq(s.auctionBidders.email, s.guests.contact)),
+      ),
+    ))
     .where(where)
     .orderBy(desc(s.registrations.registeredAt));
   return rows.map((row) => ({
     ...map.toRegistration(row.registration, row.eventTitle),
     guest: row.guest ? map.toGuest(row.guest) : null,
+    bidderAccess: row.paddleNumber && row.bidderToken ? { paddleNumber: row.paddleNumber, publicToken: row.bidderToken } : null,
   }));
 }
 
@@ -1960,6 +2100,20 @@ export const registrations = {
     if (existingGuest) {
       throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
     }
+    const normalizedName = normalizeAttendeeName(draft.name);
+    const [existingName] = await db.select({ name: s.guests.name })
+      .from(s.registrations)
+      .innerJoin(s.guests, eq(s.registrations.guestId, s.guests.id))
+      .where(and(
+        eq(s.registrations.eventId, eventId),
+        eq(s.registrations.workspaceId, ctx.workspaceId),
+        sql`${s.registrations.status} <> 'cancelled'`,
+        sql`lower(regexp_replace(trim(${s.guests.name}), '\\s+', ' ', 'g')) = ${normalizedName}`,
+      ))
+      .limit(1);
+    if (existingName) {
+      throw new HttpError(409, `${existingName.name} is already on this guest list. Search for the existing guest and check them in instead.`);
+    }
 
     const guestId = newId("att");
     const registrationId = newId("reg");
@@ -1993,7 +2147,35 @@ export const registrations = {
     try {
       const [guestRows, registrationRows] = await db.batch([guestInsert, registrationInsert]);
       const guest = map.toGuest(guestRows[0]!);
-      return { ...map.toRegistration(registrationRows[0]!, event.title), guest };
+      let bidderAccess: RegistrationWithGuest["bidderAccess"] = null;
+      if (event.auctionPublicToken) {
+        try {
+          const allocation = await allocateAuctionBidder({
+            workspaceId: ctx.workspaceId,
+            eventId,
+            name: draft.name,
+            email: draft.contact.toLowerCase(),
+            phone: null,
+            householdId: null,
+            attendeeId: guest.id,
+            paymentMethodId: null,
+            stripeCustomerId: null,
+            autoChargeOptIn: false,
+            checkedInAt,
+            participantType: "gala",
+            publicToken: crypto.randomUUID(),
+            updateExisting: false,
+          });
+          bidderAccess = { paddleNumber: allocation.paddleNumber, publicToken: allocation.publicToken };
+        } catch (allocationError) {
+          await db.batch([
+            db.delete(s.registrations).where(eq(s.registrations.id, registrationId)),
+            db.delete(s.guests).where(eq(s.guests.id, guestId)),
+          ]);
+          throw allocationError;
+        }
+      }
+      return { ...map.toRegistration(registrationRows[0]!, event.title), guest, bidderAccess };
     } catch (error) {
       if (isConstraintViolation(error, "guests_workspace_contact_idx")) {
         throw new HttpError(409, "That email is already in the people list. Search for the guest and check them in instead.");
@@ -3214,6 +3396,94 @@ const depositAmount = (body: Body): number => {
   return value;
 };
 
+const optionalDepositAmount = (body: Body, key: string): number | null => {
+  const value = optInt(body, key);
+  if (value !== null && value < 0) throw new HttpError(400, `${key} cannot be negative.`);
+  return value;
+};
+
+const depositAmounts = (body: Body) => {
+  const amountCents = depositAmount(body);
+  const totalAmountCents = optionalDepositAmount(body, "totalAmountCents");
+  if (totalAmountCents !== null && amountCents > totalAmountCents) {
+    throw new HttpError(400, "The deposit cannot be greater than the total vendor cost.");
+  }
+  return { amountCents, totalAmountCents };
+};
+
+const paymentPlanTotal = (body: Body): number => {
+  const value = optInt(body, "totalAmountCents") ?? 0;
+  if (value < 0) throw new HttpError(400, "totalAmountCents cannot be negative.");
+  return value;
+};
+
+const normalizedVendorKey = (value: string) => value.trim().toLocaleLowerCase();
+
+async function paidDepositsForPlan(
+  ctx: RequestContext,
+  eventId: string,
+  paymentPlanId: string,
+  excludeId?: string,
+): Promise<number> {
+  const conditions = [
+    eq(s.deposits.workspaceId, ctx.workspaceId),
+    eq(s.deposits.eventId, eventId),
+    eq(s.deposits.status, "paid"),
+    eq(s.deposits.paymentPlanId, paymentPlanId),
+  ];
+  if (excludeId) conditions.push(ne(s.deposits.id, excludeId));
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${s.deposits.amountCents}), 0)::bigint` })
+    .from(s.deposits)
+    .where(and(...conditions));
+  return Number(row?.total ?? 0);
+}
+
+export const vendorPaymentPlans = eventScoped({
+  table: s.vendorPaymentPlans as never,
+  mapper: map.toVendorPaymentPlan as never,
+  idPrefix: "vpp",
+  order: "createdAt",
+  insert: (ctx, eventId, body, sortOrder) => ({
+    ...scope(ctx, eventId),
+    vendorName: str(body, "vendorName"),
+    vendorKey: normalizedVendorKey(str(body, "vendorName")),
+    totalAmountCents: paymentPlanTotal(body),
+    balanceDueDate: parseDate(body.balanceDueDate, "balanceDueDate"),
+    notes: optStr(body, "notes"),
+    sortOrder,
+  }),
+  patch: {
+    totalAmountCents: (b) => paymentPlanTotal(b),
+    balanceDueDate: (b) => parseDate(b.balanceDueDate, "balanceDueDate"),
+    notes: (b) => optStr(b, "notes"),
+  },
+  beforeWrite: async (ctx, eventId, body, current) => {
+    const previous = current as VendorPaymentPlan | null;
+    const vendorName = previous?.vendorName ?? ("vendorName" in body ? str(body, "vendorName") : undefined);
+    const totalAmountCents = "totalAmountCents" in body ? paymentPlanTotal(body) : previous?.totalAmountCents;
+    if (!vendorName || totalAmountCents == null) return;
+
+    const [duplicate] = await db
+      .select({ id: s.vendorPaymentPlans.id })
+      .from(s.vendorPaymentPlans)
+      .where(and(
+        eq(s.vendorPaymentPlans.workspaceId, ctx.workspaceId),
+        eq(s.vendorPaymentPlans.eventId, eventId),
+        sql`lower(trim(${s.vendorPaymentPlans.vendorName})) = lower(trim(${vendorName}))`,
+      ))
+      .limit(1);
+    if (duplicate && duplicate.id !== previous?.id) {
+      throw new HttpError(409, `A payment plan already exists for ${vendorName}.`);
+    }
+
+    const paidCents = previous ? await paidDepositsForPlan(ctx, eventId, previous.id) : 0;
+    if (totalAmountCents < paidCents) {
+      throw new HttpError(400, "The total vendor cost cannot be less than deposits already paid.");
+    }
+  },
+});
+
 export const deposits = eventScoped({
   table: s.deposits as never,
   mapper: map.toDeposit as never,
@@ -3221,10 +3491,12 @@ export const deposits = eventScoped({
   order: "createdAt",
   insert: (ctx, eventId, body, sortOrder) => ({
     ...scope(ctx, eventId),
+    paymentPlanId: optStr(body, "paymentPlanId"),
     vendorName: str(body, "vendorName"),
-    amountCents: depositAmount(body),
+    ...depositAmounts(body),
     dueDate: parseOptionalDate(body.dueDate, "dueDate"),
     paidDate: parseOptionalDate(body.paidDate, "paidDate"),
+    balanceDueDate: parseOptionalDate(body.balanceDueDate, "balanceDueDate"),
     paidBy: optStr(body, "paidBy"),
     paymentMethod: optStr(body, "paymentMethod"),
     status: depositStatus(body),
@@ -3232,14 +3504,50 @@ export const deposits = eventScoped({
     sortOrder,
   }),
   patch: {
+    paymentPlanId: (b) => optStr(b, "paymentPlanId"),
     vendorName: (b) => str(b, "vendorName"),
+    totalAmountCents: (b) => optionalDepositAmount(b, "totalAmountCents"),
     amountCents: (b) => depositAmount(b),
     dueDate: (b) => parseOptionalDate(b.dueDate, "dueDate"),
     paidDate: (b) => parseOptionalDate(b.paidDate, "paidDate"),
+    balanceDueDate: (b) => parseOptionalDate(b.balanceDueDate, "balanceDueDate"),
     paidBy: (b) => optStr(b, "paidBy"),
     paymentMethod: (b) => optStr(b, "paymentMethod"),
     status: (b) => depositStatus(b),
     notes: (b) => optStr(b, "notes"),
+  },
+  beforeWrite: async (ctx, eventId, body, current) => {
+    const previous = current as Deposit | null;
+    const paymentPlanId = "paymentPlanId" in body ? optStr(body, "paymentPlanId") : previous?.paymentPlanId;
+    const vendorName = "vendorName" in body ? str(body, "vendorName") : previous?.vendorName;
+    const amountCents = "amountCents" in body ? depositAmount(body) : previous?.amountCents;
+    const status = "status" in body ? depositStatus(body) : previous?.status;
+    if (!vendorName || amountCents == null || status == null) return;
+
+    const planConditions = paymentPlanId
+      ? [eq(s.vendorPaymentPlans.id, paymentPlanId)]
+      : [sql`lower(trim(${s.vendorPaymentPlans.vendorName})) = lower(trim(${vendorName}))`];
+    const [plan] = await db
+      .select({ id: s.vendorPaymentPlans.id, totalAmountCents: s.vendorPaymentPlans.totalAmountCents })
+      .from(s.vendorPaymentPlans)
+      .where(and(
+        eq(s.vendorPaymentPlans.workspaceId, ctx.workspaceId),
+        eq(s.vendorPaymentPlans.eventId, eventId),
+        ...planConditions,
+      ))
+      .limit(1);
+    if (!plan) {
+      if (paymentPlanId) throw new HttpError(400, "That vendor payment plan does not belong to this event.");
+      return;
+    }
+    if (!paymentPlanId && !previous?.paymentPlanId) body.paymentPlanId = plan.id;
+
+    const resolvedPlanId = paymentPlanId ?? plan.id;
+    const otherPaidCents = await paidDepositsForPlan(ctx, eventId, resolvedPlanId, previous?.id);
+    const nextPaidCents = otherPaidCents + (status === "paid" ? amountCents : 0);
+    if (nextPaidCents > plan.totalAmountCents) {
+      throw new HttpError(400, "Paid deposits cannot be greater than the total vendor cost.");
+    }
   },
 });
 
@@ -3292,11 +3600,38 @@ export const auction = eventScoped({
     title: str(body, "title"),
     description: optStr(body, "description"),
     imageUrl: optStr(body, "imageUrl"),
+    photoUrls: Array.isArray(body.photoUrls) ? body.photoUrls.filter((value): value is string => typeof value === "string").slice(0, 5) : [],
+    estimatedValueCents: optInt(body, "estimatedValueCents"),
     startingBidCents: optInt(body, "startingBidCents"),
     currentBidCents: optInt(body, "currentBidCents"),
     fairMarketValueCents: optInt(body, "fairMarketValueCents"),
     winnerName: optStr(body, "winnerName"),
     donorName: optStr(body, "donorName"),
+    donorId: optStr(body, "donorId"),
+    itemSubmissionId: optStr(body, "itemSubmissionId"),
+    itemType: str(body, "itemType", str(body, "auctionType", "silent")),
+    category: optStr(body, "category"),
+    restrictions: optStr(body, "restrictions"),
+    expiresAt: parseOptionalDate(body.expiresAt, "expiresAt"),
+    deliveryDetails: optStr(body, "deliveryDetails"),
+    deliveryMethod: optStr(body, "deliveryMethod"),
+    creditText: optStr(body, "creditText"),
+    showFairMarketValue: optBool(body, "showFairMarketValue") ?? true,
+    buyNowCents: optInt(body, "buyNowCents"),
+    reserveCents: optInt(body, "reserveCents"),
+    incrementRule: str(body, "incrementRule", "tiered"),
+    closingWave: optStr(body, "closingWave"),
+    notesToSchool: optStr(body, "notesToSchool"),
+    isServiceOrUse: optBool(body, "isServiceOrUse") ?? false,
+    overFiveThousandFlag: (optInt(body, "fairMarketValueCents") ?? 0) > 500_000,
+    bidIncrementCents: optInt(body, "bidIncrementCents"),
+    readinessStatus: str(body, "readinessStatus", "draft"),
+    isPublished: optBool(body, "isPublished") ?? false,
+    opensAt: parseOptionalDate(body.opensAt, "opensAt"),
+    closesAt: parseOptionalDate(body.closesAt, "closesAt"),
+    extensionMinutes: optInt(body, "extensionMinutes") ?? 0,
+    quantityAvailable: optInt(body, "quantityAvailable") ?? 1,
+    fulfillmentStatus: str(body, "fulfillmentStatus", "pending"),
     paymentMethod: optStr(body, "paymentMethod"),
     paymentLink: optStr(body, "paymentLink"),
     status: str(body, "status", "open"),
@@ -3307,11 +3642,41 @@ export const auction = eventScoped({
   patch: {
     title: (b) => str(b, "title"),
     description: (b) => optStr(b, "description"),
+    imageUrl: (b) => optStr(b, "imageUrl"),
+    photoUrls: (b) => Array.isArray(b.photoUrls) ? b.photoUrls.filter((value): value is string => typeof value === "string").slice(0, 5) : [],
+    estimatedValueCents: (b) => optInt(b, "estimatedValueCents"),
     startingBidCents: (b) => optInt(b, "startingBidCents"),
     currentBidCents: (b) => optInt(b, "currentBidCents"),
     fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
     winnerName: (b) => optStr(b, "winnerName"),
     donorName: (b) => optStr(b, "donorName"),
+    donorId: (b) => optStr(b, "donorId"),
+    itemSubmissionId: (b) => optStr(b, "itemSubmissionId"),
+    itemType: (b) => str(b, "itemType", "silent"),
+    category: (b) => optStr(b, "category"),
+    restrictions: (b) => optStr(b, "restrictions"),
+    expiresAt: (b) => parseOptionalDate(b.expiresAt, "expiresAt"),
+    deliveryDetails: (b) => optStr(b, "deliveryDetails"),
+    deliveryMethod: (b) => optStr(b, "deliveryMethod"),
+    creditText: (b) => optStr(b, "creditText"),
+    showFairMarketValue: (b) => b.showFairMarketValue !== false,
+    buyNowCents: (b) => optInt(b, "buyNowCents"),
+    reserveCents: (b) => optInt(b, "reserveCents"),
+    incrementRule: (b) => str(b, "incrementRule", "tiered"),
+    closingWave: (b) => optStr(b, "closingWave"),
+    notesToSchool: (b) => optStr(b, "notesToSchool"),
+    isServiceOrUse: (b) => Boolean(b.isServiceOrUse),
+    overFiveThousandFlag: (b) => Boolean(b.overFiveThousandFlag),
+    bidIncrementCents: (b) => optInt(b, "bidIncrementCents"),
+    readinessStatus: (b) => str(b, "readinessStatus", "draft"),
+    isPublished: (b) => Boolean(b.isPublished),
+    opensAt: (b) => parseOptionalDate(b.opensAt, "opensAt"),
+    closesAt: (b) => parseOptionalDate(b.closesAt, "closesAt"),
+    extensionMinutes: (b) => optInt(b, "extensionMinutes") ?? 0,
+    quantityAvailable: (b) => optInt(b, "quantityAvailable") ?? 1,
+    winningBidderId: (b) => optStr(b, "winningBidderId"),
+    fulfillmentStatus: (b) => str(b, "fulfillmentStatus", "pending"),
+    fulfilledAt: (b) => parseOptionalDate(b.fulfilledAt, "fulfilledAt"),
     paymentMethod: (b) => optStr(b, "paymentMethod"),
     paymentLink: (b) => optStr(b, "paymentLink"),
     status: (b) => str(b, "status", "open"),
@@ -3319,6 +3684,550 @@ export const auction = eventScoped({
     lotNumber: (b) => optInt(b, "lotNumber"),
   },
 });
+
+function toAuctionDonor(row: typeof s.auctionDonors.$inferSelect): AuctionDonor {
+  return {
+    id: row.id,
+    ownerId: row.workspaceId,
+    eventId: row.eventId,
+    businessName: row.businessName,
+    contactName: row.contactName,
+    email: row.email,
+    phone: row.phone,
+    donorKind: row.donorKind === "business" ? "business" : "family",
+    website: row.website,
+    logoUrl: row.logoUrl,
+    gradeTags: row.gradeTags,
+    publicToken: row.publicToken,
+    solicitedBy: row.solicitedBy,
+    solicitationStatus: row.solicitationStatus,
+    previousDonations: row.previousDonations,
+    notes: row.notes,
+    recognitionPreference: row.recognitionPreference,
+    thankYouStatus: row.thankYouStatus,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt?.toISOString(),
+  };
+}
+
+export const auctionDonors = {
+  async list(ctx: RequestContext, eventId: string): Promise<AuctionDonor[]> {
+    await requireOwnedEvent(ctx, eventId);
+    const rows = await db.select().from(s.auctionDonors).where(and(
+      eq(s.auctionDonors.workspaceId, ctx.workspaceId),
+      eq(s.auctionDonors.eventId, eventId),
+    )).orderBy(asc(s.auctionDonors.sortOrder), asc(s.auctionDonors.createdAt));
+    return rows.map(toAuctionDonor);
+  },
+  async create(ctx: RequestContext, eventId: string, body: Body): Promise<AuctionDonor> {
+    await requireOwnedEvent(ctx, eventId);
+    const [{ maxOrder } = { maxOrder: 0 }] = await db.select({
+      maxOrder: sql<number>`coalesce(max(${s.auctionDonors.sortOrder}), 0)`,
+    }).from(s.auctionDonors).where(eq(s.auctionDonors.eventId, eventId));
+    const id = newId("adon");
+    await db.insert(s.auctionDonors).values({
+      id,
+      workspaceId: ctx.workspaceId,
+      eventId,
+      businessName: str(body, "businessName"),
+      contactName: optStr(body, "contactName"),
+      email: optStr(body, "email")?.toLowerCase() ?? null,
+      phone: optStr(body, "phone"),
+      donorKind: str(body, "donorKind", "family"),
+      website: optStr(body, "website"),
+      logoUrl: optStr(body, "logoUrl"),
+      gradeTags: Array.isArray(body.gradeTags) ? body.gradeTags.filter((value): value is string => typeof value === "string") : [],
+      publicToken: crypto.randomUUID(),
+      solicitedBy: optStr(body, "solicitedBy"),
+      solicitationStatus: str(body, "solicitationStatus", "prospect") as "prospect",
+      previousDonations: optStr(body, "previousDonations"),
+      notes: optStr(body, "notes"),
+      recognitionPreference: optStr(body, "recognitionPreference"),
+      thankYouStatus: str(body, "thankYouStatus", "pending") as "pending",
+      sortOrder: Number(maxOrder) + 1,
+    });
+    const [row] = await db.select().from(s.auctionDonors).where(eq(s.auctionDonors.id, id)).limit(1);
+    return toAuctionDonor(row!);
+  },
+  async update(ctx: RequestContext, eventId: string, id: string, body: Body): Promise<AuctionDonor> {
+    const patch = patchFrom<Record<string, unknown>>(body, {
+      businessName: (b) => str(b, "businessName"),
+      contactName: (b) => optStr(b, "contactName"),
+      email: (b) => optStr(b, "email")?.toLowerCase() ?? null,
+      phone: (b) => optStr(b, "phone"),
+      donorKind: (b) => str(b, "donorKind", "family"),
+      website: (b) => optStr(b, "website"),
+      logoUrl: (b) => optStr(b, "logoUrl"),
+      gradeTags: (b) => Array.isArray(b.gradeTags) ? b.gradeTags.filter((value): value is string => typeof value === "string") : [],
+      solicitedBy: (b) => optStr(b, "solicitedBy"),
+      solicitationStatus: (b) => str(b, "solicitationStatus", "prospect"),
+      previousDonations: (b) => optStr(b, "previousDonations"),
+      notes: (b) => optStr(b, "notes"),
+      recognitionPreference: (b) => optStr(b, "recognitionPreference"),
+      thankYouStatus: (b) => str(b, "thankYouStatus", "pending"),
+    });
+    const rows = await db.update(s.auctionDonors).set({ ...patch, updatedAt: new Date() }).where(and(
+      eq(s.auctionDonors.id, id),
+      eq(s.auctionDonors.eventId, eventId),
+      eq(s.auctionDonors.workspaceId, ctx.workspaceId),
+    )).returning();
+    if (!rows[0]) throw new HttpError(404, "That donor no longer exists.");
+    return toAuctionDonor(rows[0]);
+  },
+  async remove(ctx: RequestContext, eventId: string, id: string): Promise<void> {
+    await db.delete(s.auctionDonors).where(and(
+      eq(s.auctionDonors.id, id),
+      eq(s.auctionDonors.eventId, eventId),
+      eq(s.auctionDonors.workspaceId, ctx.workspaceId),
+    ));
+  },
+};
+
+export async function publicAuctionDonor(token: string): Promise<PublicAuctionDonorPayload | null> {
+  const [row] = await db.select({ donor: s.auctionDonors, event: s.events }).from(s.auctionDonors)
+    .innerJoin(s.events, eq(s.auctionDonors.eventId, s.events.id))
+    .where(eq(s.auctionDonors.publicToken, token)).limit(1);
+  if (!row || row.event.status === "cancelled") return null;
+  const items = await db.select().from(s.auctionItems).where(eq(s.auctionItems.donorId, row.donor.id))
+    .orderBy(asc(s.auctionItems.createdAt));
+  return {
+    eventTitle: row.event.title,
+    donor: {
+      businessName: row.donor.businessName,
+      contactName: row.donor.contactName,
+      email: row.donor.email,
+      phone: row.donor.phone,
+      recognitionPreference: row.donor.recognitionPreference,
+    },
+    items: items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      imageUrl: item.imageUrl,
+      category: item.category,
+      restrictions: item.restrictions,
+      expiresAt: item.expiresAt?.toISOString() ?? null,
+      fairMarketValueCents: item.fairMarketValueCents,
+      deliveryDetails: item.deliveryDetails,
+      readinessStatus: item.readinessStatus,
+    })),
+  };
+}
+
+export async function submitPublicAuctionDonation(token: string, body: Body): Promise<PublicAuctionDonorPayload> {
+  const [donor] = await db.select().from(s.auctionDonors).where(eq(s.auctionDonors.publicToken, token)).limit(1);
+  if (!donor) throw new HttpError(404, "This donation link is no longer active.");
+  const [{ maxOrder } = { maxOrder: 0 }] = await db.select({
+    maxOrder: sql<number>`coalesce(max(${s.auctionItems.sortOrder}), 0)`,
+  }).from(s.auctionItems).where(eq(s.auctionItems.eventId, donor.eventId));
+  const id = newId("auc");
+  await db.batch([
+    db.insert(s.auctionItems).values({
+      id,
+      workspaceId: donor.workspaceId,
+      eventId: donor.eventId,
+      donorId: donor.id,
+      donorName: donor.businessName,
+      title: str(body, "title"),
+      description: str(body, "description"),
+      imageUrl: str(body, "imageUrl"),
+      category: str(body, "category"),
+      restrictions: optStr(body, "restrictions"),
+      expiresAt: parseOptionalDate(body.expiresAt, "expiresAt"),
+      fairMarketValueCents: optInt(body, "fairMarketValueCents"),
+      deliveryDetails: str(body, "deliveryDetails"),
+      readinessStatus: "incomplete",
+      isPublished: false,
+      status: "open",
+      auctionType: "silent",
+      sortOrder: Number(maxOrder) + 1,
+    }),
+    db.update(s.auctionDonors).set({
+      solicitationStatus: "received",
+      recognitionPreference: optStr(body, "recognitionPreference") ?? donor.recognitionPreference,
+      updatedAt: new Date(),
+    }).where(eq(s.auctionDonors.id, donor.id)),
+  ]);
+  return (await publicAuctionDonor(token))!;
+}
+
+function toAuctionBidder(row: typeof s.auctionBidders.$inferSelect): AuctionBidder {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    householdId: row.householdId,
+    attendeeId: row.attendeeId,
+    paddleNumber: row.paddleNumber,
+    hasPaymentMethod: Boolean(row.paymentMethodId),
+    autoChargeOptIn: row.autoChargeOptIn,
+    checkedInAt: row.checkedInAt?.toISOString() ?? null,
+    phoneVerifiedAt: row.phoneVerifiedAt?.toISOString() ?? null,
+    participantType: row.participantType,
+    publicToken: row.publicToken,
+    status: row.status === "blocked" ? "blocked" : "active",
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export const auctionManagement = {
+  async share(ctx: RequestContext, eventId: string): Promise<{ auctionPublicToken: string }> {
+    await requireOwnedEvent(ctx, eventId);
+    const token = crypto.randomUUID();
+    const [row] = await db.update(s.events).set({
+      auctionPublicToken: sql`coalesce(${s.events.auctionPublicToken}, ${token})`,
+      auctionPage: sql`coalesce(${s.events.auctionPage}, ${JSON.stringify(normalizeAuctionPageSettings(null))}::jsonb)`,
+      updatedAt: new Date(),
+    }).where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))).returning({
+      token: s.events.auctionPublicToken,
+    });
+    if (!row?.token) throw new HttpError(404, "That event no longer exists.");
+    return { auctionPublicToken: row.token };
+  },
+  async updateSettings(ctx: RequestContext, eventId: string, settings: AuctionPageSettings): Promise<AuctionPageSettings> {
+    await requireOwnedEvent(ctx, eventId);
+    const normalized = normalizeAuctionPageSettings(settings);
+    const [row] = await db.update(s.events).set({ auctionPage: normalized, updatedAt: new Date() }).where(and(
+      eq(s.events.id, eventId),
+      eq(s.events.workspaceId, ctx.workspaceId),
+    )).returning({ settings: s.events.auctionPage });
+    if (!row) throw new HttpError(404, "That event no longer exists.");
+    if (normalized.closesAt) {
+      const baseClose = new Date(normalized.closesAt);
+      const intervalMinutes = normalized.staggeredClosingEnabled ? 5 : 0;
+      await db.execute(sql`
+        with ranked as (
+          select id, row_number() over (order by lot_number nulls last, sort_order, id) - 1 as position
+          from ${s.auctionItems}
+          where event_id = ${eventId} and workspace_id = ${ctx.workspaceId}
+        )
+        update ${s.auctionItems} as item
+        set closes_at = ${baseClose} + make_interval(mins => (ranked.position * ${intervalMinutes})::integer),
+            updated_at = now()
+        from ranked
+        where item.id = ranked.id
+      `);
+    }
+    return normalizeAuctionPageSettings(row.settings);
+  },
+  async publishItem(ctx: RequestContext, eventId: string, itemId: string, published: boolean) {
+    const [item] = await db.select().from(s.auctionItems).where(and(
+      eq(s.auctionItems.id, itemId),
+      eq(s.auctionItems.eventId, eventId),
+      eq(s.auctionItems.workspaceId, ctx.workspaceId),
+    )).limit(1);
+    if (!item) throw new HttpError(404, "That auction item no longer exists.");
+    if (published) {
+      const missing = auctionCatalogReadiness({
+        title: item.title,
+        description: item.description,
+        imageUrl: item.imageUrl,
+        category: item.category,
+        restrictions: item.restrictions,
+        fairMarketValueCents: item.fairMarketValueCents,
+        startingBidCents: item.startingBidCents,
+        bidIncrementCents: item.bidIncrementCents,
+        closesAt: item.closesAt?.toISOString() ?? null,
+      });
+      if (missing.length > 0) throw new HttpError(409, `Complete ${missing.join(", ")} before publishing.`);
+    }
+    const [updated] = await db.update(s.auctionItems).set({
+      isPublished: published,
+      readinessStatus: published ? "published" : "ready",
+      updatedAt: new Date(),
+    }).where(eq(s.auctionItems.id, itemId)).returning();
+    return map.toAuctionItem(updated!);
+  },
+  async listBidders(ctx: RequestContext, eventId: string): Promise<AuctionBidder[]> {
+    await requireOwnedEvent(ctx, eventId);
+    const rows = await db.select().from(s.auctionBidders).where(and(
+      eq(s.auctionBidders.eventId, eventId),
+      eq(s.auctionBidders.workspaceId, ctx.workspaceId),
+    )).orderBy(asc(s.auctionBidders.createdAt));
+    return rows.map(toAuctionBidder);
+  },
+  async listBids(ctx: RequestContext, eventId: string): Promise<AuctionBid[]> {
+    await requireOwnedEvent(ctx, eventId);
+    const rows = await db.select({ bid: s.auctionBids, bidder: s.auctionBidders }).from(s.auctionBids)
+      .innerJoin(s.auctionBidders, eq(s.auctionBids.bidderId, s.auctionBidders.id))
+      .where(and(eq(s.auctionBids.eventId, eventId), eq(s.auctionBids.workspaceId, ctx.workspaceId)))
+      .orderBy(desc(s.auctionBids.createdAt));
+    return rows.map(({ bid, bidder }) => ({
+      id: bid.id,
+      eventId: bid.eventId,
+      itemId: bid.itemId,
+      bidderId: bid.bidderId,
+      bidderName: bidder.name,
+      amountCents: bid.amountCents,
+      maximumAmountCents: bid.maximumAmountCents,
+      isAutomatic: bid.isAutomatic,
+      channel: bid.channel === "in_room" ? "in_room" : "remote",
+      createdAt: bid.createdAt.toISOString(),
+    }));
+  },
+  async sendDonorThankYou(ctx: RequestContext, eventId: string, donorId: string): Promise<AuctionDonor> {
+    const [row] = await db.select({ donor: s.auctionDonors, event: s.events }).from(s.auctionDonors)
+      .innerJoin(s.events, eq(s.auctionDonors.eventId, s.events.id))
+      .where(and(
+        eq(s.auctionDonors.id, donorId),
+        eq(s.auctionDonors.eventId, eventId),
+        eq(s.auctionDonors.workspaceId, ctx.workspaceId),
+      )).limit(1);
+    if (!row) throw new HttpError(404, "That donor no longer exists.");
+    if (!row.donor.email) throw new HttpError(409, "Add the donor's email before sending a thank-you.");
+    const items = await db.select({ title: s.auctionItems.title, createdAt: s.auctionItems.createdAt }).from(s.auctionItems)
+      .where(eq(s.auctionItems.donorId, donorId)).orderBy(asc(s.auctionItems.title));
+    const outcome = await notifyAuctionDonorThankYou({
+      donorId,
+      to: row.donor.email,
+      contactName: row.donor.contactName || row.donor.businessName,
+      donorName: row.donor.businessName,
+      eventTitle: row.event.title,
+      itemTitles: items.map((item) => item.title),
+      receivedDate: (items[0]?.createdAt ?? row.donor.updatedAt ?? row.donor.createdAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        timeZone: "UTC",
+      }),
+    });
+    if (outcome.status !== "sent") throw new HttpError(502, "The thank-you email could not be delivered.");
+    const [updated] = await db.update(s.auctionDonors).set({ thankYouStatus: "sent", updatedAt: new Date() })
+      .where(eq(s.auctionDonors.id, donorId)).returning();
+    return toAuctionDonor(updated!);
+  },
+};
+
+function toPublicAuctionItem(
+  item: typeof s.auctionItems.$inferSelect,
+  bidCount: number,
+  bidHistory: Array<{ amountCents: number; bidderLabel: string; placedAt: string }> = [],
+): PublicAuctionItem {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    imageUrl: item.imageUrl,
+    photoUrls: item.photoUrls,
+    estimatedValueCents: item.estimatedValueCents,
+    category: item.category,
+    restrictions: item.restrictions,
+    expiresAt: item.expiresAt?.toISOString() ?? null,
+    deliveryDetails: item.deliveryDetails,
+    fairMarketValueCents: item.showFairMarketValue ? item.fairMarketValueCents : null,
+    showFairMarketValue: item.showFairMarketValue,
+    creditText: item.creditText,
+    startingBidCents: item.startingBidCents ?? 0,
+    currentBidCents: item.currentBidCents,
+    bidIncrementCents: item.bidIncrementCents ?? 100,
+    opensAt: item.opensAt?.toISOString() ?? null,
+    closesAt: item.closesAt?.toISOString() ?? null,
+    status: item.status,
+    itemType: item.itemType,
+    buyNowCents: item.buyNowCents,
+    reserveCents: item.reserveCents,
+    quantityAvailable: item.quantityAvailable,
+    closingWave: item.closingWave,
+    extensionMinutes: item.extensionMinutes,
+    lotNumber: item.lotNumber,
+    bidCount,
+    hasBid: bidCount > 0,
+    bidHistory,
+  };
+}
+
+async function publicAuctionItem(itemId: string): Promise<PublicAuctionItem | null> {
+  const [row] = await db.select({ item: s.auctionItems, bidCount: count(s.auctionBids.id) })
+    .from(s.auctionItems)
+    .leftJoin(s.auctionBids, eq(s.auctionItems.id, s.auctionBids.itemId))
+    .where(eq(s.auctionItems.id, itemId))
+    .groupBy(s.auctionItems.id)
+    .limit(1);
+  return row ? toPublicAuctionItem(row.item, Number(row.bidCount)) : null;
+}
+
+export async function publicAuction(token: string): Promise<PublicAuctionPayload | null> {
+  const [eventRow] = await db.select({ event: s.events, timeZone: s.workspaces.timeZone }).from(s.events)
+    .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
+    .where(eq(s.events.auctionPublicToken, token)).limit(1);
+  if (!eventRow || eventRow.event.status === "cancelled") return null;
+  const settings = normalizeAuctionPageSettings(eventRow.event.auctionPage);
+  const rows = settings.catalogPublished
+    ? await db.select({ item: s.auctionItems, bidCount: count(s.auctionBids.id) })
+      .from(s.auctionItems)
+      .leftJoin(s.auctionBids, eq(s.auctionItems.id, s.auctionBids.itemId))
+      .where(and(
+        eq(s.auctionItems.eventId, eventRow.event.id),
+        eq(s.auctionItems.isPublished, true),
+      ))
+      .groupBy(s.auctionItems.id)
+      .orderBy(asc(s.auctionItems.lotNumber), asc(s.auctionItems.title))
+    : [];
+  const publicBidRows = rows.length > 0 ? await db.select({ itemId: s.auctionBids.itemId, amountCents: s.auctionBids.amountCents, createdAt: s.auctionBids.createdAt, paddleNumber: s.auctionBidders.paddleNumber, bidderName: s.auctionBidders.name })
+    .from(s.auctionBids)
+    .innerJoin(s.auctionBidders, eq(s.auctionBids.bidderId, s.auctionBidders.id))
+    .where(inArray(s.auctionBids.itemId, rows.map((row) => row.item.id)))
+    .orderBy(desc(s.auctionBids.createdAt)) : [];
+  const items = rows.map((row) => toPublicAuctionItem(row.item, Number(row.bidCount), publicBidRows.filter((bid) => bid.itemId === row.item.id).slice(0, 20).map((bid) => ({
+    amountCents: bid.amountCents,
+    bidderLabel: settings.bidHistoryPrivacy === "initials"
+      ? bid.bidderName.split(/\s+/).filter(Boolean).map((part) => `${part[0]!.toUpperCase()}.`).join(" ")
+      : `Paddle ${bid.paddleNumber ?? "-"}`,
+    placedAt: bid.createdAt.toISOString(),
+  }))));
+  const announcements = await db.select({ id: s.fundraisingBroadcasts.id, message: s.fundraisingBroadcasts.message, sentAt: s.fundraisingBroadcasts.sentAt })
+    .from(s.fundraisingBroadcasts)
+    .where(and(eq(s.fundraisingBroadcasts.eventId, eventRow.event.id), sql`${s.fundraisingBroadcasts.channels} @> array['in_app']::text[]`))
+    .orderBy(desc(s.fundraisingBroadcasts.sentAt)).limit(3);
+  const [campaign] = await db.select({ token: s.donationCampaigns.publicToken }).from(s.donationCampaigns)
+    .where(and(eq(s.donationCampaigns.eventId, eventRow.event.id), eq(s.donationCampaigns.isActive, true)))
+    .orderBy(asc(s.donationCampaigns.createdAt)).limit(1);
+  const [pledgeRows, sponsorRows] = await Promise.all([
+    db.select({ amountCents: s.fundraisingPledges.amountCents, anonymous: s.fundraisingPledges.anonymous, createdAt: s.fundraisingPledges.createdAt, bidderName: s.auctionBidders.name })
+      .from(s.fundraisingPledges)
+      .leftJoin(s.auctionBidders, eq(s.fundraisingPledges.bidderId, s.auctionBidders.id))
+      .where(eq(s.fundraisingPledges.eventId, eventRow.event.id)).orderBy(desc(s.fundraisingPledges.createdAt)),
+    db.select({ name: s.sponsorships.companyName, logoUrl: s.sponsorships.logoUrl }).from(s.sponsorships)
+      .where(and(eq(s.sponsorships.eventId, eventRow.event.id), eq(s.sponsorships.status, "confirmed"))).orderBy(asc(s.sponsorships.companyName)),
+  ]);
+  return {
+    eventTitle: eventRow.event.title,
+    eventDate: eventRow.event.startsAt.toISOString(),
+    timeZone: eventRow.timeZone,
+    settings,
+    categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))].sort(),
+    items,
+    announcements: announcements.map((announcement) => ({ ...announcement, sentAt: announcement.sentAt.toISOString() })),
+    donationToken: campaign?.token ?? null,
+    fundANeedTotalCents: pledgeRows.reduce((sum, pledge) => sum + pledge.amountCents, 0),
+    latestPledges: pledgeRows.slice(0, 8).map((pledge) => ({ amountCents: pledge.amountCents, donorLabel: pledge.anonymous ? "Anonymous" : pledge.bidderName ?? "Gala donor", createdAt: pledge.createdAt.toISOString() })),
+    sponsors: sponsorRows,
+  };
+}
+
+export async function registerPublicAuctionBidder(token: string, body: Body): Promise<AuctionBidder> {
+  const [event] = await db.select().from(s.events).where(eq(s.events.auctionPublicToken, token)).limit(1);
+  if (!event || event.status === "cancelled") throw new HttpError(404, "This auction link is no longer active.");
+  const settings = normalizeAuctionPageSettings(event.auctionPage);
+  if (!settings.registrationOpen) throw new HttpError(409, "Bidder registration is closed.");
+  const email = str(body, "email").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid email address.");
+  const phone = str(body, "phone").trim();
+  if (phone.replace(/\D/g, "").length < 10) throw new HttpError(400, "Enter a valid mobile phone number.");
+  const grades = Array.isArray(body.grades) ? body.grades.filter((value): value is string => typeof value === "string").slice(0, 5) : [];
+  const participantType = str(body, "participantType", "gala") as "gala" | "remote";
+  if (participantType === "remote" && !settings.allowRemoteBidders) throw new HttpError(409, "Remote bidding is not open for this auction.");
+  const householdId = newId("hh");
+  const [household] = await db.insert(s.households).values({
+    id: householdId,
+    workspaceId: event.workspaceId,
+    displayName: str(body, "name"),
+    primaryEmail: email,
+    phone,
+    creditName: str(body, "name"),
+  }).onConflictDoNothing({ target: [s.households.workspaceId, s.households.primaryEmail] }).returning({ id: s.households.id });
+  const bidder = await allocateAuctionBidder({
+    workspaceId: event.workspaceId,
+    eventId: event.id,
+    name: str(body, "name"),
+    email,
+    phone,
+    householdId: household?.id ?? null,
+    attendeeId: null,
+    paymentMethodId: null,
+    stripeCustomerId: null,
+    autoChargeOptIn: body.autoChargeOptIn === true,
+    checkedInAt: null,
+    participantType,
+    publicToken: crypto.randomUUID(),
+    updateExisting: false,
+  });
+  if (household && grades.length > 0) {
+    const schoolYear = String(new Date(event.startsAt).getUTCFullYear());
+    await db.insert(s.householdGrades).values(grades.map((grade) => ({
+      id: newId("hhg"), householdId: household.id, workspaceId: event.workspaceId, grade, schoolYear,
+    }))).onConflictDoNothing();
+  }
+  const [bidderRow] = await db.select().from(s.auctionBidders).where(eq(s.auctionBidders.id, bidder.id)).limit(1);
+  return { ...toAuctionBidder(bidderRow!), grades };
+}
+
+export async function placePublicAuctionBid(
+  auctionToken: string,
+  bidderToken: string,
+  itemId: string,
+  maximumAmountCents: number,
+): Promise<PublicAuctionBidResult> {
+  if (!Number.isInteger(maximumAmountCents) || maximumAmountCents <= 0) throw new HttpError(400, "Enter a valid bid amount.");
+  const [bidder] = await db.select({
+    id: s.auctionBidders.id,
+    name: s.auctionBidders.name,
+    email: s.auctionBidders.email,
+    paymentMethodId: s.auctionBidders.paymentMethodId,
+  }).from(s.auctionBidders).where(eq(s.auctionBidders.publicToken, bidderToken)).limit(1);
+  if (!bidder) throw new HttpError(404, "This bidder registration is not available.");
+  if (!bidder.paymentMethodId) throw new HttpError(409, "Add a card or wallet before placing a bid.");
+  const [before] = await db.select({
+    bidderId: s.auctionItems.winningBidderId,
+    bidderName: s.auctionBidders.name,
+    bidderEmail: s.auctionBidders.email,
+    itemTitle: s.auctionItems.title,
+    eventTitle: s.events.title,
+    incrementRule: s.auctionItems.incrementRule,
+    currentBidCents: s.auctionItems.currentBidCents,
+    startingBidCents: s.auctionItems.startingBidCents,
+  }).from(s.auctionItems)
+    .innerJoin(s.events, eq(s.auctionItems.eventId, s.events.id))
+    .leftJoin(s.auctionBidders, eq(s.auctionItems.winningBidderId, s.auctionBidders.id))
+    .where(and(eq(s.events.auctionPublicToken, auctionToken), eq(s.auctionItems.id, itemId)))
+    .limit(1);
+  if (before?.incrementRule === "tiered") {
+    await db.update(s.auctionItems).set({
+      bidIncrementCents: bidIncrementCents(before.currentBidCents ?? before.startingBidCents),
+      updatedAt: new Date(),
+    }).where(eq(s.auctionItems.id, itemId));
+  }
+  let result: { leader_bidder_id: string; current_bid_cents: number; minimum_next_bid_cents: number } | undefined;
+  try {
+    const rows = await db.execute<{ leader_bidder_id: string; current_bid_cents: number; minimum_next_bid_cents: number }>(sql`
+      select * from place_auction_bid(${auctionToken}, ${bidderToken}, ${itemId}, ${maximumAmountCents})
+    `);
+    result = rows.rows[0];
+  } catch (error) {
+    const message = errorMessages(error).join(" ");
+    if (message.includes("closed") || message.includes("not open") || message.includes("minimum") || message.includes("not available") || message.includes("finalized bidder bill")) {
+      throw new HttpError(409, message.replace(/^.*error:\s*/i, ""));
+    }
+    throw error;
+  }
+  const item = await publicAuctionItem(itemId);
+  if (!result || !bidder || !item) throw new HttpError(404, "This auction item is not available.");
+  const [latestBid] = await db.select({ id: s.auctionBids.id }).from(s.auctionBids)
+    .where(eq(s.auctionBids.itemId, itemId)).orderBy(desc(s.auctionBids.createdAt)).limit(1);
+  const outbid = result.leader_bidder_id !== bidder.id
+    ? { email: bidder.email, name: bidder.name }
+    : before?.bidderId && before.bidderId !== result.leader_bidder_id && before.bidderEmail
+      ? { email: before.bidderEmail, name: before.bidderName ?? "bidder" }
+      : null;
+  if (outbid && before) {
+    await notifyAuctionOutbid({
+      bidId: latestBid?.id ?? `${itemId}-${item.bidCount}`,
+      to: outbid.email,
+      bidderName: outbid.name,
+      eventTitle: before.eventTitle,
+      itemTitle: before.itemTitle,
+      currentBidCents: item.currentBidCents ?? item.startingBidCents,
+      auctionUrl: `${appOrigin()}/auction/${encodeURIComponent(auctionToken)}`,
+    });
+  }
+  return {
+    item,
+    bidderIsLeading: result.leader_bidder_id === bidder.id,
+    minimumNextBidCents: Number(result.minimum_next_bid_cents),
+  };
+}
 
 export const sponsorships = eventScoped({
   table: s.sponsorships as never,
@@ -3482,18 +4391,32 @@ export const tickets = {
   },
 
   async create(ctx: RequestContext, eventId: string, body: Body) {
+    const name = str(body, "name").trim();
+    const [duplicate] = await db.select({ id: s.ticketTypes.id }).from(s.ticketTypes).where(and(
+      eq(s.ticketTypes.workspaceId, ctx.workspaceId),
+      eq(s.ticketTypes.eventId, eventId),
+      sql`lower(trim(${s.ticketTypes.name})) = lower(${name})`,
+    )).limit(1);
+    if (duplicate) throw new HttpError(409, `A ticket option named “${name}” already exists. Edit that option instead of adding it twice.`);
     const [{ maxOrder } = { maxOrder: 0 }] = await db
       .select({ maxOrder: sql<number>`coalesce(max(${s.ticketTypes.sortOrder}), 0)` })
       .from(s.ticketTypes)
       .where(eq(s.ticketTypes.eventId, eventId));
     const id = newId("tt");
+    const priceCents = optInt(body, "priceCents") ?? 0;
+    const fairMarketValueCents = optInt(body, "fairMarketValueCents");
+    const fmvZeroConfirmed = optBool(body, "fmvZeroConfirmed") ?? false;
+    if (priceCents > 0 && fairMarketValueCents === 0 && !fmvZeroConfirmed) throw new HttpError(409, "Confirm that this paid ticket provides no goods or services before using a $0 fair market value.");
     await db.insert(s.ticketTypes).values({
       id,
       workspaceId: ctx.workspaceId,
       eventId,
-      name: str(body, "name"),
+      name,
       description: optStr(body, "description"),
-      priceCents: optInt(body, "priceCents") ?? 0,
+      priceCents,
+      fairMarketValueCents,
+      fmvZeroConfirmed,
+      benefitsDescription: optStr(body, "benefitsDescription"),
       quantityTotal: optInt(body, "quantityTotal") ?? 0,
       isActive: optBool(body, "isActive") ?? true,
       sortOrder: Number(maxOrder) + 1,
@@ -3510,15 +4433,33 @@ export const tickets = {
       .limit(1);
     if (!current) throw new HttpError(404, "That ticket type no longer exists.");
 
+    if ("name" in body) {
+      const nextName = str(body, "name").trim();
+      const [duplicate] = await db.select({ id: s.ticketTypes.id }).from(s.ticketTypes).where(and(
+        eq(s.ticketTypes.workspaceId, ctx.workspaceId),
+        eq(s.ticketTypes.eventId, eventId),
+        ne(s.ticketTypes.id, id),
+        sql`lower(trim(${s.ticketTypes.name})) = lower(${nextName})`,
+      )).limit(1);
+      if (duplicate) throw new HttpError(409, `Another ticket option is already named “${nextName}”.`);
+    }
+
     const nextTotal = "quantityTotal" in body ? (optInt(body, "quantityTotal") ?? 0) : current.quantityTotal;
     if (nextTotal !== 0 && nextTotal < current.quantitySold) {
       throw new HttpError(409, `${current.quantitySold} of these are already sold — the allocation can't go below that.`);
     }
+    const nextPrice = "priceCents" in body ? (optInt(body, "priceCents") ?? 0) : current.priceCents;
+    const nextFmv = "fairMarketValueCents" in body ? optInt(body, "fairMarketValueCents") : current.fairMarketValueCents;
+    const nextZeroConfirmed = "fmvZeroConfirmed" in body ? (optBool(body, "fmvZeroConfirmed") ?? false) : current.fmvZeroConfirmed;
+    if (nextPrice > 0 && nextFmv === 0 && !nextZeroConfirmed) throw new HttpError(409, "Confirm that this paid ticket provides no goods or services before using a $0 fair market value.");
 
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
       priceCents: (b) => optInt(b, "priceCents") ?? 0,
+      fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
+      fmvZeroConfirmed: (b) => Boolean(b.fmvZeroConfirmed),
+      benefitsDescription: (b) => optStr(b, "benefitsDescription"),
       quantityTotal: (b) => optInt(b, "quantityTotal") ?? 0,
       isActive: (b) => Boolean(b.isActive),
     });
@@ -3539,6 +4480,14 @@ export const tickets = {
 
 /* ------------------------------------------------------------------ raffle */
 
+async function requireRaffleEnabled(ctx: RequestContext): Promise<void> {
+  const [workspace] = await db.select({ enabled: s.workspaces.raffleEnabled, confirmed: s.workspaces.raffleRegistrationConfirmed })
+    .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+  if (!workspace?.enabled || !workspace.confirmed) {
+    throw new HttpError(409, "Raffle tools are off. Confirm the organization's California raffle registration in Fundraising settings before creating or selling raffle tickets.");
+  }
+}
+
 export const raffle = {
   async list(ctx: RequestContext, eventId: string) {
     const rows = await db
@@ -3549,6 +4498,7 @@ export const raffle = {
     return rows.map(map.toRaffleItem);
   },
   async create(ctx: RequestContext, eventId: string, body: Body) {
+    await requireRaffleEnabled(ctx);
     const id = newId("raf");
     await db.insert(s.raffleItems).values({
       id,
@@ -3558,19 +4508,32 @@ export const raffle = {
       description: optStr(body, "description"),
       imageUrl: optStr(body, "imageUrl"),
       ticketPriceCents: optInt(body, "ticketPriceCents") ?? 0,
+      fairMarketValueCents: optInt(body, "fairMarketValueCents"),
       totalTickets: optInt(body, "totalTickets") ?? 0,
     });
     const [row] = await db.select().from(s.raffleItems).where(eq(s.raffleItems.id, id)).limit(1);
     return map.toRaffleItem(row!);
   },
   async update(ctx: RequestContext, eventId: string, id: string, body: Body) {
+    await requireRaffleEnabled(ctx);
+    const collectionStatus = "taxpayerIdCollectionStatus" in body ? str(body, "taxpayerIdCollectionStatus", "not_required") : null;
+    if (collectionStatus && !["not_required", "required", "collected"].includes(collectionStatus)) throw new HttpError(400, "Choose a valid taxpayer-ID collection status.");
     const patch = patchFrom<Record<string, unknown>>(body, {
       name: (b) => str(b, "name"),
       description: (b) => optStr(b, "description"),
       ticketPriceCents: (b) => optInt(b, "ticketPriceCents") ?? 0,
+      fairMarketValueCents: (b) => optInt(b, "fairMarketValueCents"),
       totalTickets: (b) => optInt(b, "totalTickets") ?? 0,
       status: (b) => str(b, "status", "open"),
+      taxpayerIdCollectionStatus: (b) => str(b, "taxpayerIdCollectionStatus", "not_required"),
     });
+    if (collectionStatus === "collected") {
+      patch.taxpayerIdCollectedAt = new Date();
+      patch.taxpayerIdCollectedBy = ctx.userId;
+    } else if (collectionStatus) {
+      patch.taxpayerIdCollectedAt = null;
+      patch.taxpayerIdCollectedBy = null;
+    }
     const updated = await db
       .update(s.raffleItems)
       .set({ ...patch, updatedAt: new Date() })
@@ -3594,6 +4557,7 @@ export const raffle = {
   },
 
   async sellTickets(ctx: RequestContext, eventId: string, raffleItemId: string, body: Body) {
+    await requireRaffleEnabled(ctx);
     const quantity = optInt(body, "quantity") ?? 1;
     const id = newId("rt");
 
@@ -3633,10 +4597,48 @@ export const raffle = {
       quantity,
     });
     const [row] = await db.select().from(s.raffleTickets).where(eq(s.raffleTickets.id, id)).limit(1);
+    const [receiptContext] = await db.select({ workspace: s.workspaces, event: s.events }).from(s.events)
+      .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
+      .where(and(eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId))).limit(1);
+    if (row && receiptContext?.workspace.legalName && receiptContext.workspace.ein && receiptContext.workspace.fundraisingOrgType) {
+      const amountCents = updated.ticketPriceCents * quantity;
+      const [sequence] = await db.update(s.workspaces).set({ receiptSequence: sql`${s.workspaces.receiptSequence} + 1`, updatedAt: new Date() })
+        .where(eq(s.workspaces.id, ctx.workspaceId)).returning({ value: s.workspaces.receiptSequence });
+      const receiptNumber = `${receiptContext.workspace.receiptPrefix}-${new Date().getUTCFullYear()}-${String(sequence!.value).padStart(6, "0")}`;
+      const receiptId = newId("receipt");
+      const publicToken = crypto.randomUUID();
+      await db.insert(s.fundraisingReceipts).values({
+        id: receiptId,
+        workspaceId: ctx.workspaceId,
+        eventId,
+        type: "raffle",
+        receiptNumber,
+        publicToken,
+        payerName: row.buyerName,
+        payerEmail: row.buyerEmail,
+        amountCents,
+        fairMarketValueCents: amountCents,
+        deductibleCents: 0,
+        lineItems: [{ kind: "raffle", description: `${updated.name} raffle ticket × ${quantity} - not tax-deductible`, amountCents, fairMarketValueCents: amountCents, deductibleCents: 0 }],
+      });
+      await notifyCombinedFundraisingReceipt({
+        receiptId,
+        to: row.buyerEmail,
+        payerName: row.buyerName,
+        organizationName: receiptContext.workspace.legalName,
+        eventTitle: receiptContext.event.title,
+        receiptNumber,
+        amountCents,
+        deductibleCents: 0,
+        receiptUrl: `${appOrigin().replace(/\/$/, "")}/receipt/${publicToken}`,
+        corrected: false,
+      });
+    }
     return map.toRaffleTicket(row!);
   },
 
   async draw(ctx: RequestContext, eventId: string, raffleItemId: string) {
+    await requireRaffleEnabled(ctx);
     const entries = await db
       .select()
       .from(s.raffleTickets)
@@ -3646,6 +4648,10 @@ export const raffle = {
     // Weighted by quantity: ten tickets is ten chances, not one.
     const pool = entries.flatMap((entry) => Array.from({ length: entry.quantity }, () => entry));
     const winner = pool[Math.floor(Math.random() * pool.length)]!;
+    const [raffleItem] = await db.select().from(s.raffleItems).where(eq(s.raffleItems.id, raffleItemId)).limit(1);
+    if (!raffleItem) throw new HttpError(404, "That raffle no longer exists.");
+    const netPrizeValue = Math.max(0, (raffleItem.fairMarketValueCents ?? 0) - raffleItem.ticketPriceCents);
+    const w2gReviewRequired = netPrizeValue >= 60_000 && (raffleItem.ticketPriceCents === 0 || (raffleItem.fairMarketValueCents ?? 0) >= raffleItem.ticketPriceCents * 300);
 
     const updated = await db
       .update(s.raffleItems)
@@ -3655,10 +4661,13 @@ export const raffle = {
         winnerTicketId: winner.id,
         drawnAt: new Date(),
         status: "drawn",
+        w2gReviewRequired,
+        taxpayerIdCollectionStatus: w2gReviewRequired ? "required" : "not_required",
         updatedAt: new Date(),
       })
       .where(and(eq(s.raffleItems.id, raffleItemId), eq(s.raffleItems.workspaceId, ctx.workspaceId)))
       .returning();
+    if (w2gReviewRequired) await db.insert(s.checklistItems).values({ id: newId("cl"), workspaceId: ctx.workspaceId, eventId, title: `Review W-2G reporting for raffle winner: ${winner.buyerName}`, description: `Prize: ${raffleItem.name}. Confirm current IRS thresholds with the school's tax advisor and collect taxpayer ID through the school's approved secure process. Do not store a full taxpayer ID in Beebizy.`, category: "Fundraising", sortOrder: 999 });
     return map.toRaffleItem(updated[0]!);
   },
 };
@@ -3866,6 +4875,23 @@ export const floorplan = {
     return map.toFloorplan(saved[0]!);
   },
 
+  async share(ctx: RequestContext, eventId: string, id: string): Promise<{ shareToken: string }> {
+    const plan = await ownedFloorplan(ctx, id);
+    if (plan.eventId !== eventId) throw new HttpError(404, "That floorplan no longer exists.");
+    const candidateToken = crypto.randomUUID().replaceAll("-", "");
+    const [link] = await db.insert(s.floorplanShareLinks).values({
+      id: newId("floorplan-share"),
+      workspaceId: ctx.workspaceId,
+      eventId,
+      floorplanId: id,
+      publicToken: candidateToken,
+    }).onConflictDoUpdate({
+      target: s.floorplanShareLinks.floorplanId,
+      set: { updatedAt: new Date() },
+    }).returning({ publicToken: s.floorplanShareLinks.publicToken });
+    return { shareToken: link!.publicToken };
+  },
+
   async remove(ctx: RequestContext, id: string): Promise<void> {
     const before = await ownedFloorplan(ctx, id);
     await db.batch([
@@ -3883,6 +4909,32 @@ export const floorplan = {
     ]);
   },
 };
+
+/** Resolves one floorplan-specific capability token without exposing the event workspace. */
+export async function publicFloorplan(shareToken: string): Promise<PublicFloorplanPayload | null> {
+  const [row] = await db.select({ plan: s.floorplans, event: s.events })
+    .from(s.floorplanShareLinks)
+    .innerJoin(s.floorplans, and(
+      eq(s.floorplans.id, s.floorplanShareLinks.floorplanId),
+      eq(s.floorplans.eventId, s.floorplanShareLinks.eventId),
+      eq(s.floorplans.workspaceId, s.floorplanShareLinks.workspaceId),
+    ))
+    .innerJoin(s.events, and(
+      eq(s.events.id, s.floorplanShareLinks.eventId),
+      eq(s.events.workspaceId, s.floorplanShareLinks.workspaceId),
+    ))
+    .where(and(
+      eq(s.floorplanShareLinks.publicToken, shareToken),
+      isNull(s.floorplanShareLinks.revokedAt),
+    ))
+    .limit(1);
+  if (!row) return null;
+  return {
+    eventTitle: row.event.title,
+    eventDate: row.event.startsAt.toISOString(),
+    floorplan: map.toFloorplan(row.plan),
+  };
+}
 
 /* ----------------------------------------------------------------- members */
 
@@ -4163,54 +5215,88 @@ export const members = {
     await revokeInvitationEmail(email);
   },
 
-  async setRole(ctx: RequestContext, userId: string, role: string): Promise<WorkspaceMember> {
+  async setRole(ctx: RequestContext, userId: string, role: string, changeId: string): Promise<MemberRoleChangeResult> {
     requireRole(ctx, ["owner"]);
     if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
       throw new HttpError(400, `role must be one of ${WORKSPACE_ROLES.join(", ")}.`);
     }
-    await guardLastOwner(ctx, userId, role === "owner" ? "keep" : "drop");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(changeId)) {
+      throw new HttpError(400, "A valid role-change request id is required.");
+    }
+    const [current] = await db.select().from(s.workspaceMembers).where(and(
+      eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId),
+    )).limit(1);
+    if (!current) throw new HttpError(404, "That person is not in this workspace.");
+    if (current.eventScopeId && role !== "member") {
+      throw new HttpError(409, "Event-only collaborators must remain members. Remove the event restriction before granting workspace-wide Admin or Owner access.");
+    }
 
-    const updated = await db
+    const ownerLock = db.select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
+      .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const roleUpdate = db
       .update(s.workspaceMembers)
       .set({ role: role as "member" })
-      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)))
+      .where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
+        eq(s.workspaceMembers.userId, userId),
+        roleChangeOwnerGuard(ctx.workspaceId, userId, role as "member"),
+      ))
       .returning();
-    if (updated.length === 0) throw new HttpError(404, "That person is not in this workspace.");
+    const [, updatedRows] = await db.batch([ownerLock, roleUpdate]);
+    const updated = updatedRows[0];
+    if (!updated) throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
 
-    const directory = await lookupUsers([userId]);
-    return {
+    const [directory, [workspace]] = await Promise.all([
+      lookupUsers([userId]),
+      db.select({ name: s.workspaces.name }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
+    ]);
+    const account = directory.get(userId);
+    const member: WorkspaceMember = {
       userId,
-      role: updated[0]!.role,
+      role: updated.role,
       status: "active",
-      name: directory.get(userId)?.name ?? null,
-      email: directory.get(userId)?.email ?? null,
+      name: account?.name ?? null,
+      email: account?.email ?? null,
       isSelf: userId === ctx.userId,
-      joinedAt: updated[0]!.createdAt.toISOString(),
-      eventScopeId: updated[0]!.eventScopeId,
-      eventScopeTitle: updated[0]!.eventScopeId ? (await events.get(ctx, updated[0]!.eventScopeId))?.title ?? null : null,
+      joinedAt: updated.createdAt.toISOString(),
+      eventScopeId: updated.eventScopeId,
+      eventScopeTitle: updated.eventScopeId ? (await events.get(ctx, updated.eventScopeId))?.title ?? null : null,
     };
+    if (current.role === role) return { member, emailSent: false, roleChanged: false };
+    const outcome = account?.email ? await notifyWorkspaceRoleChanged({
+      changeId,
+      workspaceId: ctx.workspaceId,
+      workspaceName: workspace?.name ?? "Beebizy",
+      userId,
+      to: account.email,
+      memberName: account.name ?? "team member",
+      newRole: updated.role,
+    }) : null;
+    return { member, emailSent: outcome?.status === "sent", roleChanged: true };
   },
 
   async remove(ctx: RequestContext, userId: string): Promise<void> {
     requireRole(ctx, ["owner"]);
-    await guardLastOwner(ctx, userId, "drop");
-    await db
+    const [current] = await db.select({ role: s.workspaceMembers.role }).from(s.workspaceMembers).where(and(
+      eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId),
+    )).limit(1);
+    if (!current) return;
+    const ownerLock = db.select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
+      .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
+    const memberDelete = db
       .delete(s.workspaceMembers)
-      .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, userId)));
+      .where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
+        eq(s.workspaceMembers.userId, userId),
+        roleRemovalOwnerGuard(ctx.workspaceId, userId),
+      ))
+      .returning({ userId: s.workspaceMembers.userId });
+    const [, removed] = await db.batch([ownerLock, memberDelete]);
+    if (removed.length === 0 && current.role === "owner") {
+      throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    }
   },
 };
-
-/** Refuses a change that would leave the workspace with no owner. */
-async function guardLastOwner(ctx: RequestContext, userId: string, intent: "keep" | "drop"): Promise<void> {
-  if (intent === "keep") return;
-  const owners = await db
-    .select({ userId: s.workspaceMembers.userId })
-    .from(s.workspaceMembers)
-    .where(and(eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.role, "owner")));
-  if (owners.length <= 1 && owners.some((owner) => owner.userId === userId)) {
-    throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
-  }
-}
 
 export const history = {
   async list(ctx: RequestContext, eventId: string): Promise<EventHistoryEntry[]> {

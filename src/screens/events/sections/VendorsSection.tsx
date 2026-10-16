@@ -36,6 +36,7 @@ import {
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { BOOKING_STATUSES, type BookingStatus, type Event } from "@/data/entities";
 import VendorCsvImportDialog from "@/screens/vendors/VendorCsvImportDialog";
+import VendorEventPacketDialog from "./VendorEventPacketDialog";
 
 const COURSES = ["Breakfast", "Starter", "Main", "Dessert", "Lunch", "Canapés", "Drinks", "Other"];
 
@@ -193,6 +194,7 @@ export function VendorsPanel({ event }: { event: Event }) {
             ? `${confirmed} confirmed, ${pending} pending · ${formatMoney(committed)} committed`
             : "Nobody booked yet"
         }
+        actions={<VendorEventPacketDialog event={event} bookings={bookings ?? []} />}
       />
 
       <form

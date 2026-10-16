@@ -13,8 +13,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Circle,
+  Copy,
   GripVertical,
+  ImagePlus,
   LayoutGrid,
   Lock,
   Minus,
@@ -22,13 +25,16 @@ import {
   Plus,
   RectangleHorizontal,
   RotateCcw,
+  RotateCw,
   Save,
   Shapes,
+  Type,
   Trash2,
   Unlock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { EmptyState, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
@@ -37,11 +43,15 @@ import {
   useDeleteFloorplan,
   useFloorplans,
   useSaveFloorplan,
+  useShareFloorplan,
+  useUploadAuctionImage,
 } from "@/data/hooks";
 import {
   FLOORPLAN_SHAPES,
   type Event,
   type Floorplan,
+  type FloorplanDraft,
+  type FloorplanCustomShapeMode,
   type FloorplanItem,
   type FloorplanPoint,
   type FloorplanRoom,
@@ -49,41 +59,106 @@ import {
   type FloorplanShape,
 } from "@/data/entities";
 import { floorplanRoomSquareFeet } from "@/data/floorplan";
+import { isRecoveredFloorplanCopy, recoveredFloorplanName, resolveFloorplanRecovery, type FloorplanRecoveryCandidate, type StoredFloorplanEditorDraft } from "@/data/floorplanRecovery";
+import { useDataMode } from "@/data/provider";
 import {
   DEFAULT_FLOORPLAN_ROOM,
+  DEFAULT_CUSTOM_OBJECT_POINTS,
+  FLOORPLAN_ITEM_OVERLAY,
   addRoomCorner,
+  floorplanItemToolbarPlacement,
   nearestPointInsideRoom,
   pointIsInsideRoom,
-  roomClipPath,
+  rotationFromPointerAngles,
   roomPointsForShape,
+  smoothClosedPath,
 } from "@/data/floorplanGeometry";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
+import { FloorplanItemVisual, FloorplanRoomBackdrop } from "@/screens/floorplan/floorplanVisuals";
+import { FLOORPLAN_SHAPE_SPECS } from "@/screens/floorplan/floorplanShapeSpecs";
 
-interface ShapeSpec {
-  label: string;
-  /** Width and height as a percentage of the room box. */
-  width: number;
-  height: number;
-  seats: number | null;
-  round: boolean;
+interface InlineLabelEditorProps {
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: (value: string) => void;
+  ariaLabel: string;
+  placeholder: string;
   className: string;
+  multiline?: boolean;
+  autoFocus?: boolean;
 }
 
-const SHAPES: Record<FloorplanShape, ShapeSpec> = {
-  "round-table": { label: "Round table", width: 9, height: 12, seats: 10, round: true, className: "bg-primary-muted border-primary/40 text-foreground" },
-  "long-table": { label: "Long table", width: 22, height: 7, seats: 16, round: false, className: "bg-primary-muted border-primary/40 text-foreground" },
-  stage: { label: "Stage", width: 30, height: 9, seats: null, round: false, className: "bg-secondary border-secondary text-secondary-foreground" },
-  bar: { label: "Bar", width: 8, height: 16, seats: null, round: false, className: "bg-info-tint border-info/40 text-info-text" },
-  entrance: { label: "Entrance", width: 12, height: 6, seats: null, round: false, className: "bg-success-tint border-success/40 text-success-text" },
-  dancefloor: { label: "Dance floor", width: 24, height: 20, seats: null, round: false, className: "bg-surface-sunken border-dashed border-muted-foreground/50 text-muted-foreground" },
-  booth: { label: "Booth", width: 10, height: 10, seats: 4, round: false, className: "bg-warning-tint border-warning/40 text-warning-text" },
-  av: { label: "AV desk", width: 9, height: 7, seats: null, round: false, className: "bg-muted border-muted-foreground/40 text-muted-foreground" },
-  tree: { label: "Tree", width: 7, height: 10, seats: null, round: true, className: "bg-success-tint border-success/50 text-success-text" },
-  chair: { label: "Chair", width: 4, height: 6, seats: 1, round: false, className: "bg-surface border-muted-foreground/40 text-foreground" },
-  "chair-row": { label: "Row of chairs", width: 24, height: 6, seats: 8, round: false, className: "bg-surface border-primary/40 text-foreground" },
-};
+function InlineLabelEditor({
+  value,
+  onChange,
+  onCommit,
+  ariaLabel,
+  placeholder,
+  className,
+  multiline = false,
+  autoFocus = false,
+}: InlineLabelEditorProps) {
+  const shared = {
+    value,
+    placeholder,
+    maxLength: 80,
+    autoFocus,
+    className,
+    "aria-label": ariaLabel,
+    onChange: (inputEvent: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(inputEvent.target.value),
+    onBlur: (inputEvent: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => onCommit(inputEvent.target.value),
+    onPointerDown: (pointerEvent: React.PointerEvent<HTMLInputElement | HTMLTextAreaElement>) => pointerEvent.stopPropagation(),
+    onClick: (mouseEvent: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>) => mouseEvent.stopPropagation(),
+  };
+
+  return multiline ? <textarea {...shared} rows={2} /> : <input {...shared} />;
+}
+
+const SHAPES = FLOORPLAN_SHAPE_SPECS;
 
 const clamp = (value: number) => Math.max(2, Math.min(98, value));
+
+function suppressNextClick(ref: { current: boolean }) {
+  ref.current = true;
+  window.setTimeout(() => {
+    ref.current = false;
+  }, 0);
+}
+
+type FloorplanSaveStatus = "saved" | "unsaved" | "saving" | "error";
+
+const floorplanDraftKey = (id: string) => `beebizy:floorplan-draft:${id}`;
+
+function readFloorplanEditorRecovery(saved: Floorplan): FloorplanRecoveryCandidate | null {
+  try {
+    const key = floorplanDraftKey(saved.id);
+    const raw = window.localStorage.getItem(key);
+    const recovery = resolveFloorplanRecovery(saved, raw);
+    if (raw && recovery === null) window.localStorage.removeItem(key);
+    return recovery;
+  } catch {
+    return null;
+  }
+}
+
+function writeFloorplanEditorDraft(id: string, draft: FloorplanDraft): boolean {
+  try {
+    const stored: StoredFloorplanEditorDraft = { editedAt: Date.now(), draft };
+    window.localStorage.setItem(floorplanDraftKey(id), JSON.stringify(stored));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearFloorplanEditorDraft(id: string): boolean {
+  try {
+    window.localStorage.removeItem(floorplanDraftKey(id));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const ROOM_SHAPE_OPTIONS: {
   value: FloorplanRoomShape;
@@ -100,43 +175,245 @@ function newItemId(): string {
   return `fp-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
 }
 
+function openItemPosition(
+  items: FloorplanItem[],
+  room: FloorplanRoom,
+  spec: (typeof SHAPES)[FloorplanShape],
+): FloorplanPoint {
+  const candidates = [14, 26, 38, 50, 62, 74, 86].flatMap((y) =>
+    [14, 26, 38, 50, 62, 74, 86].map((x) => ({ x, y })),
+  );
+  const rotated = [...candidates.slice(items.length % candidates.length), ...candidates.slice(0, items.length % candidates.length)];
+  const open = rotated.find((candidate) => {
+    if (!pointIsInsideRoom(room, candidate.x, candidate.y)) return false;
+    return items.every((item) => {
+      const itemSpec = SHAPES[item.shape];
+      const horizontalClearance = ((item.width ?? itemSpec.width) + spec.width) / 2 + 2;
+      const verticalClearance = ((item.height ?? itemSpec.height) + spec.height) / 2 + 2;
+      return Math.abs(candidate.x - item.x) >= horizontalClearance || Math.abs(candidate.y - item.y) >= verticalClearance;
+    });
+  });
+
+  return open ?? nearestPointInsideRoom(room, {
+    x: clamp(20 + ((items.length * 13) % 60)),
+    y: clamp(24 + ((items.length * 9) % 50)),
+  });
+}
+
 /**
  * One room's editor. Remounted per room by the panel below (via `key`), so the local
  * unsaved state cannot leak from the terrace layout into the ballroom's.
  */
-function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
+function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; plan: Floorplan; recoverAsNewRoom: (draft: FloorplanDraft) => Promise<Floorplan> }) {
   const savePlan = useSaveFloorplan();
+  const shareFloorplan = useShareFloorplan();
+  const uploadImage = useUploadAuctionImage();
+  const { mode: dataMode } = useDataMode();
 
+  const [recoveryCandidate, setRecoveryCandidate] = useState<FloorplanRecoveryCandidate | null>(() => readFloorplanEditorRecovery(saved));
+  const [recoverySaving, setRecoverySaving] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [items, setItems] = useState<FloorplanItem[] | null>(null);
   const [room, setRoom] = useState<FloorplanRoom | null>(null);
+  const [saveStatus, setSaveStatus] = useState<FloorplanSaveStatus>("saved");
+  const [sharing, setSharing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
+  const [selectedItemCorner, setSelectedItemCorner] = useState<number | null>(null);
+  const [freehandDraft, setFreehandDraft] = useState<FloorplanPoint[] | null>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const rotationDragState = useRef<{
+    id: string;
+    centerX: number;
+    centerY: number;
+    startPointerAngle: number;
+    startRotation: number;
+    moved: boolean;
+  } | null>(null);
   const cornerDragState = useRef<{ index: number } | null>(null);
+  const itemCornerDragState = useRef<{ id: string; index: number } | null>(null);
   const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
   const suppressPaletteClick = useRef(false);
+  const suppressRotationClick = useRef(false);
+  const freehandDraftRef = useRef<FloorplanPoint[] | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const autoSaveTimer = useRef<number | null>(null);
+  const editRevision = useRef(0);
+  const deviceDraftStored = useRef(true);
+  const savePlanRef = useRef(savePlan);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  savePlanRef.current = savePlan;
 
   // Local edits win until saved or reset; otherwise mirror the stored plan. Memoized so
   // the derived values below don't recompute on every render.
   const workingItems = useMemo(() => items ?? saved?.items ?? [], [items, saved]);
+  const workingItemsRef = useRef(workingItems);
+  workingItemsRef.current = workingItems;
   const workingName = name ?? saved?.name ?? "Room layout";
   const workingRoom = useMemo(
     () => room ?? saved.room ?? DEFAULT_FLOORPLAN_ROOM,
     [room, saved.room],
   );
-  const dirty = items !== null || name !== null || room !== null;
+  const currentDraftRef = useRef<FloorplanDraft>({ name: workingName, items: workingItems, room: workingRoom });
+  currentDraftRef.current = { name: workingName, items: workingItems, room: workingRoom };
+  const hasLocalEdits = items !== null || name !== null || room !== null;
 
   const selected = workingItems.find((item) => item.id === selectedId) ?? null;
+  const selectedCustomPoints = selected?.shape === "custom-shape"
+    ? selected.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
+    : null;
+  const selectedCustomMode: FloorplanCustomShapeMode = selected?.customShapeMode ?? "polygon";
 
   const seatTotal = useMemo(
     () => workingItems.reduce((total, item) => total + (item.seats ?? 0), 0),
     [workingItems],
   );
 
+  const persistDraftRef = useRef<(revision: number, draft: FloorplanDraft, manual: boolean) => Promise<boolean>>(async () => false);
+  persistDraftRef.current = async (revision, draft, manual) => {
+    setSaveStatus("saving");
+    const request = saveQueue.current
+      .catch(() => undefined)
+      .then(() => savePlanRef.current.mutateAsync({ id: saved.id, eventId: event.id, draft }));
+    saveQueue.current = request;
+    try {
+      await request;
+      if (editRevision.current === revision) {
+        if (dataMode === "live") clearFloorplanEditorDraft(saved.id);
+        setSaveStatus("saved");
+      }
+      if (manual) toast({ title: "Floorplan saved" });
+      return true;
+    } catch (error) {
+      if (editRevision.current === revision) setSaveStatus("error");
+      toast({
+        title: "Couldn't save",
+        description: deviceDraftStored.current
+          ? `${error instanceof Error ? error.message : "Try again."} Your changes are still stored on this device.`
+          : `${error instanceof Error ? error.message : "Try again."} Your changes are still visible in this tab. Keep it open and try again.`,
+      });
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (!hasLocalEdits || recoveryCandidate) return;
+    const draft = { name: workingName, items: workingItems, room: workingRoom };
+    deviceDraftStored.current = writeFloorplanEditorDraft(saved.id, draft);
+    const revision = editRevision.current + 1;
+    editRevision.current = revision;
+    setSaveStatus("unsaved");
+    if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = window.setTimeout(() => {
+      autoSaveTimer.current = null;
+      void persistDraftRef.current(revision, draft, false);
+    }, 800);
+    return () => {
+      if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+    };
+  }, [event.id, hasLocalEdits, recoveryCandidate, saved.id, workingItems, workingName, workingRoom]);
+
+  useEffect(() => {
+    setRecoveryCandidate((current) => current ? readFloorplanEditorRecovery(saved) : null);
+  }, [saved]);
+
   const updateItem = (id: string, patch: Partial<FloorplanItem>) => {
     setItems(workingItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const normalizeLabel = (id: string, value: string, fallback: string) => {
+    updateItem(id, { label: value.trim() || fallback });
+  };
+
+  const recoverDeviceCopy = async () => {
+    if (!recoveryCandidate) return;
+    setRecoverySaving(true);
+    try {
+      const recovered = await recoverAsNewRoom(recoveryCandidate.draft);
+      const cleared = clearFloorplanEditorDraft(saved.id);
+      setRecoveryCandidate(null);
+      toast({
+        title: "Device copy recovered as a separate room",
+        description: cleared
+          ? `${recoveryCandidate.itemCount} objects are now saved in “${recovered.name}.” The original room is unchanged.`
+          : `${recoveryCandidate.itemCount} objects are saved in “${recovered.name},” but this browser could not clear its old recovery prompt. Recovering again will reopen this room without creating a duplicate.`,
+      });
+    } catch (error) {
+      toast({ title: "Couldn't recover the device copy", description: error instanceof Error ? error.message : "Try again." });
+    } finally {
+      setRecoverySaving(false);
+    }
+  };
+
+  const keepServerVersion = () => {
+    if (!window.confirm("Discard the unsynced device copy and keep the current server room?")) return;
+    if (!clearFloorplanEditorDraft(saved.id)) {
+      toast({ title: "Couldn't discard the device copy", description: "Browser storage is unavailable." });
+      return;
+    }
+    setRecoveryCandidate(null);
+    toast({ title: "Server room kept", description: "The browser recovery copy was discarded." });
+  };
+
+  const updateItemPoint = (id: string, index: number, point: FloorplanPoint) => {
+    setItems(workingItems.map((item) => {
+      if (item.id !== id) return item;
+      const points = item.points ?? DEFAULT_CUSTOM_OBJECT_POINTS;
+      return {
+        ...item,
+        points: points.map((current, currentIndex) => currentIndex === index ? point : current),
+      };
+    }));
+  };
+
+  const pointInDrawingPad = (
+    pointerEvent: React.PointerEvent<HTMLDivElement>,
+  ): FloorplanPoint => {
+    const bounds = pointerEvent.currentTarget.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(100, ((pointerEvent.clientX - bounds.left) / bounds.width) * 100)),
+      y: Math.max(0, Math.min(100, ((pointerEvent.clientY - bounds.top) / bounds.height) * 100)),
+    };
+  };
+
+  const beginFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (!selected || selected.shape !== "custom-shape" || selected.locked || pointerEvent.button !== 0) return;
+    const draft = [pointInDrawingPad(pointerEvent)];
+    freehandDraftRef.current = draft;
+    setFreehandDraft(draft);
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+  };
+
+  const continueFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    const draft = freehandDraftRef.current;
+    if (!draft || draft.length >= 256) return;
+    const point = pointInDrawingPad(pointerEvent);
+    const previous = draft.at(-1)!;
+    if (Math.hypot(point.x - previous.x, point.y - previous.y) < 1.5) return;
+    const next = [...draft, point];
+    freehandDraftRef.current = next;
+    setFreehandDraft(next);
+  };
+
+  const finishFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    const draft = freehandDraftRef.current;
+    freehandDraftRef.current = null;
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+    }
+    if (selected && draft && draft.length >= 3) {
+      updateItem(selected.id, { customShapeMode: "freehand", points: draft });
+    }
+    setFreehandDraft(null);
+  };
+
+  const cancelFreehand = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    freehandDraftRef.current = null;
+    setFreehandDraft(null);
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+    }
   };
 
   const updateRoom = (patch: Partial<FloorplanRoom>) => {
@@ -162,14 +439,17 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     setSelectedCorner(shape === "custom" ? 0 : null);
   };
 
-  const addShape = (shape: FloorplanShape, position?: { x: number; y: number }) => {
+  const addShape = (
+    shape: FloorplanShape,
+    position?: { x: number; y: number },
+    options?: Pick<FloorplanItem, "label" | "imageUrl">,
+  ) => {
     const spec = SHAPES[shape];
-    const sameShape = workingItems.filter((item) => item.shape === shape).length;
-    const staggered = {
-      x: position ? clamp(position.x) : clamp(20 + ((sameShape * 13) % 60)),
-      y: position ? clamp(position.y) : clamp(24 + ((sameShape * 9) % 50)),
-    };
-    const fallbackPosition = nearestPointInsideRoom(workingRoom, staggered);
+    const currentItems = workingItemsRef.current;
+    const sameShape = currentItems.filter((item) => item.shape === shape).length;
+    const fallbackPosition = position
+      ? nearestPointInsideRoom(workingRoom, { x: clamp(position.x), y: clamp(position.y) })
+      : openItemPosition(currentItems, workingRoom, spec);
     const item: FloorplanItem = {
       id: newItemId(),
       shape,
@@ -181,9 +461,40 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
       // Every object starts movable. Teams can lock true fixed features after they
       // have placed them, using the same control available for furniture.
       locked: false,
+      rotation: 0,
+      ...(shape === "custom-shape"
+        ? { customShapeMode: "polygon" as const, points: DEFAULT_CUSTOM_OBJECT_POINTS.map((point) => ({ ...point })) }
+        : {}),
+      ...options,
     };
-    setItems([...workingItems, item]);
+    setItems([...currentItems, item]);
     setSelectedId(item.id);
+    setSelectedItemCorner(null);
+    setFreehandDraft(null);
+    freehandDraftRef.current = null;
+  };
+
+  const uploadFloorplanImage = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Choose an image file" });
+      return;
+    }
+    if (file.size > 4_000_000) {
+      toast({ title: "Image is too large", description: "Choose an image smaller than 4 MB." });
+      return;
+    }
+
+    uploadImage.mutate(file, {
+      onSuccess: (imageUrl) => {
+        const filename = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+        addShape("image", undefined, {
+          label: (filename || "Image").slice(0, 80),
+          imageUrl,
+        });
+        toast({ title: "Image added", description: "Select it to resize or rotate it." });
+      },
+      onError: (error) => toast({ title: "Couldn't upload image", description: error.message }),
+    });
   };
 
   const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
@@ -215,22 +526,27 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     if (!drag) return;
     const moved = Math.hypot(pointerEvent.clientX - drag.startX, pointerEvent.clientY - drag.startY) > 6;
     if (!moved) return;
-    suppressPaletteClick.current = true;
+    suppressNextClick(suppressPaletteClick);
     addShapeAtPointer(drag.shape, pointerEvent.clientX, pointerEvent.clientY);
-    window.setTimeout(() => {
-      suppressPaletteClick.current = false;
-    }, 0);
   };
 
   const removeSelected = () => {
     if (!selected || selected.locked) return;
     setItems(workingItems.filter((item) => item.id !== selected.id));
     setSelectedId(null);
+    setSelectedItemCorner(null);
+    setFreehandDraft(null);
+    freehandDraftRef.current = null;
   };
 
   /* --------------------------------------------------------------- dragging */
 
-  const onPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>, item: FloorplanItem) => {
+  const onPointerDown = (pointerEvent: React.PointerEvent<HTMLElement>, item: FloorplanItem) => {
+    if (item.id !== selectedId) {
+      setSelectedItemCorner(null);
+      setFreehandDraft(null);
+      freehandDraftRef.current = null;
+    }
     setSelectedId(item.id);
     if (item.locked) return;
     const room = roomRef.current;
@@ -242,15 +558,70 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
     pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
   };
 
+  const beginRotation = (pointerEvent: React.PointerEvent<HTMLButtonElement>, item: FloorplanItem) => {
+    if (pointerEvent.button !== 0 || item.locked) return;
+    const room = roomRef.current;
+    if (!room) return;
+    const rect = room.getBoundingClientRect();
+    const centerX = rect.left + rect.width * (item.x / 100);
+    const centerY = rect.top + rect.height * (item.y / 100);
+    rotationDragState.current = {
+      id: item.id,
+      centerX,
+      centerY,
+      startPointerAngle: Math.atan2(pointerEvent.clientY - centerY, pointerEvent.clientX - centerX) * 180 / Math.PI,
+      startRotation: item.rotation ?? 0,
+      moved: false,
+    };
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+  };
+
   const onPointerMove = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
     const room = roomRef.current;
     if (!room) return;
     const rect = room.getBoundingClientRect();
+    const rotationDrag = rotationDragState.current;
+    if (rotationDrag) {
+      const pointerAngle = Math.atan2(
+        pointerEvent.clientY - rotationDrag.centerY,
+        pointerEvent.clientX - rotationDrag.centerX,
+      ) * 180 / Math.PI;
+      const rotation = rotationFromPointerAngles(
+        rotationDrag.startRotation,
+        rotationDrag.startPointerAngle,
+        pointerAngle,
+      );
+      if (rotation !== rotationDrag.startRotation) rotationDrag.moved = true;
+      updateItem(rotationDrag.id, { rotation });
+      return;
+    }
+
     const cornerDrag = cornerDragState.current;
     if (cornerDrag) {
       updateRoomPoint(cornerDrag.index, {
         x: clamp(((pointerEvent.clientX - rect.left) / rect.width) * 100),
         y: clamp(((pointerEvent.clientY - rect.top) / rect.height) * 100),
+      });
+      return;
+    }
+
+    const itemCornerDrag = itemCornerDragState.current;
+    if (itemCornerDrag) {
+      const item = workingItems.find((current) => current.id === itemCornerDrag.id);
+      if (!item) return;
+      const spec = SHAPES[item.shape];
+      const itemWidth = rect.width * ((item.width ?? spec.width) / 100);
+      const itemHeight = rect.height * ((item.height ?? spec.height) / 100);
+      const centerX = rect.left + rect.width * (item.x / 100);
+      const centerY = rect.top + rect.height * (item.y / 100);
+      const radians = -((item.rotation ?? 0) * Math.PI) / 180;
+      const deltaX = pointerEvent.clientX - centerX;
+      const deltaY = pointerEvent.clientY - centerY;
+      const localX = deltaX * Math.cos(radians) - deltaY * Math.sin(radians);
+      const localY = deltaX * Math.sin(radians) + deltaY * Math.cos(radians);
+      updateItemPoint(item.id, itemCornerDrag.index, {
+        x: Math.max(0, Math.min(100, 50 + (localX / itemWidth) * 100)),
+        y: Math.max(0, Math.min(100, 50 + (localY / itemHeight) * 100)),
       });
       return;
     }
@@ -263,8 +634,13 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   };
 
   const endDrag = () => {
+    if (rotationDragState.current?.moved) {
+      suppressNextClick(suppressRotationClick);
+    }
     dragState.current = null;
+    rotationDragState.current = null;
     cornerDragState.current = null;
+    itemCornerDragState.current = null;
   };
 
   /* ------------------------------------------------------------- keyboard */
@@ -274,9 +650,14 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
   // depending on `updateItem` (recreated each render) would do exactly that.
   const latest = useRef({ selected, workingItems, workingRoom });
   latest.current = { selected, workingItems, workingRoom };
+  const recoveryPending = useRef(Boolean(recoveryCandidate));
+  recoveryPending.current = Boolean(recoveryCandidate);
 
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
+      if (recoveryPending.current) return;
+      const eventTarget = keyEvent.target as HTMLElement | null;
+      if (eventTarget?.closest("input, textarea, select, button, [contenteditable='true']")) return;
       const { selected: target, workingItems: current, workingRoom: currentRoom } = latest.current;
       if (!target) return;
 
@@ -337,24 +718,72 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
 
   const visualAspectRatio = Math.max(0.65, Math.min(2.4, workingRoom.widthFeet / workingRoom.lengthFeet));
 
+  const copyFloorplanLink = async () => {
+    setSharing(true);
+    try {
+      if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+      if (hasLocalEdits) {
+        const savedCurrentRevision = await persistDraftRef.current(
+          editRevision.current,
+          currentDraftRef.current,
+          false,
+        );
+        if (!savedCurrentRevision) return;
+      } else {
+        await saveQueue.current;
+      }
+      const token = (await shareFloorplan.mutateAsync({ eventId: event.id, id: saved.id })).shareToken;
+      const url = new URL(`/floorplan/${encodeURIComponent(token)}`, window.location.origin);
+      await navigator.clipboard.writeText(url.toString());
+      toast({ title: "Floorplan link copied", description: "Vendors and clients can open it without signing in." });
+    } catch (caught) {
+      toast({ title: "Couldn't copy the floorplan link", description: caught instanceof Error ? caught.message : undefined });
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
-    <Panel>
+    <Panel className="relative">
       <PanelHeader
         title="Floorplan"
         description={capacityNote}
         actions={
           <div className="flex items-center gap-2">
-            {dirty ? <Pill tone="warning">unsaved</Pill> : null}
-            {dirty ? (
+            <Button type="button" variant="outline" size="sm" disabled={sharing || shareFloorplan.isPending} onClick={() => void copyFloorplanLink()}>
+              <Copy className="mr-1.5 size-3.5" />
+              {sharing || shareFloorplan.isPending ? "Saving & creating link…" : saveStatus === "saved" ? "Copy share link" : "Save & copy link"}
+            </Button>
+            {saveStatus === "saving" ? <Pill tone="info">Saving…</Pill> : null}
+            {saveStatus === "unsaved" ? <Pill tone="warning">Autosaving…</Pill> : null}
+            {saveStatus === "error" ? <Pill tone="danger">{deviceDraftStored.current ? "Saved on this device" : "Not saved - keep this tab open"}</Pill> : null}
+            {saveStatus === "saved" && hasLocalEdits ? <Pill tone="success">Saved automatically</Pill> : null}
+            {hasLocalEdits ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
+                  const revision = editRevision.current + 1;
+                  editRevision.current = revision;
+                  if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+                  if (!clearFloorplanEditorDraft(saved.id)) {
+                    toast({ title: "Couldn't revert safely", description: "The browser recovery copy could not be cleared, so no changes were made." });
+                    return;
+                  }
                   setItems(null);
                   setName(null);
                   setRoom(null);
+                  void persistDraftRef.current(revision, {
+                    name: saved.name,
+                    items: saved.items,
+                    room: saved.room ?? DEFAULT_FLOORPLAN_ROOM,
+                  }, false);
                   setSelectedId(null);
                   setSelectedCorner(null);
+                  setSelectedItemCorner(null);
+                  setFreehandDraft(null);
+                  freehandDraftRef.current = null;
                 }}
               >
                 <RotateCcw className="mr-1.5 size-3.5" />
@@ -363,32 +792,56 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             ) : null}
             <Button
               size="sm"
-              disabled={!dirty || savePlan.isPending}
-              onClick={() =>
-                savePlan.mutate(
-                  {
-                    id: saved.id,
-                    eventId: event.id,
-                    draft: { name: workingName, items: workingItems, room: workingRoom },
-                  },
-                  {
-                    onSuccess: () => {
-                      setItems(null);
-                      setName(null);
-                      setRoom(null);
-                      toast({ title: "Floorplan saved" });
-                    },
-                    onError: (error) => toast({ title: "Couldn't save", description: error.message }),
-                  },
-                )
-              }
+              disabled={!hasLocalEdits || saveStatus === "saved" || saveStatus === "saving"}
+              onClick={() => {
+                if (autoSaveTimer.current !== null) window.clearTimeout(autoSaveTimer.current);
+                autoSaveTimer.current = null;
+                persistDraftRef.current(editRevision.current, {
+                  name: workingName,
+                  items: workingItems,
+                  room: workingRoom,
+                }, true);
+              }}
             >
               <Save className="mr-1.5 size-3.5" />
-              Save
+              Save now
             </Button>
           </div>
         }
       />
+
+      {recoveryCandidate ? (
+        <div role="alert" className="mx-5 mt-4 flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-tint px-4 py-3 text-warning-text sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold">Unsynced floorplan copy found on this device</p>
+              <p data-numeric className="mt-0.5 text-xs">
+                It contains {recoveryCandidate.itemCount} objects from {new Date(recoveryCandidate.editedAt).toLocaleString()}. The current server room has {saved.items.length} objects. Recovering creates a separate room so neither version is overwritten.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={recoverySaving} onClick={keepServerVersion}>Keep server version</Button>
+            <Button type="button" size="sm" disabled={recoverySaving} onClick={() => void recoverDeviceCopy()}>
+              {recoverySaving ? "Recovering…" : "Recover device copy"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <fieldset
+        disabled={Boolean(recoveryCandidate)}
+        inert={recoveryCandidate ? true : undefined}
+        className={cn("m-0 min-w-0 border-0 p-0", recoveryCandidate && "pointer-events-none select-none opacity-60")}
+        aria-label={recoveryCandidate ? "Floorplan editing is paused until the recovery choice is made" : undefined}
+      >
+
+      {sharing ? (
+        <div className="absolute inset-0 z-50 grid cursor-wait place-items-center rounded-xl bg-surface/70 backdrop-blur-[1px]" aria-live="polite">
+          <div className="rounded-full border border-hairline bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-lg">Saving the latest floorplan before sharing…</div>
+        </div>
+      ) : null}
 
       <div className="border-b border-hairline bg-surface-sunken/60 px-5 py-4">
         <div className="flex flex-wrap items-end gap-4">
@@ -509,7 +962,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           className="h-8 w-52"
         />
         <span className="text-xs text-muted-foreground">Drag into the room:</span>
-        {FLOORPLAN_SHAPES.map((shape) => (
+        {FLOORPLAN_SHAPES.filter((shape) => shape !== "image").map((shape) => (
           <Button
             key={shape}
             type="button"
@@ -527,10 +980,32 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             }}
             title={`Drag ${SHAPES[shape].label.toLowerCase()} into the room, or click to add`}
           >
-            <GripVertical className="mr-1 size-3" />
+            {shape === "text" ? <Type className="mr-1 size-3.5" /> : <GripVertical className="mr-1 size-3" />}
             {SHAPES[shape].label}
           </Button>
         ))}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          aria-label="Choose a floorplan image"
+          onChange={(inputEvent) => {
+            const file = inputEvent.target.files?.[0];
+            inputEvent.target.value = "";
+            if (file) uploadFloorplanImage(file);
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={uploadImage.isPending}
+          onClick={() => imageInputRef.current?.click()}
+        >
+          <ImagePlus className="mr-1 size-3.5" />
+          {uploadImage.isPending ? "Uploading image…" : "Upload image"}
+        </Button>
       </div>
 
       {(
@@ -545,34 +1020,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
               className="relative min-h-[360px] w-full overflow-hidden rounded-lg border border-hairline bg-muted/30"
               style={{ aspectRatio: visualAspectRatio }}
             >
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 bg-surface-sunken shadow-inner"
-                style={{
-                  clipPath: roomClipPath(workingRoom),
-                  backgroundImage:
-                    "linear-gradient(to right, hsl(var(--hairline)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--hairline)) 1px, transparent 1px)",
-                  backgroundSize: "5% 8.333%",
-                }}
-              />
-              <svg
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 size-full text-primary/70"
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-              >
-                {workingRoom.shape === "oval" ? (
-                  <ellipse cx="50" cy="50" rx="48" ry="48" fill="none" stroke="currentColor" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-                ) : (
-                  <polygon
-                    points={workingRoom.points.map((point) => `${point.x},${point.y}`).join(" ")}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="0.5"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                )}
-              </svg>
+              <FloorplanRoomBackdrop room={workingRoom} />
 
               {workingItems.length === 0 ? (
                 <div className="absolute inset-0 grid place-items-center">
@@ -589,12 +1037,16 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 const isSelected = item.id === selectedId;
                 const width = item.width ?? spec.width;
                 const height = item.height ?? spec.height;
+                const customPoints = item.shape === "custom-shape"
+                  ? item.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
+                  : null;
+                const customMode: FloorplanCustomShapeMode = item.customShapeMode ?? "polygon";
                 return (
                   <div
                     key={item.id}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}${item.locked ? ", fixed in place" : ""}`}
+                    aria-label={`${spec.label} ${item.label}${item.seats ? `, ${item.seats} seats` : ""}, ${item.rotation ?? 0} degrees${item.locked ? ", fixed in place" : ""}`}
                     aria-pressed={isSelected}
                     onPointerDown={(pointerEvent) => onPointerDown(pointerEvent, item)}
                     onFocus={() => setSelectedId(item.id)}
@@ -603,6 +1055,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       item.locked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
                       spec.round ? "rounded-full" : "rounded-md",
                       spec.className,
+                      item.shape === "text" && "text-sm font-bold sm:text-base",
                       isSelected && "ring-2 ring-ring ring-offset-1",
                     )}
                     style={{
@@ -611,10 +1064,140 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       width: `${width}%`,
                       height: spec.round ? undefined : `${height}%`,
                       aspectRatio: spec.round ? "1 / 1" : undefined,
-                      transform: "translate(-50%, -50%)",
+                      transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)`,
                     }}
                   >
-                    <span className="px-1">{item.label}</span>
+                    {!isSelected ? (
+                      <FloorplanItemVisual item={item} />
+                    ) : item.shape === "image" && item.imageUrl ? (
+                      <>
+                        <FloorplanItemVisual item={item} showLabel={false} />
+                        <InlineLabelEditor
+                          value={item.label}
+                          onChange={(value) => updateItem(item.id, { label: value })}
+                          onCommit={(value) => normalizeLabel(item.id, value, "Image")}
+                          ariaLabel="Image name"
+                          placeholder="Rename image"
+                          className="absolute inset-x-1 bottom-1 z-10 min-w-0 rounded border border-primary/40 bg-surface/95 px-1 py-0.5 text-center text-[9px] font-semibold text-foreground shadow-xs outline-none focus:ring-2 focus:ring-ring/30"
+                        />
+                      </>
+                    ) : item.shape === "text" ? (
+                      <InlineLabelEditor
+                        value={item.label}
+                        onChange={(value) => updateItem(item.id, { label: value })}
+                        onCommit={(value) => normalizeLabel(item.id, value, "Text box")}
+                        ariaLabel="Floorplan text"
+                        placeholder="Type text"
+                        multiline
+                        autoFocus
+                        className="relative z-10 size-full resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-2 py-1 text-center text-sm font-bold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30 sm:text-base"
+                      />
+                    ) : customPoints ? (
+                      <>
+                        <FloorplanItemVisual item={item} showLabel={false} />
+                        <InlineLabelEditor
+                          value={item.label}
+                          onChange={(value) => updateItem(item.id, { label: value })}
+                          onCommit={(value) => normalizeLabel(item.id, value, "Custom shape")}
+                          ariaLabel="Label inside custom shape"
+                          placeholder="Type a label"
+                          multiline
+                          className="relative z-10 mx-2 min-w-0 resize-none rounded border border-info/40 bg-surface/90 px-1.5 py-1 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+                        />
+                        {isSelected && !item.locked && customMode !== "freehand"
+                          ? customPoints.map((point, index) => (
+                              <button
+                                key={`${item.id}-corner-${index}`}
+                                type="button"
+                                aria-label={`Custom shape corner ${index + 1}`}
+                                aria-pressed={selectedItemCorner === index}
+                                onPointerDown={(pointerEvent) => {
+                                  pointerEvent.stopPropagation();
+                                  setSelectedItemCorner(index);
+                                  itemCornerDragState.current = { id: item.id, index };
+                                  pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+                                }}
+                                onKeyDown={(keyEvent) => {
+                                  const movement: Record<string, [number, number]> = {
+                                    ArrowUp: [0, -1],
+                                    ArrowDown: [0, 1],
+                                    ArrowLeft: [-1, 0],
+                                    ArrowRight: [1, 0],
+                                  };
+                                  const delta = movement[keyEvent.key];
+                                  if (!delta) return;
+                                  keyEvent.preventDefault();
+                                  keyEvent.stopPropagation();
+                                  const step = keyEvent.shiftKey ? 5 : 1;
+                                  updateItemPoint(item.id, index, {
+                                    x: Math.max(0, Math.min(100, point.x + delta[0] * step)),
+                                    y: Math.max(0, Math.min(100, point.y + delta[1] * step)),
+                                  });
+                                }}
+                                className={cn(
+                                  "absolute size-3 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-surface bg-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  selectedItemCorner === index && "scale-125 ring-2 ring-ring",
+                                )}
+                                style={{ left: `${point.x}%`, top: `${point.y}%`, zIndex: FLOORPLAN_ITEM_OVERLAY.cornerHandleZIndex }}
+                              />
+                            ))
+                          : null}
+                      </>
+                    ) : isSelected ? (
+                      <InlineLabelEditor
+                        value={item.label}
+                        onChange={(value) => updateItem(item.id, { label: value })}
+                        onCommit={(value) => normalizeLabel(item.id, value, spec.label)}
+                        ariaLabel="Shape name"
+                        placeholder="Rename shape"
+                        multiline
+                        className="relative z-10 mx-1 min-w-0 resize-none overflow-hidden rounded border border-primary/40 bg-surface/95 px-1 py-0.5 text-center text-[10px] font-semibold leading-tight text-foreground shadow-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+                      />
+                    ) : (
+                      <span className="px-1">{item.label}</span>
+                    )}
+                    {isSelected && !item.locked ? (
+                      <div
+                        className="absolute flex touch-none items-center gap-0.5 rounded-full border border-hairline bg-surface p-0.5 text-muted-foreground shadow-md"
+                        style={{
+                          left: item.x < 15 ? "0%" : item.x > 85 ? "100%" : "50%",
+                          ...floorplanItemToolbarPlacement(item.y),
+                          zIndex: FLOORPLAN_ITEM_OVERLAY.toolbarZIndex,
+                          transform: `translateX(${item.x < 15 ? "0%" : item.x > 85 ? "-100%" : "-50%"}) rotate(${-(item.rotation ?? 0)}deg)`,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          aria-label={`Move ${spec.label.toLowerCase()}`}
+                          title={`Drag to move ${spec.label.toLowerCase()}`}
+                          onPointerDown={(pointerEvent) => {
+                            pointerEvent.stopPropagation();
+                            onPointerDown(pointerEvent, item);
+                          }}
+                          className="flex h-7 items-center gap-1 rounded-full px-2 text-[10px] font-medium hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <GripVertical className="size-3" />
+                          Move
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Rotate ${spec.label.toLowerCase()}`}
+                          title="Drag to rotate, or click for 15 degrees"
+                          onPointerDown={(pointerEvent) => {
+                            pointerEvent.stopPropagation();
+                            beginRotation(pointerEvent, item);
+                          }}
+                          onClick={(mouseEvent) => {
+                            mouseEvent.stopPropagation();
+                            if (suppressRotationClick.current) return;
+                            updateItem(item.id, { rotation: ((item.rotation ?? 0) + 15) % 360 });
+                          }}
+                          className="grid size-7 place-items-center rounded-full text-foreground hover:bg-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <RotateCw className="size-4" />
+                        </button>
+                      </div>
+                    ) : null}
                     {item.locked ? <Lock className="absolute right-1 top-1 size-2.5" aria-hidden="true" /> : null}
                   </div>
                 );
@@ -630,6 +1213,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                       onPointerDown={(pointerEvent) => {
                         pointerEvent.stopPropagation();
                         setSelectedId(null);
+                        setSelectedItemCorner(null);
+                        setFreehandDraft(null);
+                        freehandDraftRef.current = null;
                         setSelectedCorner(index);
                         cornerDragState.current = { index };
                         pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
@@ -661,8 +1247,9 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Drag objects from the toolbar to place them inside the room outline. Select any object to lock or unlock
-              its position, then use drag or the arrow keys to move it.
+              Select any shape and type its new name directly inside it. Add a Text box for section labels, then move,
+              resize, or rotate it like any other object. The circular handle on a selected item rotates it directly.
+              Select an uploaded image to rename, resize, or rotate it.
             </p>
           </div>
 
@@ -672,12 +1259,26 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                 <span className="block text-xs font-medium text-muted-foreground">
                   {SHAPES[selected.shape].label} label
                 </span>
-                <Input
-                  value={selected.label}
-                  onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
-                  aria-label="Object label"
-                  className="h-8 w-40"
-                />
+                {selected.shape === "text" ? (
+                  <Textarea
+                    value={selected.label}
+                    onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
+                    onBlur={(inputEvent) => normalizeLabel(selected.id, inputEvent.target.value, "Text box")}
+                    aria-label="Floorplan text"
+                    rows={2}
+                    maxLength={80}
+                    className="min-h-16 w-52 resize-none py-2"
+                  />
+                ) : (
+                  <Input
+                    value={selected.label}
+                    onChange={(inputEvent) => updateItem(selected.id, { label: inputEvent.target.value })}
+                    onBlur={(inputEvent) => normalizeLabel(selected.id, inputEvent.target.value, SHAPES[selected.shape].label)}
+                    aria-label="Object label"
+                    maxLength={80}
+                    className="h-8 w-40"
+                  />
+                )}
               </label>
               {selected.seats !== null ? (
                 <label className="space-y-1">
@@ -730,6 +1331,165 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
                   />
                 </label>
               ) : null}
+              <div className="space-y-1">
+                <span className="block text-xs font-medium text-muted-foreground">
+                  {selected.shape === "image" ? "Image rotation" : selected.shape === "text" ? "Text rotation" : "Rotation"}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="size-8"
+                    aria-label="Rotate object left 15 degrees"
+                    disabled={selected.locked}
+                    onClick={() => updateItem(selected.id, { rotation: ((selected.rotation ?? 0) + 345) % 360 })}
+                  >
+                    <RotateCcw className="size-3.5" />
+                  </Button>
+                  <Input
+                    value={String(selected.rotation ?? 0)}
+                    onChange={(inputEvent) => {
+                      const parsed = Number(inputEvent.target.value);
+                      updateItem(selected.id, {
+                        rotation: Number.isFinite(parsed) ? Math.max(0, Math.min(359, Math.round(parsed))) : 0,
+                      });
+                    }}
+                    type="number"
+                    min="0"
+                    max="359"
+                    aria-label="Object rotation in degrees"
+                    disabled={selected.locked}
+                    className="h-8 w-20 text-right tabular-nums"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="size-8"
+                    aria-label="Rotate object right 15 degrees"
+                    disabled={selected.locked}
+                    onClick={() => updateItem(selected.id, { rotation: ((selected.rotation ?? 0) + 15) % 360 })}
+                  >
+                    <RotateCw className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+              {selectedCustomPoints ? (
+                <div className="basis-full rounded-lg border border-hairline bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">Outline</span>
+                    <div className="flex rounded-md border border-hairline bg-surface-sunken p-0.5">
+                      {(["polygon", "curved", "freehand"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          aria-pressed={selectedCustomMode === mode}
+                          disabled={selected.locked}
+                          onClick={() => {
+                            updateItem(selected.id, { customShapeMode: mode });
+                            setSelectedItemCorner(null);
+                            setFreehandDraft(null);
+                            freehandDraftRef.current = null;
+                          }}
+                          className={cn(
+                            "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                            selectedCustomMode === mode
+                              ? "bg-secondary text-secondary-foreground shadow-xs"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {mode === "polygon" ? "Straight" : mode}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedCustomMode === "freehand"
+                        ? "Draw a closed outline in the pad below."
+                        : "Drag the yellow anchor points directly on the floor plan."}
+                    </span>
+                  </div>
+
+                  {selectedCustomMode === "freehand" ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(240px,360px)_1fr] sm:items-center">
+                      <div
+                        role="application"
+                        tabIndex={0}
+                        aria-label="Freehand shape drawing pad. Drag to replace the current outline."
+                        onPointerDown={beginFreehand}
+                        onPointerMove={continueFreehand}
+                        onPointerUp={finishFreehand}
+                        onPointerCancel={cancelFreehand}
+                        className={cn(
+                          "relative h-32 touch-none overflow-hidden rounded-md border border-dashed border-info/60 bg-info-tint/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          selected.locked ? "cursor-not-allowed opacity-60" : "cursor-crosshair",
+                        )}
+                      >
+                        <svg aria-hidden="true" className="absolute inset-2 size-[calc(100%-1rem)]" viewBox="0 0 100 100" preserveAspectRatio="none">
+                          {(freehandDraft ?? selectedCustomPoints).length >= 3 ? (
+                            <path
+                              d={smoothClosedPath(freehandDraft ?? selectedCustomPoints)}
+                              className="fill-info/15 stroke-info"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          ) : (
+                            <polyline
+                              points={(freehandDraft ?? []).map((point) => `${point.x},${point.y}`).join(" ")}
+                              fill="none"
+                              className="stroke-info"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                        </svg>
+                        {!freehandDraft ? (
+                          <span className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] font-medium text-info-text">
+                            Drag here to redraw
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Press and drag once around the object. Release to close and save the outline.</p>
+                        <p>Use width, height, and rotation above to place it precisely in the room.</p>
+                        <Pill tone="neutral">{selectedCustomPoints.length} sampled points</Pill>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap items-center gap-1">
+                      <Pill tone="neutral">{selectedCustomPoints.length} anchors</Pill>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={selected.locked || selectedCustomPoints.length >= 24}
+                        onClick={() => {
+                          const result = addRoomCorner(selectedCustomPoints);
+                          updateItem(selected.id, { points: result.points });
+                          setSelectedItemCorner(result.index);
+                        }}
+                      >
+                        <Plus className="mr-1 size-3.5" />
+                        Add anchor
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={selected.locked || selectedItemCorner === null || selectedCustomPoints.length <= 3}
+                        onClick={() => {
+                          if (selectedItemCorner === null) return;
+                          updateItem(selected.id, { points: selectedCustomPoints.filter((_, index) => index !== selectedItemCorner) });
+                          setSelectedItemCorner(null);
+                        }}
+                      >
+                        <Minus className="mr-1 size-3.5" />
+                        Remove anchor
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
               <Pill tone={capacityTone}>{capacityNote}</Pill>
               <Button
                 variant="outline"
@@ -747,6 +1507,7 @@ function RoomEditor({ event, plan: saved }: { event: Event; plan: Floorplan }) {
           ) : null}
         </>
       )}
+      </fieldset>
     </Panel>
   );
 }
@@ -779,6 +1540,18 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         onError: (error) => toast({ title: "Couldn't add the room", description: error.message }),
       },
     );
+  };
+
+  const recoverRoom = async (draft: FloorplanDraft): Promise<Floorplan> => {
+    const existingCopy = rooms.find((room) => room.id !== current?.id && isRecoveredFloorplanCopy(room, draft));
+    if (existingCopy) {
+      setSelectedId(existingCopy.id);
+      return existingCopy;
+    }
+    const name = recoveredFloorplanName(draft.name, rooms.map((room) => room.name));
+    const created = await createPlan.mutateAsync({ eventId: event.id, draft: { ...draft, name } });
+    setSelectedId(created.id);
+    return created;
   };
 
   if (isLoading) {
@@ -862,7 +1635,7 @@ export default function FloorplanPanel({ event }: { event: Event }) {
         )}
       </div>
 
-      <RoomEditor key={current.id} event={event} plan={current} />
+      <RoomEditor key={current.id} event={event} plan={current} recoverAsNewRoom={recoverRoom} />
     </div>
   );
 }

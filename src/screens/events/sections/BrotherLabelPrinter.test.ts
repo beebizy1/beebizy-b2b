@@ -74,6 +74,32 @@ describe("renderBrotherNameLabel", () => {
     expect(fillText).toHaveBeenNthCalledWith(2, "Azima-Taylor", BROTHER_BADGE_WIDTH_DOTS / 2, BROTHER_BADGE_LENGTH_DOTS / 2 + 70);
   });
 
+  it("adds a scannable bidder QR while keeping the full name on one label", () => {
+    const fillRect = vi.fn();
+    const fillText = vi.fn();
+    const context = {
+      fillStyle: "",
+      font: "",
+      textAlign: "start" as CanvasTextAlign,
+      textBaseline: "alphabetic" as CanvasTextBaseline,
+      fillRect,
+      fillText,
+      getImageData: vi.fn(() => ({
+        data: new Uint8ClampedArray(BROTHER_BADGE_WIDTH_DOTS * BROTHER_BADGE_LENGTH_DOTS * 4),
+        width: BROTHER_BADGE_WIDTH_DOTS,
+        height: BROTHER_BADGE_LENGTH_DOTS,
+      }) as ImageData),
+      measureText: vi.fn((value: string) => ({ width: value.length * 36 })),
+    };
+    const canvas = { width: 0, height: 0, getContext: vi.fn(() => context) };
+
+    renderBrotherNameLabel("Tarang Goyal", () => canvas, "https://beebizy.test/auction/one?bidder=private");
+
+    expect(fillText).toHaveBeenCalledWith("Tarang Goyal", BROTHER_BADGE_WIDTH_DOTS / 2, 260);
+    expect(fillText).toHaveBeenCalledWith("SCAN TO BID", BROTHER_BADGE_WIDTH_DOTS / 2, expect.any(Number));
+    expect(fillRect.mock.calls.length).toBeGreaterThan(100);
+  });
+
   it("stops waiting when the printer USB transfer never responds", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("document", {

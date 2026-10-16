@@ -232,8 +232,16 @@ function TeamPanel() {
                     value={member.role}
                     onValueChange={(value) =>
                       setRole.mutate(
-                        { userId: member.userId!, role: value as WorkspaceRole },
+                        { userId: member.userId!, role: value as WorkspaceRole, changeId: crypto.randomUUID() },
                         {
+                          onSuccess: (result) => toast({
+                            title: `${label} is now ${value}`,
+                            description: result.emailSent
+                              ? "They were notified by email."
+                              : result.roleChanged
+                                ? "The role changed, but the notification email could not be delivered."
+                                : "That role was already selected.",
+                          }),
                           onError: (mutationError) =>
                             toast({ title: "Couldn't change the role", description: mutationError.message }),
                         },

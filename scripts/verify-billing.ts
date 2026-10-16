@@ -12,6 +12,7 @@ import { db } from "../src/server/db";
 import * as repos from "../src/server/repos";
 import { workspaceMembers, workspaces } from "../src/server/schema";
 import type { RequestContext } from "../src/server/auth";
+import { SELF_SERVE_BILLING_ENABLED } from "../src/data/plans";
 
 const secretKey = process.env.STRIPE_SECRET_KEY;
 if (!secretKey) throw new Error("STRIPE_SECRET_KEY is required.");
@@ -35,6 +36,16 @@ const ctx: RequestContext = {
   },
 };
 const request = new Request("https://beebizy-studio-preview.vercel.app/api/billing/checkout", { method: "POST" });
+
+if (!SELF_SERVE_BILLING_ENABLED) {
+  const blocked = await createCheckoutSession(ctx, "month", request).then(
+    () => false,
+    (error) => /onboarding new teams personally/i.test(String(error)),
+  );
+  if (!blocked) throw new Error("Disabled self-serve billing did not fail closed.");
+  console.log("PASS  self-serve billing is disabled and the checkout endpoint fails closed");
+  process.exit(0);
+}
 
 let customerId: string | null = null;
 

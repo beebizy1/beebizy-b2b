@@ -11,6 +11,7 @@
 
 import type {
   AnalyticsRepository,
+  AuctionRepository,
   CanvasesRepository,
   DataAdapter,
   EventScopedRepository,
@@ -30,8 +31,11 @@ import type {
   TemplatesRepository,
   TicketsRepository,
   VendorMessagesRepository,
+  VendorEventPacketsRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
+import { platformFeeCents } from "../commerce";
+import { normalizeAuctionPageSettings } from "../auctionSettings";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
 import { teamUpdateFromHistory } from "../teamUpdates";
@@ -42,6 +46,9 @@ import type {
   AuctionItem,
   AuctionItemDraft,
   AuctionItemPatch,
+  AuctionDonor,
+  AuctionBidder,
+  AuctionBid,
   BudgetItem,
   BudgetItemDraft,
   BudgetItemPatch,
@@ -58,6 +65,9 @@ import type {
   Deposit,
   DepositDraft,
   DepositPatch,
+  VendorPaymentPlan,
+  VendorPaymentPlanDraft,
+  VendorPaymentPlanPatch,
   Event,
   EventFilter,
   EventHealth,
@@ -94,6 +104,7 @@ import type {
   RegistrationStatus,
   RegistrationWithGuest,
   PublicRegistrationDraft,
+  PublicFloorplanPayload,
   WalkInRegistrationDraft,
   RunOfShowItem,
   RunOfShowItemDraft,
@@ -132,6 +143,8 @@ import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
+import { normalizeAttendeeName } from "../attendanceReport";
+import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -327,6 +340,7 @@ const EVENT_SUBCOLLECTIONS: Array<keyof MemoryDb> = [
   "eventVendors",
   "rfps",
   "deposits",
+  "vendorPaymentPlans",
   "teamHours",
 ];
 
@@ -793,6 +807,15 @@ const registrations: RegistrationsRepository = {
     if (state.guests.some((candidate) => candidate.contact?.toLowerCase() === contact.toLowerCase())) {
       throw new DataError("conflict", "That email is already in the people list. Search for the guest and check them in instead.");
     }
+    const normalizedName = normalizeAttendeeName(name);
+    const duplicateName = state.registrations.some((registration) => {
+      if (registration.eventId !== eventId || registration.status === "cancelled") return false;
+      const guest = state.guests.find((candidate) => candidate.id === registration.guestId);
+      return guest ? normalizeAttendeeName(guest.name) === normalizedName : false;
+    });
+    if (duplicateName) {
+      throw new DataError("conflict", "That name is already on this guest list. Search for the existing guest and check them in instead.");
+    }
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
     }
@@ -1043,6 +1066,86 @@ const vendorMessages: VendorMessagesRepository = {
   },
 };
 
+const vendorEventPackets: VendorEventPacketsRepository = {
+  async send(eventId, draft) {
+    await wait();
+    const event = requireEvent(eventId);
+    const selectedPlans = store().floorplans.filter((plan) => plan.eventId === eventId && draft.floorplanIds.includes(plan.id));
+    const attachmentNames = [
+      ...(draft.includeRunOfShow && store().runOfShow.some((cue) => cue.eventId === eventId) ? [`${vendorPacketFileSlug(event.title)}-run-of-show.pdf`] : []),
+      ...(selectedPlans.length ? [`${vendorPacketFileSlug(event.title)}-floorplans.pdf`] : []),
+    ];
+    const contentKey = JSON.stringify({
+      content: vendorPacketContentKey(draft),
+      event: { title: event.title, date: event.date, endDate: event.endDate, location: event.locationRecord?.name ?? event.location },
+      cues: store().runOfShow.filter((cue) => cue.eventId === eventId).sort((a, b) => a.id.localeCompare(b.id)),
+      plans: [...selectedPlans].sort((a, b) => a.id.localeCompare(b.id)),
+    });
+    if (draft.testEmail) {
+      if (draft.testEmail.toLowerCase() !== "demo@beebizy.com") throw new DataError("permission-denied", "Send the test to your signed-in email address.");
+      const createdAt = nowIso();
+      store().history.push({ id: newId("history"), eventId, actorId: DEMO_OWNER_ID, resource: "vendor-packet", resourceId: `${draft.requestId}:test`, action: "created", summary: "Vendor event packet test sent", before: null, after: { packetRequestId: draft.requestId, test: true, contentKey, status: "sent", email: draft.testEmail, sentBy: "demo@beebizy.com" }, createdAt });
+      return {
+        sent: 1,
+        failed: 0,
+        skipped: 0,
+        attachmentNames,
+        deliveries: [{ vendorId: null, vendorName: "Test recipient", email: draft.testEmail, status: "sent", reason: null }],
+      };
+    }
+
+    if (!draft.consentConfirmed) throw new DataError("invalid", "Confirm the recipient list before sending.");
+    const successfulTest = store().history.some((entry) => entry.eventId === eventId && entry.resource === "vendor-packet" && entry.resourceId === `${draft.requestId}:test` && entry.after?.status === "sent" && entry.after?.contentKey === contentKey);
+    if (!successfulTest) throw new DataError("conflict", "Send a successful test of this exact packet before emailing vendors.");
+
+    const selected = new Set(draft.vendorIds);
+    const seenEmails = new Set<string>();
+    const deliveries: VendorEventPacketDelivery[] = [];
+    for (const booking of store().eventVendors.filter((row) => row.eventId === eventId && selected.has(row.vendorId))) {
+      const vendor = store().vendors.find((row) => row.id === booking.vendorId);
+      const email = vendor?.contactEmail?.trim() ?? "";
+      if (!vendor || !isVendorPacketEmail(email)) {
+        deliveries.push({ vendorId: booking.vendorId, vendorName: vendor?.name ?? "Removed vendor", email, status: "skipped", reason: "No valid contact email" });
+        continue;
+      }
+      const normalized = email.toLowerCase();
+      if (seenEmails.has(normalized)) {
+        deliveries.push({ vendorId: vendor.id, vendorName: vendor.name, email, status: "skipped", reason: "Duplicate contact email" });
+        continue;
+      }
+      seenEmails.add(normalized);
+      const resourceId = `${draft.requestId}:${contentKey}:${vendor.id}`;
+      const alreadySent = store().history.some((entry) => entry.eventId === eventId && entry.resource === "vendor-packet" && entry.resourceId === resourceId && entry.after?.status === "sent");
+      if (alreadySent) {
+        deliveries.push({ vendorId: vendor.id, vendorName: vendor.name, email, status: "skipped", reason: "Already sent for this request" });
+        continue;
+      }
+      const createdAt = nowIso();
+      store().vendorMessages.push({
+        id: newId("vm"), vendorId: vendor.id, eventId, direction: "outbound", senderName: "Demo organiser",
+        subject: draft.subject, content: draft.message, isRead: true, deliveredAt: createdAt, deliveryError: null, createdAt,
+      });
+      syncVendorThread(vendor.id);
+      deliveries.push({ vendorId: vendor.id, vendorName: vendor.name, email, status: "sent", reason: null });
+      store().history.push({
+        id: newId("history"), eventId, actorId: DEMO_OWNER_ID, resource: "vendor-packet",
+        resourceId, action: "created",
+        summary: `Event packet sent to ${vendor.name}`,
+        before: null,
+        after: { packetRequestId: draft.requestId, vendorId: vendor.id, vendorName: vendor.name, email, status: "sent", subject: draft.subject, attachmentNames, sentBy: "demo@beebizy.com" },
+        createdAt,
+      });
+    }
+    return {
+      sent: deliveries.filter((delivery) => delivery.status === "sent").length,
+      failed: deliveries.filter((delivery) => delivery.status === "failed").length,
+      skipped: deliveries.filter((delivery) => delivery.status === "skipped").length,
+      attachmentNames,
+      deliveries,
+    };
+  },
+};
+
 /* -------------------------------------------------------- workspace records */
 
 const eventVendors = eventScoped<EventVendor, EventVendorDraft, EventVendorPatch>(
@@ -1255,7 +1358,7 @@ const moodBoard = eventScoped<MoodBoardImage, { url: string; caption?: string | 
   }),
 );
 
-const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
+const auctionBase = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
   () => store().auction,
   "auc",
   (eventId, draft) => ({
@@ -1269,6 +1372,21 @@ const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
     fairMarketValueCents: draft.fairMarketValueCents ?? null,
     winnerName: draft.winnerName ?? null,
     donorName: draft.donorName ?? null,
+    donorId: draft.donorId ?? null,
+    category: draft.category ?? null,
+    restrictions: draft.restrictions ?? null,
+    expiresAt: draft.expiresAt ?? null,
+    deliveryDetails: draft.deliveryDetails ?? null,
+    bidIncrementCents: draft.bidIncrementCents ?? null,
+    readinessStatus: draft.readinessStatus ?? "draft",
+    isPublished: draft.isPublished ?? false,
+    opensAt: draft.opensAt ?? null,
+    closesAt: draft.closesAt ?? null,
+    extensionMinutes: draft.extensionMinutes ?? 0,
+    quantityAvailable: draft.quantityAvailable ?? 1,
+    winningBidderId: draft.winningBidderId ?? null,
+    fulfillmentStatus: draft.fulfillmentStatus ?? "pending",
+    fulfilledAt: draft.fulfilledAt ?? null,
     paymentMethod: draft.paymentMethod ?? null,
     paymentLink: draft.paymentLink ?? null,
     paymentReceivedAt: draft.paymentReceivedAt ?? null,
@@ -1280,6 +1398,197 @@ const auction = eventScoped<AuctionItem, AuctionItemDraft, AuctionItemPatch>(
   undefined,
   (a, b) => (a.lotNumber ?? 999) - (b.lotNumber ?? 999),
 );
+
+const memoryAuctionDonors: AuctionDonor[] = [];
+const memoryAuctionBidders: AuctionBidder[] = [];
+const memoryAuctionBids: AuctionBid[] = [];
+
+const auction: AuctionRepository = {
+  ...auctionBase,
+  async listDonors(eventId) {
+    await wait();
+    return copy(memoryAuctionDonors.filter((donor) => donor.eventId === eventId));
+  },
+  async createDonor(eventId, draft) {
+    const donor: AuctionDonor = {
+      id: newId("adon"), ownerId: DEMO_OWNER_ID, eventId, publicToken: newId("donor"),
+      businessName: draft.businessName, contactName: draft.contactName ?? null,
+      email: draft.email ?? null, phone: draft.phone ?? null, solicitedBy: draft.solicitedBy ?? null,
+      solicitationStatus: draft.solicitationStatus ?? "prospect", previousDonations: draft.previousDonations ?? null,
+      notes: draft.notes ?? null, recognitionPreference: draft.recognitionPreference ?? null,
+      thankYouStatus: draft.thankYouStatus ?? "pending", createdAt: nowIso(),
+    };
+    memoryAuctionDonors.push(donor);
+    return copy(donor);
+  },
+  async updateDonor(eventId, donorId, patch) {
+    const donor = required(memoryAuctionDonors.find((row) => row.id === donorId && row.eventId === eventId), "That donor no longer exists.");
+    Object.assign(donor, patch, { updatedAt: nowIso() });
+    return copy(donor);
+  },
+  async removeDonor(eventId, donorId) {
+    const index = memoryAuctionDonors.findIndex((row) => row.id === donorId && row.eventId === eventId);
+    if (index >= 0) memoryAuctionDonors.splice(index, 1);
+  },
+  async sendDonorThankYou(eventId, donorId) {
+    const donor = required(memoryAuctionDonors.find((row) => row.id === donorId && row.eventId === eventId), "That donor no longer exists.");
+    donor.thankYouStatus = "sent";
+    donor.updatedAt = nowIso();
+    return copy(donor);
+  },
+  async share(eventId) {
+    const event = requireEvent(eventId);
+    event.auctionPublicToken ??= newId("auction");
+    event.auctionPage = normalizeAuctionPageSettings(event.auctionPage);
+    return { auctionPublicToken: event.auctionPublicToken };
+  },
+  async updateSettings(eventId, settings) {
+    const event = requireEvent(eventId);
+    event.auctionPage = normalizeAuctionPageSettings(settings);
+    return event.auctionPage;
+  },
+  async publishItem(eventId, itemId, published) {
+    return auctionBase.update(eventId, itemId, { isPublished: published, readinessStatus: published ? "published" : "ready" });
+  },
+  async listBidders(eventId) {
+    return copy(memoryAuctionBidders.filter((bidder) => bidder.eventId === eventId));
+  },
+  async listBids(eventId) {
+    return copy(memoryAuctionBids.filter((bid) => bid.eventId === eventId));
+  },
+  async getPublic(token) {
+    const event = store().events.find((row) => row.auctionPublicToken === token);
+    if (!event) return null;
+    const settings = normalizeAuctionPageSettings(event.auctionPage);
+    const items = store().auction.filter((item) => item.eventId === event.id && item.isPublished).map((item) => ({
+      id: item.id, title: item.title, description: item.description, imageUrl: item.imageUrl,
+      category: item.category ?? null, restrictions: item.restrictions ?? null, expiresAt: item.expiresAt ?? null,
+      deliveryDetails: item.deliveryDetails ?? null, fairMarketValueCents: item.fairMarketValueCents,
+      startingBidCents: item.startingBidCents ?? 0, currentBidCents: item.currentBidCents,
+      bidIncrementCents: item.bidIncrementCents ?? 100, opensAt: item.opensAt ?? null, closesAt: item.closesAt ?? null,
+      status: item.status, lotNumber: item.lotNumber,
+      bidCount: memoryAuctionBids.filter((bid) => bid.itemId === item.id).length,
+      hasBid: memoryAuctionBids.some((bid) => bid.itemId === item.id),
+    }));
+    return {
+      eventTitle: event.title, eventDate: event.date, timeZone: store().settings.timeZone, settings,
+      categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))],
+      items,
+    };
+  },
+  async registerPublic(token, draft) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder: AuctionBidder = {
+      id: newId("abidder"), eventId: event.id, name: draft.name, email: draft.email,
+      phone: draft.phone ?? null, participantType: draft.participantType, publicToken: newId("bidder"),
+      status: "active", createdAt: nowIso(),
+    };
+    memoryAuctionBidders.push(bidder);
+    return copy(bidder);
+  },
+  async placePublicBid(token, bidderToken, itemId, maximumAmountCents) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder = required(memoryAuctionBidders.find((row) => row.publicToken === bidderToken && row.eventId === event.id), "This bidder is not registered.");
+    const item = required(store().auction.find((row) => row.id === itemId && row.eventId === event.id), "This auction item is not available.");
+    const increment = item.bidIncrementCents ?? 100;
+    const minimum = item.currentBidCents === null ? item.startingBidCents ?? 0 : item.currentBidCents + increment;
+    if (maximumAmountCents < minimum) throw new DataError("conflict", `The minimum next bid is ${minimum} cents.`);
+    item.currentBidCents = maximumAmountCents;
+    item.winningBidderId = bidder.id;
+    memoryAuctionBids.push({
+      id: newId("abid"), eventId: event.id, itemId, bidderId: bidder.id, bidderName: bidder.name,
+      amountCents: maximumAmountCents, maximumAmountCents, isAutomatic: false, createdAt: nowIso(),
+    });
+    const payload = await auction.getPublic(token);
+    return {
+      item: payload!.items.find((row) => row.id === itemId)!,
+      bidderIsLeading: true,
+      minimumNextBidCents: maximumAmountCents + increment,
+    };
+  },
+  async uploadImage(file) {
+    return URL.createObjectURL(file);
+  },
+  async getPublicDonor(token) {
+    const donor = memoryAuctionDonors.find((row) => row.publicToken === token);
+    if (!donor) return null;
+    const event = requireEvent(donor.eventId);
+    return {
+      eventTitle: event.title,
+      donor: {
+        businessName: donor.businessName, contactName: donor.contactName, email: donor.email,
+        phone: donor.phone, recognitionPreference: donor.recognitionPreference,
+      },
+      items: store().auction.filter((item) => item.donorId === donor.id).map((item) => ({
+        id: item.id, title: item.title, description: item.description, imageUrl: item.imageUrl,
+        category: item.category ?? null, restrictions: item.restrictions ?? null, expiresAt: item.expiresAt ?? null,
+        fairMarketValueCents: item.fairMarketValueCents, deliveryDetails: item.deliveryDetails ?? null,
+        readinessStatus: item.readinessStatus ?? "incomplete",
+      })),
+    };
+  },
+  async uploadPublicDonorImage(_token, file) {
+    return URL.createObjectURL(file);
+  },
+  async submitPublicDonation(token, draft) {
+    const donor = required(memoryAuctionDonors.find((row) => row.publicToken === token), "This donation link is no longer active.");
+    await auctionBase.create(donor.eventId, {
+      ...draft, donorId: donor.id, donorName: donor.businessName, readinessStatus: "incomplete",
+      isPublished: false, auctionType: "silent", status: "open",
+    });
+    donor.solicitationStatus = "received";
+    donor.recognitionPreference = draft.recognitionPreference ?? donor.recognitionPreference;
+    return (await auction.getPublicDonor(token))!;
+  },
+  async closeItem(eventId, itemId) {
+    const item = required(store().auction.find((row) => row.id === itemId && row.eventId === eventId), "That auction item no longer exists.");
+    item.status = item.winningBidderId ? "won" : "closed";
+    return { status: item.winningBidderId ? "winner-notified" : "closed-no-bids", paymentUrl: null };
+  },
+  async offerSecondChance(eventId, itemId) {
+    const item = required(store().auction.find((row) => row.id === itemId && row.eventId === eventId), "That auction item no longer exists.");
+    const runner = memoryAuctionBids.filter((bid) => bid.itemId === itemId && bid.bidderId !== item.winningBidderId)
+      .sort((left, right) => right.maximumAmountCents - left.maximumAmountCents)[0];
+    if (!runner) throw new DataError("conflict", "There is no runner-up bidder for this item.");
+    item.winningBidderId = runner.bidderId;
+    item.currentBidCents = runner.maximumAmountCents;
+    item.status = "won";
+    return { status: "winner-notified", paymentUrl: null };
+  },
+  async listOrders() {
+    return [];
+  },
+  async refundOrder() {
+    throw new DataError("not-found", "That auction order no longer exists.");
+  },
+  async getBidderProfile(token, bidderToken) {
+    const event = store().events.find((row) => row.auctionPublicToken === token);
+    const bidder = memoryAuctionBidders.find((row) => row.publicToken === bidderToken && row.eventId === event?.id);
+    if (!event || !bidder) return null;
+    const winningItemIds = store().auction.filter((item) => item.winningBidderId === bidder.id).map((item) => item.id);
+    const bidItemIds = [...new Set(memoryAuctionBids.filter((bid) => bid.bidderId === bidder.id).map((bid) => bid.itemId))];
+    return { ...copy(bidder), paddleNumber: bidder.paddleNumber ?? 100, hasPaymentMethod: bidder.hasPaymentMethod ?? true, grades: bidder.grades ?? [], watchedItemIds: [], winningItemIds, outbidItemIds: bidItemIds.filter((itemId) => !winningItemIds.includes(itemId)), totalDueCents: 0 };
+  },
+  async setupBidderWallet() {
+    return { url: "/?wallet=demo" };
+  },
+  async setWatch(_token, _bidderToken, _itemId, watched) {
+    return { watched };
+  },
+  async createPledge(token, bidderToken, amountCents, channel) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder = required(memoryAuctionBidders.find((row) => row.publicToken === bidderToken), "This bidder registration is not available.");
+    return { id: newId("pledge"), eventId: event.id, bidderId: bidder.id, householdId: bidder.householdId ?? null, amountCents, appeal: "fund-a-need", designation: null, channel, anonymous: false, createdAt: nowIso() };
+  },
+  async buyNow(token, bidderToken, itemId) {
+    const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");
+    const bidder = required(memoryAuctionBidders.find((row) => row.publicToken === bidderToken), "This bidder registration is not available.");
+    const item = required(store().auction.find((row) => row.eventId === event.id && row.id === itemId), "This item is not available.");
+    if (!item.buyNowCents) throw new DataError("conflict", "This buy-it-now item is no longer available.");
+    item.status = "won"; item.winningBidderId = bidder.id; item.winnerName = bidder.name; item.currentBidCents = item.buyNowCents;
+    return { won: true, amountCents: item.buyNowCents };
+  },
+};
 
 const sponsorships = eventScoped<Sponsorship, SponsorshipDraft, SponsorshipPatch>(
   () => store().sponsorships,
@@ -1393,6 +1702,33 @@ const tickets: TicketsRepository = {
       createdAt: nowIso(),
     });
     syncRegistrationCount(event.id);
+    return {
+      orderId: newId("tord"),
+      kind: "free-confirmed",
+      checkoutUrl: null,
+      applicationFeeCents: platformFeeCents(ticket.priceCents * buyer.quantity + (buyer.donationAddOnCents ?? 0)),
+    };
+  },
+  async listOrders() {
+    await wait();
+    return [];
+  },
+  async refundOrder() {
+    await wait();
+    throw new DataError("not-found", "That ticket order no longer exists.");
+  },
+  async listInvitations() {
+    await wait();
+    return [];
+  },
+  async sendInvitations(_eventId, recipients, options) {
+    await wait();
+    if (!options.consentConfirmed) throw new DataError("invalid", "Confirm that these recipients expect event communication before sending.");
+    return { attempted: recipients.length, sent: recipients.length, failed: 0, invitations: [] };
+  },
+  async getPublicOrderStatus() {
+    await wait();
+    return null;
   },
 };
 
@@ -1657,16 +1993,19 @@ const rfps: RfpsRepository = {
 
 /* ------------------------------------------------------------------ deposits */
 
-const deposits = eventScoped<Deposit, DepositDraft, DepositPatch>(
+const depositsBase = eventScoped<Deposit, DepositDraft, DepositPatch>(
   () => store().deposits,
   "dep",
   (eventId, draft) => ({
     id: "",
     eventId,
+    paymentPlanId: draft.paymentPlanId ?? null,
     vendorName: draft.vendorName,
+    totalAmountCents: draft.totalAmountCents ?? null,
     amountCents: draft.amountCents,
     dueDate: draft.dueDate ?? null,
     paidDate: draft.paidDate ?? null,
+    balanceDueDate: draft.balanceDueDate ?? null,
     paidBy: draft.paidBy ?? null,
     paymentMethod: draft.paymentMethod ?? null,
     status: draft.status ?? "pending",
@@ -1677,6 +2016,90 @@ const deposits = eventScoped<Deposit, DepositDraft, DepositPatch>(
   // Soonest due first; deposits with no due date sink to the bottom.
   (a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
 );
+
+const vendorPaymentPlansBase = eventScoped<VendorPaymentPlan, VendorPaymentPlanDraft, VendorPaymentPlanPatch>(
+  () => store().vendorPaymentPlans,
+  "vpp",
+  (eventId, draft) => ({
+    id: "",
+    eventId,
+    vendorName: draft.vendorName,
+    totalAmountCents: draft.totalAmountCents,
+    balanceDueDate: draft.balanceDueDate,
+    notes: draft.notes ?? null,
+    createdAt: nowIso(),
+  }),
+  undefined,
+  (a, b) => a.vendorName.localeCompare(b.vendorName),
+);
+
+const normalizedVendorName = (value: string) => value.trim().toLocaleLowerCase();
+
+function validatePaymentPlan(eventId: string, draft: VendorPaymentPlanDraft, currentId?: string): void {
+  const duplicate = store().vendorPaymentPlans.find(
+    (row) => row.eventId === eventId
+      && row.id !== currentId
+      && normalizedVendorName(row.vendorName) === normalizedVendorName(draft.vendorName),
+  );
+  if (duplicate) throw new DataError("conflict", `A payment plan already exists for ${draft.vendorName}.`);
+  const paidCents = currentId
+    ? store().deposits.filter((row) => row.eventId === eventId && row.paymentPlanId === currentId && row.status === "paid").reduce((total, row) => total + row.amountCents, 0)
+    : 0;
+  if (draft.totalAmountCents < paidCents) {
+    throw new DataError("invalid", "The total vendor cost cannot be less than deposits already paid.");
+  }
+}
+
+const vendorPaymentPlans: EventScopedRepository<VendorPaymentPlan, VendorPaymentPlanDraft, VendorPaymentPlanPatch> = {
+  ...vendorPaymentPlansBase,
+  async create(eventId, draft) {
+    validatePaymentPlan(eventId, draft);
+    return vendorPaymentPlansBase.create(eventId, draft);
+  },
+  async update(eventId, id, patch) {
+    const current = required(
+      store().vendorPaymentPlans.find((row) => row.id === id && row.eventId === eventId),
+      `Record ${id} no longer exists.`,
+    );
+    validatePaymentPlan(eventId, { ...current, ...patch }, id);
+    return vendorPaymentPlansBase.update(eventId, id, patch);
+  },
+};
+
+function validateDepositPayment(eventId: string, deposit: DepositDraft, currentId?: string): void {
+  const plan = store().vendorPaymentPlans.find((row) => row.eventId === eventId && (
+    deposit.paymentPlanId ? row.id === deposit.paymentPlanId : normalizedVendorName(row.vendorName) === normalizedVendorName(deposit.vendorName)
+  ));
+  if (!plan) {
+    if (deposit.paymentPlanId) throw new DataError("invalid", "That vendor payment plan does not belong to this event.");
+    return;
+  }
+  const paidCents = store().deposits
+    .filter((row) => row.eventId === eventId && row.id !== currentId && row.paymentPlanId === plan.id && row.status === "paid")
+    .reduce((total, row) => total + row.amountCents, 0)
+    + (deposit.status === "paid" ? deposit.amountCents : 0);
+  if (paidCents > plan.totalAmountCents) {
+    throw new DataError("invalid", "Paid deposits cannot be greater than the total vendor cost.");
+  }
+}
+
+const deposits: EventScopedRepository<Deposit, DepositDraft, DepositPatch> = {
+  ...depositsBase,
+  async create(eventId, draft) {
+    const inferredPlan = store().vendorPaymentPlans.find((row) => row.eventId === eventId && normalizedVendorName(row.vendorName) === normalizedVendorName(draft.vendorName));
+    const resolved = { ...draft, paymentPlanId: draft.paymentPlanId ?? inferredPlan?.id ?? null };
+    validateDepositPayment(eventId, resolved);
+    return depositsBase.create(eventId, resolved);
+  },
+  async update(eventId, id, patch) {
+    const current = required(
+      store().deposits.find((row) => row.id === id && row.eventId === eventId),
+      `Record ${id} no longer exists.`,
+    );
+    validateDepositPayment(eventId, { ...current, ...patch }, id);
+    return depositsBase.update(eventId, id, patch);
+  },
+};
 
 /* ---------------------------------------------------------------- team hours */
 
@@ -1880,6 +2303,24 @@ const floorplan: FloorplanRepository = {
       after: { ...copy(existing), ...context } as unknown as Record<string, unknown>,
     });
     return copy(existing);
+  },
+  async share(eventId, id) {
+    await wait();
+    requireEvent(eventId);
+    const plan = required(
+      store().floorplans.find((candidate) => candidate.id === id && candidate.eventId === eventId),
+      `Floorplan ${id} no longer exists.`,
+    );
+    return { shareToken: `demo-floorplan-${plan.id}` };
+  },
+  async getPublic(shareToken): Promise<PublicFloorplanPayload | null> {
+    await wait();
+    if (!shareToken.startsWith("demo-floorplan-")) return null;
+    const planId = shareToken.slice("demo-floorplan-".length);
+    const plan = store().floorplans.find((candidate) => candidate.id === planId);
+    const event = plan ? store().events.find((candidate) => candidate.id === plan.eventId) : null;
+    if (!event || !plan) return null;
+    return copy({ eventTitle: event.title, eventDate: event.date, floorplan: plan });
   },
   async remove(id) {
     await wait();
@@ -2239,6 +2680,79 @@ export const memoryAdapter: DataAdapter = {
   billing: {
     checkout: async () => ({ url: "/pricing?demo=true" }),
     portal: async () => ({ url: "/pricing?demo=true" }),
+    connectStatus: async () => ({
+      accountId: "acct_demo",
+      detailsSubmitted: true,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      ready: true,
+    }),
+    startConnectOnboarding: async (returnTo) => ({
+      accountId: "acct_demo",
+      detailsSubmitted: true,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      ready: true,
+      onboardingUrl: `${returnTo ?? "/app/tickets"}?stripe=demo`,
+    }),
+  },
+  fundraising: {
+    getProfile: async () => ({ legalName: "Beebizy Demo School", ein: null, orgType: "nonprofit_501c3", receiptPrefix: "BEE", raffleEnabled: false, raffleRegistrationConfirmed: false, defaultCoverFees: false }),
+    updateProfile: async (profile) => copy(profile),
+    listCategories: async () => ["Experiences", "Travel & Stays", "Dining", "Entertainment", "Sports", "Kids & Family", "Class Projects", "Wine & Spirits", "Gift Cards", "Live Auction"].map((name, index) => ({ id: `acat-demo-${index}`, name, sortOrder: index + 1 })),
+    createCategory: async (name) => ({ id: newId("acat"), name, sortOrder: 99 }),
+    listSubmissions: async () => [],
+    updateSubmission: async () => { throw new DataError("not-found", "That item submission no longer exists."); },
+    dashboard: async () => ({ totals: { silentCents: 0, liveCents: 0, pledgesCents: 0, ticketsCents: 0, donationsCents: 0, totalCents: 0 }, bidders: { registered: 0, checkedIn: 0, remote: 0 }, items: { total: 0, noBids: 0, sold: 0, sellThroughRate: 0 }, byGrade: [], hotItems: [], noBidClosingSoon: [] }),
+    extendItem: async (eventId, itemId, minutes) => {
+      const item = required(store().auction.find((row) => row.eventId === eventId && row.id === itemId), "That auction item no longer exists.");
+      const closesAt = new Date((item.closesAt ? new Date(item.closesAt).getTime() : Date.now()) + minutes * 60_000).toISOString();
+      item.closesAt = closesAt;
+      item.extensionMinutes = (item.extensionMinutes ?? 0) + minutes;
+      return { closesAt, extensionMinutes: item.extensionMinutes };
+    },
+    extendItems: async (eventId, itemIds, minutes) => {
+      let extended = 0;
+      for (const itemId of itemIds) { await memoryAdapter.fundraising.extendItem(eventId, itemId, minutes); extended += 1; }
+      return { extended };
+    },
+    reopenItem: async (eventId, itemId, minutes) => {
+      const item = required(store().auction.find((row) => row.eventId === eventId && row.id === itemId), "That auction item no longer exists.");
+      const closesAt = new Date(Date.now() + minutes * 60_000).toISOString();
+      item.status = "open";
+      item.closesAt = closesAt;
+      return { closesAt, status: "open" };
+    },
+    getPublicIntake: async (auctionToken) => {
+      const event = store().events.find((row) => row.auctionPublicToken === auctionToken);
+      return event ? { eventTitle: event.title, organizationName: "Beebizy Demo School", categories: ["Experiences", "Dining"], grades: ["K", "1", "2", "3"] } : null;
+    },
+    submitPublicItem: async (auctionToken, draft) => {
+      const event = required(store().events.find((row) => row.auctionPublicToken === auctionToken), "This donation link is no longer active.");
+      const item = await auction.create(event.id, { title: draft.itemTitle, description: draft.description, imageUrl: draft.photoUrls[0], photoUrls: draft.photoUrls, estimatedValueCents: draft.estimatedValueCents, fairMarketValueCents: draft.fairMarketValueCents, category: draft.category, restrictions: draft.restrictions, expiresAt: draft.expirationDate, deliveryMethod: draft.deliveryMethod, creditText: draft.creditText, notesToSchool: draft.notesToSchool, isServiceOrUse: draft.isServiceOrUse, startingBidCents: draft.suggestedStartingBidCents });
+      return { eventTitle: event.title, organizationName: "Beebizy Demo School", categories: ["Experiences", "Dining"], grades: ["K", "1", "2", "3"], submission: { id: newId("isub"), eventId: event.id, donorId: null, submittedBy: draft.donorName, publicToken: newId("submission"), payload: draft as unknown as Record<string, unknown>, status: "submitted", auctionItemId: item.id, requestedChanges: null, submittedAt: nowIso(), updatedAt: null } };
+    },
+    uploadPublicItemImage: async (_auctionToken, file) => URL.createObjectURL(file),
+    reinvitePastDonors: async () => ({ sent: 0, failed: 0 }),
+    mergeItems: async () => ({ packageItemId: newId("auc") }),
+    buildBills: async () => ({ created: 0, bills: [] }),
+    sendBills: async () => ({ sent: 0, autoCharged: 0, failed: 0 }),
+    refundBill: async (_eventId, billId) => ({ id: billId, eventId: "evt-gala", bidderId: "bidder-1", bidderName: "Demo Bidder", bidderEmail: "demo@example.com", publicToken: "demo-bill", itemsTotalCents: 0, pledgesTotalCents: 0, feesCoveredCents: 0, totalCents: 0, applicationFeeCents: 0, status: "refunded", paidAt: null, eventTitle: "Demo Gala", lineItems: [], coverFeesAvailable: false, receiptToken: null }),
+    getPublicBill: async () => null,
+    payPublicBill: async (token) => ({ url: `/bill/${token}?payment=success` }),
+    getPublicReceipt: async () => null,
+    listCampaigns: async () => [],
+    createCampaign: async (draft) => ({ id: newId("campaign"), eventId: draft.eventId ?? null, publicToken: newId("give"), title: draft.title, description: draft.description ?? null, goalCents: draft.goalCents ?? null, suggestedAmountsCents: draft.suggestedAmountsCents ?? [5_000, 10_000, 25_000, 50_000, 100_000], designations: draft.designations ?? [], defaultDesignation: draft.defaultDesignation ?? null, monthlyEnabled: true, coverFeesEnabled: true, isActive: true }),
+    getPublicCampaign: async () => null,
+    createDonationCheckout: async (token) => ({ donationId: newId("donation"), checkoutUrl: `/give/${token}?donation=success` }),
+    getDonationStatus: async (_token, donationId) => ({ donationId, status: "paid", receiptToken: null }),
+    getPublicCertificate: async () => null,
+    previewBroadcast: async () => ({ recipients: 0 }),
+    sendBroadcast: async () => ({ recipients: 0, sent: 0, failed: 0 }),
+    recordLiveSale: async (_eventId, _itemId, paddleNumbers) => ({ winners: paddleNumbers.length }),
+    undoLiveSale: async () => ({ reopened: true }),
+    reports: async () => ({ bidders: [], bids: [], items: [], attendance: [], grades: [], payments: [], acknowledgments: [], historical: [], familyHistory: [], itemIntelligence: [], yearEndStatements: [] }),
+    sendYearEndStatements: async () => ({ sent: 0, failed: 0 }),
   },
   assistant: {
     chat: async ({ messages }) => {
@@ -2283,6 +2797,7 @@ export const memoryAdapter: DataAdapter = {
   checkInStations,
   vendors,
   vendorMessages,
+  vendorEventPackets,
   eventVendors,
   checklist,
   runOfShow,
@@ -2297,6 +2812,7 @@ export const memoryAdapter: DataAdapter = {
   sponsorships,
   rfps,
   deposits,
+  vendorPaymentPlans,
   teamHours,
   templates,
   canvases,

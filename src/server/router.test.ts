@@ -15,15 +15,22 @@ vi.mock("./repos", () => {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
     publicTickets: vi.fn(),
+    publicFloorplan: vi.fn(),
     publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
     publicRegistration: vi.fn(),
     publicVolunteerSignup: vi.fn(),
+    publicAuction: vi.fn(),
+    registerPublicAuctionBidder: vi.fn(),
+    placePublicAuctionBid: vi.fn(),
+    publicAuctionDonor: vi.fn(),
+    submitPublicAuctionDonation: vi.fn(),
     publicRfp: vi.fn(),
     publicRfpResponse: vi.fn(),
     publicVendorConversation: vi.fn(),
     publicVendorReply: vi.fn(),
     publicAssignment: vi.fn(),
     publicCheckInStation: vi.fn(),
+    publicAttendanceDashboard: vi.fn(),
     setPublicCheckIn: vi.fn(),
     createPublicWalkIn: vi.fn(),
     removePublicWalkIn: vi.fn(),
@@ -36,13 +43,19 @@ vi.mock("./repos", () => {
     volunteers: child,
     budget: child,
     deposits: child,
+    vendorPaymentPlans: child,
     menu: child,
     moodBoard: child,
+    floorplan: { ...child, share: vi.fn() },
     auction: child,
     sponsorships: child,
     eventVendors: child,
     tickets: child,
     raffle: child,
+    auctionDonors: child,
+    auctionManagement: {
+      share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(), sendDonorThankYou: vi.fn(),
+    },
     events: {
       get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
       sendAssignmentSummaries: vi.fn(),
@@ -50,7 +63,7 @@ vi.mock("./repos", () => {
     vendors: { list: vi.fn() },
     registrations: { ...child, importGuests: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
-    members: { list: vi.fn().mockResolvedValue([]) },
+    members: { list: vi.fn().mockResolvedValue([]), setRole: vi.fn(), remove: vi.fn() },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
     analytics: { portfolio: vi.fn().mockResolvedValue({}), customReport: vi.fn().mockResolvedValue([]) },
     feedback: { list: vi.fn(), listInbox: vi.fn(), create: vi.fn(), notify: vi.fn() },
@@ -66,11 +79,104 @@ vi.mock("./billing", () => ({
   createPortalSession: vi.fn(),
   handleStripeWebhook: vi.fn(),
 }));
+vi.mock("./commercePayments", () => ({
+  createPublicTicketCheckout: vi.fn(),
+  createBidderWalletSetup: vi.fn(),
+  createStripeConnectOnboarding: vi.fn(),
+  getStripeConnectStatus: vi.fn(),
+  listTicketOrders: vi.fn(),
+  refundTicketOrder: vi.fn(),
+  closeAuctionItem: vi.fn(),
+  offerAuctionSecondChance: vi.fn(),
+  settleDueAuctionItems: vi.fn(),
+  listAuctionOrders: vi.fn(),
+  refundAuctionOrder: vi.fn(),
+  getPublicTicketOrderStatus: vi.fn(),
+  buildBidderBills: vi.fn(),
+  sendBidderBills: vi.fn(),
+  publicBidderBill: vi.fn(),
+  createBidderBillCheckout: vi.fn(),
+  publicFundraisingReceipt: vi.fn(),
+  createDonationCheckout: vi.fn(),
+  publicDonationStatus: vi.fn(),
+  publicExperienceCertificate: vi.fn(),
+  refundBidderBill: vi.fn(),
+  sendDueBidderBillReminders: vi.fn(),
+}));
+vi.mock("./ticketInvitations", () => ({
+  listTicketInvitations: vi.fn(),
+  openTicketInvitation: vi.fn(),
+  sendTicketInvitations: vi.fn(),
+}));
+vi.mock("./vendorEventPackets", () => ({
+  sendVendorEventPackets: vi.fn(),
+}));
+vi.mock("./fundraisingUx", () => ({
+  createAuctionCategory: vi.fn(),
+  extendAuctionItem: vi.fn(),
+  extendAuctionItems: vi.fn(),
+  reopenAuctionItem: vi.fn(),
+  fundraisingDashboard: vi.fn(),
+  getFundraisingOrganizationProfile: vi.fn(),
+  listAuctionCategories: vi.fn(),
+  listItemSubmissions: vi.fn(),
+  mergeAuctionItems: vi.fn(),
+  publicItemIntake: vi.fn(),
+  reinvitePastItemDonors: vi.fn(),
+  submitPublicItem: vi.fn(),
+  updateFundraisingOrganizationProfile: vi.fn(),
+  updateItemSubmission: vi.fn(),
+  publicBidderProfile: vi.fn(),
+  toggleAuctionWatch: vi.fn(),
+  createPublicPledge: vi.fn(),
+  createDonationCampaign: vi.fn(),
+  listDonationCampaigns: vi.fn(),
+  publicDonationCampaign: vi.fn(),
+  fundraisingReports: vi.fn(),
+  previewFundraisingBroadcast: vi.fn(),
+  sendFundraisingBroadcast: vi.fn(),
+  sendDueClosingAlerts: vi.fn(),
+  sendAllDueClosingAlerts: vi.fn(),
+  sendDueYearEndStatements: vi.fn(),
+  sendYearEndStatements: vi.fn(),
+  recordLiveAuctionSale: vi.fn(),
+  undoLiveAuctionSale: vi.fn(),
+  buyNowAuctionItem: vi.fn(),
+}));
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, feedback, events, registrations, eventByShareToken, publicAgenda, publicVolunteerNeeds, publicAssignment, publicCheckInStation, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
+const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
+const { sendVendorEventPackets } = await import("./vendorEventPackets");
+const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
+const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
+const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
+
+describe("fundraising maintenance", () => {
+  it("requires the cron secret and runs both due-job families", async () => {
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/fundraising/maintenance"))).status).toBe(401);
+    vi.mocked(sendAllDueClosingAlerts).mockResolvedValue(3);
+    vi.mocked(sendDueBidderBillReminders).mockResolvedValue({ sent: 2, failed: 0 });
+    vi.mocked(sendDueYearEndStatements).mockResolvedValue({ sent: 1, failed: 0 });
+    const response = await handleRequest(new Request("http://localhost/api/fundraising/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, eventsChecked: 3, reminders: { sent: 2, failed: 0 }, yearEndStatements: { sent: 1, failed: 0 } });
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("public donation completion", () => {
+  it("returns only the token-scoped payment status and receipt link", async () => {
+    vi.mocked(publicDonationStatus).mockResolvedValue({ donationId: "donation-1", status: "paid", receiptToken: "receipt-token" });
+    const response = await handleRequest(new Request("http://localhost/api/public/donations/campaign-token/status/donation-1"));
+    expect(response.status).toBe(200);
+    expect(publicDonationStatus).toHaveBeenCalledWith("campaign-token", "donation-1");
+    expect(await response.json()).toEqual({ donationId: "donation-1", status: "paid", receiptToken: "receipt-token" });
+  });
+});
 
 describe("single-event collaborator routing", () => {
   const context = {
@@ -151,6 +257,30 @@ describe("single-event collaborator routing", () => {
         new URL("http://localhost/api/vendors/vendor-gala/messages"),
       ),
     ).not.toThrow();
+  });
+});
+
+describe("workspace role changes", () => {
+  it("requires a request id and routes one role change without creating another invitation", async () => {
+    const context = {
+      userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+      eventScopeId: null,
+      access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    const changeId = "66ee3482-cbea-4c20-a181-eddc7c9b7001";
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(members.setRole).mockResolvedValue({ member: { userId: "user-2", role: "owner" }, emailSent: true, roleChanged: true } as never);
+    const response = await handleRequest(new Request("http://localhost/api/members/user-2", {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: "owner", changeId }),
+    }));
+    expect(response.status).toBe(200);
+    expect(members.setRole).toHaveBeenCalledWith(context, "user-2", "owner", changeId);
+
+    const invalid = await handleRequest(new Request("http://localhost/api/members/user-2", {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: "admin", changeId: "not-valid" }),
+    }));
+    expect(invalid.status).toBe(400);
+    expect(members.setRole).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -515,6 +645,44 @@ describe("public assignment endpoint", () => {
   });
 });
 
+describe("public attendance dashboard", () => {
+  it("returns aggregate attendance without authorizing or exposing attendee records", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicAttendanceDashboard).mockResolvedValue({
+      eventTitle: "SCU Demo Day 2026",
+      eventDate: "2026-10-10T01:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+      generatedAt: "2026-10-12T18:00:00.000Z",
+      summary: {
+        registrationRows: 912,
+        uniqueRegistered: 850,
+        checkedInRows: 550,
+        uniqueCheckedIn: 533,
+        duplicateCheckedInRows: 17,
+        noShows: 317,
+        attendanceRate: 62.7,
+      },
+      guestTypes: [{ label: "General", count: 300 }],
+      registrationSources: [{ label: "Imported registration", count: 148 }],
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/attendance/public-dashboard-token"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ summary: { uniqueCheckedIn: 533, duplicateCheckedInRows: 17 } });
+    expect(JSON.stringify(body)).not.toMatch(/email|guestId|registrationId|name/i);
+    expect(publicAttendanceDashboard).toHaveBeenCalledWith("public-dashboard-token");
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for an inactive attendance dashboard link", async () => {
+    vi.mocked(publicAttendanceDashboard).mockResolvedValue(null);
+    const response = await handleRequest(new Request("http://localhost/api/public/attendance/inactive"));
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("public event signup endpoints", () => {
   it("does not fetch internal schedule or volunteer coverage for disabled public sections", async () => {
     vi.mocked(eventByShareToken).mockResolvedValue({
@@ -528,9 +696,26 @@ describe("public event signup endpoints", () => {
     vi.mocked(publicVolunteerNeeds).mockClear();
     const response = await handleRequest(new Request("http://localhost/api/public/events/share-1"));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ agenda: [], volunteerNeeds: [] });
+    expect(await response.json()).toMatchObject({
+      agenda: [],
+      volunteerNeeds: [],
+    });
     expect(publicAgenda).not.toHaveBeenCalled();
     expect(publicVolunteerNeeds).not.toHaveBeenCalled();
+  });
+
+  it("returns one isolated floorplan through its own token without authorizing", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicFloorplan).mockResolvedValue({
+      eventTitle: "Gala",
+      eventDate: "2026-10-18T18:00:00.000Z",
+      floorplan: { id: "floorplan-1", eventId: "event-1", name: "Ballroom", items: [], updatedAt: "2026-10-14T00:00:00.000Z" },
+    });
+    const response = await handleRequest(new Request("http://localhost/api/public/floorplans/floorplan-token"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ floorplan: { id: "floorplan-1", name: "Ballroom" } });
+    expect(publicFloorplan).toHaveBeenCalledWith("floorplan-token");
+    expect(authorize).not.toHaveBeenCalled();
   });
 
   it("registers one guest without requiring a user session", async () => {
@@ -561,6 +746,102 @@ describe("public event signup endpoints", () => {
       needId: "need-1", name: "Grace", email: "grace@example.com",
     });
     expect(authorize).not.toHaveBeenCalled();
+  });
+});
+
+describe("public commerce endpoints", () => {
+  it("serves a public auction and registers bidders without a login", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicAuction).mockResolvedValue({ eventTitle: "Gala", items: [] } as never);
+    vi.mocked(registerPublicAuctionBidder).mockResolvedValue({ id: "bidder-1" } as never);
+
+    const catalog = await handleRequest(new Request("http://localhost/api/public/auctions/auction-token"));
+    const registration = await handleRequest(new Request("http://localhost/api/public/auctions/auction-token/bidders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Ada", email: "ada@example.com", participantType: "remote" }),
+    }));
+
+    expect(catalog.status).toBe(200);
+    expect(registration.status).toBe(201);
+    expect(registerPublicAuctionBidder).toHaveBeenCalledWith("auction-token", {
+      name: "Ada", email: "ada@example.com", participantType: "remote",
+    });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("opens donor intake and redirects unique ticket invitations", async () => {
+    vi.mocked(publicAuctionDonor).mockResolvedValue({ eventTitle: "Gala", items: [] } as never);
+    vi.mocked(openTicketInvitation).mockResolvedValue("/e/share-token/tickets?invite=invite-token");
+
+    const donor = await handleRequest(new Request("http://localhost/api/public/auction-donors/donor-token"));
+    const invitation = await handleRequest(new Request("http://localhost/api/public/ticket-invitations/invite-token"));
+
+    expect(donor.status).toBe(200);
+    expect(invitation.status).toBe(302);
+    expect(invitation.headers.get("location")).toBe("http://localhost/e/share-token/tickets?invite=invite-token");
+  });
+});
+
+describe("workspace member ticket invitations", () => {
+  it("allows a full workspace member to send the event's invitations", async () => {
+    const context = {
+      userId: "user-laila",
+      workspaceId: "workspace-school",
+      email: "laila@beebizy.com",
+      role: "member" as const,
+      eventScopeId: null,
+      access: { status: "beta" as const, plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(sendTicketInvitations).mockResolvedValue({ attempted: 1, sent: 1, failed: 0, invitations: [] });
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/ticket-invitations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recipients: [{ name: "Laila", email: "laila@beebizy.com" }], consentConfirmed: true }),
+    }));
+    expect(response.status).toBe(201);
+    expect(sendTicketInvitations).toHaveBeenCalledWith(context, "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request), false);
+  });
+
+  it("marks a test delivery so it does not count as a real invitation", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "user-laila", workspaceId: "workspace-school", email: "laila@beebizy.com", role: "member", access: { status: "beta", plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false } });
+    vi.mocked(sendTicketInvitations).mockResolvedValue({ attempted: 1, sent: 1, failed: 0, invitations: [] });
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/ticket-invitations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipients: [{ name: "Laila", email: "laila@beebizy.com" }], consentConfirmed: true, testOnly: true }) }));
+    expect(response.status).toBe(201);
+    expect(sendTicketInvitations).toHaveBeenCalledWith(expect.anything(), "event-gala", [{ name: "Laila", email: "laila@beebizy.com" }], true, expect.any(Request), true);
+  });
+});
+
+describe("vendor event packet endpoint", () => {
+  it("validates and routes one private email per selected event vendor", async () => {
+    const context = {
+      userId: "user-laila", workspaceId: "workspace-school", email: "laila@beebizy.com", role: "member" as const,
+      eventScopeId: null,
+      access: { status: "beta" as const, plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(sendVendorEventPackets).mockResolvedValue({ sent: 1, failed: 0, skipped: 0, attachmentNames: ["packet.pdf"], deliveries: [] });
+    const draft = {
+      vendorIds: ["vendor-1"], subject: "Final details", message: "Please review.", includeRunOfShow: true,
+      floorplanIds: ["plan-1"], requestId: "66ee3482-cbea-4c20-a181-eddc7c9b7001", consentConfirmed: true, testEmail: null,
+    };
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/vendor-packets", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft),
+    }));
+    expect(response.status).toBe(201);
+    expect(sendVendorEventPackets).toHaveBeenCalledWith(context, "event-gala", draft);
+  });
+
+  it("requires a vendor unless this is a test email", async () => {
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/vendor-packets", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        vendorIds: [], subject: "Final details", message: "Please review.", includeRunOfShow: false,
+        floorplanIds: [], requestId: "66ee3482-cbea-4c20-a181-eddc7c9b7001", consentConfirmed: false, testEmail: null,
+      }),
+    }));
+    expect(response.status).toBe(400);
+    expect(sendVendorEventPackets).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -845,6 +1126,28 @@ describe("billing endpoints", () => {
       vendorName: "Venue",
       amountCents: 50000,
       status: "pending",
+    });
+  });
+
+  it("persists vendor payment plans through the event route", async () => {
+    vi.mocked(authorize).mockResolvedValue(owner);
+    vi.mocked(vendorPaymentPlans.list).mockResolvedValue([]);
+    vi.mocked(vendorPaymentPlans.create).mockResolvedValue({ id: "vpp-1" } as never);
+
+    const list = await handleRequest(new Request("http://localhost/api/events/evt-1/vendor-payment-plans"));
+    const create = await handleRequest(new Request("http://localhost/api/events/evt-1/vendor-payment-plans", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vendorName: "Venue", totalAmountCents: 250000, balanceDueDate: "2026-12-01T12:00:00.000Z" }),
+    }));
+
+    expect(list.status).toBe(200);
+    expect(create.status).toBe(201);
+    expect(vendorPaymentPlans.list).toHaveBeenCalledWith(owner, "evt-1");
+    expect(vendorPaymentPlans.create).toHaveBeenCalledWith(owner, "evt-1", {
+      vendorName: "Venue",
+      totalAmountCents: 250000,
+      balanceDueDate: "2026-12-01T12:00:00.000Z",
     });
   });
 

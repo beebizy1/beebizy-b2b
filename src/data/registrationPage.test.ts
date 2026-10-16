@@ -5,6 +5,7 @@ import {
   LEGACY_REGISTRATION_PAGE,
   REGISTRATION_PAGE_TEMPLATES,
   registrationInvitationHtml,
+  registrationPageIsCustomized,
   normalizeRegistrationPage,
 } from "./registrationPage";
 
@@ -17,8 +18,9 @@ describe("registration page settings", () => {
     ]);
   });
 
-  it("preserves segmented links for events created before the builder", () => {
+  it("gives events created before the builder a neutral client-facing guest type", () => {
     expect(normalizeRegistrationPage(null)).toEqual(LEGACY_REGISTRATION_PAGE);
+    expect(normalizeRegistrationPage(null).registrationTypes).toEqual(["General"]);
     expect(normalizeRegistrationPage(DEFAULT_REGISTRATION_PAGE)).toEqual(DEFAULT_REGISTRATION_PAGE);
   });
 
@@ -63,6 +65,14 @@ describe("registration page settings", () => {
       .toMatchObject({ accentColor: DEFAULT_REGISTRATION_PAGE.accentColor, heroImageUrl: null });
   });
 
+  it("counts template, color and guest-type choices as invitation design work", () => {
+    expect(registrationPageIsCustomized(DEFAULT_REGISTRATION_PAGE)).toBe(false);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, template: "garden" })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, accentColor: "#245F45" })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, registrationTypes: ["Parent/Guardian"] })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, showAgenda: false, collectOrganization: false })).toBe(false);
+  });
+
   it("builds a safe, themed invitation that links to the registration page", () => {
     const html = registrationInvitationHtml({
       ...DEFAULT_REGISTRATION_PAGE,
@@ -71,12 +81,15 @@ describe("registration page settings", () => {
       headline: "Welcome <friends>",
       welcomeMessage: "Register & join us.",
       heroImageUrl: "https://images.example.com/garden.jpg",
-    }, "Garden Gala", "An evening together", "https://beebizy.example/e/token?guest=1&source=email");
+    }, "Garden Gala", "An evening together", "https://beebizy.example/e/token?guest=1&source=email", "Laila <Marshall>", "Cedar Grove School");
     expect(html).toContain("#245F45");
     expect(html).toContain("https://images.example.com/garden.jpg");
     expect(html).toContain("Welcome &lt;friends&gt;");
     expect(html).toContain("Register &amp; join us.");
     expect(html).toContain("https://beebizy.example/e/token?guest=1&amp;source=email");
+    expect(html).toContain("Hi Laila &lt;Marshall&gt;,");
+    expect(html).toContain("View tickets &amp; RSVP");
+    expect(html).toContain("Sent by Cedar Grove School using Beebizy");
     expect(html).not.toContain("Welcome <friends>");
   });
 });
