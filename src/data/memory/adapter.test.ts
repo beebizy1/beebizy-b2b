@@ -107,8 +107,13 @@ describe("events", () => {
         headline: "An evening in the garden",
         welcomeMessage: "Reserve your place with the team.",
         heroImageUrl: "https://images.example.com/garden.jpg",
+        aboutImageUrl: null,
+        agendaImageUrl: null,
         showAgenda: false,
+        showSpeakers: true,
+        showSponsors: true,
         showVolunteerSignup: true,
+        speakers: [],
         registrationTypes: ["Investor", "Founder"],
         collectOrganization: true,
       },
@@ -127,6 +132,16 @@ describe("events", () => {
       name: "Founder", email: "founder@example.com", segment: "Founder", organization: "Acme",
     });
     expect(registration).toMatchObject({ segment: "Founder", organization: "Acme" });
+  });
+
+  it("publishes only safe confirmed sponsor recognition on the event page", async () => {
+    const shared = await memoryAdapter.events.getByShareToken("demo-evt-gala");
+
+    expect(shared?.sponsors.map((sponsor) => sponsor.companyName)).toEqual([
+      "Cascade Capital",
+      "Northstar Ventures",
+    ]);
+    expect(JSON.stringify(shared?.sponsors)).not.toMatch(/contact|amount|notes/i);
   });
 
   it("does not expose or accept volunteer signups when the public section is disabled", async () => {

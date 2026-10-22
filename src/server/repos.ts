@@ -955,6 +955,19 @@ export async function publicTickets(eventId: string) {
   return rows.map(map.toTicketType);
 }
 
+/** Public-safe sponsor recognition. Contact details and contribution amounts stay private. */
+export async function publicSponsors(eventId: string) {
+  return db
+    .select({
+      companyName: s.sponsorships.companyName,
+      tier: s.sponsorships.tier,
+      logoUrl: s.sponsorships.logoUrl,
+    })
+    .from(s.sponsorships)
+    .where(and(eq(s.sponsorships.eventId, eventId), eq(s.sponsorships.status, "confirmed")))
+    .orderBy(asc(s.sponsorships.companyName));
+}
+
 /** Read-only floorplans for an event already authorized by its public share token. */
 /** Public-safe volunteer openings. Names and contact details stay server-side. */
 export async function publicVolunteerNeeds(eventId: string) {

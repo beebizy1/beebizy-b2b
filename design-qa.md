@@ -98,3 +98,63 @@ final result: passed
 ## Result
 
 Passed. The page matches the reference structure, uses Beebizy's requested non-black visual system, and keeps the full selection and conversion path functional.
+
+## Rich event registration page review
+
+**Source visual truth**
+- Selected ideation result: `/Users/tarang/.codex/generated_images/01a0594f-bbf5-7a92-b2a3-e2e1e5da3519/exec-64a03d76-1290-4172-9199-0d4303cba19f.png`
+
+**Implementation evidence**
+- Desktop: `/tmp/beebizy-rich-registration-desktop-v2.png`
+- Mobile: `/tmp/beebizy-rich-registration-mobile-v2.png`
+- Side-by-side comparison: `/tmp/beebizy-registration-comparison-v2.png`
+
+**Viewport and normalization**
+- Source image: 946 × 1663 px, treated as the 1440 px desktop design target selected by the user.
+- Desktop implementation: 2250 × 4218 px captured from a 1440 × 1024 CSS viewport in the in-app browser at its 1.5625 capture density.
+- Mobile implementation: 609 × 6903 px captured from a 390 × 844 CSS viewport at the same density.
+- Side-by-side comparison: implementation downsampled to the source's 946 px width without cropping; both images placed on one white comparison canvas.
+
+**State**
+- Source: registration-only gala concept with editorial event content.
+- Implementation: the same gala visual direction with seeded operational ticket and volunteer actions preserved so existing product behavior remains available.
+- Public guest state, light theme, no login required.
+
+**Full-view comparison evidence**
+- The implementation preserves the source's white navigation, cinematic darkened hero photo, oversized invitation title, yellow primary action, warm ivory surface, two-column event story, agenda imagery, four-person speaker row, sponsor recognition, and photo-backed closing CTA.
+- Existing ticket, free-registration, auction, and volunteer entry points remain functional and are inserted between the editorial sections rather than removing customer workflows.
+
+**Focused-region comparison evidence**
+- Hero region: title hierarchy, photo crop, black overlay, yellow CTA, metadata icons, and calendar action were compared at the same desktop state.
+- Agenda region: source and implementation both use a program list paired with a warm event photograph.
+- Speaker region: all four generated portraits use consistent light, crop, radius, and four-column proportions; mobile collapses them to one readable column.
+- Sponsor region: confirmed sponsor logos render as real transparent PNG assets rather than text or CSS approximations.
+
+**Findings**
+- No actionable P0, P1, or P2 findings remain.
+- Fonts and typography: Plus Jakarta Sans matches the source's modern editorial hierarchy. Display, metadata, body, and micro-label weights remain readable without clipping on desktop or mobile.
+- Spacing and layout rhythm: hero, story, agenda, speakers, sponsors, and closing CTA follow the source sequence with generous ivory whitespace. The 390 px layout has zero horizontal overflow.
+- Colors and visual tokens: Beebizy yellow, warm ivory, near-black, white, and muted amber accents match the selected direction while preserving accessible dark text on yellow actions.
+- Image quality and asset fidelity: hero, venue, agenda, four speaker portraits, and sponsor logos are project-owned raster assets generated to the selected art direction. No placeholders, custom SVG approximations, or CSS art remain.
+- Copy and content: event title, date, venue, agenda, speaker profiles, and sponsor recognition are data-driven. The demo's date and operational actions intentionally differ from the static mock.
+- Interactions and accessibility: event navigation anchors, registration CTA, registration form route, Add to Calendar, QR generation, QR PNG download, speaker controls, sponsor logo upload controls, and show/hide switches were checked. The in-app browser reported zero console errors.
+
+**Comparison history**
+- Pass 1 finding [P2]: the implementation had only the hero image, leaving the About and Agenda regions visually flatter than the selected source. Demo sponsor logo assets were also mapped to vendors by mistake, so sponsor recognition fell back to text.
+- Fix: added organizer-controlled About and Agenda image uploads, generated two matching editorial photos, wired them into the public page, restored vendor demo records, and attached the real logo assets to sponsor records.
+- Pass 2 evidence: the revised desktop capture shows the venue image in About, reception image beside Agenda, two real sponsor logos, and the selected editorial section rhythm. Mobile shows all sections with zero overflow and no console errors.
+
+**Implementation checklist**
+- [x] Generate and download an event-registration QR code.
+- [x] Preserve free registration without requiring tickets or a Beebizy login.
+- [x] Add a full-width invitation photo plus optional About and Agenda photos.
+- [x] Publish the existing run of show as a guest-safe agenda.
+- [x] Add, edit, upload, remove, show, and hide speaker profiles.
+- [x] Upload sponsor logos and expose only confirmed public-safe sponsor recognition.
+- [x] Verify the public registration route and mobile responsiveness.
+- [x] Verify the QR PNG download in the browser.
+
+**Follow-up polish**
+- [P3] Real events with more than six sponsors may benefit from optional tier headings in a future iteration.
+
+final result: passed

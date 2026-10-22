@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, Mail, Palette, Save, Ticket } from "lucide-react";
+import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, ImagePlus, Mail, Palette, Plus, Save, Ticket, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useShareEvent, useTickets, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
+import { useShareEvent, useSponsorships, useTickets, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import {
@@ -18,21 +18,34 @@ import {
   normalizeRegistrationPage,
   registrationInvitationHtml,
   registrationPageTemplate,
+  type RegistrationSpeaker,
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
-import type { Event } from "@/data/entities";
+import type { Event, Sponsorship } from "@/data/entities";
 import { EVENT_LAUNCH_STEP_IDS, eventLaunchPath, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import EventLaunchGuide from "./EventLaunchGuide";
 import EventLaunchContextBar from "../EventLaunchContextBar";
 import { useEventLaunchProgress } from "../useEventLaunchProgress";
 import TicketInvitationBuilder from "./TicketInvitationBuilder";
 import GuidedTicketPricing from "./GuidedTicketPricing";
+import EventQrCard from "./EventQrCard";
 
 const REGISTRATION_TYPE_PRESETS = [
   { label: "School gala", types: ["Parent/Guardian", "Alumni", "Faculty/Staff", "Friend of school"] },
   { label: "Open event", types: ["Guest"] },
   { label: "Professional", types: ["Attendee", "Sponsor", "Speaker", "Staff"] },
 ] as const;
+
+function newSpeaker(): RegistrationSpeaker {
+  return {
+    id: `speaker-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name: "",
+    title: "",
+    organization: "",
+    bio: "",
+    photoUrl: null,
+  };
+}
 
 function absoluteUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
@@ -95,7 +108,7 @@ function CopyRow({ label, url, hint }: { label: string; url: string; hint: strin
   );
 }
 
-function RegistrationPreview({ event, settings }: { event: Event; settings: RegistrationPageSettings }) {
+function RegistrationPreview({ event, settings, sponsors }: { event: Event; settings: RegistrationPageSettings; sponsors: Sponsorship[] }) {
   const template = registrationPageTemplate(settings.template);
   const style = { backgroundColor: template.background } as CSSProperties;
 
@@ -115,6 +128,8 @@ function RegistrationPreview({ event, settings }: { event: Event; settings: Regi
           <p className="mt-2 text-sm leading-6 text-slate-600">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
         </div>
         <span className="inline-flex rounded-md px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>Register now</span>
+        {settings.showSpeakers && settings.speakers.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Featured speakers</p><div className="mt-3 flex -space-x-2">{settings.speakers.slice(0, 4).map((speaker) => speaker.photoUrl ? <img key={speaker.id} src={speaker.photoUrl} alt={speaker.name} className="size-10 rounded-full border-2 border-white object-cover" /> : <span key={speaker.id} className="grid size-10 place-items-center rounded-full border-2 border-white bg-slate-100 text-xs font-bold text-slate-600">{speaker.name.slice(0, 1)}</span>)}</div></div> : null}
+        {settings.showSponsors && sponsors.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Sponsors</p><div className="mt-3 flex flex-wrap items-center gap-4">{sponsors.slice(0, 4).map((sponsor) => sponsor.logoUrl ? <img key={sponsor.id} src={sponsor.logoUrl} alt={sponsor.companyName} className="h-7 w-20 object-contain" /> : <span key={sponsor.id} className="text-xs font-semibold text-slate-500">{sponsor.companyName}</span>)}</div></div> : null}
       </div>
     </div>
   );
@@ -127,6 +142,7 @@ export default function ShareSection({ event }: { event: Event }) {
   const update = useUpdateEvent();
   const uploadImage = useUploadAuctionImage();
   const { data: tickets } = useTickets(event.id);
+  const { data: sponsorships } = useSponsorships(event.id);
   const [activeWorkspace, setActiveWorkspace] = useState<"design" | "pricing" | "sender" | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
@@ -141,7 +157,7 @@ export default function ShareSection({ event }: { event: Event }) {
   const auctionPage = normalizeAuctionPageSettings(event.auctionPage);
   const published = normalizeRegistrationPage(event.registrationPage);
   const inviteMessage = eventUrl
-    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nRegister and choose tickets here: ${eventUrl}\n\nPowered by Beebizy`
+    ? `${published.headline || event.title}\n\n${published.welcomeMessage || event.description || "We would love to see you there."}\n\nView event details and register here: ${eventUrl}\n\nPowered by Beebizy`
     : "";
   const inviteHtml = eventUrl
     ? registrationInvitationHtml(published, event.title, event.description, eventUrl)
@@ -199,6 +215,13 @@ export default function ShareSection({ event }: { event: Event }) {
     setActiveWorkspace("pricing");
     setShowDetails(false);
     window.requestAnimationFrame(() => document.getElementById("guided-ticket-pricing")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const updateSpeaker = (index: number, patch: Partial<RegistrationSpeaker>) => {
+    setDraft((current) => ({
+      ...current,
+      speakers: current.speakers.map((speaker, speakerIndex) => speakerIndex === index ? { ...speaker, ...patch } : speaker),
+    }));
   };
 
   useEffect(() => {
@@ -272,7 +295,7 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={600} rows={4} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label>Invitation image or logo</Label>
+                <Label>Large invitation photo</Label>
                 <div className="flex flex-wrap items-center gap-3">
                   {draft.heroImageUrl ? <img src={draft.heroImageUrl} alt="Invitation" className="h-20 w-32 rounded-lg border border-hairline object-cover" /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><Image className="size-5 text-muted-foreground" /></div>}
                   <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-surface-sunken">
@@ -281,8 +304,45 @@ export default function ShareSection({ event }: { event: Event }) {
                   </label>
                   {draft.heroImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, heroImageUrl: null }))}>Remove</Button> : null}
                 </div>
-                <p className="text-xs text-muted-foreground">Upload a banner photo or organization logo. It appears in the invitation email and registration page.</p>
+                <p className="text-xs text-muted-foreground">This full-width image appears at the top of the invitation email and registration page.</p>
               </div>
+              <div className="space-y-1.5">
+                <Label>About section photo</Label>
+                <div className="space-y-2 rounded-lg border border-hairline p-3">
+                  {draft.aboutImageUrl ? <img src={draft.aboutImageUrl} alt="About the event" className="aspect-[3/2] w-full rounded-lg object-cover" /> : <div className="grid aspect-[3/2] w-full place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><ImagePlus className="size-5 text-muted-foreground" /></div>}
+                  <div className="flex flex-wrap gap-2"><label className="inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-input bg-background px-3 text-xs font-semibold hover:bg-accent"><ImagePlus className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.aboutImageUrl ? "Replace" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, aboutImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload the about photo", description: error.message }) }); }} /></label>{draft.aboutImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, aboutImageUrl: null }))}>Remove</Button> : null}</div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Agenda section photo</Label>
+                <div className="space-y-2 rounded-lg border border-hairline p-3">
+                  {draft.agendaImageUrl ? <img src={draft.agendaImageUrl} alt="Guests at the event" className="aspect-[3/2] w-full rounded-lg object-cover" /> : <div className="grid aspect-[3/2] w-full place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><ImagePlus className="size-5 text-muted-foreground" /></div>}
+                  <div className="flex flex-wrap gap-2"><label className="inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-input bg-background px-3 text-xs font-semibold hover:bg-accent"><ImagePlus className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.agendaImageUrl ? "Replace" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, agendaImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload the agenda photo", description: error.message }) }); }} /></label>{draft.agendaImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, agendaImageUrl: null }))}>Remove</Button> : null}</div>
+                </div>
+              </div>
+              <fieldset className="space-y-3 rounded-xl border border-hairline p-4 sm:col-span-2">
+                <legend className="px-1 text-sm font-semibold text-foreground">Featured speakers</legend>
+                <p className="text-xs text-muted-foreground">Add up to eight speakers. Their photos and public details appear on the registration page.</p>
+                {draft.speakers.length === 0 ? <div className="rounded-lg border border-dashed border-hairline bg-surface-sunken p-4 text-center text-xs text-muted-foreground">No speakers added yet.</div> : null}
+                <div className="space-y-4">
+                  {draft.speakers.map((speaker, index) => (
+                    <div key={speaker.id} className="grid gap-3 rounded-xl border border-hairline p-4 sm:grid-cols-[7rem_minmax(0,1fr)]">
+                      <div className="space-y-2">
+                        {speaker.photoUrl ? <img src={speaker.photoUrl} alt={speaker.name || `Speaker ${index + 1}`} className="aspect-[4/3] w-28 rounded-xl object-cover" /> : <div className="grid aspect-[4/3] w-28 place-items-center rounded-xl border border-dashed border-hairline bg-surface-sunken"><UserRound className="size-6 text-muted-foreground" aria-hidden="true" /></div>}
+                        <label className="inline-flex min-h-8 cursor-pointer items-center rounded-lg border border-input bg-background px-2.5 text-[11px] font-semibold hover:bg-accent"><ImagePlus className="mr-1 size-3.5" aria-hidden="true" />{uploadImage.isPending ? "Uploading..." : speaker.photoUrl ? "Replace" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(inputEvent) => { const file = inputEvent.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => updateSpeaker(index, { photoUrl: url }), onError: (error) => toast({ title: "Couldn't upload speaker photo", description: error.message }) }); }} /></label>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1"><Label htmlFor={`speaker-name-${index}`}>Name</Label><Input id={`speaker-name-${index}`} value={speaker.name} maxLength={120} onChange={(event) => updateSpeaker(index, { name: event.target.value })} /></div>
+                        <div className="space-y-1"><Label htmlFor={`speaker-title-${index}`}>Title</Label><Input id={`speaker-title-${index}`} value={speaker.title} maxLength={120} onChange={(event) => updateSpeaker(index, { title: event.target.value })} /></div>
+                        <div className="space-y-1 sm:col-span-2"><Label htmlFor={`speaker-organization-${index}`}>Organization</Label><Input id={`speaker-organization-${index}`} value={speaker.organization} maxLength={120} onChange={(event) => updateSpeaker(index, { organization: event.target.value })} /></div>
+                        <div className="space-y-1 sm:col-span-2"><Label htmlFor={`speaker-bio-${index}`}>Short biography</Label><Textarea id={`speaker-bio-${index}`} value={speaker.bio} maxLength={500} rows={2} onChange={(event) => updateSpeaker(index, { bio: event.target.value })} /></div>
+                        <div className="flex justify-end sm:col-span-2"><Button type="button" size="sm" variant="ghost" onClick={() => setDraft((current) => ({ ...current, speakers: current.speakers.filter((_, speakerIndex) => speakerIndex !== index) }))}><Trash2 className="mr-1.5 size-4" aria-hidden="true" />Remove speaker</Button></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <Button type="button" size="sm" variant="outline" disabled={draft.speakers.length >= 8} onClick={() => setDraft((current) => ({ ...current, speakers: [...current.speakers, newSpeaker()] }))}><Plus className="mr-1.5 size-4" aria-hidden="true" />Add speaker</Button>
+              </fieldset>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-types">Guest types</Label>
                 <Input id="registration-types" value={guestTypesInput} placeholder="General, VIP, Speaker" onChange={(e) => setGuestTypesInput(e.target.value)} />
@@ -301,6 +361,8 @@ export default function ShareSection({ event }: { event: Event }) {
               <div className="space-y-3 rounded-lg border border-hairline p-3">
                 <div><label className="flex items-center justify-between gap-3 text-sm"><span>Ask for company, school, or organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label><p className="mt-1 pr-12 text-xs text-muted-foreground">Adds an optional field so guests can name the business, school, nonprofit, or group they represent.</p></div>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show public agenda</span><Switch checked={draft.showAgenda} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showAgenda: checked }))} /></label>
+                <label className="flex items-center justify-between gap-3 text-sm"><span>Show featured speakers</span><Switch checked={draft.showSpeakers} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showSpeakers: checked }))} /></label>
+                <label className="flex items-center justify-between gap-3 text-sm"><span>Show confirmed sponsors</span><Switch checked={draft.showSponsors} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showSponsors: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
               </div>
             </div>
@@ -316,6 +378,7 @@ export default function ShareSection({ event }: { event: Event }) {
             <PanelHeader title="Invite guests" description="The registration link works without a Beebizy login" actions={<Pill tone="success">Live</Pill>} />
             <div className="divide-y divide-hairline">
               <CopyRow label="Registration site" url={eventUrl} hint="Event details and registration" />
+              <EventQrCard eventTitle={event.title} url={eventUrl} />
               {onSale.length > 0 && ticketUrl ? <CopyRow label="Ticket checkout" url={ticketUrl} hint={`${onSale.length} ticket type${onSale.length === 1 ? "" : "s"}`} /> : null}
               {auctionUrl ? <CopyRow label="Bidder auction" url={auctionUrl} hint="Public mobile bidding" /> : null}
             </div>
@@ -356,7 +419,7 @@ export default function ShareSection({ event }: { event: Event }) {
       </div>
 
       <div className="space-y-6">
-        {activeWorkspace === "design" ? <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} /></div></Panel> : null}
+        {activeWorkspace === "design" ? <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} sponsors={(sponsorships ?? []).filter((sponsor) => sponsor.status === "confirmed")} /></div></Panel> : null}
         {activeWorkspace !== "design" ? <Panel>
           <PanelHeader title="What guests can access" description="Only the public event experience" />
           <div className="space-y-3 px-5 py-4 text-sm">

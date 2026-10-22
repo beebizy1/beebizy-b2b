@@ -32,8 +32,13 @@ describe("registration page settings", () => {
         headline: "Join us under the stars",
         welcomeMessage: "Register below and we will see you there.",
         heroImageUrl: "https://images.example.com/garden.jpg",
+        aboutImageUrl: "https://images.example.com/venue.jpg",
+        agendaImageUrl: "/demo-registration/gala-networking.png",
         showAgenda: false,
+        showSpeakers: true,
+        showSponsors: false,
         showVolunteerSignup: true,
+        speakers: [{ id: "keynote", name: "Amina Shah", title: "Founder", organization: "Bright Futures", bio: "Opening keynote.", photoUrl: "https://images.example.com/amina.jpg" }],
         registrationTypes: ["Investor", "Student", "Investor", "  "],
         collectOrganization: false,
       }),
@@ -43,8 +48,13 @@ describe("registration page settings", () => {
       headline: "Join us under the stars",
       welcomeMessage: "Register below and we will see you there.",
       heroImageUrl: "https://images.example.com/garden.jpg",
+      aboutImageUrl: "https://images.example.com/venue.jpg",
+      agendaImageUrl: "/demo-registration/gala-networking.png",
       showAgenda: false,
+      showSpeakers: true,
+      showSponsors: false,
       showVolunteerSignup: true,
+      speakers: [{ id: "keynote", name: "Amina Shah", title: "Founder", organization: "Bright Futures", bio: "Opening keynote.", photoUrl: "https://images.example.com/amina.jpg" }],
       registrationTypes: ["Investor", "Student"],
       collectOrganization: false,
     });
@@ -63,6 +73,8 @@ describe("registration page settings", () => {
     });
     expect(normalizeRegistrationPage({ accentColor: "#FFFFFF", heroImageUrl: "http://example.com/a.jpg" }))
       .toMatchObject({ accentColor: DEFAULT_REGISTRATION_PAGE.accentColor, heroImageUrl: null });
+    expect(normalizeRegistrationPage({ heroImageUrl: "/demo-registration/gala-hero.png" }).heroImageUrl)
+      .toBe("/demo-registration/gala-hero.png");
   });
 
   it("counts template, color and guest-type choices as invitation design work", () => {
@@ -70,6 +82,7 @@ describe("registration page settings", () => {
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, template: "garden" })).toBe(true);
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, accentColor: "#245F45" })).toBe(true);
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, registrationTypes: ["Parent/Guardian"] })).toBe(true);
+    expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, speakers: [{ id: "one", name: "Amina Shah", title: "", organization: "", bio: "", photoUrl: null }] })).toBe(true);
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, showAgenda: false, collectOrganization: false })).toBe(false);
   });
 
@@ -88,7 +101,8 @@ describe("registration page settings", () => {
     expect(html).toContain("Register &amp; join us.");
     expect(html).toContain("https://beebizy.example/e/token?guest=1&amp;source=email");
     expect(html).toContain("Hi Laila &lt;Marshall&gt;,");
-    expect(html).toContain("View tickets &amp; RSVP");
+    expect(html).toContain("View event &amp; register");
+    expect(html).toContain("the agenda, and registration options");
     expect(html).toContain("Sent by Cedar Grove School using Beebizy");
     expect(html).not.toContain("Welcome <friends>");
   });
