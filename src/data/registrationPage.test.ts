@@ -30,6 +30,7 @@ describe("registration page settings", () => {
         template: "garden",
         accentColor: "#245f45",
         headline: "Join us under the stars",
+        aboutHeading: "Why we gather",
         welcomeMessage: "Register below and we will see you there.",
         heroImageUrl: "https://images.example.com/garden.jpg",
         aboutImageUrl: "https://images.example.com/venue.jpg",
@@ -46,6 +47,7 @@ describe("registration page settings", () => {
       template: "garden",
       accentColor: "#245F45",
       headline: "Join us under the stars",
+      aboutHeading: "Why we gather",
       welcomeMessage: "Register below and we will see you there.",
       heroImageUrl: "https://images.example.com/garden.jpg",
       aboutImageUrl: "https://images.example.com/venue.jpg",
@@ -105,5 +107,22 @@ describe("registration page settings", () => {
     expect(html).toContain("the agenda, and registration options");
     expect(html).toContain("Sent by Cedar Grove School using Beebizy");
     expect(html).not.toContain("Welcome <friends>");
+  });
+
+  it("preserves long multi-paragraph welcome copy separately from the About heading", () => {
+    const longParagraph = "A".repeat(900);
+    const page = normalizeRegistrationPage({
+      aboutHeading: "A milestone worth celebrating",
+      welcomeMessage: longParagraph,
+    });
+
+    expect(page).toMatchObject({ aboutHeading: "A milestone worth celebrating" });
+    expect(page.welcomeMessage).toHaveLength(900);
+
+    const html = registrationInvitationHtml({
+      ...DEFAULT_REGISTRATION_PAGE,
+      welcomeMessage: "First paragraph.\n\nSecond paragraph.",
+    }, "Celebration", null, "https://beebizy.example/e/token");
+    expect(html).toContain("First paragraph.<br /><br />Second paragraph.");
   });
 });

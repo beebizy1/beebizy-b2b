@@ -105,6 +105,7 @@ describe("events", () => {
         template: "garden",
         accentColor: "#245F45",
         headline: "An evening in the garden",
+        aboutHeading: "Why we gather",
         welcomeMessage: "Reserve your place with the team.",
         heroImageUrl: "https://images.example.com/garden.jpg",
         aboutImageUrl: null,

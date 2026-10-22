@@ -125,7 +125,7 @@ function RegistrationPreview({ event, settings, sponsors }: { event: Event; sett
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: settings.accentColor }}>{event.category}</p>
           <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{settings.headline || event.title}</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
+          <p className="whitespace-pre-line mt-2 text-sm leading-6 text-slate-600">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
         </div>
         <span className="inline-flex rounded-md px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>Register now</span>
         {settings.showSpeakers && settings.speakers.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Featured speakers</p><div className="mt-3 flex -space-x-2">{settings.speakers.slice(0, 4).map((speaker) => speaker.photoUrl ? <img key={speaker.id} src={speaker.photoUrl} alt={speaker.name} className="size-10 rounded-full border-2 border-white object-cover" /> : <span key={speaker.id} className="grid size-10 place-items-center rounded-full border-2 border-white bg-slate-100 text-xs font-bold text-slate-600">{speaker.name.slice(0, 1)}</span>)}</div></div> : null}
@@ -292,7 +292,12 @@ export default function ShareSection({ event }: { event: Event }) {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-welcome">Welcome message</Label>
-                <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={600} rows={4} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
+                <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={2000} rows={7} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
+                <p className="text-xs text-muted-foreground">Blank lines become separate paragraphs in the preview, invitation email, and public page.</p>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-about-heading">About section heading</Label>
+                <Input id="registration-about-heading" value={draft.aboutHeading} maxLength={160} placeholder="About the event" onChange={(event) => setDraft((current) => ({ ...current, aboutHeading: event.target.value }))} />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Large invitation photo</Label>

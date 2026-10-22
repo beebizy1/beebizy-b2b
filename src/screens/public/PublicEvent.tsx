@@ -132,8 +132,8 @@ export function PublicEventPage({ token }: { token: string }) {
         <section id="about" className="grid gap-8 border-b border-black/10 pb-12 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)] md:pb-16">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>About the event</p>
-            <h2 className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">{registrationPage.welcomeMessage || "Join us for an unforgettable gathering."}</h2>
-            {event.description ? <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">{event.description}</p> : null}
+            <h2 className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">{registrationPage.aboutHeading || "About the event"}</h2>
+            {registrationPage.welcomeMessage || event.description ? <p className="whitespace-pre-line mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">{registrationPage.welcomeMessage || event.description}</p> : null}
           </div>
           <div className="space-y-5 self-center">
             {registrationPage.aboutImageUrl ? <img src={registrationPage.aboutImageUrl} alt={`${event.title} venue`} className="aspect-[3/2] w-full rounded-2xl object-cover" /> : null}

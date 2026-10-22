@@ -14,6 +14,7 @@ export interface RegistrationPageSettings {
   template: RegistrationPageTemplateId;
   accentColor: string;
   headline: string;
+  aboutHeading: string;
   welcomeMessage: string;
   heroImageUrl: string | null;
   aboutImageUrl: string | null;
@@ -69,6 +70,7 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   template: "warm",
   accentColor: "#8C5A12",
   headline: "",
+  aboutHeading: "",
   welcomeMessage: "",
   heroImageUrl: null,
   aboutImageUrl: null,
@@ -152,7 +154,8 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
       ? accent
       : templateDefaults.accentColor,
     headline: text(input.headline, 120),
-    welcomeMessage: text(input.welcomeMessage, 600),
+    aboutHeading: text(input.aboutHeading, 160),
+    welcomeMessage: text(input.welcomeMessage, 2_000),
     heroImageUrl: safeImageUrl(input.heroImageUrl),
     aboutImageUrl: safeImageUrl(input.aboutImageUrl),
     agendaImageUrl: safeImageUrl(input.agendaImageUrl),
@@ -171,7 +174,7 @@ export function registrationPageIsCustomized(value: unknown): boolean {
   const page = normalizeRegistrationPage(value);
   return page.template !== DEFAULT_REGISTRATION_PAGE.template ||
     page.accentColor !== DEFAULT_REGISTRATION_PAGE.accentColor ||
-    Boolean(page.headline || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
+    Boolean(page.headline || page.aboutHeading || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
     page.speakers.length > 0 ||
     page.registrationTypes.join("\u0000") !== DEFAULT_REGISTRATION_PAGE.registrationTypes.join("\u0000");
 }
@@ -211,7 +214,7 @@ export function registrationInvitationHtml(
   const page = normalizeRegistrationPage(settings);
   const template = registrationPageTemplate(page.template);
   const title = escapeHtml(page.headline || eventTitle);
-  const welcome = escapeHtml(page.welcomeMessage || eventDescription || "We would love to see you there.");
+  const welcome = escapeHtml(page.welcomeMessage || eventDescription || "We would love to see you there.").replace(/\r?\n/g, "<br />");
   const link = escapeHtml(url);
   const hero = page.heroImageUrl
     ? `<img src="${escapeHtml(page.heroImageUrl)}" alt="" width="600" style="display:block;width:100%;max-height:280px;object-fit:cover;border:0;" />`
