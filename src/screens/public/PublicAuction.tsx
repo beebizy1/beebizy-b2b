@@ -169,12 +169,14 @@ export default function PublicAuctionPage({ token }: { token: string }) {
             ) : <p className="mt-4 text-sm text-muted-foreground">Bidder registration is closed.</p>}
           </Panel>
         ) : (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-success/20 bg-success-tint px-4 py-3 text-sm text-success-text">
-            <CheckCircle2 className="size-4" aria-hidden="true" />
-            <button type="button" className="rounded-lg bg-primary px-3 py-2 font-black text-primary-foreground shadow-sm" onClick={() => setShowPaddle(true)}>Paddle {bidderProfile?.paddleNumber ?? "assigned"}</button>
-            <span className="min-w-0 flex-1">{bidderProfile?.hasPaymentMethod ? "You're ready to bid." : "Add a card or wallet before your first bid."}</span>
-            {!bidderProfile?.hasPaymentMethod ? <Button size="sm" disabled={setupWallet.isPending} onClick={() => setupWallet.mutate({ token, bidderToken }, { onSuccess: (result) => window.location.assign(result.url), onError: (error) => toast({ title: "Couldn't open wallet setup", description: error.message }) })}><WalletCards className="mr-1.5 size-4" />{setupWallet.isPending ? "Opening..." : "Add card or wallet"}</Button> : null}
-            <Button size="sm" variant={myBidsOnly ? "default" : "outline"} onClick={() => setMyBidsOnly((value) => !value)}>My bids {(bidderProfile?.outbidItemIds.length ?? 0) > 0 ? `(${bidderProfile?.outbidItemIds.length} outbid)` : ""}</Button>
+          <div className="grid gap-3 rounded-xl border border-success/20 bg-success-tint px-4 py-3 text-sm text-success-text sm:flex sm:flex-wrap sm:items-center">
+            <div className="flex items-center gap-3 sm:contents">
+              <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+              <button type="button" className="rounded-lg bg-primary px-3 py-2 font-black text-primary-foreground shadow-sm" onClick={() => setShowPaddle(true)}>Paddle {bidderProfile?.paddleNumber ?? "assigned"}</button>
+            </div>
+            <span className="min-w-0 leading-5 sm:flex-1">{bidderProfile?.hasPaymentMethod ? "You're ready to bid." : "Add a card or wallet before your first bid."}</span>
+            {!bidderProfile?.hasPaymentMethod ? <Button className="w-full sm:w-auto" size="sm" disabled={setupWallet.isPending} onClick={() => setupWallet.mutate({ token, bidderToken }, { onSuccess: (result) => window.location.assign(result.url), onError: (error) => toast({ title: "Couldn't open wallet setup", description: error.message }) })}><WalletCards className="mr-1.5 size-4" />{setupWallet.isPending ? "Opening..." : "Add card or wallet"}</Button> : null}
+            <Button className="w-full sm:w-auto" size="sm" variant={myBidsOnly ? "default" : "outline"} onClick={() => setMyBidsOnly((value) => !value)}>My bids {(bidderProfile?.outbidItemIds.length ?? 0) > 0 ? `(${bidderProfile?.outbidItemIds.length} outbid)` : ""}</Button>
           </div>
         )}
 
