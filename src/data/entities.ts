@@ -2014,6 +2014,7 @@ export interface PublicEventPayload {
   event: Event;
   agenda: PublicRunOfShowItem[];
   tickets: TicketType[];
+  sponsors: Array<Pick<Sponsorship, "companyName" | "tier" | "logoUrl">>;
   volunteerNeeds: VolunteerNeedWithCoverage[];
   timeZone: string;
 }

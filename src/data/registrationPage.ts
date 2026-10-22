@@ -1,16 +1,30 @@
 export const REGISTRATION_PAGE_TEMPLATE_IDS = ["warm", "garden", "coastal"] as const;
 export type RegistrationPageTemplateId = (typeof REGISTRATION_PAGE_TEMPLATE_IDS)[number];
 
+export interface RegistrationSpeaker {
+  id: string;
+  name: string;
+  title: string;
+  organization: string;
+  bio: string;
+  photoUrl: string | null;
+}
+
 export interface RegistrationPageSettings {
   template: RegistrationPageTemplateId;
   accentColor: string;
   headline: string;
   welcomeMessage: string;
   heroImageUrl: string | null;
+  aboutImageUrl: string | null;
+  agendaImageUrl: string | null;
   /** Optional organizer-owned checkout. Beebizy does not process this payment. */
   paymentUrl?: string | null;
   showAgenda: boolean;
+  showSpeakers: boolean;
+  showSponsors: boolean;
   showVolunteerSignup: boolean;
+  speakers: RegistrationSpeaker[];
   registrationTypes: string[];
   collectOrganization: boolean;
 }
@@ -57,9 +71,14 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   headline: "",
   welcomeMessage: "",
   heroImageUrl: null,
+  aboutImageUrl: null,
+  agendaImageUrl: null,
   paymentUrl: null,
   showAgenda: true,
+  showSpeakers: true,
+  showSponsors: true,
   showVolunteerSignup: true,
+  speakers: [],
   registrationTypes: ["General"],
   collectOrganization: true,
 };
@@ -77,12 +96,31 @@ function text(value: unknown, maxLength: number): string {
 function safeImageUrl(value: unknown): string | null {
   const candidate = text(value, 2_000);
   if (!candidate) return null;
+  if (candidate.startsWith("/") && !candidate.startsWith("//")) return candidate;
   try {
     const url = new URL(candidate);
     return url.protocol === "https:" ? url.toString() : null;
   } catch {
     return null;
   }
+}
+
+function speakers(value: unknown): RegistrationSpeaker[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index): RegistrationSpeaker[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const input = item as Record<string, unknown>;
+    const name = text(input.name, 120);
+    if (!name) return [];
+    return [{
+      id: text(input.id, 80) || `speaker-${index + 1}`,
+      name,
+      title: text(input.title, 120),
+      organization: text(input.organization, 120),
+      bio: text(input.bio, 500),
+      photoUrl: safeImageUrl(input.photoUrl),
+    }];
+  }).slice(0, 8);
 }
 
 function registrationTypes(value: unknown): string[] {
@@ -116,9 +154,14 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     headline: text(input.headline, 120),
     welcomeMessage: text(input.welcomeMessage, 600),
     heroImageUrl: safeImageUrl(input.heroImageUrl),
+    aboutImageUrl: safeImageUrl(input.aboutImageUrl),
+    agendaImageUrl: safeImageUrl(input.agendaImageUrl),
     ...(Object.hasOwn(input, "paymentUrl") ? { paymentUrl: safeImageUrl(input.paymentUrl) } : {}),
     showAgenda: typeof input.showAgenda === "boolean" ? input.showAgenda : true,
+    showSpeakers: typeof input.showSpeakers === "boolean" ? input.showSpeakers : true,
+    showSponsors: typeof input.showSponsors === "boolean" ? input.showSponsors : true,
     showVolunteerSignup: typeof input.showVolunteerSignup === "boolean" ? input.showVolunteerSignup : true,
+    speakers: speakers(input.speakers),
     registrationTypes: registrationTypes(input.registrationTypes),
     collectOrganization: typeof input.collectOrganization === "boolean" ? input.collectOrganization : true,
   };
@@ -128,7 +171,8 @@ export function registrationPageIsCustomized(value: unknown): boolean {
   const page = normalizeRegistrationPage(value);
   return page.template !== DEFAULT_REGISTRATION_PAGE.template ||
     page.accentColor !== DEFAULT_REGISTRATION_PAGE.accentColor ||
-    Boolean(page.headline || page.welcomeMessage || page.heroImageUrl) ||
+    Boolean(page.headline || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
+    page.speakers.length > 0 ||
     page.registrationTypes.join("\u0000") !== DEFAULT_REGISTRATION_PAGE.registrationTypes.join("\u0000");
 }
 
@@ -179,5 +223,5 @@ export function registrationInvitationHtml(
     ? `<p style="margin:16px 0 0;"><a href="${escapeHtml(page.paymentUrl)}" style="display:inline-block;padding:12px 20px;border:2px solid ${page.accentColor};border-radius:8px;color:${page.accentColor};text-decoration:none;font-size:14px;font-weight:700;">Continue to payment</a></p>`
     : "";
 
-  return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${template.background};font-family:Arial,sans-serif;"><tr><td align="center" style="padding:32px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" width="600" style="max-width:600px;width:100%;background:${template.surface};border-radius:16px;overflow:hidden;"><tr><td>${hero}</td></tr><tr><td style="padding:36px;"><p style="margin:0 0 16px;color:${page.accentColor};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">You're invited</p>${greeting}<h1 style="margin:0 0 16px;color:#1E293B;font-size:32px;line-height:1.2;">${title}</h1><p style="margin:0 0 28px;color:#475569;font-size:16px;line-height:1.6;">${welcome}</p><a href="${link}" style="display:inline-block;padding:14px 22px;border-radius:8px;background:${page.accentColor};color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;">View tickets &amp; RSVP</a>${payment}<p style="margin:24px 0 0;color:#64748B;font-size:12px;line-height:1.5;">This opens the ticket options for ${escapeHtml(eventTitle)}. Choose the ticket type and quantity that fit your household.</p><p style="margin:12px 0 0;color:#64748B;font-size:12px;line-height:1.5;">If the button does not work, visit <a href="${link}" style="color:${page.accentColor};">${link}</a>.</p><p style="margin:28px 0 0;color:#94A3B8;font-size:11px;text-align:center;">Sent by ${escapeHtml(organizationName)} using Beebizy</p></td></tr></table></td></tr></table>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${template.background};font-family:Arial,sans-serif;"><tr><td align="center" style="padding:32px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" width="600" style="max-width:600px;width:100%;background:${template.surface};border-radius:16px;overflow:hidden;"><tr><td>${hero}</td></tr><tr><td style="padding:36px;"><p style="margin:0 0 16px;color:${page.accentColor};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">You're invited</p>${greeting}<h1 style="margin:0 0 16px;color:#1E293B;font-size:32px;line-height:1.2;">${title}</h1><p style="margin:0 0 28px;color:#475569;font-size:16px;line-height:1.6;">${welcome}</p><a href="${link}" style="display:inline-block;padding:14px 22px;border-radius:8px;background:${page.accentColor};color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;">View event &amp; register</a>${payment}<p style="margin:24px 0 0;color:#64748B;font-size:12px;line-height:1.5;">Open the event page for details, the agenda, and registration options for ${escapeHtml(eventTitle)}.</p><p style="margin:12px 0 0;color:#64748B;font-size:12px;line-height:1.5;">If the button does not work, visit <a href="${link}" style="color:${page.accentColor};">${link}</a>.</p><p style="margin:28px 0 0;color:#94A3B8;font-size:11px;text-align:center;">Sent by ${escapeHtml(organizationName)} using Beebizy</p></td></tr></table></td></tr></table>`;
 }

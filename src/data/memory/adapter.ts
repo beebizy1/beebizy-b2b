@@ -476,6 +476,11 @@ const events: EventsRepository = {
         .sort(compareRunOfShowItems)
         .map(({ assignedEmail: _assignedEmail, completed: _completed, ...publicCue }) => publicCue),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
+      sponsors: normalizeRegistrationPage(event.registrationPage).showSponsors
+        ? store().sponsorships
+            .filter((sponsor) => sponsor.eventId === event.id && sponsor.status === "confirmed")
+            .map(({ companyName, tier, logoUrl }) => ({ companyName, tier, logoUrl }))
+        : [],
       volunteerNeeds: volunteerCoverage(
         store().volunteerNeeds.filter((need) => need.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showVolunteerSignup),
         store().volunteers.filter((shift) => shift.eventId === event.id),

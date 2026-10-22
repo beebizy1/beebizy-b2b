@@ -15,6 +15,7 @@ vi.mock("./repos", () => {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
     publicTickets: vi.fn(),
+    publicSponsors: vi.fn().mockResolvedValue([]),
     publicFloorplan: vi.fn(),
     publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
     publicRegistration: vi.fn(),
@@ -149,7 +150,7 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, vendorPaymentPlans, feedback, events, registrations, members, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
@@ -704,7 +705,7 @@ describe("public event signup endpoints", () => {
     vi.mocked(eventByShareToken).mockResolvedValue({
       event: {
         id: "event-1",
-        registrationPage: { showAgenda: false, showVolunteerSignup: false },
+        registrationPage: { showAgenda: false, showSponsors: false, showVolunteerSignup: false },
       } as never,
       timeZone: "America/Los_Angeles",
     });
@@ -714,9 +715,11 @@ describe("public event signup endpoints", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       agenda: [],
+      sponsors: [],
       volunteerNeeds: [],
     });
     expect(publicAgenda).not.toHaveBeenCalled();
+    expect(publicSponsors).not.toHaveBeenCalled();
     expect(publicVolunteerNeeds).not.toHaveBeenCalled();
   });
 

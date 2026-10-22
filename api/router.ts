@@ -319,15 +319,16 @@ async function handlePublic(segments: string[], method: string, request: Request
     if (!shared) return json({ error: "This link is no longer active." }, 404);
     const page = normalizeRegistrationPage(shared.event.registrationPage);
 
-    const [agenda, tickets, volunteerNeeds] = await Promise.all([
+    const [agenda, tickets, sponsors, volunteerNeeds] = await Promise.all([
       page.showAgenda ? repos.publicAgenda(shared.event.id) : Promise.resolve([]),
       repos.publicTickets(shared.event.id),
+      page.showSponsors ? repos.publicSponsors(shared.event.id) : Promise.resolve([]),
       page.showVolunteerSignup ? repos.publicVolunteerNeeds(shared.event.id) : Promise.resolve([]),
     ]);
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
     // bids are not in this payload at all, rather than filtered out in the client. The
     // agenda and tickets ride along because the guest has no session to fetch them with.
-    return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
+    return json({ event: shared.event, agenda, tickets, sponsors, volunteerNeeds, timeZone: shared.timeZone });
   }
   if (segments[0] === "public" && segments[1] === "floorplans" && segments[2] && method === "GET") {
     const shared = await repos.publicFloorplan(segments[2]);
