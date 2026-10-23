@@ -19,6 +19,7 @@ export function useEventLaunchProgress(event: Event | null | undefined) {
   const { data: invitations } = useTicketInvitations(eventId);
   const { data: registrations } = useRegistrations();
   const activeTickets = (tickets ?? []).filter((ticket) => ticket.isActive);
+  const paymentsRequired = activeTickets.some((ticket) => ticket.priceCents > 0) || event?.category === "Fundraiser" || Boolean(event?.auctionPublicToken);
   const contactableInvitees = event
     ? eventInvitationRecipients(registrations ?? [], event.id)
     : [];
@@ -29,6 +30,7 @@ export function useEventLaunchProgress(event: Event | null | undefined) {
     inviteeCount: contactableInvitees.length,
     invitationDesigned: event ? registrationPageIsCustomized(event.registrationPage) : false,
     activeTicketCount: activeTickets.length,
+    paymentsRequired,
     stripeReady: connect?.ready === true,
     invitationsSent,
   });
@@ -41,6 +43,7 @@ export function useEventLaunchProgress(event: Event | null | undefined) {
     contactableInvitees,
     invitations: invitations ?? [],
     invitationsSent,
+    paymentsRequired,
     tickets: tickets ?? [],
     unlocked: eventLaunchUnlocks(completion),
   };

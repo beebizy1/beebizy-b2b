@@ -2,6 +2,7 @@ export interface EventLaunchProgressInput {
   inviteeCount: number;
   invitationDesigned: boolean;
   activeTicketCount: number;
+  paymentsRequired: boolean;
   stripeReady: boolean;
   invitationsSent: boolean;
 }
@@ -47,8 +48,8 @@ export function eventLaunchCompletion(input: EventLaunchProgressInput): EventLau
     event: true,
     "invite-list": input.inviteeCount > 0,
     "invite-design": input.invitationDesigned,
-    tickets: input.activeTicketCount > 0,
-    payments: input.stripeReady,
+    tickets: true,
+    payments: !input.paymentsRequired || input.stripeReady,
     send: input.invitationsSent,
   };
 }

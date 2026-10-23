@@ -40,7 +40,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
   const { data: identity } = useMe();
   const startConnect = useStartStripeConnect();
   const [selectedStep, setSelectedStep] = useState<{ id: EventLaunchStepId; wasComplete: boolean } | null>(null);
-  const { activeTickets, completion, connect, connectLoading, contactableInvitees, unlocked } = useEventLaunchProgress(event);
+  const { activeTickets, completion, connect, connectLoading, contactableInvitees, paymentsRequired, unlocked } = useEventLaunchProgress(event);
   const focusedComplete = focusStep ? completion[focusStep] : false;
   const focusedUnlocked = focusStep ? unlocked[focusStep] : false;
 
@@ -83,12 +83,12 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
     {
       number: 4,
       id: "tickets",
-      title: "Price your tickets",
-      summary: "Name each ticket, set its price, and choose how many are available.",
+      title: "Tickets (optional)",
+      summary: "Add free or paid tickets, or use the event as a simple RSVP.",
       complete: completion.tickets,
       icon: Ticket,
-      detail: <p>{activeTickets.length > 0 ? `${activeTickets.length} ticket ${activeTickets.length === 1 ? "option is" : "options are"} ready.` : "Add at least one free or paid ticket option before inviting guests."}</p>,
-      action: <Button type="button" size="sm" onClick={onPriceTickets}>{activeTickets.length > 0 ? "Review ticket prices" : "Add ticket prices"}</Button>,
+      detail: <p>{activeTickets.length > 0 ? `${activeTickets.length} ticket ${activeTickets.length === 1 ? "option is" : "options are"} ready.` : "No tickets needed. Guests will RSVP directly from the invitation."}</p>,
+      action: <Button type="button" size="sm" variant={activeTickets.length > 0 ? "default" : "outline"} onClick={onPriceTickets}>{activeTickets.length > 0 ? "Review ticket prices" : "Add tickets instead"}</Button>,
     },
     {
       number: 5,
@@ -97,8 +97,8 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       summary: "Use Stripe so ticket, auction, and fundraising money can reach the school.",
       complete: completion.payments,
       icon: CreditCard,
-      detail: connect?.ready ? <div className="space-y-2"><p>Stripe is connected. Stripe will send paid ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div> : <div className="space-y-2"><p>Stripe is the secure payment service that sends money to the school.</p><p><strong>1.</strong> Click Connect below.</p><p><strong>2.</strong> The school owner fills out Stripe's form.</p><p><strong>3.</strong> Stripe sends ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div>,
-      action: connect?.ready ? <Button asChild variant="outline" size="lg"><a href={eventLaunchPath(event.id)}>Stripe connected · Continue to next step</a></Button> : identity?.role === "owner" ? <Button type="button" size="lg" className="w-full text-base font-bold shadow-sm sm:w-auto" disabled={connectLoading || startConnect.isPending} onClick={() => startConnect.mutate(eventLaunchPath(event.id), { onSuccess: (status) => { if (status.onboardingUrl) window.location.assign(status.onboardingUrl); }, onError: (error) => toast({ title: "Couldn't open Stripe", description: error.message }) })}>{startConnect.isPending ? "Opening Stripe…" : connect?.accountId ? "Continue connecting Stripe" : "Connect Stripe bank account"}</Button> : <p className="text-xs font-medium text-muted-foreground">Ask the Beebizy workspace owner to connect Stripe.</p>,
+      detail: !paymentsRequired ? <p>This event uses free RSVP only, so no bank connection is needed.</p> : connect?.ready ? <div className="space-y-2"><p>Stripe is connected. Stripe will send paid ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div> : <div className="space-y-2"><p>Stripe is the secure payment service that sends money to the school.</p><p><strong>1.</strong> Click Connect below.</p><p><strong>2.</strong> The school owner fills out Stripe's form.</p><p><strong>3.</strong> Stripe sends ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div>,
+      action: !paymentsRequired ? <Pill tone="success">Not needed for free RSVP</Pill> : connect?.ready ? <Button asChild variant="outline" size="lg"><a href={eventLaunchPath(event.id)}>Stripe connected · Continue to next step</a></Button> : identity?.role === "owner" ? <Button type="button" size="lg" className="w-full text-base font-bold shadow-sm sm:w-auto" disabled={connectLoading || startConnect.isPending} onClick={() => startConnect.mutate(eventLaunchPath(event.id), { onSuccess: (status) => { if (status.onboardingUrl) window.location.assign(status.onboardingUrl); }, onError: (error) => toast({ title: "Couldn't open Stripe", description: error.message }) })}>{startConnect.isPending ? "Opening Stripe…" : connect?.accountId ? "Continue connecting Stripe" : "Connect Stripe bank account"}</Button> : <p className="text-xs font-medium text-muted-foreground">Ask the Beebizy workspace owner to connect Stripe.</p>,
     },
     {
       number: 6,

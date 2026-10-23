@@ -270,6 +270,7 @@ export interface PublicRegistrationDraft {
   email: string;
   segment: string;
   organization?: string | null;
+  invitationToken?: string | null;
 }
 
 /** Registration plus the result of the guest confirmation email attempt. */

@@ -37,4 +37,16 @@ describe("registration welcome-message formatting", () => {
     expect(publicPage).toContain('settings.heroImageDisplay === "logo"');
     expect(publicPage).toContain('alt="Event logo"');
   });
+
+  it("carries a private invitation token through the RSVP-only registration flow", () => {
+    const publicPage = readFileSync(new URL("./PublicEvent.tsx", import.meta.url), "utf8");
+    const sender = readFileSync(new URL("../events/sections/TicketInvitationBuilder.tsx", import.meta.url), "utf8");
+
+    expect(publicPage).toContain("invitationAwarePath");
+    expect(publicPage).toContain("invitationToken");
+    expect(publicPage).toContain("Confirm RSVP");
+    expect(sender).toContain("Invitation guests receive");
+    expect(sender).toContain("This event does not require tickets");
+    expect(sender).toContain("Edit invitation design");
+  });
 });

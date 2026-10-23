@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { eventInvitationRecipients, parseTicketInvitationRecipients } from "./ticketInvitations";
+import { eventInvitationRecipients, parseTicketInvitationRecipients, ticketInvitationRsvpPath } from "./ticketInvitations";
 
 describe("ticket invitation recipient input", () => {
+  it("routes RSVP-only invitations to registration instead of an empty ticket page", () => {
+    expect(ticketInvitationRsvpPath("share token", { hasTickets: false, invitationToken: "invite/token" }))
+      .toBe("/e/share%20token?invite=invite%2Ftoken");
+    expect(ticketInvitationRsvpPath("share-token", { hasTickets: true, invitationToken: "invite-token" }))
+      .toBe("/e/share-token/tickets?invite=invite-token");
+    expect(ticketInvitationRsvpPath("share-token", { hasTickets: false, preview: true }))
+      .toBe("/e/share-token?preview=1");
+  });
   it("accepts an email without requiring a separate name", () => {
     expect(parseTicketInvitationRecipients("laila@beebizy.com")).toEqual([
       { name: "Laila", email: "laila@beebizy.com" },

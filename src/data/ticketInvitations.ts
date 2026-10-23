@@ -5,6 +5,17 @@ export interface TicketInvitationRecipientDraft {
   email: string;
 }
 
+export function ticketInvitationRsvpPath(
+  shareToken: string,
+  options: { hasTickets: boolean; invitationToken?: string | null; preview?: boolean },
+): string {
+  const base = `/e/${encodeURIComponent(shareToken)}${options.hasTickets ? "/tickets" : ""}`;
+  const query = new URLSearchParams();
+  if (options.invitationToken) query.set("invite", options.invitationToken);
+  if (options.preview) query.set("preview", "1");
+  return query.size > 0 ? `${base}?${query}` : base;
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function nameFromEmail(email: string): string {
