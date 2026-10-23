@@ -170,6 +170,7 @@ import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "./eventCopy";
 import type { RegistrationPageSettings } from "./registrationPage";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
+import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowRecovery";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -186,6 +187,10 @@ export interface EventScopedRepository<T, TDraft, TPatch> {
   create(eventId: string, draft: TDraft): Promise<T>;
   update(eventId: string, id: string, patch: TPatch): Promise<T>;
   remove(eventId: string, id: string): Promise<void>;
+}
+
+export interface RunOfShowRepository extends EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch> {
+  reorder(eventId: string, dayNumber: number, orderedIds: string[]): Promise<RunOfShowItem[]>;
 }
 
 export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft, EventPatch>, "list"> {
@@ -375,6 +380,12 @@ export interface EventHistoryRepository {
   list(eventId: string): Promise<EventHistoryEntry[]>;
 }
 
+export interface RunOfShowDraftRepository {
+  list(eventId: string): Promise<RunOfShowSyncedDraft[]>;
+  save(eventId: string, draftKey: string, draft: RunOfShowEditorDraft, clientUpdatedAt: number): Promise<RunOfShowSyncedDraft | null>;
+  discard(eventId: string, draftKey: string, clientUpdatedAt: number): Promise<void>;
+}
+
 export interface TeamUpdatesRepository {
   list(eventId: string): Promise<TeamUpdate[]>;
   create(eventId: string, draft: TeamUpdateDraft): Promise<TeamUpdate>;
@@ -543,7 +554,8 @@ export interface DataAdapter {
   vendorEventPackets: VendorEventPacketsRepository;
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
-  runOfShow: EventScopedRepository<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>;
+  runOfShow: RunOfShowRepository;
+  runOfShowDrafts: RunOfShowDraftRepository;
   volunteerNeeds: VolunteerNeedsRepository;
   volunteers: EventScopedRepository<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>;
   budget: EventScopedRepository<BudgetItem, BudgetItemDraft, BudgetItemPatch>;

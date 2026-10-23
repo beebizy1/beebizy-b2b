@@ -54,6 +54,7 @@ import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } fr
 import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
+import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
@@ -858,6 +859,25 @@ async function handleAuthed(
       if (a && b === "save-as-template" && method === "POST") return json(await repos.events.saveAsTemplate(ctx, a, body), 201);
       if (a && b === "assignment-summaries" && method === "POST") {
         return json(await repos.events.sendAssignmentSummaries(ctx, a));
+      }
+
+      if (a && b === "run-of-show-drafts") {
+        if (!c && method === "GET") return json(await listRunOfShowDrafts(ctx, a));
+        if (c && method === "PUT") {
+          return json(await saveRunOfShowDraft(ctx, a, c, body.draft, body.clientUpdatedAt));
+        }
+        if (c && method === "PATCH" && body.discarded === true) {
+          await discardRunOfShowDraft(ctx, a, c, body.clientUpdatedAt);
+          return json({ ok: true });
+        }
+        return notFound();
+      }
+      if (a && b === "run-of-show-order" && !c && method === "PATCH") {
+        const input = z.object({
+          dayNumber: z.number().int().min(1).max(365),
+          orderedIds: z.array(z.string().min(1).max(200)).max(2_000),
+        }).parse(body);
+        return json(await repos.runOfShow.reorder(ctx, a, input.dayNumber, input.orderedIds));
       }
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]

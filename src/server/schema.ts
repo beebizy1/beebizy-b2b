@@ -41,6 +41,7 @@ import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 import type { RegistrationPageSettings } from "../data/registrationPage.ts";
 import type { EventNavigationSettings } from "../data/eventNavigation.ts";
+import type { RunOfShowEditorDraft } from "../data/runOfShowRecovery.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -696,6 +697,36 @@ export const runOfShowItems = pgTable(
     completed: boolean("completed").notNull().default(false),
   },
   (table) => [index("run_of_show_event_idx").on(table.eventId, table.dayNumber, table.startTime)],
+);
+
+/**
+ * Cross-device autosave for work that has not become a Run of Show cue yet, or for an
+ * in-progress edit. A client revision fences delayed requests so older keystrokes can
+ * never replace newer work. Discarded rows are tombstones that stop an in-flight save
+ * from resurrecting a draft after Add, Save, or Cancel.
+ */
+export const runOfShowDrafts = pgTable(
+  "run_of_show_drafts",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    draftKey: text("draft_key").notNull(),
+    draft: jsonb("draft").$type<RunOfShowEditorDraft>(),
+    clientUpdatedAt: bigint("client_updated_at", { mode: "number" }).notNull(),
+    discarded: boolean("discarded").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.eventId, table.userId, table.draftKey] }),
+    index("run_of_show_drafts_user_event_idx").on(table.workspaceId, table.userId, table.eventId),
+    check("run_of_show_drafts_key_length_check", sql`char_length(${table.draftKey}) between 1 and 160`),
+  ],
 );
 
 export const checkInStations = pgTable(

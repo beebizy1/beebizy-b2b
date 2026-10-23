@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { RunOfShowItem } from "./entities";
+import type { EventHistoryEntry, RunOfShowItem } from "./entities";
 import {
   parseDeletedRunOfShowCues,
   parseRunOfShowDraft,
+  preferredRunOfShowDraft,
   rememberDeletedRunOfShowCue,
+  recoverableDeletedRunOfShowCues,
+  recoverableRunOfShowVersions,
   runOfShowDeletedCueStorageKey,
+  runOfShowDraftDiscardStorageKey,
   runOfShowDraftFromCue,
   runOfShowDraftStorageKey,
   serializeRunOfShowDraft,
@@ -50,6 +54,22 @@ describe("run of show draft recovery", () => {
   it("uses event-scoped keys so one event cannot replace another event's draft", () => {
     expect(runOfShowDraftStorageKey("event-1", "new")).not.toBe(runOfShowDraftStorageKey("event-2", "new"));
     expect(runOfShowDeletedCueStorageKey("event-1")).not.toBe(runOfShowDeletedCueStorageKey("event-2"));
+    expect(runOfShowDraftDiscardStorageKey("event-1", "new")).not.toBe(runOfShowDraftDiscardStorageKey("event-2", "new"));
+  });
+
+  it("prefers the newest valid copy across device and server storage", () => {
+    const server = { draftKey: "new-2", draft, clientUpdatedAt: 2000, updatedAt: "2026-10-16T12:00:00.000Z" };
+    expect(preferredRunOfShowDraft({ savedAt: 1000, draft: { ...draft, title: "Older local" } }, server)).toEqual({
+      source: "server",
+      savedAt: 2000,
+      draft,
+    });
+    expect(preferredRunOfShowDraft({ savedAt: 3000, draft: { ...draft, title: "Newer local" } }, server)).toEqual({
+      source: "device",
+      savedAt: 3000,
+      draft: { ...draft, title: "Newer local" },
+    });
+    expect(preferredRunOfShowDraft(null, server, 2500)).toBeNull();
   });
 });
 
@@ -80,5 +100,22 @@ describe("deleted run of show recovery", () => {
       completed: false,
       sortOrder: 4,
     });
+  });
+
+  it("recovers deleted cues and previous versions from server history on any device", () => {
+    const deleted = cue("cue-deleted");
+    const previous = cue("cue-current", { title: "Earlier title" });
+    const history: EventHistoryEntry[] = [
+      { id: "history-delete", eventId: "event-1", actorId: "user-1", resource: "run-of-show", resourceId: deleted.id, action: "deleted", summary: "Deleted cue", before: deleted as unknown as Record<string, unknown>, after: null, createdAt: "2026-10-16T12:10:00.000Z" },
+      { id: "history-update", eventId: "event-1", actorId: "user-1", resource: "run-of-show", resourceId: previous.id, action: "updated", summary: "Updated cue", before: previous as unknown as Record<string, unknown>, after: cue("cue-current", { title: "Current title" }) as unknown as Record<string, unknown>, createdAt: "2026-10-16T12:05:00.000Z" },
+    ];
+    const current = [cue("cue-current", { title: "Current title" })];
+
+    expect(recoverableDeletedRunOfShowCues(history, current, "event-1")).toEqual([
+      { historyId: "history-delete", deletedAt: Date.parse("2026-10-16T12:10:00.000Z"), cue: deleted },
+    ]);
+    expect(recoverableRunOfShowVersions(history, current, "event-1")).toEqual([
+      { historyId: "history-update", recordedAt: Date.parse("2026-10-16T12:05:00.000Z"), cue: previous },
+    ]);
   });
 });

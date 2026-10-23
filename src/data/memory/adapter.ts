@@ -26,6 +26,8 @@ import type {
   RegistrationsRepository,
   VolunteerNeedsRepository,
   RfpsRepository,
+  RunOfShowDraftRepository,
+  RunOfShowRepository,
   RoiRepository,
   SettingsRepository,
   TemplatesRepository,
@@ -38,6 +40,7 @@ import { calculateProxyBid, platformFeeCents } from "../commerce";
 import { normalizeAuctionPageSettings } from "../auctionSettings";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
+import { validRunOfShowOrder } from "../runOfShowOrder";
 import { teamUpdateFromHistory } from "../teamUpdates";
 import type {
   Guest,
@@ -147,6 +150,7 @@ import { normalizeEventNavigation } from "../eventNavigation";
 import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
 import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
 import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
+import type { RunOfShowSyncedDraft } from "../runOfShowRecovery";
 
 /**
  * A short artificial delay so loading states, skeletons and optimistic updates are
@@ -462,6 +466,12 @@ const events: EventsRepository = {
     }
     state.roi = state.roi.filter((r) => r.eventId !== id);
     state.floorplans = state.floorplans.filter((plan) => plan.eventId !== id);
+    for (const key of memoryRunOfShowDrafts.keys()) {
+      if (key.startsWith(`${id}:`)) memoryRunOfShowDrafts.delete(key);
+    }
+    for (const key of memoryRunOfShowDraftRevisions.keys()) {
+      if (key.startsWith(`${id}:`)) memoryRunOfShowDraftRevisions.delete(key);
+    }
     // Boards outlive their event — they were concepting work before it existed — so
     // detach rather than delete.
     for (const board of state.canvases) {
@@ -1222,7 +1232,7 @@ const checkInStations = eventScoped<CheckInStation, CheckInStationDraft, CheckIn
   "check-in-station",
 );
 
-const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>(
+const runOfShowBase = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPatch>(
   () => store().runOfShow,
   "ros",
   (eventId, draft, sortOrder) => ({
@@ -1242,6 +1252,52 @@ const runOfShow = eventScoped<RunOfShowItem, RunOfShowItemDraft, RunOfShowItemPa
   "run-of-show",
   compareRunOfShowItems,
 );
+const runOfShow: RunOfShowRepository = {
+  ...runOfShowBase,
+  async reorder(eventId, dayNumber, orderedIds) {
+    await wait();
+    const rows = store().runOfShow.filter((cue) => cue.eventId === eventId && cue.dayNumber === dayNumber);
+    if (!validRunOfShowOrder(rows.map((cue) => cue.id), orderedIds)) {
+      throw new DataError("invalid", "The Run of Show changed while it was being reordered. Refresh and try again.");
+    }
+    const order = new Map(orderedIds.map((id, index) => [id, index + 1]));
+    for (const cue of rows) cue.sortOrder = order.get(cue.id)!;
+    return copy(rows.sort(compareRunOfShowItems));
+  },
+};
+
+const memoryRunOfShowDrafts = new Map<string, RunOfShowSyncedDraft>();
+const memoryRunOfShowDraftRevisions = new Map<string, number>();
+const runOfShowDraftKey = (eventId: string, draftKey: string) => `${eventId}:${draftKey}`;
+const runOfShowDrafts: RunOfShowDraftRepository = {
+  async list(eventId) {
+    await wait();
+    return [...memoryRunOfShowDrafts.entries()]
+      .filter(([key]) => key.startsWith(`${eventId}:`))
+      .map(([, draft]) => copy(draft));
+  },
+  async save(eventId, draftKey, draft, clientUpdatedAt) {
+    await wait();
+    const key = runOfShowDraftKey(eventId, draftKey);
+    if ((memoryRunOfShowDraftRevisions.get(key) ?? 0) > clientUpdatedAt) return copy(memoryRunOfShowDrafts.get(key) ?? null);
+    const saved: RunOfShowSyncedDraft = {
+      draftKey,
+      draft: copy(draft),
+      clientUpdatedAt,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryRunOfShowDraftRevisions.set(key, clientUpdatedAt);
+    memoryRunOfShowDrafts.set(key, saved);
+    return copy(saved);
+  },
+  async discard(eventId, draftKey, clientUpdatedAt) {
+    await wait();
+    const key = runOfShowDraftKey(eventId, draftKey);
+    if ((memoryRunOfShowDraftRevisions.get(key) ?? 0) > clientUpdatedAt) return;
+    memoryRunOfShowDraftRevisions.set(key, clientUpdatedAt);
+    memoryRunOfShowDrafts.delete(key);
+  },
+};
 
 const volunteers = eventScoped<VolunteerShift, VolunteerShiftDraft, VolunteerShiftPatch>(
   () => store().volunteers,
@@ -2855,6 +2911,7 @@ export const memoryAdapter: DataAdapter = {
   eventVendors,
   checklist,
   runOfShow,
+  runOfShowDrafts,
   volunteerNeeds,
   volunteers,
   budget,

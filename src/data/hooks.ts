@@ -15,7 +15,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { useData } from "./provider";
-import type { DataAdapter } from "./adapter";
+import { DataError, type DataAdapter } from "./adapter";
 import type { RegistrationPageSettings } from "./registrationPage";
 import { prepareImageForUpload } from "./imageUpload";
 import type {
@@ -97,6 +97,7 @@ import type { PlanningBrief, PlanningPreviewBrief } from "./planner";
 import { useAccountExperience } from "@/app/useAccountExperience";
 import type { AssistantChatMessage } from "./assistantChat";
 import type { VendorEventPacketDraft } from "./vendorEventPackets";
+import type { RunOfShowEditorDraft } from "./runOfShowRecovery";
 
 /* ---------------------------------------------------------------- query keys */
 
@@ -132,6 +133,7 @@ export const qk = {
   checkInStations: (eventId: string) => ["checkInStations", eventId] as const,
   checklist: (eventId: string) => ["checklist", eventId] as const,
   runOfShow: (eventId: string) => ["runOfShow", eventId] as const,
+  runOfShowDrafts: (eventId: string) => ["runOfShowDrafts", eventId] as const,
   volunteers: (eventId: string) => ["volunteers", eventId] as const,
   volunteerNeeds: (eventId: string) => ["volunteerNeeds", eventId] as const,
   budget: (eventId: string) => ["budget", eventId] as const,
@@ -709,6 +711,42 @@ export function useRemoveRunOfShowItem() {
     (a, vars: { eventId: string; id: string }) => a.runOfShow.remove(vars.eventId, vars.id),
     (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
   );
+}
+
+export function useReorderRunOfShow() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; dayNumber: number; orderedIds: string[] }) =>
+      a.runOfShow.reorder(vars.eventId, vars.dayNumber, vars.orderedIds),
+    (vars) => [qk.runOfShow(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useRunOfShowDrafts(eventId: string) {
+  return useAdapterQuery(qk.runOfShowDrafts(eventId), (a) => a.runOfShowDrafts.list(eventId), { enabled: !!eventId });
+}
+
+export function useSaveRunOfShowDraft() {
+  const adapter = useData();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { eventId: string; draftKey: string; draft: RunOfShowEditorDraft; clientUpdatedAt: number }) =>
+      adapter.runOfShowDrafts.save(vars.eventId, vars.draftKey, vars.draft, vars.clientUpdatedAt),
+    retry: (failureCount, error) => error instanceof DataError && error.code === "unavailable" ? true : failureCount < 5,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 30_000),
+    onSuccess: (_result, vars) => queryClient.invalidateQueries({ queryKey: qk.runOfShowDrafts(vars.eventId) }),
+  });
+}
+
+export function useDiscardRunOfShowDraft() {
+  const adapter = useData();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { eventId: string; draftKey: string; clientUpdatedAt: number }) =>
+      adapter.runOfShowDrafts.discard(vars.eventId, vars.draftKey, vars.clientUpdatedAt),
+    retry: (failureCount, error) => error instanceof DataError && error.code === "unavailable" ? true : failureCount < 5,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 30_000),
+    onSuccess: (_result, vars) => queryClient.invalidateQueries({ queryKey: qk.runOfShowDrafts(vars.eventId) }),
+  });
 }
 
 /* ---------------------------------------------------------------- volunteers */

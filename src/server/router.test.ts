@@ -39,7 +39,7 @@ vi.mock("./repos", () => {
     reopenPublicAssignment: vi.fn(),
     checklist: child(),
     checkInStations: child(),
-    runOfShow: child(),
+    runOfShow: { ...child(), reorder: vi.fn() },
     volunteerNeeds: child(),
     volunteers: child(),
     budget: child(),
@@ -122,6 +122,11 @@ vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
   generatePostEventCopy: vi.fn(),
 }));
+vi.mock("./runOfShowDrafts", () => ({
+  discardRunOfShowDraft: vi.fn(),
+  listRunOfShowDrafts: vi.fn(),
+  saveRunOfShowDraft: vi.fn(),
+}));
 vi.mock("./fundraisingUx", () => ({
   createAuctionCategory: vi.fn(),
   extendAuctionItem: vi.fn(),
@@ -157,13 +162,14 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, vendorPaymentPlans, feedback, events, registrations, members, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
 const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
 const { processDueAuctionOutbidNotifications } = await import("./auctionOutbidNotifications");
 const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
+const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await import("./runOfShowDrafts");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
@@ -422,6 +428,58 @@ describe("event copy assistant", () => {
     }));
     expect(response.status).toBe(200);
     expect(events.updateRegistrationPage).toHaveBeenCalledWith(context, "event-1", { postEventThankYou: "Saved independently" });
+  });
+});
+
+describe("run of show server drafts", () => {
+  const context = {
+    userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+    eventScopeId: null,
+    access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+  };
+  const draft = { dayNumber: 1, startTime: "09:00", title: "Doors open", duration: "15", assignee: "Mary", description: "Welcome guests" };
+
+  it("lists and saves a user-scoped draft", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(listRunOfShowDrafts).mockResolvedValue([]);
+    expect((await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-drafts"))).status).toBe(200);
+    expect(listRunOfShowDrafts).toHaveBeenCalledWith(context, "event-1");
+
+    vi.mocked(saveRunOfShowDraft).mockResolvedValue({ draftKey: "new-1", draft, clientUpdatedAt: 1000, updatedAt: "2026-10-16T12:00:00.000Z" });
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-drafts/new-1", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ draft, clientUpdatedAt: 1000 }),
+    }));
+    expect(response.status).toBe(200);
+    expect(saveRunOfShowDraft).toHaveBeenCalledWith(context, "event-1", "new-1", draft, 1000);
+  });
+
+  it("writes a discard tombstone so a delayed save cannot resurrect a cleared draft", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-drafts/cue-1", {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ discarded: true, clientUpdatedAt: 2000 }),
+    }));
+    expect(response.status).toBe(200);
+    expect(discardRunOfShowDraft).toHaveBeenCalledWith(context, "event-1", "cue-1", 2000);
+  });
+});
+
+describe("run of show ordering", () => {
+  it("routes one complete day order to the atomic reorder operation", async () => {
+    const context = {
+      userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+      eventScopeId: null,
+      access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(runOfShow.reorder).mockResolvedValue([]);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/run-of-show-order", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dayNumber: 2, orderedIds: ["cue-2", "cue-1"] }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runOfShow.reorder).toHaveBeenCalledWith(context, "event-1", 2, ["cue-2", "cue-1"]);
   });
 });
 

@@ -135,6 +135,7 @@ import { bidIncrementCents } from "../data/fundraising.ts";
 import { allocateAuctionBidder } from "./auctionBidderAllocation.ts";
 import { errorMessages } from "./errorMessage.ts";
 import { roleChangeOwnerGuard, roleRemovalOwnerGuard } from "./workspaceMemberRoleGuards.ts";
+import { validRunOfShowOrder } from "../data/runOfShowOrder.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -150,8 +151,8 @@ type Body = Record<string, unknown>;
 
 const runOfShowOrderColumns = () => [
   asc(s.runOfShowItems.dayNumber),
-  asc(s.runOfShowItems.startTime),
   asc(s.runOfShowItems.sortOrder),
+  asc(s.runOfShowItems.startTime),
 ] as const;
 
 function isQuotaConflict(error: unknown): boolean {
@@ -3265,7 +3266,7 @@ export const checkInStations = eventScoped({
   afterWrite: notifyCheckInStationAssignment,
 });
 
-export const runOfShow = eventScoped({
+const runOfShowBase = eventScoped({
   table: s.runOfShowItems as never,
   mapper: map.toRunOfShowItem as never,
   idPrefix: "ros",
@@ -3295,6 +3296,57 @@ export const runOfShow = eventScoped({
   },
   afterWrite: notifyRunOfShowAssignment,
 });
+
+export const runOfShow = {
+  ...runOfShowBase,
+  async reorder(ctx: RequestContext, eventId: string, dayNumber: number, orderedIds: string[]): Promise<RunOfShowItem[]> {
+    await requireOwnedEvent(ctx, eventId);
+    if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 365) {
+      throw new HttpError(400, "Choose a valid event day before reordering cues.");
+    }
+    if (orderedIds.length > 2_000) throw new HttpError(400, "A Run of Show day cannot contain more than 2,000 cues.");
+    const rows = await db.select().from(s.runOfShowItems).where(and(
+      eq(s.runOfShowItems.workspaceId, ctx.workspaceId),
+      eq(s.runOfShowItems.eventId, eventId),
+      eq(s.runOfShowItems.dayNumber, dayNumber),
+    )).orderBy(...runOfShowOrderColumns());
+    if (!validRunOfShowOrder(rows.map((cue) => cue.id), orderedIds)) {
+      throw new HttpError(409, "The Run of Show changed while it was being reordered. Refresh and try again.");
+    }
+    if (rows.length === 0) return [];
+    const now = new Date();
+    const rowById = new Map(rows.map((row) => [row.id, row]));
+    const patches = orderedIds.map((id, index) => ({ id, sortOrder: index + 1 }));
+    const values = sql.join(patches.map((patch) => sql`(${patch.id}::text, ${patch.sortOrder}::integer)`), sql`, `);
+    const reorder = db.execute(sql`
+      update run_of_show_items cue
+      set sort_order = ordered.sort_order, updated_at = ${now}
+      from (values ${values}) as ordered(id, sort_order)
+      where cue.id = ordered.id
+        and cue.workspace_id = ${ctx.workspaceId}
+        and cue.event_id = ${eventId}
+        and cue.day_number = ${dayNumber}
+    `);
+    const historyRows = patches.flatMap((patch) => {
+      const before = rowById.get(patch.id);
+      if (!before || before.sortOrder === patch.sortOrder) return [];
+      return [historyValues(ctx, {
+        eventId,
+        resource: "run-of-show",
+        resourceId: patch.id,
+        action: "updated",
+        before: map.toRunOfShowItem(before) as unknown as Record<string, unknown>,
+        after: map.toRunOfShowItem({ ...before, sortOrder: patch.sortOrder, updatedAt: now }) as unknown as Record<string, unknown>,
+      })];
+    });
+    if (historyRows.length > 0) {
+      await db.batch([reorder, db.insert(s.eventHistory).values(historyRows)]);
+    } else {
+      await reorder;
+    }
+    return (await runOfShowBase.list(ctx, eventId)).filter((cue) => cue.dayNumber === dayNumber);
+  },
+};
 
 const localTime = (body: Body, key: string): string => {
   const value = str(body, key).trim();
