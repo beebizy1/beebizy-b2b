@@ -40,6 +40,7 @@ import type { AuctionPageSettings, ImportedSpreadsheetField, RfpSpaceRequirement
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 import type { RegistrationPageSettings } from "../data/registrationPage.ts";
+import type { EventNavigationSettings } from "../data/eventNavigation.ts";
 
 /* ----------------------------------------------------------------------- enums */
 
@@ -304,6 +305,7 @@ export const events = pgTable(
     /** Unique so a token can be looked up directly instead of scanning. */
     shareToken: text("share_token").unique(),
     registrationPage: jsonb("registration_page").$type<RegistrationPageSettings>(),
+    navigation: jsonb("navigation").$type<EventNavigationSettings>().notNull().default({ hiddenTabIds: [] }),
     auctionPublicToken: text("auction_public_token").unique(),
     auctionPage: jsonb("auction_page").$type<AuctionPageSettings>(),
     createdAt: createdAt(),

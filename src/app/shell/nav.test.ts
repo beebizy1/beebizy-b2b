@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAppPathAllowed, isNavActive, NAV_ITEMS, orderedEventTabs, visibleEventTabs, visibleNavItems } from "./nav";
+import { eventTabsForEvent, isAppPathAllowed, isNavActive, NAV_ITEMS, orderedEventTabs, visibleEventTabs, visibleNavItems } from "./nav";
 
 describe("product navigation", () => {
   it("lists the twelve destinations in the reference order", () => {
@@ -75,5 +75,13 @@ describe("product navigation", () => {
     expect(new Set(reordered.map((tab) => tab.id)).size).toBe(tabs.length);
     expect(reordered).toHaveLength(tabs.length);
     expect(reordered.some((tab) => tab.id === "overview")).toBe(true);
+  });
+
+  it("hides event-specific tabs without ever removing Overview", () => {
+    const tabs = visibleEventTabs("enterprise");
+    const visible = eventTabsForEvent(tabs, ["raffle", "silent-auction", "overview", "unknown"]);
+
+    expect(visible.map((tab) => tab.id)).not.toEqual(expect.arrayContaining(["raffle", "silent-auction"]));
+    expect(visible[0]?.id).toBe("overview");
   });
 });

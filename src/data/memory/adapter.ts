@@ -143,6 +143,7 @@ import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
+import { normalizeEventNavigation } from "../eventNavigation";
 import { normalizeAttendeeName } from "../attendanceReport";
 import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
 
@@ -389,6 +390,7 @@ const events: EventsRepository = {
       registrationCount: 0,
       shareToken: null,
       registrationPage: draft.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
+      navigation: normalizeEventNavigation(draft.navigation),
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
@@ -410,6 +412,7 @@ const events: EventsRepository = {
     const event = required(store().events.find((e) => e.id === id), `Event ${id} no longer exists.`);
     const before = copy(event) as unknown as Record<string, unknown>;
     Object.assign(event, patch);
+    if ("navigation" in patch) event.navigation = normalizeEventNavigation(patch.navigation);
     if ("locationId" in patch) {
       const location = patch.locationId ? (store().locations.find((l) => l.id === patch.locationId) ?? null) : null;
       event.locationRecord = location;
