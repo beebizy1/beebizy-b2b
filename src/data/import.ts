@@ -858,7 +858,7 @@ export function buildEventImportPlan(
   if (allFloorplanRows.length > floorplanRows.length) {
     warnings.push(`Only the first 500 floorplan objects were imported. ${allFloorplanRows.length - floorplanRows.length} extra rows were skipped.`);
   }
-  const floorplanShapes = new Set(["round-table", "long-table", "stage", "bar", "entrance", "dancefloor", "booth", "av", "tree", "chair", "chair-row", "custom-shape"]);
+  const floorplanShapes = new Set(["round-table", "cocktail-table", "long-table", "stage", "bar", "entrance", "dancefloor", "booth", "av", "tree", "chair", "chair-row", "custom-shape"]);
   const floorplanName = floorplanTable && floorplanRows.length > 0
     ? stringFrom(floorplanRows[0]!, floorplanTable, ["floorplan", "floorplan name", "room", "room name", "plan name"])
     : "";

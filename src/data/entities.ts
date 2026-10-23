@@ -702,6 +702,7 @@ export type CanvasPatch = Partial<CanvasDraft>;
  */
 export const FLOORPLAN_SHAPES = [
   "round-table",
+  "cocktail-table",
   "long-table",
   "stage",
   "bar",
@@ -756,6 +757,8 @@ export interface FloorplanItem {
   /** Optional object dimensions as percentages of the room canvas. */
   width?: number;
   height?: number;
+  /** Physical diameter for true-scale round and cocktail tables. */
+  diameterFeet?: number;
   /** Clockwise rotation around the object's center, in degrees. */
   rotation?: number;
   /** Normalized vertices for a custom object. Other object types ignore this. */

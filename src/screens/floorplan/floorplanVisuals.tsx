@@ -3,6 +3,7 @@ import { DEFAULT_CUSTOM_OBJECT_POINTS, roomClipPath, smoothClosedPath } from "@/
 import { cn } from "@/lib/utils";
 
 export function FloorplanRoomBackdrop({ room }: { room: FloorplanRoom }) {
+  const gridStepFeet = Math.max(room.widthFeet, room.lengthFeet) >= 200 ? 10 : 5;
   return (
     <>
       <div
@@ -12,7 +13,7 @@ export function FloorplanRoomBackdrop({ room }: { room: FloorplanRoom }) {
           clipPath: roomClipPath(room),
           backgroundImage:
             "linear-gradient(to right, hsl(var(--hairline)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--hairline)) 1px, transparent 1px)",
-          backgroundSize: "5% 8.333%",
+          backgroundSize: `${gridStepFeet / room.widthFeet * 100}% ${gridStepFeet / room.lengthFeet * 100}%`,
         }}
       />
       <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full text-primary/70" viewBox="0 0 100 100" preserveAspectRatio="none">

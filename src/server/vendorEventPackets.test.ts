@@ -61,6 +61,32 @@ describe("vendor event packet PDFs", () => {
     ]));
   });
 
+  it("keeps physical table sizes true to the room in PDF exports", () => {
+    const scaled: Floorplan = {
+      ...plan,
+      room: {
+        shape: "rectangle",
+        widthFeet: 150,
+        lengthFeet: 50,
+        points: [{ x: 2, y: 2 }, { x: 98, y: 2 }, { x: 98, y: 98 }, { x: 2, y: 98 }],
+      },
+      items: [{
+        id: "table-60",
+        shape: "round-table",
+        label: "Table 1",
+        x: 50,
+        y: 50,
+        seats: 8,
+        diameterFeet: 5,
+      }],
+    };
+
+    expect(floorplanPdfRenderModel(scaled).objects[0]).toMatchObject({
+      width: 5 / 150 * 100,
+      height: 5 / 50 * 100,
+    });
+  });
+
   it("paginates instead of truncating long run-of-show descriptions", async () => {
     const encoded = await buildRunOfShowPdf({ event, cues: [{ ...cue, description: "Detailed vendor instruction ".repeat(500) }], timeZone: "America/Los_Angeles" });
     const pdf = await PDFDocument.load(Buffer.from(encoded, "base64"));

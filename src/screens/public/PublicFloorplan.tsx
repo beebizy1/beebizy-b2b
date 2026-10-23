@@ -11,23 +11,29 @@ import { FloorplanItemVisual, FloorplanRoomBackdrop } from "@/screens/floorplan/
 import { FLOORPLAN_SHAPE_SPECS } from "@/screens/floorplan/floorplanShapeSpecs";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import {
+  floorplanCanvasAspectRatio,
+  floorplanCanvasMinWidth,
+  floorplanItemPercentSize,
+} from "@/data/floorplanScale";
 
 function FloorplanPreviewCanvas({ plan }: { plan: Floorplan }) {
   const room = plan.room ?? DEFAULT_FLOORPLAN_ROOM;
-  const visualAspectRatio = Math.max(0.65, Math.min(2.4, room.widthFeet / room.lengthFeet));
+  const visualAspectRatio = floorplanCanvasAspectRatio(room);
+  const minimumCanvasWidth = floorplanCanvasMinWidth(room);
 
   return (
+    <div className="overflow-x-auto pb-1">
     <div
       aria-label={`${plan.name} floorplan`}
-      className="relative min-h-[360px] w-full overflow-hidden rounded-xl border border-hairline bg-muted/30 print:min-h-0 print:rounded-none"
-      style={{ aspectRatio: visualAspectRatio }}
+      className="relative w-full overflow-hidden rounded-xl border border-hairline bg-muted/30 print:!min-w-0 print:rounded-none"
+      style={{ aspectRatio: visualAspectRatio, minWidth: `${minimumCanvasWidth}px` }}
     >
       <FloorplanRoomBackdrop room={room} />
 
       {plan.items.map((item) => {
         const spec = FLOORPLAN_SHAPE_SPECS[item.shape];
-        const width = item.width ?? spec.width;
-        const height = item.height ?? spec.height;
+        const { width, height } = floorplanItemPercentSize(item, room, spec);
         return (
           <div
             key={item.id}
@@ -41,8 +47,7 @@ function FloorplanPreviewCanvas({ plan }: { plan: Floorplan }) {
               left: `${item.x}%`,
               top: `${item.y}%`,
               width: `${width}%`,
-              height: spec.round ? undefined : `${height}%`,
-              aspectRatio: spec.round ? "1 / 1" : undefined,
+              height: `${height}%`,
               transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)`,
             }}
           >
@@ -50,6 +55,7 @@ function FloorplanPreviewCanvas({ plan }: { plan: Floorplan }) {
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
