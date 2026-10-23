@@ -16,6 +16,7 @@ import {
 } from "@tanstack/react-query";
 import { useData } from "./provider";
 import type { DataAdapter } from "./adapter";
+import { prepareImageForUpload } from "./imageUpload";
 import type {
   GuestDraft,
   GuestRegistrationImportDraft,
@@ -1017,7 +1018,7 @@ export function usePublishAuctionItem() {
 
 export function useUploadAuctionImage() {
   return useAdapterMutation(
-    (a, file: File) => a.auction.uploadImage(file),
+    async (a, file: File) => a.auction.uploadImage(await prepareImageForUpload(file)),
     () => [],
   );
 }
@@ -1073,7 +1074,7 @@ export function usePublicAuctionDonor(token: string) {
 
 export function useUploadPublicAuctionDonorImage() {
   return useAdapterMutation(
-    (a, vars: { token: string; file: File }) => a.auction.uploadPublicDonorImage(vars.token, vars.file),
+    async (a, vars: { token: string; file: File }) => a.auction.uploadPublicDonorImage(vars.token, await prepareImageForUpload(vars.file)),
     () => [],
   );
 }
@@ -1152,7 +1153,7 @@ export function useSubmitPublicItem() {
 
 export function useUploadPublicItemImage() {
   return useAdapterMutation(
-    (a, vars: { token: string; file: File }) => a.fundraising.uploadPublicItemImage(vars.token, vars.file),
+    async (a, vars: { token: string; file: File }) => a.fundraising.uploadPublicItemImage(vars.token, await prepareImageForUpload(vars.file)),
     () => [],
   );
 }

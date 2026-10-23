@@ -71,7 +71,7 @@ export default function PublicAuctionDonationPage({ token }: { token: string }) 
             <div className="space-y-2 sm:col-span-2">
               <Label>Item photo</Label>
               <label className="flex min-h-28 cursor-pointer items-center justify-center rounded-xl border border-dashed border-input bg-surface-sunken p-5 text-center">
-                {imageUrl ? <img src={imageUrl} alt="Donation preview" className="max-h-48 rounded-lg object-contain" /> : <span className="text-sm text-muted-foreground"><ImagePlus className="mx-auto mb-2 size-6" />{upload.isPending ? "Uploading…" : "Choose an image up to 4 MB"}</span>}
+                {imageUrl ? <img src={imageUrl} alt="Donation preview" className="max-h-48 rounded-lg object-contain" /> : <span className="text-sm text-muted-foreground"><ImagePlus className="mx-auto mb-2 size-6" />{upload.isPending ? "Resizing and uploading…" : "Choose a photo. Large images resize automatically."}</span>}
                 <input type="file" accept="image/*" className="sr-only" onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
