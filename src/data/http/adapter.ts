@@ -100,6 +100,7 @@ import type {
 } from "../entities";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
+import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "../eventCopy";
 import type { VendorEventPacketResult } from "../vendorEventPackets";
 
 export interface HttpAdapterOptions {
@@ -316,6 +317,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
       preview: (brief: PlanningPreviewBrief) => client.post<PlanningSuggestions>("/assistant/preview", brief),
       chat: (input) => client.post<AssistantTurn>("/assistant/chat", input),
+      registrationCopy: (input) => client.post<RegistrationCopySuggestion>("/assistant/registration-copy", input),
+      postEventCopy: (input) => client.post<PostEventCopySuggestion>("/assistant/post-event-copy", input),
     },
 
     imports: {

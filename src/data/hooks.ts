@@ -260,6 +260,17 @@ export function usePlanningPreview() {
   return useAdapterMutation((a, brief: PlanningPreviewBrief) => a.assistant.preview(brief), () => []);
 }
 
+export function useRegistrationCopyGenerator() {
+  return useAdapterMutation(
+    (a, input: { eventId: string; aboutHeading: string; aboutBody: string; agendaIntroduction: string }) => a.assistant.registrationCopy(input),
+    () => [],
+  );
+}
+
+export function usePostEventCopyGenerator() {
+  return useAdapterMutation((a, input: { eventId: string }) => a.assistant.postEventCopy(input), () => []);
+}
+
 export function useLoadGoogleSheet() {
   return useAdapterMutation((a, url: string) => a.imports.loadGoogleSheet(url), () => []);
 }

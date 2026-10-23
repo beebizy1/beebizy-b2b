@@ -10,7 +10,7 @@ vi.mock("./auth", () => ({
   },
 }));
 vi.mock("./repos", () => {
-  const child = { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() };
+  const child = () => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() });
   return {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
@@ -37,23 +37,23 @@ vi.mock("./repos", () => {
     removePublicWalkIn: vi.fn(),
     completePublicAssignment: vi.fn(),
     reopenPublicAssignment: vi.fn(),
-    checklist: child,
-    checkInStations: child,
-    runOfShow: child,
-    volunteerNeeds: child,
-    volunteers: child,
-    budget: child,
-    deposits: child,
-    vendorPaymentPlans: child,
-    menu: child,
-    moodBoard: child,
-    floorplan: { ...child, share: vi.fn() },
-    auction: child,
-    sponsorships: child,
-    eventVendors: child,
-    tickets: child,
-    raffle: child,
-    auctionDonors: child,
+    checklist: child(),
+    checkInStations: child(),
+    runOfShow: child(),
+    volunteerNeeds: child(),
+    volunteers: child(),
+    budget: child(),
+    deposits: child(),
+    vendorPaymentPlans: child(),
+    menu: child(),
+    moodBoard: child(),
+    floorplan: { ...child(), share: vi.fn() },
+    auction: child(),
+    sponsorships: child(),
+    eventVendors: child(),
+    tickets: child(),
+    raffle: child(),
+    auctionDonors: child(),
     auctionManagement: {
       share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(), sendDonorThankYou: vi.fn(),
     },
@@ -62,7 +62,7 @@ vi.mock("./repos", () => {
       sendAssignmentSummaries: vi.fn(),
     },
     vendors: { list: vi.fn() },
-    registrations: { ...child, importGuests: vi.fn() },
+    registrations: { ...child(), listForEvent: vi.fn(), importGuests: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]), setRole: vi.fn(), remove: vi.fn() },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
@@ -115,6 +115,10 @@ vi.mock("./vendorEventPackets", () => ({
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
 }));
+vi.mock("./eventCopy", () => ({
+  generateRegistrationCopy: vi.fn(),
+  generatePostEventCopy: vi.fn(),
+}));
 vi.mock("./fundraisingUx", () => ({
   createAuctionCategory: vi.fn(),
   extendAuctionItem: vi.fn(),
@@ -155,6 +159,7 @@ const { createCheckoutSession, handleStripeWebhook } = await import("./billing")
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
 const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
+const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
@@ -298,6 +303,71 @@ describe("workspace role changes", () => {
     }));
     expect(invalid.status).toBe(400);
     expect(members.setRole).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("event copy assistant", () => {
+  const context = {
+    userId: "user-owner",
+    workspaceId: "workspace-1",
+    email: "owner@example.com",
+    role: "owner" as const,
+    eventScopeId: null,
+    access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+  };
+  const event = { id: "event-1", title: "Spring Gala" };
+
+  it("generates editable registration-page copy from the event and agenda", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(event as never);
+    const { runOfShow } = await import("./repos");
+    vi.mocked(runOfShow.list).mockResolvedValue([{ id: "cue-1", title: "Welcome" }] as never);
+    vi.mocked(generateRegistrationCopy).mockResolvedValue({
+      aboutHeading: "Why we are gathering",
+      aboutBody: "A clear description for guests.",
+      agendaIntroduction: "Here is what to expect.",
+      source: "ai",
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/assistant/registration-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "event-1", aboutHeading: "About", aboutBody: "", agendaIntroduction: "" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(generateRegistrationCopy).toHaveBeenCalledWith(expect.objectContaining({
+      event,
+      agenda: [{ id: "cue-1", title: "Welcome" }],
+      userId: "user-owner",
+    }));
+  });
+
+  it("builds post-event copy from unique attendance and recorded results", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(event as never);
+    const { checklist, budget, sponsorships } = await import("./repos");
+    vi.mocked(registrations.listForEvent).mockResolvedValue([
+      { id: "reg-1", status: "confirmed", checkedInAt: "2026-10-01T18:00:00.000Z", guest: { name: "Ada Lovelace" } },
+      { id: "reg-2", status: "confirmed", checkedInAt: "2026-10-01T18:05:00.000Z", guest: { name: "ada lovelace" } },
+      { id: "reg-3", status: "confirmed", checkedInAt: null, guest: { name: "Grace Hopper" } },
+    ] as never);
+    vi.mocked(checklist.list).mockResolvedValue([{ completed: true }, { completed: false }] as never);
+    vi.mocked(budget.list).mockResolvedValue([{ type: "revenue", estimatedCents: 50_000, actualCents: 60_000 }] as never);
+    vi.mocked(sponsorships.list).mockResolvedValue([{ status: "confirmed", amountCents: 40_000 }] as never);
+    vi.mocked(generatePostEventCopy).mockResolvedValue({ subject: "Thank you", thankYouMessage: "Thank you for joining us.", wrapUp: "One unique guest checked in.", source: "ai" });
+
+    const response = await handleRequest(new Request("http://localhost/api/assistant/post-event-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "event-1" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(generatePostEventCopy).toHaveBeenCalledWith(expect.objectContaining({
+      facts: expect.objectContaining({ uniqueRegistered: 2, uniqueCheckedIn: 1, checklistDone: 1, checklistTotal: 2, revenueCents: 100_000 }),
+      userId: "user-owner",
+    }));
   });
 });
 

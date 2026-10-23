@@ -34,7 +34,7 @@ import type {
   VendorEventPacketsRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
-import { platformFeeCents } from "../commerce";
+import { calculateProxyBid, platformFeeCents } from "../commerce";
 import { normalizeAuctionPageSettings } from "../auctionSettings";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
@@ -144,7 +144,8 @@ import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
 import { normalizeEventNavigation } from "../eventNavigation";
-import { normalizeAttendeeName } from "../attendanceReport";
+import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
+import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
 import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
 
 /**
@@ -1501,17 +1502,28 @@ const auction: AuctionRepository = {
     const increment = item.bidIncrementCents ?? 100;
     const minimum = item.currentBidCents === null ? item.startingBidCents ?? 0 : item.currentBidCents + increment;
     if (maximumAmountCents < minimum) throw new DataError("conflict", `The minimum next bid is ${minimum} cents.`);
-    item.currentBidCents = maximumAmountCents;
-    item.winningBidderId = bidder.id;
-    memoryAuctionBids.push({
+    const bid: AuctionBid = {
       id: newId("abid"), eventId: event.id, itemId, bidderId: bidder.id, bidderName: bidder.name,
       amountCents: maximumAmountCents, maximumAmountCents, isAutomatic: false, createdAt: nowIso(),
+    };
+    memoryAuctionBids.push(bid);
+    const latestMaximumByBidder = new Map<string, { bidderId: string; maximumAmountCents: number; sequence: number }>();
+    memoryAuctionBids.forEach((candidate, sequence) => {
+      if (candidate.itemId === itemId) latestMaximumByBidder.set(candidate.bidderId, {
+        bidderId: candidate.bidderId,
+        maximumAmountCents: candidate.maximumAmountCents,
+        sequence,
+      });
     });
+    const result = calculateProxyBid([...latestMaximumByBidder.values()], item.startingBidCents ?? 0, increment);
+    item.currentBidCents = result.currentBidCents;
+    item.winningBidderId = result.leaderBidderId;
+    bid.amountCents = result.currentBidCents ?? maximumAmountCents;
     const payload = await auction.getPublic(token);
     return {
       item: payload!.items.find((row) => row.id === itemId)!,
-      bidderIsLeading: true,
-      minimumNextBidCents: maximumAmountCents + increment,
+      bidderIsLeading: result.leaderBidderId === bidder.id,
+      minimumNextBidCents: (result.currentBidCents ?? item.startingBidCents ?? 0) + increment,
     };
   },
   async uploadImage(file) {
@@ -2784,6 +2796,29 @@ export const memoryAdapter: DataAdapter = {
         registrationPage: { ...DEFAULT_REGISTRATION_PAGE }, createdAt: nowIso(),
       };
       return buildRuleBasedSuggestions(event, { ...brief, eventId: event.id }, planningMemoryFor(event), current.settings.timeZone);
+    },
+    registrationCopy: async (input) => {
+      await wait();
+      const event = requireEvent(input.eventId);
+      const agenda = store().runOfShow.filter((cue) => cue.eventId === event.id);
+      return buildRegistrationCopyFallback(event, agenda, input);
+    },
+    postEventCopy: async (input) => {
+      await wait();
+      const event = requireEvent(input.eventId);
+      const current = store();
+      const attendance = buildUniqueAttendanceReport(await registrations.listForEvent(event.id)).summary;
+      const checklist = current.checklist.filter((item) => item.eventId === event.id);
+      const revenueCents = current.budget.filter((item) => item.eventId === event.id && item.type === "revenue").reduce((sum, item) => sum + (item.actualCents ?? item.estimatedCents), 0) +
+        current.sponsorships.filter((sponsor) => sponsor.eventId === event.id && sponsor.status === "confirmed").reduce((sum, sponsor) => sum + (sponsor.amountCents ?? 0), 0);
+      return buildPostEventCopyFallback(event, {
+        uniqueRegistered: attendance.uniqueRegistered,
+        uniqueCheckedIn: attendance.uniqueCheckedIn,
+        attendanceRate: attendance.uniqueRegistered > 0 ? attendance.attendanceRate : null,
+        checklistDone: checklist.filter((item) => item.completed).length,
+        checklistTotal: checklist.length,
+        revenueCents,
+      });
     },
   },
   imports: {

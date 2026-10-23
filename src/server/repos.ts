@@ -4230,7 +4230,7 @@ export async function placePublicAuctionBid(
       ? { email: before.bidderEmail, name: before.bidderName ?? "bidder" }
       : null;
   if (outbid && before) {
-    await notifyAuctionOutbid({
+    const notification = await notifyAuctionOutbid({
       bidId: latestBid?.id ?? `${itemId}-${item.bidCount}`,
       to: outbid.email,
       bidderName: outbid.name,
@@ -4239,6 +4239,9 @@ export async function placePublicAuctionBid(
       currentBidCents: item.currentBidCents ?? item.startingBidCents,
       auctionUrl: `${appOrigin()}/auction/${encodeURIComponent(auctionToken)}`,
     });
+    if (notification.status !== "sent") {
+      console.warn("AUCTION_OUTBID_EMAIL_NOT_SENT", itemId, notification.status, notification.reason);
+    }
   }
   return {
     item,

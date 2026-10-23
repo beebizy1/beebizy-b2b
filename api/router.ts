@@ -13,9 +13,12 @@
 import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
 import { accountExperienceForEmail, canSwitchAccountExperience } from "../src/data/accountExperience.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../src/data/registrationPage.ts";
+import { buildUniqueAttendanceReport } from "../src/data/attendanceReport.ts";
+import type { BudgetItem, ChecklistItem, Sponsorship } from "../src/data/entities.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
+import { generatePostEventCopy, generateRegistrationCopy } from "../src/server/eventCopy.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
 import { PLANNING_LIMITS } from "../src/data/planner.ts";
 import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
@@ -691,6 +694,51 @@ async function handleAuthed(
 
     /* -------------------------------------------------------------- assistant */
     case "assistant": {
+      if (a === "registration-copy" && method === "POST") {
+        const input = z.object({
+          eventId: z.string().min(1).max(100),
+          aboutHeading: z.string().max(160).optional(),
+          aboutBody: z.string().max(3_000).optional(),
+          agendaIntroduction: z.string().max(1_500).optional(),
+        }).parse(body);
+        const event = await repos.events.get(ctx, input.eventId);
+        if (!event) throw new HttpError(404, "This event no longer exists.");
+        const agenda = await repos.runOfShow.list(ctx, input.eventId);
+        return json(await generateRegistrationCopy({ event, agenda, current: input, userId: ctx.userId }));
+      }
+      if (a === "post-event-copy" && method === "POST") {
+        const input = z.object({ eventId: z.string().min(1).max(100) }).parse(body);
+        const event = await repos.events.get(ctx, input.eventId);
+        if (!event) throw new HttpError(404, "This event no longer exists.");
+        const [registrations, checklist, budget, sponsorships] = await Promise.all([
+          repos.registrations.listForEvent(ctx, input.eventId),
+          repos.checklist.list(ctx, input.eventId),
+          repos.budget.list(ctx, input.eventId),
+          repos.sponsorships.list(ctx, input.eventId),
+        ]);
+        const attendance = buildUniqueAttendanceReport(registrations).summary;
+        const checklistItems = checklist as ChecklistItem[];
+        const budgetItems = budget as BudgetItem[];
+        const eventSponsorships = sponsorships as Sponsorship[];
+        const budgetRevenueCents = budgetItems
+          .filter((item) => item.type === "revenue")
+          .reduce((sum, item) => sum + (item.actualCents ?? item.estimatedCents), 0);
+        const sponsorRevenueCents = eventSponsorships
+          .filter((sponsor) => sponsor.status === "confirmed")
+          .reduce((sum, sponsor) => sum + (sponsor.amountCents ?? 0), 0);
+        return json(await generatePostEventCopy({
+          event,
+          facts: {
+            uniqueRegistered: attendance.uniqueRegistered,
+            uniqueCheckedIn: attendance.uniqueCheckedIn,
+            attendanceRate: attendance.uniqueRegistered > 0 ? attendance.attendanceRate : null,
+            checklistDone: checklistItems.filter((item) => item.completed).length,
+            checklistTotal: checklistItems.length,
+            revenueCents: budgetRevenueCents + sponsorRevenueCents,
+          },
+          userId: ctx.userId,
+        }));
+      }
       if (a === "chat" && method === "POST") {
         const input = z
           .object({

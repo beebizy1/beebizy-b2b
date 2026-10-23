@@ -116,6 +116,8 @@ describe("events", () => {
         accentColor: "#245F45",
         headline: "An evening in the garden",
         aboutHeading: "Why we gather",
+        aboutBody: "Meet the founders building the next chapter.",
+        agendaIntroduction: "Doors open before the first conversation.",
         welcomeMessage: "Reserve your place with the team.",
         heroImageUrl: "https://images.example.com/garden.jpg",
         aboutImageUrl: null,
@@ -127,6 +129,9 @@ describe("events", () => {
         speakers: [],
         registrationTypes: ["Investor", "Founder"],
         collectOrganization: true,
+        postEventSubject: "",
+        postEventThankYou: "",
+        postEventWrapUp: "",
       },
     });
 
@@ -238,6 +243,20 @@ describe("registrations", () => {
 
     await memoryAdapter.registrations.setStatus(created.id, "cancelled");
     expect((await memoryAdapter.events.get("evt-atlas"))!.registrationCount).toBe(event.registrationCount);
+  });
+
+  it("uses unique checked-in people in the demo post-event copy", async () => {
+    const firstGuest = await memoryAdapter.guests.create({ name: "Ada Lovelace", contact: "ada-one@example.com" });
+    const secondGuest = await memoryAdapter.guests.create({ name: "ada lovelace", contact: "ada-two@example.com" });
+    const first = await memoryAdapter.registrations.create({ eventId: "evt-support-offsite", guestId: firstGuest.id, status: "confirmed" });
+    const second = await memoryAdapter.registrations.create({ eventId: "evt-support-offsite", guestId: secondGuest.id, status: "confirmed" });
+    await memoryAdapter.registrations.setCheckIn(first.id, { checkedInAt: "2027-02-19T18:00:00.000Z" });
+    await memoryAdapter.registrations.setCheckIn(second.id, { checkedInAt: "2027-02-19T18:05:00.000Z" });
+
+    const copy = await memoryAdapter.assistant.postEventCopy({ eventId: "evt-support-offsite" });
+
+    expect(copy.thankYouMessage).toContain("1 guest");
+    expect(copy.thankYouMessage).not.toContain("2 guests");
   });
 
   it("imports a name-only party and counts every attendee", async () => {

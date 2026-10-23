@@ -15,6 +15,8 @@ export interface RegistrationPageSettings {
   accentColor: string;
   headline: string;
   aboutHeading: string;
+  aboutBody: string;
+  agendaIntroduction: string;
   welcomeMessage: string;
   heroImageUrl: string | null;
   aboutImageUrl: string | null;
@@ -28,6 +30,9 @@ export interface RegistrationPageSettings {
   speakers: RegistrationSpeaker[];
   registrationTypes: string[];
   collectOrganization: boolean;
+  postEventSubject: string;
+  postEventThankYou: string;
+  postEventWrapUp: string;
 }
 
 export interface RegistrationPageTemplate {
@@ -71,6 +76,8 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   accentColor: "#8C5A12",
   headline: "",
   aboutHeading: "",
+  aboutBody: "",
+  agendaIntroduction: "",
   welcomeMessage: "",
   heroImageUrl: null,
   aboutImageUrl: null,
@@ -83,6 +90,9 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   speakers: [],
   registrationTypes: ["General"],
   collectOrganization: true,
+  postEventSubject: "",
+  postEventThankYou: "",
+  postEventWrapUp: "",
 };
 
 /** Null means an event predates the builder. Use a neutral public label until the client customizes it. */
@@ -155,6 +165,8 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
       : templateDefaults.accentColor,
     headline: text(input.headline, 120),
     aboutHeading: text(input.aboutHeading, 160),
+    aboutBody: text(input.aboutBody, 3_000),
+    agendaIntroduction: text(input.agendaIntroduction, 1_500),
     welcomeMessage: text(input.welcomeMessage, 2_000),
     heroImageUrl: safeImageUrl(input.heroImageUrl),
     aboutImageUrl: safeImageUrl(input.aboutImageUrl),
@@ -167,6 +179,9 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     speakers: speakers(input.speakers),
     registrationTypes: registrationTypes(input.registrationTypes),
     collectOrganization: typeof input.collectOrganization === "boolean" ? input.collectOrganization : true,
+    postEventSubject: text(input.postEventSubject, 160),
+    postEventThankYou: text(input.postEventThankYou, 3_000),
+    postEventWrapUp: text(input.postEventWrapUp, 4_000),
   };
 }
 
@@ -174,7 +189,7 @@ export function registrationPageIsCustomized(value: unknown): boolean {
   const page = normalizeRegistrationPage(value);
   return page.template !== DEFAULT_REGISTRATION_PAGE.template ||
     page.accentColor !== DEFAULT_REGISTRATION_PAGE.accentColor ||
-    Boolean(page.headline || page.aboutHeading || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
+    Boolean(page.headline || page.aboutHeading || page.aboutBody || page.agendaIntroduction || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
     page.speakers.length > 0 ||
     page.registrationTypes.join("\u0000") !== DEFAULT_REGISTRATION_PAGE.registrationTypes.join("\u0000");
 }

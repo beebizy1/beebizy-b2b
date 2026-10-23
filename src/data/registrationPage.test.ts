@@ -48,6 +48,8 @@ describe("registration page settings", () => {
       accentColor: "#245F45",
       headline: "Join us under the stars",
       aboutHeading: "Why we gather",
+      aboutBody: "",
+      agendaIntroduction: "",
       welcomeMessage: "Register below and we will see you there.",
       heroImageUrl: "https://images.example.com/garden.jpg",
       aboutImageUrl: "https://images.example.com/venue.jpg",
@@ -59,6 +61,9 @@ describe("registration page settings", () => {
       speakers: [{ id: "keynote", name: "Amina Shah", title: "Founder", organization: "Bright Futures", bio: "Opening keynote.", photoUrl: "https://images.example.com/amina.jpg" }],
       registrationTypes: ["Investor", "Student"],
       collectOrganization: false,
+      postEventSubject: "",
+      postEventThankYou: "",
+      postEventWrapUp: "",
     });
 
     expect(
@@ -124,5 +129,21 @@ describe("registration page settings", () => {
       welcomeMessage: "First paragraph.\n\nSecond paragraph.",
     }, "Celebration", null, "https://beebizy.example/e/token");
     expect(html).toContain("First paragraph.<br /><br />Second paragraph.");
+  });
+
+  it("normalizes editable public copy and saved post-event communications", () => {
+    expect(normalizeRegistrationPage({
+      aboutBody: " Why this event matters. ",
+      agendaIntroduction: " Doors open before the first session. ",
+      postEventSubject: " Thank you for joining us ",
+      postEventThankYou: " We appreciated having you with us. ",
+      postEventWrapUp: " The event welcomed our community and completed the planned program. ",
+    })).toMatchObject({
+      aboutBody: "Why this event matters.",
+      agendaIntroduction: "Doors open before the first session.",
+      postEventSubject: "Thank you for joining us",
+      postEventThankYou: "We appreciated having you with us.",
+      postEventWrapUp: "The event welcomed our community and completed the planned program.",
+    });
   });
 });
