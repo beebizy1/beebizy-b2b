@@ -362,8 +362,8 @@ async function handlePublic(segments: string[], method: string, request: Request
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
-      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
-      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB each.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Choose a JPG, PNG, WebP, or another image file.");
+      if (file.size > 4_000_000) throw new HttpError(400, "The image is too large to upload. Try again so Beebizy can resize it, or choose an image smaller than 4 MB.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
       const blob = await put(`auction/intake/${segments[2]}/${safeName}`, file, { access: "public", addRandomSuffix: true, contentType: file.type });
       return json({ url: blob.url });
@@ -425,8 +425,8 @@ async function handlePublic(segments: string[], method: string, request: Request
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
-      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
-      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Choose a JPG, PNG, WebP, or another image file.");
+      if (file.size > 4_000_000) throw new HttpError(400, "The image is too large to upload. Try again so Beebizy can resize it, or choose an image smaller than 4 MB.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
       const blob = await put(`auction/donors/${segments[2]}/${safeName}`, file, {
         access: "public",
@@ -653,8 +653,8 @@ async function handleAuthed(
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
-      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
-      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Choose a JPG, PNG, WebP, or another image file.");
+      if (file.size > 4_000_000) throw new HttpError(400, "The image is too large to upload. Try again so Beebizy can resize it, or choose an image smaller than 4 MB.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
       const blob = await put(`auction/${ctx.workspaceId}/${safeName}`, file, {
         access: "public",

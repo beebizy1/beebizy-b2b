@@ -309,7 +309,7 @@ export default function ShareSection({ event }: { event: Event }) {
                   </label>
                   {draft.heroImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, heroImageUrl: null }))}>Remove</Button> : null}
                 </div>
-                <p className="text-xs text-muted-foreground">This full-width image appears at the top of the invitation email and registration page.</p>
+                <p className="text-xs text-muted-foreground">This full-width image appears at the top of the invitation email and registration page. Large phone photos resize automatically.</p>
               </div>
               <div className="space-y-1.5">
                 <Label>About section photo</Label>

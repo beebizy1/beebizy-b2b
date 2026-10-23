@@ -479,11 +479,6 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
       toast({ title: "Choose an image file" });
       return;
     }
-    if (file.size > 4_000_000) {
-      toast({ title: "Image is too large", description: "Choose an image smaller than 4 MB." });
-      return;
-    }
-
     uploadImage.mutate(file, {
       onSuccess: (imageUrl) => {
         const filename = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
@@ -491,7 +486,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
           label: (filename || "Image").slice(0, 80),
           imageUrl,
         });
-        toast({ title: "Image added", description: "Select it to resize or rotate it." });
+        toast({ title: "Image added", description: "Large images are resized automatically. Select it to resize or rotate it." });
       },
       onError: (error) => toast({ title: "Couldn't upload image", description: error.message }),
     });
@@ -1004,7 +999,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
           onClick={() => imageInputRef.current?.click()}
         >
           <ImagePlus className="mr-1 size-3.5" />
-          {uploadImage.isPending ? "Uploading image…" : "Upload image"}
+          {uploadImage.isPending ? "Resizing and uploading…" : "Upload image"}
         </Button>
       </div>
 
