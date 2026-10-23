@@ -8,7 +8,7 @@ const event: Event = {
   date: "2026-10-20T00:00:00.000Z", endDate: null, location: "Mission Gardens",
   locationId: null, locationRecord: null, capacity: 200, status: "published", category: "Gala",
   imageUrl: null, registrationCount: 0, shareToken: null, registrationPage: {
-    template: "warm", headline: "", aboutHeading: "", aboutBody: "", agendaIntroduction: "", welcomeMessage: "", accentColor: "#FFD700", heroImageUrl: null, aboutImageUrl: null, agendaImageUrl: null,
+    template: "warm", headline: "", aboutHeading: "", aboutBody: "", agendaIntroduction: "", welcomeMessage: "", accentColor: "#FFD700", heroImageUrl: null, heroImageDisplay: "banner", aboutImageUrl: null, agendaImageUrl: null,
     paymentUrl: null, showAgenda: true, showSpeakers: true, showSponsors: true, showVolunteerSignup: true, speakers: [], registrationTypes: ["General"], collectOrganization: true,
     postEventSubject: "", postEventThankYou: "", postEventWrapUp: "",
   }, createdAt: "2026-10-01T00:00:00.000Z",

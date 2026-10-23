@@ -130,6 +130,7 @@ describe("events", () => {
         agendaIntroduction: "Doors open before the first conversation.",
         welcomeMessage: "Reserve your place with the team.",
         heroImageUrl: "https://images.example.com/garden.jpg",
+        heroImageDisplay: "banner",
         aboutImageUrl: null,
         agendaImageUrl: null,
         showAgenda: false,

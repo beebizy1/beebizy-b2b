@@ -24,4 +24,17 @@ describe("registration welcome-message formatting", () => {
     expect(publicPage).not.toContain("registrationPage.aboutImageUrl");
     expect(publicPage).not.toContain("registrationPage.agendaImageUrl");
   });
+
+  it("keeps the template editor focused on four quick edits and renders logos without cropping", () => {
+    const publicPage = readFileSync(new URL("./PublicEvent.tsx", import.meta.url), "utf8");
+    const builder = readFileSync(new URL("../events/sections/ShareSection.tsx", import.meta.url), "utf8");
+
+    for (const label of ["1. Color", "2. Banner or logo", "3. Welcome text", "4. Agenda introduction"]) {
+      expect(builder).toContain(label);
+    }
+    expect(builder).toContain("More page options");
+    expect(builder).toContain('heroImageDisplay === "logo"');
+    expect(publicPage).toContain('settings.heroImageDisplay === "logo"');
+    expect(publicPage).toContain('alt="Event logo"');
+  });
 });

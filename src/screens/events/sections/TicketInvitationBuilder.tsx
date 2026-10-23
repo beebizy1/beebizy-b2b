@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useRegistrations, useSendTicketInvitations, useTicketInvitations, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
+import { useRegistrations, useSendTicketInvitations, useTicketInvitations, useUpdateRegistrationPage, useUploadAuctionImage } from "@/data/hooks";
 import { readSpreadsheetFile } from "@/data/import";
 import { REGISTRATION_PAGE_TEMPLATES, normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 import { eventInvitationRecipients, parseTicketInvitationRecipients } from "@/data/ticketInvitations";
@@ -32,7 +32,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone 
   const { data: invitations } = useTicketInvitations(event.id);
   const { data: registrations } = useRegistrations();
   const sendInvitations = useSendTicketInvitations();
-  const updateEvent = useUpdateEvent();
+  const updateEvent = useUpdateRegistrationPage();
   const uploadImage = useUploadAuctionImage();
   const [design, setDesign] = useState(() => normalizeRegistrationPage(event.registrationPage));
   const [guestRows, setGuestRows] = useState("");
@@ -50,7 +50,15 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone 
   const saveDesign = async () => {
     const registrationPage = normalizeRegistrationPage({ ...design, paymentUrl: null });
     setDesign(registrationPage);
-    await updateEvent.mutateAsync({ id: event.id, patch: { registrationPage } });
+    await updateEvent.mutateAsync({ id: event.id, patch: {
+      template: registrationPage.template,
+      accentColor: registrationPage.accentColor,
+      headline: registrationPage.headline,
+      welcomeMessage: registrationPage.welcomeMessage,
+      agendaIntroduction: registrationPage.agendaIntroduction,
+      heroImageUrl: registrationPage.heroImageUrl,
+      heroImageDisplay: registrationPage.heroImageDisplay,
+    } });
     return registrationPage;
   };
 
@@ -141,10 +149,12 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone 
           <fieldset className="space-y-2"><legend className="text-sm font-medium text-foreground">Invitation style</legend><div className="grid gap-2 sm:grid-cols-3">{REGISTRATION_PAGE_TEMPLATES.map((option) => <button key={option.id} type="button" aria-pressed={design.template === option.id} onClick={() => setDesign((current) => ({ ...current, template: option.id, accentColor: option.accentColor }))} className="rounded-lg border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm" style={{ borderColor: design.template === option.id ? design.accentColor : undefined, backgroundColor: option.background }}><span className="mb-2 block h-1.5 rounded-full" style={{ backgroundColor: option.accentColor }} /><span className="block text-xs font-semibold text-slate-900">{option.name}</span></button>)}</div></fieldset>
           <div className="space-y-1.5"><Label htmlFor="ticket-invite-headline">Invitation title</Label><Input id="ticket-invite-headline" value={design.headline} placeholder={event.title} maxLength={120} onChange={(inputEvent) => setDesign((current) => ({ ...current, headline: inputEvent.target.value }))} /></div>
           <div className="space-y-1.5"><Label htmlFor="ticket-invite-message">Invitation message</Label><Textarea id="ticket-invite-message" value={design.welcomeMessage} placeholder={event.description || "Tell guests why you would love them to attend."} rows={7} maxLength={2000} onChange={(inputEvent) => setDesign((current) => ({ ...current, welcomeMessage: inputEvent.target.value }))} /><p className="text-xs text-muted-foreground">Use blank lines to create separate paragraphs.</p></div>
+          <div className="space-y-1.5"><Label htmlFor="ticket-invite-agenda">Agenda introduction</Label><Textarea id="ticket-invite-agenda" value={design.agendaIntroduction} placeholder="Give guests a short overview of what to expect." rows={4} maxLength={1500} onChange={(inputEvent) => setDesign((current) => ({ ...current, agendaIntroduction: inputEvent.target.value }))} /></div>
           <div className="space-y-2">
             <Label>Invitation image or logo</Label>
+            <div className="flex gap-2" role="group" aria-label="Invitation image display style"><Button type="button" size="sm" aria-pressed={design.heroImageDisplay === "banner"} variant={design.heroImageDisplay === "banner" ? "default" : "outline"} onClick={() => setDesign((current) => ({ ...current, heroImageDisplay: "banner" }))}>Banner</Button><Button type="button" size="sm" aria-pressed={design.heroImageDisplay === "logo"} variant={design.heroImageDisplay === "logo" ? "default" : "outline"} onClick={() => setDesign((current) => ({ ...current, heroImageDisplay: "logo" }))}>Logo</Button></div>
             <div className="flex flex-wrap items-center gap-3">
-              {design.heroImageUrl ? <img src={design.heroImageUrl} alt="Invitation" className="h-20 w-32 rounded-lg border border-hairline object-cover" /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><ImagePlus className="size-5 text-muted-foreground" /></div>}
+              {design.heroImageUrl ? <img src={design.heroImageUrl} alt="Invitation" className={`h-20 w-32 rounded-lg border border-hairline bg-white ${design.heroImageDisplay === "logo" ? "object-contain p-2" : "object-cover"}`} /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><ImagePlus className="size-5 text-muted-foreground" /></div>}
               <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-surface-sunken">
                 <Upload className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : design.heroImageUrl ? "Replace image" : "Upload image"}
                 <input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(inputEvent) => { const file = inputEvent.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDesign((current) => ({ ...current, heroImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload image", description: error.message }) }); }} />
@@ -159,7 +169,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone 
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live invitation preview</p>
           <div className="overflow-hidden rounded-xl border border-hairline shadow-sm" style={{ backgroundColor: template.surface }}>
-            {design.heroImageUrl ? <img src={design.heroImageUrl} alt="" className="h-32 w-full object-cover" /> : <div className="grid h-20 place-items-center" style={{ backgroundColor: `${design.accentColor}18` }}><Mail className="size-6" style={{ color: design.accentColor }} /></div>}
+            {design.heroImageUrl ? <div className={`grid h-32 w-full place-items-center ${design.heroImageDisplay === "logo" ? "bg-surface-sunken p-5" : ""}`}>{design.heroImageDisplay === "logo" ? <img src={design.heroImageUrl} alt="Event logo" className="max-h-20 max-w-[75%] object-contain" /> : <img src={design.heroImageUrl} alt="" className="h-32 w-full object-cover" />}</div> : <div className="grid h-20 place-items-center" style={{ backgroundColor: `${design.accentColor}18` }}><Mail className="size-6" style={{ color: design.accentColor }} /></div>}
             <div className="space-y-3 p-5">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: design.accentColor }}>You're invited</p>
               <h3 className="text-xl font-bold text-foreground">{headline}</h3>
