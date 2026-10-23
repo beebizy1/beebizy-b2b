@@ -14,6 +14,7 @@
 import type { Cents } from "./money.ts";
 import type { RegistrationPageSettings } from "./registrationPage.ts";
 import type { AccountExperience } from "./accountExperience.ts";
+import type { EventNavigationSettings } from "./eventNavigation.ts";
 
 /* ------------------------------------------------------------------ primitives */
 
@@ -82,6 +83,8 @@ export interface Event extends OwnedRecord {
   shareToken: string | null;
   /** Branding and content for the guest-facing registration site. */
   registrationPage: RegistrationPageSettings;
+  /** Per-event menu cleanup. Hidden sections keep their data and can be restored. */
+  navigation?: EventNavigationSettings;
   /** Present after the organizer creates the public auction catalog link. */
   auctionPublicToken?: string | null;
   auctionPage?: AuctionPageSettings;
@@ -100,6 +103,7 @@ export interface EventDraft {
   category: EventCategory;
   imageUrl?: string | null;
   registrationPage?: RegistrationPageSettings;
+  navigation?: EventNavigationSettings;
   auctionPage?: AuctionPageSettings;
 }
 
@@ -698,6 +702,7 @@ export type CanvasPatch = Partial<CanvasDraft>;
  */
 export const FLOORPLAN_SHAPES = [
   "round-table",
+  "cocktail-table",
   "long-table",
   "stage",
   "bar",
@@ -752,6 +757,8 @@ export interface FloorplanItem {
   /** Optional object dimensions as percentages of the room canvas. */
   width?: number;
   height?: number;
+  /** Physical diameter for true-scale round and cocktail tables. */
+  diameterFeet?: number;
   /** Clockwise rotation around the object's center, in degrees. */
   rotation?: number;
   /** Normalized vertices for a custom object. Other object types ignore this. */
@@ -1949,6 +1956,7 @@ export interface MemberRoleChangeResult {
   /** False when the role was unchanged or the notification could not be delivered. */
   emailSent: boolean;
   roleChanged: boolean;
+  notificationStatus: "sent" | "queued" | "not-needed";
 }
 
 /* ----------------------------------------------------------------- team hours */
@@ -2013,6 +2021,7 @@ export interface PublicEventPayload {
   event: Event;
   agenda: PublicRunOfShowItem[];
   tickets: TicketType[];
+  sponsors: Array<Pick<Sponsorship, "companyName" | "tier" | "logoUrl">>;
   volunteerNeeds: VolunteerNeedWithCoverage[];
   timeZone: string;
 }

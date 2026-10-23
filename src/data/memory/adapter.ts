@@ -36,7 +36,7 @@ import type {
   VendorEventPacketsRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
-import { platformFeeCents } from "../commerce";
+import { calculateProxyBid, platformFeeCents } from "../commerce";
 import { normalizeAuctionPageSettings } from "../auctionSettings";
 import { buildAttention, computeEventHealth, computePortfolio, daysUntil } from "../derive";
 import { compareRunOfShowItems } from "../eventDays";
@@ -145,8 +145,10 @@ import { googleSheetCsvUrl } from "../import";
 import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
-import { normalizeAttendeeName } from "../attendanceReport";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../registrationPage";
+import { normalizeEventNavigation } from "../eventNavigation";
+import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
+import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
 import { isVendorPacketEmail, vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDelivery } from "../vendorEventPackets";
 import type { RunOfShowSyncedDraft } from "../runOfShowRecovery";
 
@@ -393,6 +395,7 @@ const events: EventsRepository = {
       registrationCount: 0,
       shareToken: null,
       registrationPage: draft.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
+      navigation: normalizeEventNavigation(draft.navigation),
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
@@ -414,6 +417,7 @@ const events: EventsRepository = {
     const event = required(store().events.find((e) => e.id === id), `Event ${id} no longer exists.`);
     const before = copy(event) as unknown as Record<string, unknown>;
     Object.assign(event, patch);
+    if ("navigation" in patch) event.navigation = normalizeEventNavigation(patch.navigation);
     if ("locationId" in patch) {
       const location = patch.locationId ? (store().locations.find((l) => l.id === patch.locationId) ?? null) : null;
       event.locationRecord = location;
@@ -429,6 +433,17 @@ const events: EventsRepository = {
       before,
       after: copy(event) as unknown as Record<string, unknown>,
     });
+    return copy(event);
+  },
+
+  async updateRegistrationPage(id, patch) {
+    await wait();
+    const event = required(store().events.find((candidate) => candidate.id === id), `Event ${id} no longer exists.`);
+    event.registrationPage = normalizeRegistrationPage({
+      ...event.registrationPage,
+      ...normalizeRegistrationPagePatch(patch),
+    });
+    event.updatedAt = nowIso();
     return copy(event);
   },
 
@@ -486,6 +501,11 @@ const events: EventsRepository = {
         .sort(compareRunOfShowItems)
         .map(({ assignedEmail: _assignedEmail, completed: _completed, ...publicCue }) => publicCue),
       tickets: store().tickets.filter((ticket) => ticket.eventId === event.id && ticket.isActive),
+      sponsors: normalizeRegistrationPage(event.registrationPage).showSponsors
+        ? store().sponsorships
+            .filter((sponsor) => sponsor.eventId === event.id && sponsor.status === "confirmed")
+            .map(({ companyName, tier, logoUrl }) => ({ companyName, tier, logoUrl }))
+        : [],
       volunteerNeeds: volunteerCoverage(
         store().volunteerNeeds.filter((need) => need.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showVolunteerSignup),
         store().volunteers.filter((shift) => shift.eventId === event.id),
@@ -1549,17 +1569,28 @@ const auction: AuctionRepository = {
     const increment = item.bidIncrementCents ?? 100;
     const minimum = item.currentBidCents === null ? item.startingBidCents ?? 0 : item.currentBidCents + increment;
     if (maximumAmountCents < minimum) throw new DataError("conflict", `The minimum next bid is ${minimum} cents.`);
-    item.currentBidCents = maximumAmountCents;
-    item.winningBidderId = bidder.id;
-    memoryAuctionBids.push({
+    const bid: AuctionBid = {
       id: newId("abid"), eventId: event.id, itemId, bidderId: bidder.id, bidderName: bidder.name,
       amountCents: maximumAmountCents, maximumAmountCents, isAutomatic: false, createdAt: nowIso(),
+    };
+    memoryAuctionBids.push(bid);
+    const latestMaximumByBidder = new Map<string, { bidderId: string; maximumAmountCents: number; sequence: number }>();
+    memoryAuctionBids.forEach((candidate, sequence) => {
+      if (candidate.itemId === itemId) latestMaximumByBidder.set(candidate.bidderId, {
+        bidderId: candidate.bidderId,
+        maximumAmountCents: candidate.maximumAmountCents,
+        sequence,
+      });
     });
+    const result = calculateProxyBid([...latestMaximumByBidder.values()], item.startingBidCents ?? 0, increment);
+    item.currentBidCents = result.currentBidCents;
+    item.winningBidderId = result.leaderBidderId;
+    bid.amountCents = result.currentBidCents ?? maximumAmountCents;
     const payload = await auction.getPublic(token);
     return {
       item: payload!.items.find((row) => row.id === itemId)!,
-      bidderIsLeading: true,
-      minimumNextBidCents: maximumAmountCents + increment,
+      bidderIsLeading: result.leaderBidderId === bidder.id,
+      minimumNextBidCents: (result.currentBidCents ?? item.startingBidCents ?? 0) + increment,
     };
   },
   async uploadImage(file) {
@@ -2832,6 +2863,29 @@ export const memoryAdapter: DataAdapter = {
         registrationPage: { ...DEFAULT_REGISTRATION_PAGE }, createdAt: nowIso(),
       };
       return buildRuleBasedSuggestions(event, { ...brief, eventId: event.id }, planningMemoryFor(event), current.settings.timeZone);
+    },
+    registrationCopy: async (input) => {
+      await wait();
+      const event = requireEvent(input.eventId);
+      const agenda = store().runOfShow.filter((cue) => cue.eventId === event.id);
+      return buildRegistrationCopyFallback(event, agenda, input);
+    },
+    postEventCopy: async (input) => {
+      await wait();
+      const event = requireEvent(input.eventId);
+      const current = store();
+      const attendance = buildUniqueAttendanceReport(await registrations.listForEvent(event.id)).summary;
+      const checklist = current.checklist.filter((item) => item.eventId === event.id);
+      const revenueCents = current.budget.filter((item) => item.eventId === event.id && item.type === "revenue").reduce((sum, item) => sum + (item.actualCents ?? 0), 0) +
+        current.sponsorships.filter((sponsor) => sponsor.eventId === event.id && sponsor.status === "confirmed").reduce((sum, sponsor) => sum + (sponsor.amountCents ?? 0), 0);
+      return buildPostEventCopyFallback(event, {
+        uniqueRegistered: attendance.uniqueRegistered,
+        uniqueCheckedIn: attendance.uniqueCheckedIn,
+        attendanceRate: attendance.uniqueRegistered > 0 ? attendance.attendanceRate : null,
+        checklistDone: checklist.filter((item) => item.completed).length,
+        checklistTotal: checklist.length,
+        revenueCents,
+      });
     },
   },
   imports: {

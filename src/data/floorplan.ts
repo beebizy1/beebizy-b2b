@@ -19,6 +19,7 @@ const floorplanItemSchema = z.object({
   locked: z.boolean().optional(),
   width: z.number().finite().min(1).max(100).optional(),
   height: z.number().finite().min(1).max(100).optional(),
+  diameterFeet: z.number().finite().min(0.5).max(100).optional(),
   rotation: z.number().finite().min(0).max(359).optional(),
   imageUrl: z.string().url().optional(),
   customShapeMode: z.enum(FLOORPLAN_CUSTOM_SHAPE_MODES).optional(),

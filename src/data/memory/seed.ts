@@ -286,6 +286,23 @@ export function buildSeed(): MemoryDb {
     },
   ];
 
+  const galaRegistrationPage = {
+    ...DEFAULT_REGISTRATION_PAGE,
+    accentColor: "#8C5A12",
+    headline: "Annual Partner Gala & Fundraiser",
+    aboutHeading: "A night of people, progress, and possibility.",
+    welcomeMessage: "Join our community for an unforgettable evening celebrating the partners, supporters, and changemakers who make our work possible.\n\nEnjoy an inspiring program, meaningful conversations, and a shared commitment to a brighter future.",
+    heroImageUrl: "/demo-registration/gala-hero.png",
+    aboutImageUrl: "/demo-registration/gala-venue.png",
+    agendaImageUrl: "/demo-registration/gala-networking.png",
+    speakers: [
+      { id: "speaker-elena", name: "Dr. Elena Park", title: "Founder & CEO", organization: "BrightWay Foundation", bio: "Building stronger communities through ambitious partnerships.", photoUrl: "/demo-registration/speaker-elena.png" },
+      { id: "speaker-marcus", name: "Marcus Rivera", title: "Partner", organization: "Catalyst Ventures", bio: "Investing in founders who turn community needs into lasting impact.", photoUrl: "/demo-registration/speaker-marcus.png" },
+      { id: "speaker-jasmine", name: "Jasmine Carter", title: "Director of Community", organization: "The Civic Project", bio: "Connecting people, ideas, and resources across the region.", photoUrl: "/demo-registration/speaker-jasmine.png" },
+      { id: "speaker-daniel", name: "Daniel Kim", title: "Board Member", organization: "Beebizy", bio: "Helping mission-driven teams bring memorable events to life.", photoUrl: "/demo-registration/speaker-daniel.png" },
+    ],
+  } satisfies Event["registrationPage"];
+
   const events: Event[] = eventSeeds.map((seed) => {
     const location = locationById.get(seed.locationId) ?? null;
     return {
@@ -304,7 +321,7 @@ export function buildSeed(): MemoryDb {
       imageUrl: null,
       registrationCount: 0,
       shareToken: seed.shared ? `demo-${seed.id}` : null,
-      registrationPage: { ...DEFAULT_REGISTRATION_PAGE },
+      registrationPage: seed.id === "evt-gala" ? galaRegistrationPage : { ...DEFAULT_REGISTRATION_PAGE },
       createdAt: at(seed.dayOffset - 90),
       updatedAt: at(-2, 14),
     };
@@ -1246,7 +1263,7 @@ export function buildSeed(): MemoryDb {
       companyName: "Cascade Capital",
       tier: "gold",
       amountCents: usd(75000),
-      logoUrl: null,
+      logoUrl: "/demo-registration/sponsor-cascade.png",
       contactEmail: "jwhitfield@cascadecapital.com",
       contactName: "Jamal Whitfield",
       notes: "Stage naming, full-page programme, ten seats.",
@@ -1259,7 +1276,7 @@ export function buildSeed(): MemoryDb {
       companyName: "Northstar Ventures",
       tier: "gold",
       amountCents: usd(70000),
-      logoUrl: null,
+      logoUrl: "/demo-registration/sponsor-northstar.png",
       contactEmail: "naomi@northstarvc.com",
       contactName: "Naomi Bergstrom",
       notes: "Reception naming, ten seats.",
@@ -1272,7 +1289,7 @@ export function buildSeed(): MemoryDb {
       companyName: "Meridian Health",
       tier: "silver",
       amountCents: usd(35000),
-      logoUrl: null,
+      logoUrl: "/demo-registration/sponsor-meridian.png",
       contactEmail: "priya.r@meridianhealth.com",
       contactName: "Priya Raghunathan",
       notes: "Half-page programme, six seats.",
@@ -1285,7 +1302,7 @@ export function buildSeed(): MemoryDb {
       companyName: "Fieldstone & Co",
       tier: "bronze",
       amountCents: usd(15000),
-      logoUrl: null,
+      logoUrl: "/demo-registration/sponsor-fieldstone.png",
       contactEmail: "amara.bello@fieldstone.co",
       contactName: "Amara Bello",
       notes: "Logo placement, four seats.",

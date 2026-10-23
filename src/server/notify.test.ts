@@ -228,6 +228,23 @@ describe("ticket and auction action emails", () => {
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("auction-outbid-bid-2-bidder@example.com");
   });
 
+  it("retries transient outbid delivery failures with the same idempotency key", async () => {
+    vi.stubEnv("RESEND_API_KEY", "test-key");
+    vi.stubEnv("MAIL_FROM", "Beebizy <events@beebizy.com>");
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("temporary", { status: 503 }))
+      .mockResolvedValueOnce(new Response("temporary", { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"id":"email-1"}', { status: 200 }));
+
+    await expect(notifyAuctionOutbid({
+      bidId: "bid-retry", to: "bidder@example.com", bidderName: "Grace", eventTitle: "Gala",
+      itemTitle: "Dinner", currentBidCents: 8_500, auctionUrl: "https://beebizy.test/auction/one",
+    })).resolves.toEqual({ status: "sent" });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.map((call) => new Headers((call[1] as RequestInit).headers).get("Idempotency-Key")))
+      .toEqual(["auction-outbid-bid-retry-bidder@example.com", "auction-outbid-bid-retry-bidder@example.com", "auction-outbid-bid-retry-bidder@example.com"]);
+  });
+
   it("acknowledges donated property without assigning a dollar value", async () => {
     const fetch = configureDelivery();
     await notifyAuctionDonorThankYou({

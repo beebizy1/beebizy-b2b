@@ -167,6 +167,8 @@ import type { WorkspaceAccessStatus } from "./workspaceAccess";
 import type { AccountExperience } from "./accountExperience";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
+import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "./eventCopy";
+import type { RegistrationPageSettings } from "./registrationPage";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowRecovery";
 
@@ -193,6 +195,7 @@ export interface RunOfShowRepository extends EventScopedRepository<RunOfShowItem
 
 export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft, EventPatch>, "list"> {
   list(filter?: EventFilter): Promise<Event[]>;
+  updateRegistrationPage(id: string, patch: Partial<RegistrationPageSettings>): Promise<Event>;
   /** Idempotent: returns the existing token if the event already has one. */
   share(id: string): Promise<{ shareToken: string }>;
   /**
@@ -428,6 +431,8 @@ export interface PlanningAssistantRepository {
    * server-side, so a reload or a second tab resumes the same conversation.
    */
   chat(input: { eventId: string; messages: AssistantChatMessage[] }): Promise<AssistantTurn>;
+  registrationCopy(input: { eventId: string; aboutHeading: string; aboutBody: string; agendaIntroduction: string }): Promise<RegistrationCopySuggestion>;
+  postEventCopy(input: { eventId: string }): Promise<PostEventCopySuggestion>;
 }
 
 export interface SpreadsheetImportsRepository {

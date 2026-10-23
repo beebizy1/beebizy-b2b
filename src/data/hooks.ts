@@ -16,6 +16,8 @@ import {
 } from "@tanstack/react-query";
 import { useData } from "./provider";
 import { DataError, type DataAdapter } from "./adapter";
+import type { RegistrationPageSettings } from "./registrationPage";
+import { prepareImageForUpload } from "./imageUpload";
 import type {
   GuestDraft,
   GuestRegistrationImportDraft,
@@ -261,6 +263,17 @@ export function usePlanningPreview() {
   return useAdapterMutation((a, brief: PlanningPreviewBrief) => a.assistant.preview(brief), () => []);
 }
 
+export function useRegistrationCopyGenerator() {
+  return useAdapterMutation(
+    (a, input: { eventId: string; aboutHeading: string; aboutBody: string; agendaIntroduction: string }) => a.assistant.registrationCopy(input),
+    () => [],
+  );
+}
+
+export function usePostEventCopyGenerator() {
+  return useAdapterMutation((a, input: { eventId: string }) => a.assistant.postEventCopy(input), () => []);
+}
+
 export function useLoadGoogleSheet() {
   return useAdapterMutation((a, url: string) => a.imports.loadGoogleSheet(url), () => []);
 }
@@ -333,6 +346,18 @@ export function useUpdateEvent() {
       for (const key of [...eventDerivedKeys(vars.id), qk.locations]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
+    },
+  });
+}
+
+export function useUpdateRegistrationPage() {
+  const adapter = useData();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; patch: Partial<RegistrationPageSettings> }) => adapter.events.updateRegistrationPage(vars.id, vars.patch),
+    onSuccess: (updated, vars) => {
+      queryClient.setQueryData(qk.event(vars.id), updated);
+      queryClient.invalidateQueries({ queryKey: qk.events });
     },
   });
 }
@@ -1055,7 +1080,7 @@ export function usePublishAuctionItem() {
 
 export function useUploadAuctionImage() {
   return useAdapterMutation(
-    (a, file: File) => a.auction.uploadImage(file),
+    async (a, file: File) => a.auction.uploadImage(await prepareImageForUpload(file)),
     () => [],
   );
 }
@@ -1111,7 +1136,7 @@ export function usePublicAuctionDonor(token: string) {
 
 export function useUploadPublicAuctionDonorImage() {
   return useAdapterMutation(
-    (a, vars: { token: string; file: File }) => a.auction.uploadPublicDonorImage(vars.token, vars.file),
+    async (a, vars: { token: string; file: File }) => a.auction.uploadPublicDonorImage(vars.token, await prepareImageForUpload(vars.file)),
     () => [],
   );
 }
@@ -1190,7 +1215,7 @@ export function useSubmitPublicItem() {
 
 export function useUploadPublicItemImage() {
   return useAdapterMutation(
-    (a, vars: { token: string; file: File }) => a.fundraising.uploadPublicItemImage(vars.token, vars.file),
+    async (a, vars: { token: string; file: File }) => a.fundraising.uploadPublicItemImage(vars.token, await prepareImageForUpload(vars.file)),
     () => [],
   );
 }

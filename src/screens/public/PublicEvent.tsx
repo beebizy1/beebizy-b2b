@@ -8,7 +8,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
-import { CalendarDays, Check, ExternalLink, Gavel, HeartHandshake, MapPin, Minus, Plus, Ticket, Users } from "lucide-react";
+import { ArrowRight, CalendarDays, CalendarPlus, Check, ExternalLink, Gavel, HeartHandshake, MapPin, Minus, Plus, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,26 +18,26 @@ import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "
 import { BrandLogo } from "@/components/BrandLogo";
 import { useEventByShareToken, usePublicRegistration, usePublicTicketOrderStatus, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
-import { describeWhenInZone, formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
+import { formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import { SCHOOL_GRADES, type Event, type PublicRegistrationResult, type SchoolGrade } from "@/data/entities";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
-export function PublicFrame({ children, event }: { children: React.ReactNode; event?: Event }) {
+export function PublicFrame({ children, event, wide = false }: { children: React.ReactNode; event?: Event; wide?: boolean }) {
   const settings = normalizeRegistrationPage(event?.registrationPage);
   const template = registrationPageTemplate(settings.template);
   const style = { backgroundColor: template.background } as CSSProperties;
   return (
     <div className="min-h-dvh" style={style}>
       <header className="border-b border-black/5 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-5">
+        <div className={cn("mx-auto flex items-center justify-between px-6 py-5", wide ? "max-w-7xl" : "max-w-4xl")}>
           <BrandLogo size="sm" />
-          {event ? <span className="text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: settings.accentColor }}>Registration</span> : null}
+          {event && wide ? <div className="flex items-center gap-6"><nav aria-label="Event page" className="hidden items-center gap-6 text-sm font-semibold text-slate-700 md:flex"><a href="#about" className="hover:text-slate-950">About</a>{settings.showAgenda ? <a href="#agenda" className="hover:text-slate-950">Agenda</a> : null}{settings.showSpeakers && settings.speakers.length > 0 ? <a href="#speakers" className="hover:text-slate-950">Speakers</a> : null}{settings.showSponsors ? <a href="#sponsors" className="hover:text-slate-950">Sponsors</a> : null}</nav><Button asChild size="sm"><a href="#register">Register</a></Button></div> : event ? <span className="text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: settings.accentColor }}>Registration</span> : null}
         </div>
       </header>
-      <main className="mx-auto max-w-4xl px-6 py-10">{children}</main>
-      <footer className="mx-auto max-w-4xl px-6 pb-10">
+      <main className={wide ? "" : "mx-auto max-w-4xl px-6 py-10"}>{children}</main>
+      <footer className={cn("mx-auto px-6 pb-10", wide ? "max-w-7xl pt-8" : "max-w-4xl")}>
         <p className="text-xs text-muted-foreground">Event page powered by Beebizy.</p>
       </footer>
     </div>
@@ -58,51 +58,32 @@ function EventNotFound() {
   );
 }
 
-function EventHeading({ event, timeZone }: { event: Event; timeZone: string }) {
+function EventHeading({ event, timeZone, token, registrationLabel }: { event: Event; timeZone: string; token: string; registrationLabel: string }) {
   const settings = normalizeRegistrationPage(event.registrationPage);
+  const registerHref = settings.registrationTypes.length === 1
+    ? `/e/${token}/register/${encodeURIComponent(settings.registrationTypes[0]!)}`
+    : "#register";
+  const calendarStart = new Date(event.date).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const calendarEnd = new Date(event.endDate ?? new Date(new Date(event.date).getTime() + 2 * 60 * 60_000)).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(settings.headline || event.title)}&dates=${calendarStart}/${calendarEnd}&details=${encodeURIComponent(settings.welcomeMessage || event.description || "")}&location=${encodeURIComponent(event.location ?? "")}`;
   return (
-    <div className="overflow-hidden rounded-3xl border border-black/5 bg-white shadow-sm">
-      {settings.heroImageUrl ? <div className="h-56 bg-cover bg-center sm:h-72" style={{ backgroundImage: `url(${settings.heroImageUrl})` }} role="img" aria-label={`${event.title} cover`} /> : null}
-      <div className="space-y-4 p-6 sm:p-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full px-2.5 py-1 text-xs font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>{event.category}</span>
-        <span className="text-xs font-medium text-muted-foreground">{describeWhenInZone(event.date, timeZone)}</span>
-      </div>
-      <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{settings.headline || event.title}</h1>
-      {settings.welcomeMessage || event.description ? (
-        <p className="max-w-2xl text-base leading-relaxed text-slate-600">{settings.welcomeMessage || event.description}</p>
-      ) : null}
-      <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <CalendarDays className="size-4" aria-hidden="true" />
-          <dt className="sr-only">When</dt>
-         <dd>
-            {formatInZone(event.date, timeZone, "full")}
-            {event.endDate ? ` to ${formatInZone(event.endDate, timeZone, "full")}` : ""}{" "}
-           <span className="text-muted-foreground/70">{timeZoneLabel(timeZone, new Date(event.date))}</span>
-          </dd>
+    <section className={cn("relative isolate min-h-[34rem] overflow-hidden bg-[#17130a] text-white", settings.heroImageUrl && "bg-cover bg-center")} style={settings.heroImageUrl ? { backgroundImage: `url(${settings.heroImageUrl})` } : undefined} aria-label={`${event.title} invitation`}>
+      <div className="absolute inset-0 -z-10 bg-black/55" aria-hidden="true" />
+      <div className="mx-auto flex min-h-[34rem] max-w-7xl items-center px-6 py-16 sm:py-24">
+        <div className="max-w-2xl">
+          <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: settings.accentColor }}>You&apos;re invited</p>
+          <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">{settings.headline || event.title}</h1>
+          <dl className="mt-8 space-y-3 text-sm font-semibold sm:text-base">
+            <div className="flex items-center gap-3"><CalendarDays className="size-5 shrink-0" style={{ color: settings.accentColor }} aria-hidden="true" /><dt className="sr-only">When</dt><dd>{formatInZone(event.date, timeZone, "full")}{event.endDate ? ` to ${formatInZone(event.endDate, timeZone, "full")}` : ""}</dd></div>
+            {event.locationRecord || event.location ? <div className="flex items-center gap-3"><MapPin className="size-5 shrink-0" style={{ color: settings.accentColor }} aria-hidden="true" /><dt className="sr-only">Where</dt><dd>{event.locationRecord ? [event.locationRecord.name, event.locationRecord.city].filter(Boolean).join(", ") : event.location}</dd></div> : null}
+          </dl>
+          <div className="mt-8 flex flex-col gap-3 sm:w-fit sm:min-w-80">
+            <Button asChild size="lg" className="font-black text-slate-950"><a href={registerHref}>{registrationLabel}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></a></Button>
+            <Button asChild size="lg" variant="outline" className="border-white/70 bg-black/20 text-white hover:bg-white hover:text-slate-950"><a href={calendarUrl} target="_blank" rel="noopener noreferrer"><CalendarPlus className="mr-1.5 size-4" aria-hidden="true" />Add to calendar</a></Button>
+          </div>
         </div>
-        {event.locationRecord || event.location ? (
-          <div className="flex items-center gap-1.5">
-            <MapPin className="size-4" aria-hidden="true" />
-            <dt className="sr-only">Where</dt>
-            <dd>
-              {event.locationRecord
-                ? [event.locationRecord.name, event.locationRecord.city].filter(Boolean).join(", ")
-                : event.location}
-            </dd>
-          </div>
-        ) : null}
-        {event.capacity ? (
-          <div className="flex items-center gap-1.5">
-            <Users className="size-4" aria-hidden="true" />
-            <dt className="sr-only">Capacity</dt>
-            <dd data-numeric>{event.capacity} places</dd>
-          </div>
-        ) : null}
-      </dl>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -114,6 +95,7 @@ export function PublicEventPage({ token }: { token: string }) {
   const event = shared?.event ?? null;
   const agenda = shared?.agenda;
   const tickets = shared?.tickets;
+  const sponsors = shared?.sponsors ?? [];
   const volunteerNeeds = shared?.volunteerNeeds ?? [];
   const timeZone = shared?.timeZone ?? "UTC";
 
@@ -144,9 +126,23 @@ export function PublicEventPage({ token }: { token: string }) {
   );
 
   return (
-    <PublicFrame event={event}>
-      <div className="space-y-6">
-        <EventHeading event={event} timeZone={timeZone} />
+    <PublicFrame event={event} wide>
+      <EventHeading event={event} timeZone={timeZone} token={token} registrationLabel={onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "Register free"} />
+      <div className="mx-auto max-w-7xl space-y-6 px-6 py-12 md:py-16">
+        <section id="about" className="grid gap-8 border-b border-black/10 pb-12 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)] md:pb-16">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>About the event</p>
+            <h2 className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">{registrationPage.aboutHeading || "About the event"}</h2>
+            {registrationPage.aboutBody || registrationPage.welcomeMessage || event.description ? <p className="whitespace-pre-line mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">{registrationPage.aboutBody || registrationPage.welcomeMessage || event.description}</p> : null}
+          </div>
+          <div className="space-y-5 self-center">
+            <dl className="divide-y divide-black/10 border-y border-black/10 text-sm text-slate-700">
+              <div className="flex gap-4 py-4"><CalendarDays className="mt-0.5 size-5 shrink-0" style={{ color: registrationPage.accentColor }} aria-hidden="true" /><div><dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Date and time</dt><dd className="mt-1 font-semibold">{formatInZone(event.date, timeZone, "full")}</dd></div></div>
+              {event.location ? <div className="flex gap-4 py-4"><MapPin className="mt-0.5 size-5 shrink-0" style={{ color: registrationPage.accentColor }} aria-hidden="true" /><div><dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Location</dt><dd className="mt-1 font-semibold">{event.location}</dd></div></div> : null}
+              {event.capacity ? <div className="flex gap-4 py-4"><Users className="mt-0.5 size-5 shrink-0" style={{ color: registrationPage.accentColor }} aria-hidden="true" /><div><dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Capacity</dt><dd className="mt-1 font-semibold">{event.capacity} guests</dd></div></div> : null}
+            </dl>
+          </div>
+        </section>
 
         {onSale.length > 0 ? (
           <Panel className="p-5">
@@ -204,13 +200,14 @@ export function PublicEventPage({ token }: { token: string }) {
           </Panel>
         ) : null}
 
-        <Panel className="p-5">
-          <p className="text-sm font-semibold text-foreground">Register for this event</p>
-          <p className="mt-1 text-xs text-muted-foreground">Choose the guest type that best describes you.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+        <Panel id="register" className="p-6 sm:p-8">
+          <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>Reserve your place</p>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-foreground">Register for this event</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Choose the guest type that best describes you. No Beebizy account is required.</p>
+          <div className="mt-5 flex flex-wrap gap-2">
             {registrationPage.registrationTypes.map((segment) => (
-              <Button key={segment} asChild variant="outline" size="sm">
-                <Link href={`/e/${token}/register/${encodeURIComponent(segment)}`}>{segment}</Link>
+              <Button key={segment} asChild size="lg">
+                <Link href={`/e/${token}/register/${encodeURIComponent(segment)}`}>{segment}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></Link>
               </Button>
             ))}
           </div>
@@ -225,9 +222,11 @@ export function PublicEventPage({ token }: { token: string }) {
           </Panel>
         ) : null}
 
-        {registrationPage.showAgenda && (agenda ?? []).length > 0 ? (
+        {registrationPage.showAgenda && ((agenda ?? []).length > 0 || Boolean(registrationPage.agendaIntroduction)) ? (
+          <section id="agenda">
           <Panel>
             <PanelHeader title="Agenda" description={`Times shown in ${timeZoneLabel(timeZone, new Date(event.date))}, the venue\u2019s zone`} />
+            {registrationPage.agendaIntroduction ? <p className="whitespace-pre-line border-t border-hairline px-5 py-4 text-sm leading-6 text-muted-foreground">{registrationPage.agendaIntroduction}</p> : null}
             {eventDays.map((day) => {
               const dayAgenda = (agenda ?? []).filter((cue) => cue.dayNumber === day.dayNumber);
               if (dayAgenda.length === 0) return null;
@@ -261,8 +260,46 @@ export function PublicEventPage({ token }: { token: string }) {
                 </section>
               );
             })}
+            {(agenda ?? []).length === 0 ? <p className="border-t border-hairline px-5 py-4 text-sm text-muted-foreground">Detailed times will appear here when the schedule is ready.</p> : null}
           </Panel>
+          </section>
         ) : null}
+
+        {registrationPage.showSpeakers && registrationPage.speakers.length > 0 ? (
+          <section id="speakers" className="border-t border-black/10 pt-12 md:pt-16">
+            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>Featured speakers</p>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Meet the people taking the stage</h2>
+            <div className="mt-8 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+              {registrationPage.speakers.map((speaker) => (
+                <article key={speaker.id}>
+                  {speaker.photoUrl ? <img src={speaker.photoUrl} alt={speaker.name} className="aspect-[4/3] w-full rounded-2xl object-cover" /> : <div className="grid aspect-[4/3] w-full place-items-center rounded-2xl bg-black/5"><Users className="size-10 text-slate-400" aria-hidden="true" /></div>}
+                  <h3 className="mt-4 font-bold text-slate-950">{speaker.name}</h3>
+                  {speaker.title ? <p className="mt-1 text-sm text-slate-600">{speaker.title}</p> : null}
+                  {speaker.organization ? <p className="text-sm text-slate-500">{speaker.organization}</p> : null}
+                  {speaker.bio ? <p className="mt-3 text-sm leading-6 text-slate-600">{speaker.bio}</p> : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {registrationPage.showSponsors && sponsors.length > 0 ? (
+          <section id="sponsors" className="border-t border-black/10 pt-12 md:pt-16">
+            <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>Sponsors</p>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Thank you to our sponsors</h2>
+            <div className="mt-8 flex flex-wrap items-center gap-x-12 gap-y-8">
+              {sponsors.map((sponsor) => sponsor.logoUrl ? <img key={sponsor.companyName} src={sponsor.logoUrl} alt={sponsor.companyName} className="h-12 w-40 object-contain grayscale" /> : <span key={sponsor.companyName} className="text-lg font-bold text-slate-500">{sponsor.companyName}</span>)}
+            </div>
+          </section>
+        ) : null}
+
+        <section className={cn("relative isolate overflow-hidden rounded-3xl bg-[#17130a] text-white", registrationPage.heroImageUrl && "bg-cover bg-center")} style={registrationPage.heroImageUrl ? { backgroundImage: `url(${registrationPage.heroImageUrl})` } : undefined}>
+          <div className="absolute inset-0 -z-10 bg-black/60" aria-hidden="true" />
+          <div className="flex flex-col gap-7 px-7 py-12 sm:flex-row sm:items-center sm:justify-between sm:px-10">
+            <div><p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>Be part of it</p><h2 className="mt-3 max-w-xl text-3xl font-extrabold tracking-tight sm:text-4xl">{registrationPage.headline || event.title}</h2></div>
+            <Button asChild size="lg" className="font-black text-slate-950"><a href="#register">{onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "Register free"}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></a></Button>
+          </div>
+        </section>
       </div>
     </PublicFrame>
   );

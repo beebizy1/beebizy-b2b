@@ -219,6 +219,7 @@ async function addWorkspaceMember(
   role: Role,
   seatAlreadyReserved = false,
   eventScopeId: string | null = null,
+  email: string | null = null,
 ): Promise<boolean> {
   const entitlementLock = db
     .select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${workspaceId}))` })
@@ -229,7 +230,7 @@ async function addWorkspaceMember(
     .insert(workspaceMembers)
     .select(
       db
-        .select(workspaceMemberInsertSelection(userId, role, eventScopeId))
+        .select(workspaceMemberInsertSelection(userId, role, eventScopeId, email))
         .from(workspaces)
         .where(
           and(
@@ -273,7 +274,7 @@ async function resolveWorkspace(
     if (invite) {
       const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
       if (workspace) {
-        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role, true, invite.eventScopeId))) {
+        if (!(await addWorkspaceMember(invite.workspaceId, userId, invite.role, true, invite.eventScopeId, email))) {
           throw new HttpError(403, "This workspace's Solo plan does not include another user.");
         }
         await db
@@ -300,7 +301,7 @@ async function resolveWorkspace(
         .limit(1);
       // Being in the Clerk org is the source of truth; mirror it into membership once.
       if (!membership) {
-        if (!(await addWorkspaceMember(existing.id, userId, "member"))) {
+        if (!(await addWorkspaceMember(existing.id, userId, "member", false, null, email))) {
           throw new HttpError(403, "This workspace's Solo plan does not include another user.");
         }
         return { workspaceId: existing.id, role: "member", eventScopeId: null, access: accessForWorkspace(existing) };
@@ -360,7 +361,7 @@ async function resolveWorkspace(
       eventQuotaExempt: staff,
     })
     .returning();
-  await db.insert(workspaceMembers).values({ workspaceId, userId, role: "owner" });
+  await db.insert(workspaceMembers).values({ workspaceId, userId, email, role: "owner" });
   if (!workspace) throw new HttpError(500, "The workspace could not be created.");
   return { workspaceId, role: "owner", eventScopeId: null, access: accessForWorkspace(workspace) };
 }

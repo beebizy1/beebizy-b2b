@@ -59,6 +59,14 @@ import {
   type FloorplanShape,
 } from "@/data/entities";
 import { floorplanRoomSquareFeet } from "@/data/floorplan";
+import {
+  FLOORPLAN_TABLE_PRESETS,
+  floorplanCanvasAspectRatio,
+  floorplanCanvasMinWidth,
+  floorplanItemDiameterFeet,
+  floorplanItemPercentSize,
+  type FloorplanTablePreset,
+} from "@/data/floorplanScale";
 import { isRecoveredFloorplanCopy, recoveredFloorplanName, resolveFloorplanRecovery, type FloorplanRecoveryCandidate, type StoredFloorplanEditorDraft } from "@/data/floorplanRecovery";
 import { useDataMode } from "@/data/provider";
 import {
@@ -233,7 +241,12 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
   } | null>(null);
   const cornerDragState = useRef<{ index: number } | null>(null);
   const itemCornerDragState = useRef<{ id: string; index: number } | null>(null);
-  const paletteDragState = useRef<{ shape: FloorplanShape; startX: number; startY: number } | null>(null);
+  const paletteDragState = useRef<{
+    shape: FloorplanShape;
+    options?: Partial<Pick<FloorplanItem, "label" | "seats" | "diameterFeet">>;
+    startX: number;
+    startY: number;
+  } | null>(null);
   const suppressPaletteClick = useRef(false);
   const suppressRotationClick = useRef(false);
   const freehandDraftRef = useRef<FloorplanPoint[] | null>(null);
@@ -264,6 +277,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
     ? selected.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
     : null;
   const selectedCustomMode: FloorplanCustomShapeMode = selected?.customShapeMode ?? "polygon";
+  const selectedDiameterFeet = selected ? floorplanItemDiameterFeet(selected) : null;
 
   const seatTotal = useMemo(
     () => workingItems.reduce((total, item) => total + (item.seats ?? 0), 0),
@@ -442,7 +456,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
   const addShape = (
     shape: FloorplanShape,
     position?: { x: number; y: number },
-    options?: Pick<FloorplanItem, "label" | "imageUrl">,
+    options?: Partial<Pick<FloorplanItem, "label" | "imageUrl" | "seats" | "diameterFeet">>,
   ) => {
     const spec = SHAPES[shape];
     const currentItems = workingItemsRef.current;
@@ -453,7 +467,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
     const item: FloorplanItem = {
       id: newItemId(),
       shape,
-      label: spec.seats === null ? spec.label : String(sameShape + 1),
+      label: shape === "cocktail-table" ? `H${sameShape + 1}` : spec.seats === null ? spec.label : String(sameShape + 1),
       // Stagger new objects so they don't stack on the same spot.
       x: fallbackPosition.x,
       y: fallbackPosition.y,
@@ -479,11 +493,6 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
       toast({ title: "Choose an image file" });
       return;
     }
-    if (file.size > 4_000_000) {
-      toast({ title: "Image is too large", description: "Choose an image smaller than 4 MB." });
-      return;
-    }
-
     uploadImage.mutate(file, {
       onSuccess: (imageUrl) => {
         const filename = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
@@ -491,13 +500,18 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
           label: (filename || "Image").slice(0, 80),
           imageUrl,
         });
-        toast({ title: "Image added", description: "Select it to resize or rotate it." });
+        toast({ title: "Image added", description: "Large images are resized automatically. Select it to resize or rotate it." });
       },
       onError: (error) => toast({ title: "Couldn't upload image", description: error.message }),
     });
   };
 
-  const addShapeAtPointer = (shape: FloorplanShape, clientX: number, clientY: number) => {
+  const addShapeAtPointer = (
+    shape: FloorplanShape,
+    clientX: number,
+    clientY: number,
+    options?: Partial<Pick<FloorplanItem, "label" | "seats" | "diameterFeet">>,
+  ) => {
     const room = roomRef.current;
     if (!room) return false;
     const rect = room.getBoundingClientRect();
@@ -507,13 +521,17 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
       y: ((clientY - rect.top) / rect.height) * 100,
     };
     if (!pointIsInsideRoom(workingRoom, position.x, position.y)) return false;
-    addShape(shape, position);
+    addShape(shape, position, options);
     return true;
   };
 
-  const onPalettePointerDown = (pointerEvent: React.PointerEvent<HTMLButtonElement>, shape: FloorplanShape) => {
+  const onPalettePointerDown = (
+    pointerEvent: React.PointerEvent<HTMLButtonElement>,
+    shape: FloorplanShape,
+    options?: Partial<Pick<FloorplanItem, "label" | "seats" | "diameterFeet">>,
+  ) => {
     if (pointerEvent.button !== 0) return;
-    paletteDragState.current = { shape, startX: pointerEvent.clientX, startY: pointerEvent.clientY };
+    paletteDragState.current = { shape, options, startX: pointerEvent.clientX, startY: pointerEvent.clientY };
     pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
   };
 
@@ -527,7 +545,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
     const moved = Math.hypot(pointerEvent.clientX - drag.startX, pointerEvent.clientY - drag.startY) > 6;
     if (!moved) return;
     suppressNextClick(suppressPaletteClick);
-    addShapeAtPointer(drag.shape, pointerEvent.clientX, pointerEvent.clientY);
+    addShapeAtPointer(drag.shape, pointerEvent.clientX, pointerEvent.clientY, drag.options);
   };
 
   const removeSelected = () => {
@@ -716,7 +734,8 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
           ? "success"
           : "warning";
 
-  const visualAspectRatio = Math.max(0.65, Math.min(2.4, workingRoom.widthFeet / workingRoom.lengthFeet));
+  const visualAspectRatio = floorplanCanvasAspectRatio(workingRoom);
+  const minimumCanvasWidth = floorplanCanvasMinWidth(workingRoom);
 
   const copyFloorplanLink = async () => {
     setSharing(true);
@@ -962,7 +981,33 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
           className="h-8 w-52"
         />
         <span className="text-xs text-muted-foreground">Drag into the room:</span>
-        {FLOORPLAN_SHAPES.filter((shape) => shape !== "image").map((shape) => (
+        {FLOORPLAN_TABLE_PRESETS.map((preset: FloorplanTablePreset) => {
+          const options = {
+            seats: preset.seats,
+            diameterFeet: preset.diameterFeet,
+          };
+          return (
+            <Button
+              key={preset.id}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="touch-none cursor-grab active:cursor-grabbing"
+              onPointerDown={(pointerEvent) => onPalettePointerDown(pointerEvent, preset.shape, options)}
+              onPointerUp={onPalettePointerUp}
+              onPointerCancel={() => { paletteDragState.current = null; }}
+              onClick={() => {
+                if (suppressPaletteClick.current) return;
+                addShape(preset.shape, undefined, options);
+              }}
+              title={`Drag ${preset.label.toLowerCase()} into the room, or click to add`}
+            >
+              <GripVertical className="mr-1 size-3" />
+              {preset.label}
+            </Button>
+          );
+        })}
+        {FLOORPLAN_SHAPES.filter((shape) => !["image", "round-table", "cocktail-table"].includes(shape)).map((shape) => (
           <Button
             key={shape}
             type="button"
@@ -1004,21 +1049,22 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
           onClick={() => imageInputRef.current?.click()}
         >
           <ImagePlus className="mr-1 size-3.5" />
-          {uploadImage.isPending ? "Uploading image…" : "Upload image"}
+          {uploadImage.isPending ? "Resizing and uploading…" : "Upload image"}
         </Button>
       </div>
 
       {(
         <>
           <div className="p-5">
+            <div className="overflow-x-auto pb-1">
             <div
               ref={roomRef}
               aria-label="Floorplan room"
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
-              className="relative min-h-[360px] w-full overflow-hidden rounded-lg border border-hairline bg-muted/30"
-              style={{ aspectRatio: visualAspectRatio }}
+              className="relative w-full overflow-hidden rounded-lg border border-hairline bg-muted/30"
+              style={{ aspectRatio: visualAspectRatio, minWidth: `${minimumCanvasWidth}px` }}
             >
               <FloorplanRoomBackdrop room={workingRoom} />
 
@@ -1035,8 +1081,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
               {workingItems.map((item) => {
                 const spec = SHAPES[item.shape];
                 const isSelected = item.id === selectedId;
-                const width = item.width ?? spec.width;
-                const height = item.height ?? spec.height;
+                const { width, height } = floorplanItemPercentSize(item, workingRoom, spec);
                 const customPoints = item.shape === "custom-shape"
                   ? item.points ?? DEFAULT_CUSTOM_OBJECT_POINTS
                   : null;
@@ -1062,8 +1107,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
                       left: `${item.x}%`,
                       top: `${item.y}%`,
                       width: `${width}%`,
-                      height: spec.round ? undefined : `${height}%`,
-                      aspectRatio: spec.round ? "1 / 1" : undefined,
+                      height: `${height}%`,
                       transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)`,
                     }}
                   >
@@ -1245,6 +1289,7 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
                   ))
                 : null}
             </div>
+            </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
               Select any shape and type its new name directly inside it. Add a Text box for section labels, then move,
@@ -1295,24 +1340,48 @@ function RoomEditor({ event, plan: saved, recoverAsNewRoom }: { event: Event; pl
                   />
                 </label>
               ) : null}
-              <label className="space-y-1">
-                <span className="block text-xs font-medium text-muted-foreground">Width</span>
-                <Input
-                  value={String(selected.width ?? SHAPES[selected.shape].width)}
-                  onChange={(inputEvent) => {
-                    const parsed = Number(inputEvent.target.value);
-                    updateItem(selected.id, {
-                      width: Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : 1,
-                    });
-                  }}
-                  type="number"
-                  min="1"
-                  max="100"
-                  aria-label="Object width percent"
-                  className="h-8 w-20 text-right"
-                />
-              </label>
-              {!SHAPES[selected.shape].round ? (
+              {selectedDiameterFeet !== null ? (
+                <label className="space-y-1">
+                  <span className="block text-xs font-medium text-muted-foreground">Diameter</span>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      value={String(Math.round(selectedDiameterFeet * 12))}
+                      onChange={(inputEvent) => {
+                        const parsed = Number(inputEvent.target.value);
+                        updateItem(selected.id, {
+                          diameterFeet: Number.isFinite(parsed) ? Math.max(6, Math.min(1_200, parsed)) / 12 : 0.5,
+                        });
+                      }}
+                      type="number"
+                      min="6"
+                      max="1200"
+                      step="1"
+                      aria-label="Table diameter in inches"
+                      className="h-8 w-20 text-right"
+                    />
+                    <span className="text-xs text-muted-foreground">in</span>
+                  </div>
+                </label>
+              ) : (
+                <label className="space-y-1">
+                  <span className="block text-xs font-medium text-muted-foreground">Width</span>
+                  <Input
+                    value={String(selected.width ?? SHAPES[selected.shape].width)}
+                    onChange={(inputEvent) => {
+                      const parsed = Number(inputEvent.target.value);
+                      updateItem(selected.id, {
+                        width: Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : 1,
+                      });
+                    }}
+                    type="number"
+                    min="1"
+                    max="100"
+                    aria-label="Object width percent"
+                    className="h-8 w-20 text-right"
+                  />
+                </label>
+              )}
+              {!SHAPES[selected.shape].round && selectedDiameterFeet === null ? (
                 <label className="space-y-1">
                   <span className="block text-xs font-medium text-muted-foreground">Height</span>
                   <Input

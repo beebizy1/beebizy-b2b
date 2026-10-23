@@ -100,6 +100,7 @@ import type {
 } from "../entities";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "../planner";
 import type { AssistantTurn } from "../assistantChat";
+import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "../eventCopy";
 import type { VendorEventPacketResult } from "../vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRecovery";
 
@@ -317,6 +318,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       plan: (brief: PlanningBrief) => client.post<PlanningSuggestions>("/assistant/plan", brief),
       preview: (brief: PlanningPreviewBrief) => client.post<PlanningSuggestions>("/assistant/preview", brief),
       chat: (input) => client.post<AssistantTurn>("/assistant/chat", input),
+      registrationCopy: (input) => client.post<RegistrationCopySuggestion>("/assistant/registration-copy", input),
+      postEventCopy: (input) => client.post<PostEventCopySuggestion>("/assistant/post-event-copy", input),
     },
 
     imports: {
@@ -337,6 +340,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       get: (id) => client.get<Event | null>(`/events/${id}`),
       create: (draft) => client.post<Event>("/events", draft),
       update: (id, patch) => client.patch<Event>(`/events/${id}`, patch),
+      updateRegistrationPage: (id, patch) => client.patch<Event>(`/events/${id}/registration-page`, patch),
       remove: async (id) => {
         await client.del(`/events/${id}`);
       },

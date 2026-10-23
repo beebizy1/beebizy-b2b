@@ -1,0 +1,1 @@
+ALTER TABLE "events" ADD COLUMN "navigation" jsonb DEFAULT '{"hiddenTabIds":[]}'::jsonb NOT NULL;

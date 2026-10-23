@@ -8,4 +8,3 @@
 - Reloading, signing out, changing devices after sync, or losing power must not silently discard work. Add recovery and version history appropriate to the workflow.
 - Never autosubmit consequential actions such as payments, publishing, invitations, emails, permission changes, or deletions. Those require an explicit user action.
 - Add behavioral tests for full-field round trips, stale-response fencing, refresh recovery, and failure fallback whenever an editor is introduced or changed.
-

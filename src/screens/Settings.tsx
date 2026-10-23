@@ -236,10 +236,10 @@ function TeamPanel() {
                         {
                           onSuccess: (result) => toast({
                             title: `${label} is now ${value}`,
-                            description: result.emailSent
+                            description: result.notificationStatus === "sent"
                               ? "They were notified by email."
-                              : result.roleChanged
-                                ? "The role changed, but the notification email could not be delivered."
+                              : result.notificationStatus === "queued"
+                                ? "Their notification is queued and will retry automatically until sent."
                                 : "That role was already selected.",
                           }),
                           onError: (mutationError) =>

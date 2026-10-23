@@ -13,9 +13,12 @@
 import { authorize, HttpError, requireBeebizyOperator, type RequestContext } from "../src/server/auth.ts";
 import { accountExperienceForEmail, canSwitchAccountExperience } from "../src/data/accountExperience.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../src/data/registrationPage.ts";
+import { buildUniqueAttendanceReport } from "../src/data/attendanceReport.ts";
+import type { BudgetItem, ChecklistItem, Sponsorship } from "../src/data/entities.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
+import { generatePostEventCopy, generateRegistrationCopy } from "../src/server/eventCopy.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
 import { PLANNING_LIMITS } from "../src/data/planner.ts";
 import { fetchGoogleSheetCsv } from "../src/server/imports.ts";
@@ -49,6 +52,8 @@ import {
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
+import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
+import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
@@ -281,6 +286,18 @@ async function handlePublic(segments: string[], method: string, request: Request
     return json({ ok: true, eventsChecked, reminders, yearEndStatements });
   }
 
+  if (segments[0] === "notifications" && segments[1] === "maintenance") {
+    if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) return json({ error: "Notification maintenance is not configured." }, 503);
+    if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+    const [roleNotifications, outbidNotifications] = await Promise.all([
+      processDueMemberRoleNotifications(),
+      processDueAuctionOutbidNotifications(),
+    ]);
+    return json({ ok: true, roleNotifications, outbidNotifications });
+  }
+
   if (segments[0] === "billing" && segments[1] === "webhook") {
     if (method !== "POST") return json({ error: "Method not allowed" }, 405);
     return json(await handleStripeWebhook(request));
@@ -311,15 +328,16 @@ async function handlePublic(segments: string[], method: string, request: Request
     if (!shared) return json({ error: "This link is no longer active." }, 404);
     const page = normalizeRegistrationPage(shared.event.registrationPage);
 
-    const [agenda, tickets, volunteerNeeds] = await Promise.all([
+    const [agenda, tickets, sponsors, volunteerNeeds] = await Promise.all([
       page.showAgenda ? repos.publicAgenda(shared.event.id) : Promise.resolve([]),
       repos.publicTickets(shared.event.id),
+      page.showSponsors ? repos.publicSponsors(shared.event.id) : Promise.resolve([]),
       page.showVolunteerSignup ? repos.publicVolunteerNeeds(shared.event.id) : Promise.resolve([]),
     ]);
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
     // bids are not in this payload at all, rather than filtered out in the client. The
     // agenda and tickets ride along because the guest has no session to fetch them with.
-    return json({ event: shared.event, agenda, tickets, volunteerNeeds, timeZone: shared.timeZone });
+    return json({ event: shared.event, agenda, tickets, sponsors, volunteerNeeds, timeZone: shared.timeZone });
   }
   if (segments[0] === "public" && segments[1] === "floorplans" && segments[2] && method === "GET") {
     const shared = await repos.publicFloorplan(segments[2]);
@@ -353,8 +371,8 @@ async function handlePublic(segments: string[], method: string, request: Request
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
-      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
-      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB each.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Choose a JPG, PNG, WebP, or another image file.");
+      if (file.size > 4_000_000) throw new HttpError(400, "The image is too large to upload. Try again so Beebizy can resize it, or choose an image smaller than 4 MB.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
       const blob = await put(`auction/intake/${segments[2]}/${safeName}`, file, { access: "public", addRandomSuffix: true, contentType: file.type });
       return json({ url: blob.url });
@@ -416,8 +434,8 @@ async function handlePublic(segments: string[], method: string, request: Request
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
-      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
-      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Choose a JPG, PNG, WebP, or another image file.");
+      if (file.size > 4_000_000) throw new HttpError(400, "The image is too large to upload. Try again so Beebizy can resize it, or choose an image smaller than 4 MB.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
       const blob = await put(`auction/donors/${segments[2]}/${safeName}`, file, {
         access: "public",
@@ -644,8 +662,8 @@ async function handleAuthed(
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) throw new HttpError(400, "Choose an image to upload.");
-      if (!file.type.startsWith("image/")) throw new HttpError(400, "Auction photos must be image files.");
-      if (file.size > 4_000_000) throw new HttpError(400, "Auction photos must be smaller than 4 MB.");
+      if (!file.type.startsWith("image/")) throw new HttpError(400, "Choose a JPG, PNG, WebP, or another image file.");
+      if (file.size > 4_000_000) throw new HttpError(400, "The image is too large to upload. Try again so Beebizy can resize it, or choose an image smaller than 4 MB.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "auction-image";
       const blob = await put(`auction/${ctx.workspaceId}/${safeName}`, file, {
         access: "public",
@@ -682,6 +700,51 @@ async function handleAuthed(
 
     /* -------------------------------------------------------------- assistant */
     case "assistant": {
+      if (a === "registration-copy" && method === "POST") {
+        const input = z.object({
+          eventId: z.string().min(1).max(100),
+          aboutHeading: z.string().max(160).optional(),
+          aboutBody: z.string().max(3_000).optional(),
+          agendaIntroduction: z.string().max(1_500).optional(),
+        }).parse(body);
+        const event = await repos.events.get(ctx, input.eventId);
+        if (!event) throw new HttpError(404, "This event no longer exists.");
+        const agenda = await repos.runOfShow.list(ctx, input.eventId);
+        return json(await generateRegistrationCopy({ event, agenda, current: input, userId: ctx.userId }));
+      }
+      if (a === "post-event-copy" && method === "POST") {
+        const input = z.object({ eventId: z.string().min(1).max(100) }).parse(body);
+        const event = await repos.events.get(ctx, input.eventId);
+        if (!event) throw new HttpError(404, "This event no longer exists.");
+        const [registrations, checklist, budget, sponsorships] = await Promise.all([
+          repos.registrations.listForEvent(ctx, input.eventId),
+          repos.checklist.list(ctx, input.eventId),
+          repos.budget.list(ctx, input.eventId),
+          repos.sponsorships.list(ctx, input.eventId),
+        ]);
+        const attendance = buildUniqueAttendanceReport(registrations).summary;
+        const checklistItems = checklist as ChecklistItem[];
+        const budgetItems = budget as BudgetItem[];
+        const eventSponsorships = sponsorships as Sponsorship[];
+        const budgetRevenueCents = budgetItems
+          .filter((item) => item.type === "revenue")
+          .reduce((sum, item) => sum + (item.actualCents ?? 0), 0);
+        const sponsorRevenueCents = eventSponsorships
+          .filter((sponsor) => sponsor.status === "confirmed")
+          .reduce((sum, sponsor) => sum + (sponsor.amountCents ?? 0), 0);
+        return json(await generatePostEventCopy({
+          event,
+          facts: {
+            uniqueRegistered: attendance.uniqueRegistered,
+            uniqueCheckedIn: attendance.uniqueCheckedIn,
+            attendanceRate: attendance.uniqueRegistered > 0 ? attendance.attendanceRate : null,
+            checklistDone: checklistItems.filter((item) => item.completed).length,
+            checklistTotal: checklistItems.length,
+            revenueCents: budgetRevenueCents + sponsorRevenueCents,
+          },
+          userId: ctx.userId,
+        }));
+      }
       if (a === "chat" && method === "POST") {
         const input = z
           .object({
@@ -787,6 +850,7 @@ async function handleAuthed(
       if (!a && method === "POST") return json(await repos.events.create(ctx, body), 201);
       if (a && !b && method === "GET") return json(await repos.events.get(ctx, a));
       if (a && !b && method === "PATCH") return json(await repos.events.update(ctx, a, body));
+      if (a && b === "registration-page" && method === "PATCH") return json(await repos.events.updateRegistrationPage(ctx, a, body));
       if (a && !b && method === "DELETE") {
         await repos.events.remove(ctx, a);
         return json({ ok: true });

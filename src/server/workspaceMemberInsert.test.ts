@@ -12,7 +12,7 @@ describe("invited workspace membership insert", () => {
         .insert(schema.workspaceMembers)
         .select(
           db
-            .select(workspaceMemberInsertSelection("user_invited", "member"))
+            .select(workspaceMemberInsertSelection("user_invited", "member", null, "invited@example.com"))
             .from(schema.workspaces),
         ),
     ).not.toThrow();

@@ -10,11 +10,12 @@ vi.mock("./auth", () => ({
   },
 }));
 vi.mock("./repos", () => {
-  const child = { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() };
+  const child = () => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() });
   return {
     eventByShareToken: vi.fn(),
     publicAgenda: vi.fn(),
     publicTickets: vi.fn(),
+    publicSponsors: vi.fn().mockResolvedValue([]),
     publicFloorplan: vi.fn(),
     publicVolunteerNeeds: vi.fn().mockResolvedValue([]),
     publicRegistration: vi.fn(),
@@ -36,32 +37,32 @@ vi.mock("./repos", () => {
     removePublicWalkIn: vi.fn(),
     completePublicAssignment: vi.fn(),
     reopenPublicAssignment: vi.fn(),
-    checklist: child,
-    checkInStations: child,
-    runOfShow: { ...child, reorder: vi.fn() },
-    volunteerNeeds: child,
-    volunteers: child,
-    budget: child,
-    deposits: child,
-    vendorPaymentPlans: child,
-    menu: child,
-    moodBoard: child,
-    floorplan: { ...child, share: vi.fn() },
-    auction: child,
-    sponsorships: child,
-    eventVendors: child,
-    tickets: child,
-    raffle: child,
-    auctionDonors: child,
+    checklist: child(),
+    checkInStations: child(),
+    runOfShow: { ...child(), reorder: vi.fn() },
+    volunteerNeeds: child(),
+    volunteers: child(),
+    budget: child(),
+    deposits: child(),
+    vendorPaymentPlans: child(),
+    menu: child(),
+    moodBoard: child(),
+    floorplan: { ...child(), share: vi.fn() },
+    auction: child(),
+    sponsorships: child(),
+    eventVendors: child(),
+    tickets: child(),
+    raffle: child(),
+    auctionDonors: child(),
     auctionManagement: {
       share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(), sendDonorThankYou: vi.fn(),
     },
     events: {
-      get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
+      get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), updateRegistrationPage: vi.fn(), remove: vi.fn(),
       sendAssignmentSummaries: vi.fn(),
     },
     vendors: { list: vi.fn() },
-    registrations: { ...child, importGuests: vi.fn() },
+    registrations: { ...child(), listForEvent: vi.fn(), importGuests: vi.fn() },
     locations: { list: vi.fn().mockResolvedValue([]), get: vi.fn() },
     members: { list: vi.fn().mockResolvedValue([]), setRole: vi.fn(), remove: vi.fn() },
     canvases: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn() },
@@ -111,6 +112,16 @@ vi.mock("./ticketInvitations", () => ({
 vi.mock("./vendorEventPackets", () => ({
   sendVendorEventPackets: vi.fn(),
 }));
+vi.mock("./memberRoleNotifications", () => ({
+  processDueMemberRoleNotifications: vi.fn(),
+}));
+vi.mock("./auctionOutbidNotifications", () => ({
+  processDueAuctionOutbidNotifications: vi.fn(),
+}));
+vi.mock("./eventCopy", () => ({
+  generateRegistrationCopy: vi.fn(),
+  generatePostEventCopy: vi.fn(),
+}));
 vi.mock("./runOfShowDrafts", () => ({
   discardRunOfShowDraft: vi.fn(),
   listRunOfShowDrafts: vi.fn(),
@@ -151,10 +162,13 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventByShareToken, publicAgenda, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
+const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
+const { processDueAuctionOutbidNotifications } = await import("./auctionOutbidNotifications");
+const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
 const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await import("./runOfShowDrafts");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
@@ -170,6 +184,23 @@ describe("fundraising maintenance", () => {
     const response = await handleRequest(new Request("http://localhost/api/fundraising/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, eventsChecked: 3, reminders: { sent: 2, failed: 0 }, yearEndStatements: { sent: 1, failed: 0 } });
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("notification maintenance", () => {
+  it("requires the cron secret and retries due role notifications", async () => {
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/notifications/maintenance"))).status).toBe(401);
+    vi.mocked(processDueMemberRoleNotifications).mockResolvedValue({ processed: 2, sent: 1, queued: 1, superseded: 0 });
+    vi.mocked(processDueAuctionOutbidNotifications).mockResolvedValue({ processed: 1, sent: 0, queued: 1 });
+    const response = await handleRequest(new Request("http://localhost/api/notifications/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      roleNotifications: { processed: 2, sent: 1, queued: 1, superseded: 0 },
+      outbidNotifications: { processed: 1, sent: 0, queued: 1 },
+    });
     vi.unstubAllEnvs();
   });
 });
@@ -287,6 +318,116 @@ describe("workspace role changes", () => {
     }));
     expect(invalid.status).toBe(400);
     expect(members.setRole).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("event copy assistant", () => {
+  const context = {
+    userId: "user-owner",
+    workspaceId: "workspace-1",
+    email: "owner@example.com",
+    role: "owner" as const,
+    eventScopeId: null,
+    access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+  };
+  const event = { id: "event-1", title: "Spring Gala" };
+
+  it("generates editable registration-page copy from the event and agenda", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(event as never);
+    const { runOfShow } = await import("./repos");
+    vi.mocked(runOfShow.list).mockResolvedValue([{ id: "cue-1", title: "Welcome" }] as never);
+    vi.mocked(generateRegistrationCopy).mockResolvedValue({
+      aboutHeading: "Why we are gathering",
+      aboutBody: "A clear description for guests.",
+      agendaIntroduction: "Here is what to expect.",
+      source: "ai",
+    });
+
+    const response = await handleRequest(new Request("http://localhost/api/assistant/registration-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "event-1", aboutHeading: "About", aboutBody: "", agendaIntroduction: "" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(generateRegistrationCopy).toHaveBeenCalledWith(expect.objectContaining({
+      event,
+      agenda: [{ id: "cue-1", title: "Welcome" }],
+      userId: "user-owner",
+    }));
+  });
+
+  it("builds post-event copy from unique attendance and recorded results", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(event as never);
+    const { checklist, budget, sponsorships } = await import("./repos");
+    vi.mocked(registrations.listForEvent).mockResolvedValue([
+      { id: "reg-1", status: "confirmed", checkedInAt: "2026-10-01T18:00:00.000Z", guest: { name: "Ada Lovelace" } },
+      { id: "reg-2", status: "confirmed", checkedInAt: "2026-10-01T18:05:00.000Z", guest: { name: "ada lovelace" } },
+      { id: "reg-3", status: "confirmed", checkedInAt: null, guest: { name: "Grace Hopper" } },
+    ] as never);
+    vi.mocked(checklist.list).mockResolvedValue([{ completed: true }, { completed: false }] as never);
+    vi.mocked(budget.list).mockResolvedValue([{ type: "revenue", estimatedCents: 50_000, actualCents: 60_000 }] as never);
+    vi.mocked(sponsorships.list).mockResolvedValue([{ status: "confirmed", amountCents: 40_000 }] as never);
+    vi.mocked(generatePostEventCopy).mockResolvedValue({ subject: "Thank you", thankYouMessage: "Thank you for joining us.", wrapUp: "One unique guest checked in.", source: "ai" });
+
+    const response = await handleRequest(new Request("http://localhost/api/assistant/post-event-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "event-1" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(generatePostEventCopy).toHaveBeenCalledWith(expect.objectContaining({
+      facts: expect.objectContaining({ uniqueRegistered: 2, uniqueCheckedIn: 1, checklistDone: 1, checklistTotal: 2, revenueCents: 100_000 }),
+      userId: "user-owner",
+    }));
+  });
+
+  it("does not report estimated or pending revenue as money raised", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(event as never);
+    const { checklist, budget, sponsorships } = await import("./repos");
+    vi.mocked(registrations.listForEvent).mockResolvedValue([]);
+    vi.mocked(checklist.list).mockResolvedValue([]);
+    vi.mocked(budget.list).mockResolvedValue([{ type: "revenue", estimatedCents: 900_000, actualCents: null }] as never);
+    vi.mocked(sponsorships.list).mockResolvedValue([{ status: "pending", amountCents: 500_000 }] as never);
+    vi.mocked(generatePostEventCopy).mockResolvedValue({ subject: "Thank you", thankYouMessage: "Thank you.", wrapUp: "No revenue recorded.", source: "fallback" });
+
+    const response = await handleRequest(new Request("http://localhost/api/assistant/post-event-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "event-1" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(generatePostEventCopy).toHaveBeenCalledWith(expect.objectContaining({ facts: expect.objectContaining({ revenueCents: 0 }) }));
+  });
+
+  it("returns not found instead of generating copy for a removed event", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(null);
+    vi.mocked(generateRegistrationCopy).mockClear();
+    const response = await handleRequest(new Request("http://localhost/api/assistant/registration-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "missing", aboutHeading: "", aboutBody: "", agendaIntroduction: "" }),
+    }));
+    expect(response.status).toBe(404);
+    expect(generateRegistrationCopy).not.toHaveBeenCalled();
+  });
+
+  it("routes a field-level registration-page update without replacing the whole page", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.updateRegistrationPage).mockResolvedValue(event as never);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/registration-page", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ postEventThankYou: "Saved independently" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(events.updateRegistrationPage).toHaveBeenCalledWith(context, "event-1", { postEventThankYou: "Saved independently" });
   });
 });
 
@@ -746,7 +887,7 @@ describe("public event signup endpoints", () => {
     vi.mocked(eventByShareToken).mockResolvedValue({
       event: {
         id: "event-1",
-        registrationPage: { showAgenda: false, showVolunteerSignup: false },
+        registrationPage: { showAgenda: false, showSponsors: false, showVolunteerSignup: false },
       } as never,
       timeZone: "America/Los_Angeles",
     });
@@ -756,9 +897,11 @@ describe("public event signup endpoints", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       agenda: [],
+      sponsors: [],
       volunteerNeeds: [],
     });
     expect(publicAgenda).not.toHaveBeenCalled();
+    expect(publicSponsors).not.toHaveBeenCalled();
     expect(publicVolunteerNeeds).not.toHaveBeenCalled();
   });
 

@@ -1,4 +1,4 @@
-CREATE TABLE "run_of_show_drafts" (
+CREATE TABLE IF NOT EXISTS "run_of_show_drafts" (
 	"workspace_id" text NOT NULL,
 	"event_id" text NOT NULL,
 	"user_id" text NOT NULL,
@@ -12,9 +12,15 @@ CREATE TABLE "run_of_show_drafts" (
 	CONSTRAINT "run_of_show_drafts_key_length_check" CHECK (char_length("run_of_show_drafts"."draft_key") between 1 and 160)
 );
 --> statement-breakpoint
-ALTER TABLE "run_of_show_drafts" ADD CONSTRAINT "run_of_show_drafts_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "run_of_show_drafts" ADD CONSTRAINT "run_of_show_drafts_event_id_events_id_fk" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "run_of_show_drafts_user_event_idx" ON "run_of_show_drafts" USING btree ("workspace_id","user_id","event_id");
+DO $$ BEGIN
+  ALTER TABLE "run_of_show_drafts" ADD CONSTRAINT "run_of_show_drafts_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "run_of_show_drafts" ADD CONSTRAINT "run_of_show_drafts_event_id_events_id_fk" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "run_of_show_drafts_user_event_idx" ON "run_of_show_drafts" USING btree ("workspace_id","user_id","event_id");
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION guard_single_workspace_member_role_update()
 RETURNS trigger

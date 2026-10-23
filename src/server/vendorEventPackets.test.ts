@@ -8,8 +8,9 @@ const event: Event = {
   date: "2026-10-20T00:00:00.000Z", endDate: null, location: "Mission Gardens",
   locationId: null, locationRecord: null, capacity: 200, status: "published", category: "Gala",
   imageUrl: null, registrationCount: 0, shareToken: null, registrationPage: {
-    template: "warm", headline: "", welcomeMessage: "", accentColor: "#FFD700", heroImageUrl: null,
-    paymentUrl: null, showAgenda: true, showVolunteerSignup: true, registrationTypes: ["General"], collectOrganization: true,
+    template: "warm", headline: "", aboutHeading: "", aboutBody: "", agendaIntroduction: "", welcomeMessage: "", accentColor: "#FFD700", heroImageUrl: null, aboutImageUrl: null, agendaImageUrl: null,
+    paymentUrl: null, showAgenda: true, showSpeakers: true, showSponsors: true, showVolunteerSignup: true, speakers: [], registrationTypes: ["General"], collectOrganization: true,
+    postEventSubject: "", postEventThankYou: "", postEventWrapUp: "",
   }, createdAt: "2026-10-01T00:00:00.000Z",
 };
 
@@ -59,6 +60,32 @@ describe("vendor event packet PDFs", () => {
       expect.objectContaining({ id: "text", label: "VIP SECTION", rotation: 12 }),
       expect.objectContaining({ id: "image", imageUrl: "https://example.com/logo.png", rotation: 90 }),
     ]));
+  });
+
+  it("keeps physical table sizes true to the room in PDF exports", () => {
+    const scaled: Floorplan = {
+      ...plan,
+      room: {
+        shape: "rectangle",
+        widthFeet: 150,
+        lengthFeet: 50,
+        points: [{ x: 2, y: 2 }, { x: 98, y: 2 }, { x: 98, y: 98 }, { x: 2, y: 98 }],
+      },
+      items: [{
+        id: "table-60",
+        shape: "round-table",
+        label: "Table 1",
+        x: 50,
+        y: 50,
+        seats: 8,
+        diameterFeet: 5,
+      }],
+    };
+
+    expect(floorplanPdfRenderModel(scaled).objects[0]).toMatchObject({
+      width: 5 / 150 * 100,
+      height: 5 / 50 * 100,
+    });
   });
 
   it("paginates instead of truncating long run-of-show descriptions", async () => {

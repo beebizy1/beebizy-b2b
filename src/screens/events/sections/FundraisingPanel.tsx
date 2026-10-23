@@ -16,6 +16,7 @@ import {
   DollarSign,
   Gavel,
   HandCoins,
+  ImagePlus,
   Link as LinkIcon,
   Mail,
   MessageSquare,
@@ -73,6 +74,7 @@ import {
   useSponsorships,
   useUpdateAuctionItem,
   useUpdateSponsorship,
+  useUploadAuctionImage,
 } from "@/data/hooks";
 import {
   AUCTION_ITEM_STATUSES,
@@ -393,6 +395,7 @@ interface SponsorFields {
   companyName: string;
   tier: SponsorshipTier;
   amount: string;
+  logoUrl: string;
   contactName: string;
   contactEmail: string;
   notes: string;
@@ -403,6 +406,7 @@ const BLANK_SPONSOR: SponsorFields = {
   companyName: "",
   tier: "custom",
   amount: "",
+  logoUrl: "",
   contactName: "",
   contactEmail: "",
   notes: "",
@@ -422,6 +426,7 @@ function SponsorshipDialog({
 }) {
   const add = useAddSponsorship();
   const update = useUpdateSponsorship();
+  const uploadLogo = useUploadAuctionImage();
   const [form, setForm] = useState<SponsorFields>(BLANK_SPONSOR);
 
   useEffect(() => {
@@ -432,6 +437,7 @@ function SponsorshipDialog({
             companyName: sponsor.companyName,
             tier: sponsor.tier,
             amount: sponsor.amountCents == null ? "" : String(sponsor.amountCents / 100),
+            logoUrl: sponsor.logoUrl ?? "",
             contactName: sponsor.contactName ?? "",
             contactEmail: sponsor.contactEmail ?? "",
             notes: sponsor.notes ?? "",
@@ -444,7 +450,7 @@ function SponsorshipDialog({
   const set = <K extends keyof SponsorFields>(key: K, value: SponsorFields[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const pending = add.isPending || update.isPending;
+  const pending = add.isPending || update.isPending || uploadLogo.isPending;
 
   const save = () => {
     const companyName = form.companyName.trim();
@@ -454,6 +460,7 @@ function SponsorshipDialog({
       companyName,
       tier: form.tier,
       amountCents: centsFromInput(form.amount),
+      logoUrl: form.logoUrl || null,
       contactName: form.contactName.trim() || null,
       contactEmail: form.contactEmail.trim() || null,
       notes: form.notes.trim() || null,
@@ -516,6 +523,26 @@ function SponsorshipDialog({
                 placeholder="10,000"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Sponsor logo</Label>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-hairline p-3">
+              {form.logoUrl ? (
+                <img src={form.logoUrl} alt={`${form.companyName || "Sponsor"} logo`} className="h-14 w-36 rounded-md bg-white object-contain p-2" />
+              ) : (
+                <div className="grid h-14 w-36 place-items-center rounded-md border border-dashed border-hairline bg-surface-sunken">
+                  <ImagePlus className="size-5 text-muted-foreground" aria-hidden="true" />
+                </div>
+              )}
+              <label className="inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-input bg-background px-3 text-xs font-semibold hover:bg-accent">
+                <ImagePlus className="mr-1.5 size-4" aria-hidden="true" />
+                {uploadLogo.isPending ? "Uploading..." : form.logoUrl ? "Replace logo" : "Upload logo"}
+                <input type="file" accept="image/*" className="sr-only" disabled={uploadLogo.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; uploadLogo.mutate(file, { onSuccess: (url) => set("logoUrl", url), onError: (error) => toast({ title: "Couldn't upload the sponsor logo", description: error.message }) }); }} />
+              </label>
+              {form.logoUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => set("logoUrl", "")}>Remove</Button> : null}
+            </div>
+            <p className="text-xs text-muted-foreground">Confirmed sponsors appear on the public registration page.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

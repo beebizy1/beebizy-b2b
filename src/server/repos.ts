@@ -117,12 +117,14 @@ import {
   notifyAuctionOutbid,
   notifyAuctionDonorThankYou,
   notifyCombinedFundraisingReceipt,
-  notifyWorkspaceRoleChanged,
 } from "./notify.ts";
+import { queueAuctionOutbidNotification } from "./auctionOutbidNotifications.ts";
+import { deliverMemberRoleNotification } from "./memberRoleNotifications.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../data/registrationPage.ts";
+import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
 import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
@@ -378,6 +380,7 @@ export const events = {
       category: str(body, "category", "Other"),
       imageUrl: optStr(body, "imageUrl"),
       registrationPage: normalizeRegistrationPage(body.registrationPage ?? DEFAULT_REGISTRATION_PAGE),
+      navigation: normalizeEventNavigation(body.navigation ?? DEFAULT_EVENT_NAVIGATION),
       createdAt,
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
@@ -427,6 +430,7 @@ export const events = {
       registrationCount: 0,
       shareToken: null,
       registrationPage: values.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
+      navigation: values.navigation,
       createdAt: createdAt.toISOString(),
     };
     const eventInsert = db.insert(s.events).values(values);
@@ -493,6 +497,7 @@ export const events = {
       category: (b) => str(b, "category", "Other"),
       imageUrl: (b) => optStr(b, "imageUrl"),
       registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
+      navigation: (b) => normalizeEventNavigation(b.navigation),
       locationId: (b) => optStr(b, "locationId"),
     });
     if ("experience" in body && ctx.canSwitchExperience && !ctx.eventScopeId) {
@@ -511,6 +516,7 @@ export const events = {
     if ("category" in body) after.category = patch.category as string;
     if ("imageUrl" in body) after.imageUrl = patch.imageUrl as string | null;
     if ("registrationPage" in body) after.registrationPage = normalizeRegistrationPage(patch.registrationPage);
+    if ("navigation" in body) after.navigation = normalizeEventNavigation(patch.navigation);
     if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
     if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
     if ("location" in body) after.location = patch.venue as string | null;
@@ -589,6 +595,29 @@ export const events = {
     const result = await events.get(ctx, id);
     if (!result) throw new HttpError(404, "That event no longer exists.");
     return result;
+  },
+
+  async updateRegistrationPage(ctx: RequestContext, id: string, body: Body): Promise<Event> {
+    const before = await events.get(ctx, id);
+    if (!before) throw new HttpError(404, "That event no longer exists.");
+    const patch = normalizeRegistrationPagePatch(body);
+    if (Object.keys(patch).length === 0) return before;
+    const updatedAt = new Date();
+    await db.update(s.events).set({
+      registrationPage: sql`coalesce(${s.events.registrationPage}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      updatedAt,
+    }).where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)));
+    const after = await events.get(ctx, id);
+    if (!after) throw new HttpError(404, "That event no longer exists.");
+    await db.insert(s.eventHistory).values(historyValues(ctx, {
+      eventId: id,
+      resource: "event",
+      resourceId: id,
+      action: "updated",
+      before: { registrationPage: before.registrationPage },
+      after: { registrationPage: after.registrationPage },
+    }));
+    return after;
   },
 
   async remove(ctx: RequestContext, id: string): Promise<void> {
@@ -954,6 +983,19 @@ export async function publicTickets(eventId: string) {
     .where(and(eq(s.ticketTypes.eventId, eventId), eq(s.ticketTypes.isActive, true)))
     .orderBy(asc(s.ticketTypes.sortOrder));
   return rows.map(map.toTicketType);
+}
+
+/** Public-safe sponsor recognition. Contact details and contribution amounts stay private. */
+export async function publicSponsors(eventId: string) {
+  return db
+    .select({
+      companyName: s.sponsorships.companyName,
+      tier: s.sponsorships.tier,
+      logoUrl: s.sponsorships.logoUrl,
+    })
+    .from(s.sponsorships)
+    .where(and(eq(s.sponsorships.eventId, eventId), eq(s.sponsorships.status, "confirmed")))
+    .orderBy(asc(s.sponsorships.companyName));
 }
 
 /** Read-only floorplans for an event already authorized by its public share token. */
@@ -4222,6 +4264,7 @@ export async function placePublicAuctionBid(
   if (!bidder) throw new HttpError(404, "This bidder registration is not available.");
   if (!bidder.paymentMethodId) throw new HttpError(409, "Add a card or wallet before placing a bid.");
   const [before] = await db.select({
+    eventId: s.auctionItems.eventId,
     bidderId: s.auctionItems.winningBidderId,
     bidderName: s.auctionBidders.name,
     bidderEmail: s.auctionBidders.email,
@@ -4264,7 +4307,8 @@ export async function placePublicAuctionBid(
       ? { email: before.bidderEmail, name: before.bidderName ?? "bidder" }
       : null;
   if (outbid && before) {
-    await notifyAuctionOutbid({
+    const notificationInput = {
+      eventId: before.eventId,
       bidId: latestBid?.id ?? `${itemId}-${item.bidCount}`,
       to: outbid.email,
       bidderName: outbid.name,
@@ -4272,7 +4316,12 @@ export async function placePublicAuctionBid(
       itemTitle: before.itemTitle,
       currentBidCents: item.currentBidCents ?? item.startingBidCents,
       auctionUrl: `${appOrigin()}/auction/${encodeURIComponent(auctionToken)}`,
-    });
+    };
+    const notification = await notifyAuctionOutbid(notificationInput);
+    if (notification.status !== "sent") {
+      await queueAuctionOutbidNotification(notificationInput, notification.reason);
+      console.warn("AUCTION_OUTBID_EMAIL_NOT_SENT", itemId, notification.status, notification.reason);
+    }
   }
   return {
     item,
@@ -5013,6 +5062,7 @@ async function claimInviteForExistingAccount(
     .values({
       workspaceId: invite.workspaceId,
       userId: account.userId,
+      email: account.email,
       role: invite.role,
       eventScopeId: invite.eventScopeId,
     })
@@ -5064,12 +5114,20 @@ export const members = {
 
     // One call for the whole page rather than one per member.
     const directory = await lookupUsers(rows.map((row) => row.member.userId));
+    const emailBackfills = rows.flatMap((row) => {
+      const verifiedEmail = directory.get(row.member.userId)?.email ?? null;
+      if (!verifiedEmail || verifiedEmail === row.member.email) return [];
+      return [db.update(s.workspaceMembers).set({ email: verifiedEmail }).where(and(
+        eq(s.workspaceMembers.workspaceId, ctx.workspaceId), eq(s.workspaceMembers.userId, row.member.userId),
+      ))];
+    });
+    if (emailBackfills.length) await Promise.all(emailBackfills);
     const active: WorkspaceMember[] = rows.map((row) => ({
       userId: row.member.userId,
       role: row.member.role,
       status: "active",
       name: directory.get(row.member.userId)?.name ?? null,
-      email: directory.get(row.member.userId)?.email ?? null,
+      email: directory.get(row.member.userId)?.email ?? row.member.email,
       isSelf: row.member.userId === ctx.userId,
       joinedAt: row.member.createdAt.toISOString(),
       eventScopeId: row.member.eventScopeId,
@@ -5283,6 +5341,40 @@ export const members = {
       throw new HttpError(409, "Event-only collaborators must remain members. Remove the event restriction before granting workspace-wide Admin or Owner access.");
     }
 
+    const [directory, [workspace]] = await Promise.all([
+      lookupUsers([userId]),
+      db.select({ name: s.workspaces.name }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
+    ]);
+    const account = directory.get(userId);
+    const memberFrom = (row: typeof current): WorkspaceMember => ({
+      userId,
+      role: row.role,
+      status: "active",
+      name: account?.name ?? null,
+      email: account?.email ?? row.email,
+      isSelf: userId === ctx.userId,
+      joinedAt: row.createdAt.toISOString(),
+      eventScopeId: row.eventScopeId,
+      eventScopeTitle: null,
+    });
+    if (current.role === role) {
+      const member = memberFrom(current);
+      member.eventScopeTitle = current.eventScopeId ? (await events.get(ctx, current.eventScopeId))?.title ?? null : null;
+      const [existingNotification] = await db.select({ id: s.memberRoleNotifications.id, status: s.memberRoleNotifications.status })
+        .from(s.memberRoleNotifications).where(and(
+          eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+          eq(s.memberRoleNotifications.userId, userId),
+          eq(s.memberRoleNotifications.changeId, changeId),
+          eq(s.memberRoleNotifications.newRole, role as "member"),
+        )).limit(1);
+      if (!existingNotification) return { member, emailSent: false, roleChanged: false, notificationStatus: "not-needed" };
+      const delivery = await deliverMemberRoleNotification(existingNotification.id).catch(() => "queued" as const);
+      const sent = delivery === "sent" || delivery === "already-sent";
+      return { member, emailSent: sent, roleChanged: false, notificationStatus: sent ? "sent" : "queued" };
+    }
+    const notificationId = newId("role-notify");
+    const recipientEmail = account?.email ?? current.email;
+
     const ownerLock = db.select({ locked: sql<number>`pg_advisory_xact_lock(hashtext(${ctx.workspaceId}))` })
       .from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1);
     const roleUpdate = db
@@ -5291,40 +5383,74 @@ export const members = {
       .where(and(
         eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
         eq(s.workspaceMembers.userId, userId),
+        sql`not exists (
+          select 1 from member_role_notifications active_role_notice
+          where active_role_notice.workspace_id = ${ctx.workspaceId}
+            and active_role_notice.user_id = ${userId}
+            and active_role_notice.status = 'processing'
+        )`,
         roleChangeOwnerGuard(ctx.workspaceId, userId, role as "member"),
       ))
       .returning();
-    const [, updatedRows] = await db.batch([ownerLock, roleUpdate]);
+    const supersedeOlderNotifications = db.update(s.memberRoleNotifications).set({
+      status: "superseded",
+      lockedAt: null,
+      leaseToken: null,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+      eq(s.memberRoleNotifications.userId, userId),
+      inArray(s.memberRoleNotifications.status, ["pending", "processing"]),
+      or(ne(s.memberRoleNotifications.changeId, changeId), ne(s.memberRoleNotifications.newRole, role as "member")),
+      sql`exists (
+        select 1 from workspace_members member_after_role_change
+        where member_after_role_change.workspace_id = ${ctx.workspaceId}
+          and member_after_role_change.user_id = ${userId}
+          and member_after_role_change.role = ${role}::workspace_role
+      )`,
+    ));
+    const notificationInsert = db.execute(sql`
+      insert into member_role_notifications (
+        id, workspace_id, user_id, change_id, recipient_email, member_name, workspace_name, new_role
+      )
+      select
+        ${notificationId}, ${ctx.workspaceId}, ${userId}, ${changeId}, ${recipientEmail},
+        ${account?.name ?? recipientEmail ?? "team member"}, ${workspace?.name ?? "Beebizy"}, ${role}::workspace_role
+      from workspace_members member_after_role_change
+      where member_after_role_change.workspace_id = ${ctx.workspaceId}
+        and member_after_role_change.user_id = ${userId}
+        and member_after_role_change.role = ${role}::workspace_role
+      on conflict (workspace_id, user_id, change_id, new_role) do nothing
+    `);
+    const [, updatedRows] = await db.batch([ownerLock, roleUpdate, supersedeOlderNotifications, notificationInsert]);
     const updated = updatedRows[0];
-    if (!updated) throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    if (!updated) {
+      const [sending] = await db.select({ id: s.memberRoleNotifications.id }).from(s.memberRoleNotifications).where(and(
+        eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+        eq(s.memberRoleNotifications.userId, userId),
+        eq(s.memberRoleNotifications.status, "processing"),
+      )).limit(1);
+      if (sending) throw new HttpError(409, "A role notification is being sent. Wait a few seconds, then change this person's role again.");
+      throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    }
 
-    const [directory, [workspace]] = await Promise.all([
-      lookupUsers([userId]),
-      db.select({ name: s.workspaces.name }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
-    ]);
-    const account = directory.get(userId);
-    const member: WorkspaceMember = {
-      userId,
-      role: updated.role,
-      status: "active",
-      name: account?.name ?? null,
-      email: account?.email ?? null,
-      isSelf: userId === ctx.userId,
-      joinedAt: updated.createdAt.toISOString(),
-      eventScopeId: updated.eventScopeId,
-      eventScopeTitle: updated.eventScopeId ? (await events.get(ctx, updated.eventScopeId))?.title ?? null : null,
-    };
-    if (current.role === role) return { member, emailSent: false, roleChanged: false };
-    const outcome = account?.email ? await notifyWorkspaceRoleChanged({
-      changeId,
-      workspaceId: ctx.workspaceId,
-      workspaceName: workspace?.name ?? "Beebizy",
-      userId,
-      to: account.email,
-      memberName: account.name ?? "team member",
-      newRole: updated.role,
-    }) : null;
-    return { member, emailSent: outcome?.status === "sent", roleChanged: true };
+    const member = memberFrom(updated);
+    const [queuedNotification] = await db.select({ id: s.memberRoleNotifications.id }).from(s.memberRoleNotifications).where(and(
+      eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+      eq(s.memberRoleNotifications.userId, userId),
+      eq(s.memberRoleNotifications.changeId, changeId),
+      eq(s.memberRoleNotifications.newRole, role as "member"),
+    )).limit(1);
+    if (!queuedNotification) throw new HttpError(500, "The role changed, but its notification could not be queued.");
+    let delivery: Awaited<ReturnType<typeof deliverMemberRoleNotification>> = "queued";
+    try {
+      delivery = await deliverMemberRoleNotification(queuedNotification.id);
+    } catch (error) {
+      // The outbox row committed with the role change. Cron will retry even if this
+      // request lost its connection while making the immediate delivery attempt.
+      console.warn("ROLE_NOTIFICATION_IMMEDIATE_ATTEMPT_FAILED", queuedNotification.id, error instanceof Error ? error.message : String(error));
+    }
+    return { member, emailSent: delivery === "sent" || delivery === "already-sent", roleChanged: true, notificationStatus: delivery === "sent" || delivery === "already-sent" ? "sent" : "queued" };
   },
 
   async remove(ctx: RequestContext, userId: string): Promise<void> {
@@ -5340,12 +5466,34 @@ export const members = {
       .where(and(
         eq(s.workspaceMembers.workspaceId, ctx.workspaceId),
         eq(s.workspaceMembers.userId, userId),
+        sql`not exists (
+          select 1 from member_role_notifications active_role_notice
+          where active_role_notice.workspace_id = ${ctx.workspaceId}
+            and active_role_notice.user_id = ${userId}
+            and active_role_notice.status = 'processing'
+        )`,
         roleRemovalOwnerGuard(ctx.workspaceId, userId),
       ))
       .returning({ userId: s.workspaceMembers.userId });
-    const [, removed] = await db.batch([ownerLock, memberDelete]);
-    if (removed.length === 0 && current.role === "owner") {
-      throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
+    const supersedeNotifications = db.update(s.memberRoleNotifications).set({ status: "superseded", lockedAt: null, leaseToken: null, updatedAt: new Date() }).where(and(
+      eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+      eq(s.memberRoleNotifications.userId, userId),
+      inArray(s.memberRoleNotifications.status, ["pending", "processing"]),
+      sql`not exists (
+        select 1 from workspace_members remaining_member
+        where remaining_member.workspace_id = ${ctx.workspaceId}
+          and remaining_member.user_id = ${userId}
+      )`,
+    ));
+    const [, removed] = await db.batch([ownerLock, memberDelete, supersedeNotifications]);
+    if (removed.length === 0) {
+      const [sending] = await db.select({ id: s.memberRoleNotifications.id }).from(s.memberRoleNotifications).where(and(
+        eq(s.memberRoleNotifications.workspaceId, ctx.workspaceId),
+        eq(s.memberRoleNotifications.userId, userId),
+        eq(s.memberRoleNotifications.status, "processing"),
+      )).limit(1);
+      if (sending) throw new HttpError(409, "A role notification is being sent. Wait a few seconds, then remove this person.");
+      if (current.role === "owner") throw new HttpError(409, "A workspace needs at least one owner. Make someone else an owner first.");
     }
   },
 };

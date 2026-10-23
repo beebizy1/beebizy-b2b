@@ -11,6 +11,7 @@ export interface FloorplanShapeSpec {
 
 export const FLOORPLAN_SHAPE_SPECS: Record<FloorplanShape, FloorplanShapeSpec> = {
   "round-table": { label: "Round table", width: 9, height: 12, seats: 10, round: true, className: "bg-primary-muted border-primary/40 text-foreground" },
+  "cocktail-table": { label: "Highboy / cocktail", width: 4, height: 6, seats: null, round: true, className: "bg-warning-tint border-warning/40 text-warning-text" },
   "long-table": { label: "Long table", width: 22, height: 7, seats: 16, round: false, className: "bg-primary-muted border-primary/40 text-foreground" },
   stage: { label: "Stage", width: 30, height: 9, seats: null, round: false, className: "bg-secondary border-secondary text-secondary-foreground" },
   bar: { label: "Bar", width: 8, height: 16, seats: null, round: false, className: "bg-info-tint border-info/40 text-info-text" },
