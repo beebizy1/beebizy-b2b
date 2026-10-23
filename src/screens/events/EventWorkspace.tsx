@@ -16,6 +16,8 @@ import {
   ArrowUp,
   CalendarClock,
   Copy,
+  Eye,
+  EyeOff,
   FileText,
   MailCheck,
   MapPin,
@@ -79,7 +81,8 @@ import {
   useUpdateEvent,
 } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
-import { eventSectionHref, eventSectionLabel, eventTabHref, orderedEventTabs, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
+import { eventSectionHref, eventSectionLabel, eventTabHref, eventTabsForEvent, orderedEventTabs, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
+import type { HideableEventTabId } from "@/data/eventNavigation";
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
@@ -133,13 +136,18 @@ function SectionTabs({
   plan,
   experience,
   dayNumber,
+  hiddenTabIds,
+  onHiddenChange,
 }: {
   eventId: string;
   active: EventTabId;
   plan: PlanId;
   experience: AccountExperience;
   dayNumber: number;
+  hiddenTabIds: readonly HideableEventTabId[];
+  onHiddenChange(hiddenTabIds: HideableEventTabId[]): void;
 }) {
+  const [, navigate] = useLocation();
   const activeRef = useRef<HTMLAnchorElement>(null);
   const storageKey = `beebizy:event-tab-order:${experience}`;
   const baseTabs = visibleEventTabs(plan, experience);
@@ -151,7 +159,11 @@ function SectionTabs({
       return [];
     }
   });
-  const tabs = orderedEventTabs(baseTabs, order);
+  const [hidden, setHidden] = useState<HideableEventTabId[]>([...hiddenTabIds]);
+  const allTabs = orderedEventTabs(baseTabs, order);
+  const tabs = eventTabsForEvent(allTabs, hidden);
+
+  useEffect(() => setHidden([...hiddenTabIds]), [hiddenTabIds]);
 
   const saveOrder = (next: EventTabId[]) => {
     setOrder(next);
@@ -159,12 +171,22 @@ function SectionTabs({
   };
 
   const move = (id: EventTabId, direction: -1 | 1) => {
-    const ids = tabs.map((tab) => tab.id);
+    const ids = allTabs.map((tab) => tab.id);
     const from = ids.indexOf(id);
     const to = from + direction;
     if (from < 0 || to < 0 || to >= ids.length) return;
     [ids[from], ids[to]] = [ids[to]!, ids[from]!];
     saveOrder(ids);
+  };
+
+  const setTabHidden = (id: EventTabId, nextHidden: boolean) => {
+    if (id === "overview" || id === "share") return;
+    const next = nextHidden
+      ? [...new Set([...hidden, id as HideableEventTabId])]
+      : hidden.filter((tabId) => tabId !== id);
+    setHidden(next);
+    onHiddenChange(next);
+    if (nextHidden && active === id) navigate(eventTabHref(eventId, "overview"));
   };
 
   // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
@@ -212,23 +234,26 @@ function SectionTabs({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Arrange event tabs</DialogTitle>
-            <DialogDescription>Move the sections into the order your team uses. The order applies to every event in this view.</DialogDescription>
+            <DialogDescription>Move sections into your preferred order, or hide anything this event does not need. Hidden sections keep all their data and can be restored later.</DialogDescription>
           </DialogHeader>
           <ol className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
-            {tabs.map((tab, index) => (
-              <li key={tab.id} className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2">
+            {allTabs.map((tab, index) => {
+              const isHidden = hidden.includes(tab.id as HideableEventTabId);
+              return (
+              <li key={tab.id} className={cn("flex items-center gap-2 rounded-lg border border-hairline px-3 py-2", isHidden && "bg-surface-sunken text-muted-foreground")}>
                 <span className="w-6 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                 <span className="min-w-0 flex-1 text-sm font-medium">{tab.label}</span>
+                {tab.id === "overview" ? <span className="text-[11px] text-muted-foreground">Always shown</span> : <Button type="button" variant="ghost" size="sm" aria-label={`${isHidden ? "Show" : "Hide"} ${tab.label}`} onClick={() => setTabHidden(tab.id, !isHidden)}>{isHidden ? <Eye className="mr-1.5 size-4" /> : <EyeOff className="mr-1.5 size-4" />}{isHidden ? "Show" : "Hide"}</Button>}
                 <Button type="button" variant="ghost" size="icon" disabled={index === 0} aria-label={`Move ${tab.label} up`} onClick={() => move(tab.id, -1)}>
                   <ArrowUp className="size-4" />
                 </Button>
-                <Button type="button" variant="ghost" size="icon" disabled={index === tabs.length - 1} aria-label={`Move ${tab.label} down`} onClick={() => move(tab.id, 1)}>
+                <Button type="button" variant="ghost" size="icon" disabled={index === allTabs.length - 1} aria-label={`Move ${tab.label} down`} onClick={() => move(tab.id, 1)}>
                   <ArrowDown className="size-4" />
                 </Button>
               </li>
-            ))}
+            );})}
           </ol>
-          <Button type="button" variant="outline" onClick={() => saveOrder([])}>Reset default order</Button>
+          <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => saveOrder([])}>Reset default order</Button><Button type="button" variant="outline" onClick={() => { setHidden([]); onHiddenChange([]); }}>Show all sections</Button></div>
         </DialogContent>
       </Dialog>
     </div>
@@ -605,7 +630,7 @@ function WorkspaceHeader({
       </div>
 
       {active !== "share" ? <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
-        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} />
+        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} hiddenTabIds={event.navigation?.hiddenTabIds ?? []} onHiddenChange={(hiddenTabIds) => updateEvent.mutate({ id: event.id, patch: { navigation: { hiddenTabIds } } }, { onError: (error) => toast({ title: "Couldn't update event tabs", description: error.message }) })} />
         <div className="flex items-center gap-2 overflow-x-auto border-t border-hairline py-2" aria-label="Event days">
           {days.map((day) => (
             <Button

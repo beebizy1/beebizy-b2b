@@ -49,6 +49,7 @@ import type {
   VolunteerNeed,
   VolunteerShift,
 } from "../data/entities.ts";
+import { normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { readStoredFloorplan } from "../data/floorplan.ts";
 import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
@@ -99,6 +100,7 @@ export function toEvent(
     registrationCount: extras.registrationCount ?? 0,
     shareToken: row.shareToken,
     registrationPage: normalizeRegistrationPage(row.registrationPage),
+    navigation: normalizeEventNavigation(row.navigation),
     auctionPublicToken: row.auctionPublicToken,
     auctionPage: normalizeAuctionPageSettings(row.auctionPage),
     createdAt: isoRequired(row.createdAt),

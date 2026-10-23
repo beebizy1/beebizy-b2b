@@ -39,6 +39,7 @@ import {
 import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
 import { planHasCapability, type PlanCapability, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
+import type { HideableEventTabId } from "@/data/eventNavigation";
 
 export interface NavItem {
   label: string;
@@ -167,25 +168,7 @@ export interface EventTab {
 
 export type EventTabId =
   | "overview"
-  | "registrations"
-  | "check-in"
-  | "run-of-show"
-  | "checklist"
-  | "volunteers"
-  | "contingency"
-  | "vendors"
-  | "budget"
-  | "floorplan"
-  | "inspiration"
-  | "fundraising"
-  | "analytics"
-  | "menu"
-  | "tickets"
-  | "raffle"
-  | "silent-auction"
-  | "live-auction"
-  | "rfp"
-  | "deposits"
+  | HideableEventTabId
   /** Reachable by URL and from the header's Share button, but not a tab in the bar. */
   | "share";
 
@@ -275,6 +258,12 @@ export function orderedEventTabs(tabs: EventTab[], order: readonly EventTabId[])
     return [tab];
   });
   return [...ordered, ...tabs.filter((tab) => byId.has(tab.id))];
+}
+
+/** Hides only optional event sections. Overview always remains the stable way back in. */
+export function eventTabsForEvent(tabs: EventTab[], hiddenTabIds: readonly string[]): EventTab[] {
+  const hidden = new Set(hiddenTabIds);
+  return tabs.filter((tab) => tab.id === "overview" || !hidden.has(tab.id));
 }
 
 /**

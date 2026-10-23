@@ -43,6 +43,16 @@ describe("events", () => {
     expect((await memoryAdapter.events.get("evt-gala"))!.title).toBe("Annual Partner Gala & Fundraiser");
   });
 
+  it("persists hidden event tabs per event without deleting their data", async () => {
+    const beforeRaffle = await memoryAdapter.raffle.list("evt-gala");
+
+    await memoryAdapter.events.update("evt-gala", { navigation: { hiddenTabIds: ["raffle", "menu"] } });
+
+    expect((await memoryAdapter.events.get("evt-gala"))?.navigation).toEqual({ hiddenTabIds: ["raffle", "menu"] });
+    expect(await memoryAdapter.raffle.list("evt-gala")).toEqual(beforeRaffle);
+    expect((await memoryAdapter.events.get("evt-cab"))?.navigation?.hiddenTabIds ?? []).toEqual([]);
+  });
+
   it("keeps the venue's event count in sync on create and delete", async () => {
     const before = (await memoryAdapter.locations.get("loc-moscone"))!.eventCount;
     const created = await memoryAdapter.events.create({

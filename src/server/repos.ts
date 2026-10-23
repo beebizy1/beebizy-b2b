@@ -123,6 +123,7 @@ import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
+import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
 import { lastNameSearchValue, parseAlphabeticalLane } from "../data/checkInLanes.ts";
@@ -377,6 +378,7 @@ export const events = {
       category: str(body, "category", "Other"),
       imageUrl: optStr(body, "imageUrl"),
       registrationPage: normalizeRegistrationPage(body.registrationPage ?? DEFAULT_REGISTRATION_PAGE),
+      navigation: normalizeEventNavigation(body.navigation ?? DEFAULT_EVENT_NAVIGATION),
       createdAt,
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
@@ -426,6 +428,7 @@ export const events = {
       registrationCount: 0,
       shareToken: null,
       registrationPage: values.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
+      navigation: values.navigation,
       createdAt: createdAt.toISOString(),
     };
     const eventInsert = db.insert(s.events).values(values);
@@ -492,6 +495,7 @@ export const events = {
       category: (b) => str(b, "category", "Other"),
       imageUrl: (b) => optStr(b, "imageUrl"),
       registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
+      navigation: (b) => normalizeEventNavigation(b.navigation),
       locationId: (b) => optStr(b, "locationId"),
     });
     if ("experience" in body && ctx.canSwitchExperience && !ctx.eventScopeId) {
@@ -510,6 +514,7 @@ export const events = {
     if ("category" in body) after.category = patch.category as string;
     if ("imageUrl" in body) after.imageUrl = patch.imageUrl as string | null;
     if ("registrationPage" in body) after.registrationPage = normalizeRegistrationPage(patch.registrationPage);
+    if ("navigation" in body) after.navigation = normalizeEventNavigation(patch.navigation);
     if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
     if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
     if ("location" in body) after.location = patch.venue as string | null;

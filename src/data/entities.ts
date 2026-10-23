@@ -14,6 +14,7 @@
 import type { Cents } from "./money.ts";
 import type { RegistrationPageSettings } from "./registrationPage.ts";
 import type { AccountExperience } from "./accountExperience.ts";
+import type { EventNavigationSettings } from "./eventNavigation.ts";
 
 /* ------------------------------------------------------------------ primitives */
 
@@ -82,6 +83,8 @@ export interface Event extends OwnedRecord {
   shareToken: string | null;
   /** Branding and content for the guest-facing registration site. */
   registrationPage: RegistrationPageSettings;
+  /** Per-event menu cleanup. Hidden sections keep their data and can be restored. */
+  navigation?: EventNavigationSettings;
   /** Present after the organizer creates the public auction catalog link. */
   auctionPublicToken?: string | null;
   auctionPage?: AuctionPageSettings;
@@ -100,6 +103,7 @@ export interface EventDraft {
   category: EventCategory;
   imageUrl?: string | null;
   registrationPage?: RegistrationPageSettings;
+  navigation?: EventNavigationSettings;
   auctionPage?: AuctionPageSettings;
 }
 
