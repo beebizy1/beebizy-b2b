@@ -4,7 +4,7 @@ import { FLOORPLAN_SHAPES } from "./entities";
 
 describe("parseFloorplanDraft", () => {
   it("supports Santa Clara site features and individual seating", () => {
-    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["tree", "chair", "chair-row", "image", "text"]));
+    expect(FLOORPLAN_SHAPES).toEqual(expect.arrayContaining(["cocktail-table", "tree", "chair", "chair-row", "image", "text"]));
   });
 
   it("calculates usable square footage for rectangular, oval and traced rooms", () => {
@@ -49,6 +49,19 @@ describe("parseFloorplanDraft", () => {
       height: 10,
     };
     expect(parseFloorplanDraft({ name: "Main room", items: [item] }).items[0]).toEqual(item);
+  });
+
+  it("preserves physical table diameters", () => {
+    const item = {
+      id: "table-60",
+      shape: "round-table" as const,
+      label: "Table 1",
+      x: 50,
+      y: 50,
+      seats: 8,
+      diameterFeet: 5,
+    };
+    expect(parseFloorplanDraft({ name: "Ballroom", items: [item] }).items[0]).toEqual(item);
   });
 
   it("preserves rotation and editable corners for custom objects", () => {
@@ -146,6 +159,7 @@ describe("parseFloorplanDraft", () => {
     { field: "seats", value: 1.5 },
     { field: "width", value: 101 },
     { field: "height", value: 0 },
+    { field: "diameterFeet", value: 0.25 },
     { field: "rotation", value: 360 },
   ])("rejects an invalid $field", ({ field, value }) => {
     const item = { id: "table-1", shape: "round-table", label: "Table 1", x: 42, y: 58, seats: 10 };

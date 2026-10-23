@@ -1,12 +1,14 @@
 import { degrees, PDFDocument, StandardFonts, rgb, type PDFDocument as PdfDocument, type PDFImage, type PDFPage } from "pdf-lib";
 import { createHash } from "node:crypto";
 import type { Event, Floorplan, FloorplanItem, FloorplanPoint, RunOfShowItem } from "../data/entities.ts";
+import { floorplanItemPercentSize } from "../data/floorplanScale.ts";
+import { DEFAULT_FLOORPLAN_ROOM } from "../data/floorplanGeometry.ts";
 import { vendorPacketContentKey, vendorPacketFileSlug, type VendorEventPacketDraft } from "../data/vendorEventPackets.ts";
 import { formatClockTime, timeZoneLabel } from "../lib/datetime.ts";
 import type { EmailMessage } from "./notify.ts";
 
 const ITEM_DEFAULTS: Record<FloorplanItem["shape"], { width: number; height: number }> = {
-  "round-table": { width: 9, height: 12 }, "long-table": { width: 22, height: 7 }, stage: { width: 30, height: 9 },
+  "round-table": { width: 9, height: 12 }, "cocktail-table": { width: 4, height: 6 }, "long-table": { width: 22, height: 7 }, stage: { width: 30, height: 9 },
   bar: { width: 8, height: 16 }, entrance: { width: 12, height: 6 }, dancefloor: { width: 24, height: 20 },
   booth: { width: 10, height: 10 }, av: { width: 9, height: 7 }, tree: { width: 7, height: 10 },
   chair: { width: 4, height: 6 }, "chair-row": { width: 24, height: 6 }, "custom-shape": { width: 18, height: 14 },
@@ -50,7 +52,8 @@ export interface FloorplanPdfRenderObject {
 }
 
 export function floorplanPdfRenderModel(plan: Floorplan): { roomShape: NonNullable<Floorplan["room"]>["shape"]; roomPoints: FloorplanPoint[]; objects: FloorplanPdfRenderObject[] } {
-  const roomShape = plan.room?.shape ?? "rectangle";
+  const room = plan.room ?? DEFAULT_FLOORPLAN_ROOM;
+  const roomShape = room.shape;
   const roomPoints = roomShape === "oval" ? [] : plan.room?.points?.map((point) => ({ ...point })) ?? [{ x: 2, y: 2 }, { x: 98, y: 2 }, { x: 98, y: 98 }, { x: 2, y: 98 }];
   return {
     roomShape,
@@ -61,8 +64,7 @@ export function floorplanPdfRenderModel(plan: Floorplan): { roomShape: NonNullab
       label: item.label,
       x: item.x,
       y: item.y,
-      width: item.width ?? ITEM_DEFAULTS[item.shape].width,
-      height: item.height ?? ITEM_DEFAULTS[item.shape].height,
+      ...floorplanItemPercentSize(item, room, ITEM_DEFAULTS[item.shape]),
       rotation: item.rotation ?? 0,
       points: item.points?.map((point) => ({ ...point })) ?? [],
       customShapeMode: item.customShapeMode,
@@ -218,7 +220,17 @@ export async function buildFloorplansPdf(input: { event: Event; plans: Floorplan
     const page = document.addPage([792, 612]);
     page.drawText(safePdfText(input.event.title), { x: 36, y: 570, size: 18, font: bold });
     page.drawText(safePdfText(plan.name), { x: 36, y: 545, size: 12, font: regular, color: rgb(0.35, 0.35, 0.35) });
-    const canvas = { x: 36, y: 36, width: 720, height: 480 };
+    const room = plan.room ?? DEFAULT_FLOORPLAN_ROOM;
+    const roomRatio = room.widthFeet / room.lengthFeet;
+    const availableCanvas = { x: 36, y: 36, width: 720, height: 480 };
+    const fittedWidth = Math.min(availableCanvas.width, availableCanvas.height * roomRatio);
+    const fittedHeight = fittedWidth / roomRatio;
+    const canvas = {
+      x: availableCanvas.x + (availableCanvas.width - fittedWidth) / 2,
+      y: availableCanvas.y + (availableCanvas.height - fittedHeight) / 2,
+      width: fittedWidth,
+      height: fittedHeight,
+    };
     const model = floorplanPdfRenderModel(plan);
     page.drawRectangle({ ...canvas, color: rgb(1, 0.99, 0.95) });
     if (model.roomShape === "oval") page.drawEllipse({ x: canvas.x + canvas.width / 2, y: canvas.y + canvas.height / 2, xScale: canvas.width * 0.48, yScale: canvas.height * 0.48, borderWidth: 2, borderColor: rgb(0.8, 0.65, 0) });
@@ -229,7 +241,7 @@ export async function buildFloorplansPdf(input: { event: Event; plans: Floorplan
       const height = Math.max(12, canvas.height * (item.height / 100));
       const center = { x: canvas.x + canvas.width * (item.x / 100), y: canvas.y + canvas.height * (1 - item.y / 100) };
       const fill = item.shape === "stage" ? rgb(0.07, 0.1, 0.18) : item.shape === "bar" ? rgb(0.9, 0.96, 1) : item.shape === "text" ? rgb(1, 1, 1) : rgb(1, 0.97, 0.78);
-      if (item.shape === "round-table" || item.shape === "tree") {
+      if (item.shape === "round-table" || item.shape === "cocktail-table" || item.shape === "tree") {
         page.drawEllipse({ x: center.x, y: center.y, xScale: width / 2, yScale: height / 2, color: fill, borderColor: rgb(0.45, 0.5, 0.58), borderWidth: 0.8 });
       } else if (item.shape === "custom-shape") {
         const points = item.points.length >= 3 ? item.points : [{ x: 8, y: 18 }, { x: 72, y: 6 }, { x: 94, y: 42 }, { x: 78, y: 92 }, { x: 18, y: 84 }];
