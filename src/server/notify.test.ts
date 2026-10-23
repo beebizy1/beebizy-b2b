@@ -191,8 +191,8 @@ describe("ticket and auction action emails", () => {
     const request = fetch.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(request.body));
     expect(body.from).toBe("Cedar Grove School <events@beebizy.com>");
-    expect(body.html).toContain(">View tickets &amp; RSVP</a>");
-    expect(body.text).toContain("View ticket options and RSVP");
+    expect(body.html).toContain(">View invitation &amp; RSVP</a>");
+    expect(body.text).toContain("View the invitation and RSVP");
     expect(body.text).toContain("sent by Cedar Grove School using Beebizy");
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("ticket-invitation-invite-1");
   });

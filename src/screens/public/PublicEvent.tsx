@@ -58,10 +58,16 @@ function EventNotFound() {
   );
 }
 
-function EventHeading({ event, timeZone, token, registrationLabel }: { event: Event; timeZone: string; token: string; registrationLabel: string }) {
+function invitationAwarePath(path: string, invitationToken: string | null): string {
+  if (!invitationToken) return path;
+  const query = new URLSearchParams({ invite: invitationToken });
+  return `${path}?${query}`;
+}
+
+function EventHeading({ event, timeZone, token, registrationLabel, invitationToken }: { event: Event; timeZone: string; token: string; registrationLabel: string; invitationToken: string | null }) {
   const settings = normalizeRegistrationPage(event.registrationPage);
   const registerHref = settings.registrationTypes.length === 1
-    ? `/e/${token}/register/${encodeURIComponent(settings.registrationTypes[0]!)}`
+    ? invitationAwarePath(`/e/${token}/register/${encodeURIComponent(settings.registrationTypes[0]!)}`, invitationToken)
     : "#register";
   const calendarStart = new Date(event.date).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const calendarEnd = new Date(event.endDate ?? new Date(new Date(event.date).getTime() + 2 * 60 * 60_000)).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -99,6 +105,7 @@ export function PublicEventPage({ token }: { token: string }) {
   const sponsors = shared?.sponsors ?? [];
   const volunteerNeeds = shared?.volunteerNeeds ?? [];
   const timeZone = shared?.timeZone ?? "UTC";
+  const invitationToken = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("invite");
 
   if (isLoading) {
     return (
@@ -128,7 +135,7 @@ export function PublicEventPage({ token }: { token: string }) {
 
   return (
     <PublicFrame event={event} wide>
-      <EventHeading event={event} timeZone={timeZone} token={token} registrationLabel={onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "Register free"} />
+      <EventHeading event={event} timeZone={timeZone} token={token} registrationLabel={onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "RSVP"} invitationToken={invitationToken} />
       <div className="mx-auto max-w-7xl space-y-6 px-6 py-12 md:py-16">
         <section id="about" className="grid gap-8 border-b border-black/10 pb-12 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)] md:pb-16">
           <div>
@@ -208,7 +215,7 @@ export function PublicEventPage({ token }: { token: string }) {
           <div className="mt-5 flex flex-wrap gap-2">
             {registrationPage.registrationTypes.map((segment) => (
               <Button key={segment} asChild size="lg">
-                <Link href={`/e/${token}/register/${encodeURIComponent(segment)}`}>{segment}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></Link>
+                <Link href={invitationAwarePath(`/e/${token}/register/${encodeURIComponent(segment)}`, invitationToken)}>{segment}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></Link>
               </Button>
             ))}
           </div>
@@ -294,11 +301,11 @@ export function PublicEventPage({ token }: { token: string }) {
           </section>
         ) : null}
 
-        <section className={cn("relative isolate overflow-hidden rounded-3xl bg-[#17130a] text-white", registrationPage.heroImageUrl && "bg-cover bg-center")} style={registrationPage.heroImageUrl ? { backgroundImage: `url(${registrationPage.heroImageUrl})` } : undefined}>
+        <section className={cn("relative isolate overflow-hidden rounded-3xl bg-[#17130a] text-white", registrationPage.heroImageUrl && registrationPage.heroImageDisplay === "banner" && "bg-cover bg-center")} style={registrationPage.heroImageUrl && registrationPage.heroImageDisplay === "banner" ? { backgroundImage: `url(${registrationPage.heroImageUrl})` } : undefined}>
           <div className="absolute inset-0 -z-10 bg-black/60" aria-hidden="true" />
           <div className="flex flex-col gap-7 px-7 py-12 sm:flex-row sm:items-center sm:justify-between sm:px-10">
-            <div><p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>Be part of it</p><h2 className="mt-3 max-w-xl text-3xl font-extrabold tracking-tight sm:text-4xl">{registrationPage.headline || event.title}</h2></div>
-            <Button asChild size="lg" className="font-black text-slate-950"><a href="#register">{onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "Register free"}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></a></Button>
+            <div>{registrationPage.heroImageUrl && registrationPage.heroImageDisplay === "logo" ? <img src={registrationPage.heroImageUrl} alt="Event logo" className="mb-4 max-h-16 max-w-40 rounded-lg bg-white object-contain p-2" /> : null}<p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>Be part of it</p><h2 className="mt-3 max-w-xl text-3xl font-extrabold tracking-tight sm:text-4xl">{registrationPage.headline || event.title}</h2></div>
+            <Button asChild size="lg" className="font-black text-slate-950"><a href="#register">{onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "RSVP"}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></a></Button>
           </div>
         </section>
       </div>
@@ -315,10 +322,11 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
   const [result, setResult] = useState<PublicRegistrationResult | null>(null);
   const settings = normalizeRegistrationPage(shared?.event?.registrationPage);
   const selectedSegment = settings.registrationTypes.find((item) => item.toLowerCase() === decodeURIComponent(segment).toLowerCase());
+  const invitationToken = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("invite");
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !selectedSegment) return <EventNotFound />;
   if (result) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><p className="mt-3 text-sm text-muted-foreground">{result.confirmationEmailStatus === "sent" ? `A confirmation email was sent to ${email.trim()}.` : `Your place is confirmed, but we could not send the confirmation email to ${email.trim()}. Please save this event link.`}</p><div className="mt-4 flex flex-wrap justify-center gap-2">{settings.paymentUrl ? <Button asChild size="sm"><a href={settings.paymentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Continue to payment</a></Button> : null}<Button asChild variant="outline" size="sm"><Link href={`/e/${token}`}>Back to the event</Link></Button></div></Panel></PublicFrame>;
-  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={`/e/${token}`} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} registration</h1><p className="mt-1 text-sm text-muted-foreground">Your response will be added directly to the organizer's segmented guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment } }, { onSuccess: setResult, onError: (caught) => toast({ title: "Couldn't register", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Company, school, or organization <span className="font-normal text-muted-foreground">(optional)</span><Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Example: Cedar Grove School or Acme Inc." /><span className="block text-xs font-normal text-muted-foreground">This helps the event organizer understand who you are attending with. Leave it blank if it does not apply.</span></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Registering…" : `Register as ${selectedSegment}`}</Button></form></Panel></div></PublicFrame>;
+  return <PublicFrame event={shared.event}><div className="space-y-6"><div><Link href={invitationAwarePath(`/e/${token}`, invitationToken)} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} RSVP</h1><p className="mt-1 text-sm text-muted-foreground">Confirm your attendance. Your response goes directly to the organizer's guest list.</p></div><Panel><form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment, invitationToken } }, { onSuccess: setResult, onError: (caught) => toast({ title: "Couldn't RSVP", description: caught.message }) }); }}><label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></label><label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} /></label>{settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Company, school, or organization <span className="font-normal text-muted-foreground">(optional)</span><Input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="Example: Cedar Grove School or Acme Inc." /><span className="block text-xs font-normal text-muted-foreground">This helps the event organizer understand who you are attending with. Leave it blank if it does not apply.</span></label> : null}<Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Saving RSVP…" : "Confirm RSVP"}</Button></form></Panel></div></PublicFrame>;
 }
 
 export function PublicVolunteerSignupPage({ token }: { token: string }) {

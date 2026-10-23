@@ -16,6 +16,7 @@ describe("event launch guide", () => {
       inviteeCount: 10,
       invitationDesigned: false,
       activeTicketCount: 4,
+      paymentsRequired: true,
       stripeReady: true,
       invitationsSent: false,
     });
@@ -28,6 +29,7 @@ describe("event launch guide", () => {
       inviteeCount: 1,
       invitationDesigned: true,
       activeTicketCount: 1,
+      paymentsRequired: true,
       stripeReady: true,
       invitationsSent: true,
     });
@@ -68,6 +70,7 @@ describe("event launch guide", () => {
       inviteeCount: 0,
       invitationDesigned: false,
       activeTicketCount: 0,
+      paymentsRequired: false,
       stripeReady: false,
       invitationsSent: false,
     });
@@ -75,8 +78,8 @@ describe("event launch guide", () => {
       event: true,
       "invite-list": true,
       "invite-design": false,
-      tickets: false,
-      payments: false,
+      tickets: true,
+      payments: true,
       send: false,
     });
   });
@@ -86,11 +89,12 @@ describe("event launch guide", () => {
       inviteeCount: 0,
       invitationDesigned: true,
       activeTicketCount: 0,
+      paymentsRequired: false,
       stripeReady: false,
       invitationsSent: false,
     });
     expect(eventLaunchUnlocks(completion)["invite-design"]).toBe(true);
-    expect(eventLaunchUnlocks(completion).tickets).toBe(false);
+    expect(eventLaunchUnlocks(completion).tickets).toBe(true);
   });
 
   it("advances from a completed selected step to the next unfinished step", () => {
@@ -98,11 +102,12 @@ describe("event launch guide", () => {
       inviteeCount: 10,
       invitationDesigned: true,
       activeTicketCount: 0,
+      paymentsRequired: false,
       stripeReady: false,
       invitationsSent: false,
     });
-    expect(openEventLaunchStep("invite-design", false, completion)).toBe("tickets");
-    expect(openEventLaunchStep("tickets", false, completion)).toBe("tickets");
+    expect(openEventLaunchStep("invite-design", false, completion)).toBe("send");
+    expect(openEventLaunchStep("tickets", false, completion)).toBe("send");
     expect(openEventLaunchStep("invite-design", true, completion)).toBe("invite-design");
   });
 });

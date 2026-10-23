@@ -3,8 +3,10 @@ import type { TicketInvitation, TicketInvitationBatchResult } from "../data/enti
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
 import { notifyTicketInvitation } from "./notify.ts";
-import { events, ticketInvitations, workspaces } from "./schema.ts";
+import { events, ticketInvitations, ticketTypes, workspaces } from "./schema.ts";
 import { normalizeRegistrationPage, registrationInvitationHtml } from "../data/registrationPage.ts";
+import { ticketInvitationRsvpPath } from "../data/ticketInvitations.ts";
+import { formatInZone } from "../lib/datetime.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -53,6 +55,12 @@ export async function sendTicketInvitations(
     .innerJoin(workspaces, eq(events.workspaceId, workspaces.id))
     .where(and(eq(events.id, eventId), eq(events.workspaceId, ctx.workspaceId))).limit(1);
   if (!event) throw new HttpError(404, "That event no longer exists.");
+  const [activeTicket] = await db.select({ id: ticketTypes.id }).from(ticketTypes).where(and(
+    eq(ticketTypes.eventId, eventId),
+    eq(ticketTypes.workspaceId, ctx.workspaceId),
+    eq(ticketTypes.isActive, true),
+  )).limit(1);
+  const hasTickets = Boolean(activeTicket);
   const generatedShareToken = crypto.randomUUID().replaceAll("-", "");
   const [shared] = await db.update(events).set({
     shareToken: sql`coalesce(${events.shareToken}, ${generatedShareToken})`,
@@ -72,12 +80,20 @@ export async function sendTicketInvitations(
     organizationName: event.legalName || event.workspaceName,
     headline: invitationDesign.headline || event.event.title,
     welcomeMessage: invitationDesign.welcomeMessage || event.event.description || `You are invited to ${event.event.title}.`,
-    designedHtml: registrationInvitationHtml(invitationDesign, event.event.title, event.event.description, input.invitationUrl, input.recipient.name, event.legalName || event.workspaceName),
+    designedHtml: registrationInvitationHtml(
+      invitationDesign,
+      event.event.title,
+      event.event.description,
+      input.invitationUrl,
+      input.recipient.name,
+      event.legalName || event.workspaceName,
+      { dateLabel: formatInZone(event.event.startsAt, event.timeZone, "full"), location: event.event.venue },
+    ),
     deliveryAttemptKey: input.attemptKey,
   });
 
   if (testOnly) {
-    const testUrl = `${origin}/e/${encodeURIComponent(shared.shareToken)}/tickets?preview=1`;
+    const testUrl = `${origin}${ticketInvitationRsvpPath(shared.shareToken, { hasTickets, preview: true })}`;
     const results = await Promise.all(normalized.map((recipient) => deliver({ invitationId: `test-${eventId}-${recipient.email}`, recipient, invitationUrl: testUrl, attemptKey: crypto.randomUUID() })));
     return {
       attempted: results.length,
@@ -142,5 +158,12 @@ export async function openTicketInvitation(token: string): Promise<string | null
     await db.update(ticketInvitations).set({ status: "opened", openedAt: new Date(), updatedAt: new Date() })
       .where(eq(ticketInvitations.id, row.invitation.id));
   }
-  return `/e/${encodeURIComponent(row.event.shareToken)}/tickets?invite=${encodeURIComponent(row.invitation.publicToken)}`;
+  const [activeTicket] = await db.select({ id: ticketTypes.id }).from(ticketTypes).where(and(
+    eq(ticketTypes.eventId, row.event.id),
+    eq(ticketTypes.isActive, true),
+  )).limit(1);
+  return ticketInvitationRsvpPath(row.event.shareToken, {
+    hasTickets: Boolean(activeTicket),
+    invitationToken: row.invitation.publicToken,
+  });
 }

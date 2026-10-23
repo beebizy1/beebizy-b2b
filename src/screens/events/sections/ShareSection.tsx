@@ -302,7 +302,7 @@ export default function ShareSection({ event }: { event: Event }) {
         />
       )}
       {activeWorkspace === "pricing" ? <div id="guided-ticket-pricing"><GuidedTicketPricing event={event} onDone={returnToLaunchGuide} /></div> : null}
-      {activeWorkspace === "sender" ? <div id="guided-invitation-sender"><TicketInvitationBuilder event={event} guided onDone={returnToLaunchGuide} /></div> : null}
+      {activeWorkspace === "sender" ? <div id="guided-invitation-sender"><TicketInvitationBuilder event={event} guided onDone={returnToLaunchGuide} onEditDesign={revealInvitationDesign} /></div> : null}
       {activeWorkspace === null || activeWorkspace === "design" ? <details className="rounded-xl border border-hairline bg-background" open={showDetails} onToggle={(event) => { setShowDetails(event.currentTarget.open); if (!event.currentTarget.open && activeWorkspace === "design") setActiveWorkspace(null); }}>
         <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">{activeWorkspace === "design" ? "Invitation design and preview" : "Advanced public links and settings"}</summary>
         <div id="registration-site-builder" className="grid gap-6 border-t border-hairline p-5 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">

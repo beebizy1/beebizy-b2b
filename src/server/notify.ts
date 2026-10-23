@@ -307,7 +307,7 @@ export async function notifyTicketInvitation(input: {
     input.welcomeMessage || `You are invited to ${input.eventTitle}.`,
     `When: ${when}`,
     "",
-    `View ticket options and RSVP: ${input.invitationUrl}`,
+    `View the invitation and RSVP: ${input.invitationUrl}`,
     "",
     `This invitation was sent by ${input.organizationName} using Beebizy. Questions? Reply to this email.`,
   ].join("\n");
@@ -316,7 +316,7 @@ export async function notifyTicketInvitation(input: {
     greeting: `Hi ${input.recipientName},`,
     paragraphs: [`You are invited to ${input.eventTitle}.`],
     details,
-    action: { label: "View tickets & RSVP", url: input.invitationUrl },
+    action: { label: "View invitation & RSVP", url: input.invitationUrl },
   });
   const outcome = await sendEmail({
     to: input.to,

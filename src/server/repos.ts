@@ -1026,6 +1026,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     email: str(body, "email").trim().toLowerCase(),
     segment: labelFrom(body, "segment") ?? "General",
     organization: labelFrom(body, "organization", 120),
+    invitationToken: labelFrom(body, "invitationToken", 160),
   };
   const page = normalizeRegistrationPage(event.registrationPage);
   if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
@@ -1075,6 +1076,17 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   }
   const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
   const registration = map.toRegistration(row!, event.title);
+  if (draft.invitationToken) {
+    await db.update(s.ticketInvitations).set({
+      status: "registered",
+      registeredAt: new Date(),
+      updatedAt: new Date(),
+    }).where(and(
+      eq(s.ticketInvitations.publicToken, draft.invitationToken),
+      eq(s.ticketInvitations.eventId, event.id),
+      eq(s.ticketInvitations.recipientEmail, draft.email),
+    ));
+  }
   let bidderAccessUrl: string | null = null;
   let bidderPaddle: number | null = null;
   if (event.auctionPublicToken) {

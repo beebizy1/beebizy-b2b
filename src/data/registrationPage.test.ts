@@ -104,16 +104,20 @@ describe("registration page settings", () => {
       accentColor: "#245F45",
       headline: "Welcome <friends>",
       welcomeMessage: "Register & join us.",
+      agendaIntroduction: "Dinner, dancing, and a birthday toast.",
       heroImageUrl: "https://images.example.com/garden.jpg",
-    }, "Garden Gala", "An evening together", "https://beebizy.example/e/token?guest=1&source=email", "Laila <Marshall>", "Cedar Grove School");
+    }, "Garden Gala", "An evening together", "https://beebizy.example/e/token?guest=1&source=email", "Laila <Marshall>", "Cedar Grove School", { dateLabel: "Saturday, May 8 at 6:00 PM", location: "The Garden Room" });
     expect(html).toContain("#245F45");
     expect(html).toContain("https://images.example.com/garden.jpg");
     expect(html).toContain("Welcome &lt;friends&gt;");
     expect(html).toContain("Register &amp; join us.");
     expect(html).toContain("https://beebizy.example/e/token?guest=1&amp;source=email");
     expect(html).toContain("Hi Laila &lt;Marshall&gt;,");
-    expect(html).toContain("View event &amp; register");
-    expect(html).toContain("the agenda, and registration options");
+    expect(html).toContain("View invitation &amp; RSVP");
+    expect(html).toContain("the agenda, and RSVP options");
+    expect(html).toContain("Saturday, May 8 at 6:00 PM");
+    expect(html).toContain("The Garden Room");
+    expect(html).toContain("Dinner, dancing, and a birthday toast.");
     expect(html).toContain("Sent by Cedar Grove School using Beebizy");
     expect(html).not.toContain("Welcome <friends>");
   });
