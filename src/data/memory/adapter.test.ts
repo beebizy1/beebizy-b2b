@@ -53,6 +53,16 @@ describe("events", () => {
     expect((await memoryAdapter.events.get("evt-cab"))?.navigation?.hiddenTabIds ?? []).toEqual([]);
   });
 
+  it("merges independent registration-page editors without losing either change", async () => {
+    await memoryAdapter.events.updateRegistrationPage("evt-gala", { aboutBody: "Updated invitation copy" });
+    await memoryAdapter.events.updateRegistrationPage("evt-gala", { postEventThankYou: "Saved thank-you copy" });
+
+    expect((await memoryAdapter.events.get("evt-gala"))?.registrationPage).toMatchObject({
+      aboutBody: "Updated invitation copy",
+      postEventThankYou: "Saved thank-you copy",
+    });
+  });
+
   it("keeps the venue's event count in sync on create and delete", async () => {
     const before = (await memoryAdapter.locations.get("loc-moscone"))!.eventCount;
     const created = await memoryAdapter.events.create({
@@ -734,6 +744,28 @@ describe("raffle", () => {
     await expect(
       memoryAdapter.raffle.sellTickets("evt-cab", created.id, { buyerName: "A", buyerEmail: "a@b.c", quantity: 6 }),
     ).rejects.toThrow(/Only 5 tickets left/);
+  });
+});
+
+describe("auction proxy bidding", () => {
+  it("keeps a maximum private and charges only the amount needed to lead", async () => {
+    const item = await memoryAdapter.auction.create("evt-support-offsite", {
+      title: "Weekend stay",
+      startingBidCents: 1_000,
+      bidIncrementCents: 100,
+    });
+    await memoryAdapter.auction.publishItem("evt-support-offsite", item.id, true);
+    const { auctionPublicToken } = await memoryAdapter.auction.share("evt-support-offsite");
+    const first = await memoryAdapter.auction.registerPublic(auctionPublicToken, { name: "First Bidder", email: "first@example.com", phone: "4085550101", participantType: "remote" });
+    const second = await memoryAdapter.auction.registerPublic(auctionPublicToken, { name: "Second Bidder", email: "second@example.com", phone: "4085550102", participantType: "remote" });
+
+    expect((await memoryAdapter.auction.placePublicBid(auctionPublicToken, first.publicToken, item.id, 5_000)).item.currentBidCents).toBe(1_000);
+    const losing = await memoryAdapter.auction.placePublicBid(auctionPublicToken, second.publicToken, item.id, 3_000);
+    expect(losing).toMatchObject({ bidderIsLeading: false, minimumNextBidCents: 3_200 });
+    expect(losing.item.currentBidCents).toBe(3_100);
+    const winning = await memoryAdapter.auction.placePublicBid(auctionPublicToken, second.publicToken, item.id, 6_000);
+    expect(winning).toMatchObject({ bidderIsLeading: true, minimumNextBidCents: 5_200 });
+    expect(winning.item.currentBidCents).toBe(5_100);
   });
 });
 

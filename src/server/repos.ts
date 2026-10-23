@@ -118,11 +118,12 @@ import {
   notifyAuctionDonorThankYou,
   notifyCombinedFundraisingReceipt,
 } from "./notify.ts";
+import { queueAuctionOutbidNotification } from "./auctionOutbidNotifications.ts";
 import { deliverMemberRoleNotification } from "./memberRoleNotifications.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../data/registrationPage.ts";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../data/registrationPage.ts";
 import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
@@ -593,6 +594,29 @@ export const events = {
     const result = await events.get(ctx, id);
     if (!result) throw new HttpError(404, "That event no longer exists.");
     return result;
+  },
+
+  async updateRegistrationPage(ctx: RequestContext, id: string, body: Body): Promise<Event> {
+    const before = await events.get(ctx, id);
+    if (!before) throw new HttpError(404, "That event no longer exists.");
+    const patch = normalizeRegistrationPagePatch(body);
+    if (Object.keys(patch).length === 0) return before;
+    const updatedAt = new Date();
+    await db.update(s.events).set({
+      registrationPage: sql`coalesce(${s.events.registrationPage}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      updatedAt,
+    }).where(and(eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)));
+    const after = await events.get(ctx, id);
+    if (!after) throw new HttpError(404, "That event no longer exists.");
+    await db.insert(s.eventHistory).values(historyValues(ctx, {
+      eventId: id,
+      resource: "event",
+      resourceId: id,
+      action: "updated",
+      before: { registrationPage: before.registrationPage },
+      after: { registrationPage: after.registrationPage },
+    }));
+    return after;
   },
 
   async remove(ctx: RequestContext, id: string): Promise<void> {
@@ -4188,6 +4212,7 @@ export async function placePublicAuctionBid(
   if (!bidder) throw new HttpError(404, "This bidder registration is not available.");
   if (!bidder.paymentMethodId) throw new HttpError(409, "Add a card or wallet before placing a bid.");
   const [before] = await db.select({
+    eventId: s.auctionItems.eventId,
     bidderId: s.auctionItems.winningBidderId,
     bidderName: s.auctionBidders.name,
     bidderEmail: s.auctionBidders.email,
@@ -4230,7 +4255,8 @@ export async function placePublicAuctionBid(
       ? { email: before.bidderEmail, name: before.bidderName ?? "bidder" }
       : null;
   if (outbid && before) {
-    const notification = await notifyAuctionOutbid({
+    const notificationInput = {
+      eventId: before.eventId,
       bidId: latestBid?.id ?? `${itemId}-${item.bidCount}`,
       to: outbid.email,
       bidderName: outbid.name,
@@ -4238,8 +4264,10 @@ export async function placePublicAuctionBid(
       itemTitle: before.itemTitle,
       currentBidCents: item.currentBidCents ?? item.startingBidCents,
       auctionUrl: `${appOrigin()}/auction/${encodeURIComponent(auctionToken)}`,
-    });
+    };
+    const notification = await notifyAuctionOutbid(notificationInput);
     if (notification.status !== "sent") {
+      await queueAuctionOutbidNotification(notificationInput, notification.reason);
       console.warn("AUCTION_OUTBID_EMAIL_NOT_SENT", itemId, notification.status, notification.reason);
     }
   }

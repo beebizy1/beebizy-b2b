@@ -58,7 +58,7 @@ vi.mock("./repos", () => {
       share: vi.fn(), updateSettings: vi.fn(), publishItem: vi.fn(), listBidders: vi.fn(), listBids: vi.fn(), sendDonorThankYou: vi.fn(),
     },
     events: {
-      get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
+      get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), updateRegistrationPage: vi.fn(), remove: vi.fn(),
       sendAssignmentSummaries: vi.fn(),
     },
     vendors: { list: vi.fn() },
@@ -115,6 +115,9 @@ vi.mock("./vendorEventPackets", () => ({
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
 }));
+vi.mock("./auctionOutbidNotifications", () => ({
+  processDueAuctionOutbidNotifications: vi.fn(),
+}));
 vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
   generatePostEventCopy: vi.fn(),
@@ -159,6 +162,7 @@ const { createCheckoutSession, handleStripeWebhook } = await import("./billing")
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
 const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
+const { processDueAuctionOutbidNotifications } = await import("./auctionOutbidNotifications");
 const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
@@ -183,9 +187,14 @@ describe("notification maintenance", () => {
     vi.stubEnv("CRON_SECRET", "maintenance-secret");
     expect((await handleRequest(new Request("http://localhost/api/notifications/maintenance"))).status).toBe(401);
     vi.mocked(processDueMemberRoleNotifications).mockResolvedValue({ processed: 2, sent: 1, queued: 1, superseded: 0 });
+    vi.mocked(processDueAuctionOutbidNotifications).mockResolvedValue({ processed: 1, sent: 0, queued: 1 });
     const response = await handleRequest(new Request("http://localhost/api/notifications/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, roleNotifications: { processed: 2, sent: 1, queued: 1, superseded: 0 } });
+    expect(await response.json()).toEqual({
+      ok: true,
+      roleNotifications: { processed: 2, sent: 1, queued: 1, superseded: 0 },
+      outbidNotifications: { processed: 1, sent: 0, queued: 1 },
+    });
     vi.unstubAllEnvs();
   });
 });
@@ -368,6 +377,51 @@ describe("event copy assistant", () => {
       facts: expect.objectContaining({ uniqueRegistered: 2, uniqueCheckedIn: 1, checklistDone: 1, checklistTotal: 2, revenueCents: 100_000 }),
       userId: "user-owner",
     }));
+  });
+
+  it("does not report estimated or pending revenue as money raised", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(event as never);
+    const { checklist, budget, sponsorships } = await import("./repos");
+    vi.mocked(registrations.listForEvent).mockResolvedValue([]);
+    vi.mocked(checklist.list).mockResolvedValue([]);
+    vi.mocked(budget.list).mockResolvedValue([{ type: "revenue", estimatedCents: 900_000, actualCents: null }] as never);
+    vi.mocked(sponsorships.list).mockResolvedValue([{ status: "pending", amountCents: 500_000 }] as never);
+    vi.mocked(generatePostEventCopy).mockResolvedValue({ subject: "Thank you", thankYouMessage: "Thank you.", wrapUp: "No revenue recorded.", source: "fallback" });
+
+    const response = await handleRequest(new Request("http://localhost/api/assistant/post-event-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "event-1" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(generatePostEventCopy).toHaveBeenCalledWith(expect.objectContaining({ facts: expect.objectContaining({ revenueCents: 0 }) }));
+  });
+
+  it("returns not found instead of generating copy for a removed event", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.get).mockResolvedValue(null);
+    vi.mocked(generateRegistrationCopy).mockClear();
+    const response = await handleRequest(new Request("http://localhost/api/assistant/registration-copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: "missing", aboutHeading: "", aboutBody: "", agendaIntroduction: "" }),
+    }));
+    expect(response.status).toBe(404);
+    expect(generateRegistrationCopy).not.toHaveBeenCalled();
+  });
+
+  it("routes a field-level registration-page update without replacing the whole page", async () => {
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(events.updateRegistrationPage).mockResolvedValue(event as never);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/registration-page", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ postEventThankYou: "Saved independently" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(events.updateRegistrationPage).toHaveBeenCalledWith(context, "event-1", { postEventThankYou: "Saved independently" });
   });
 });
 

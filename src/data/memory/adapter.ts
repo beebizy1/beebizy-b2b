@@ -142,7 +142,7 @@ import { googleSheetCsvUrl } from "../import";
 import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage } from "../registrationPage";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../registrationPage";
 import { normalizeEventNavigation } from "../eventNavigation";
 import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
 import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
@@ -429,6 +429,17 @@ const events: EventsRepository = {
       before,
       after: copy(event) as unknown as Record<string, unknown>,
     });
+    return copy(event);
+  },
+
+  async updateRegistrationPage(id, patch) {
+    await wait();
+    const event = required(store().events.find((candidate) => candidate.id === id), `Event ${id} no longer exists.`);
+    event.registrationPage = normalizeRegistrationPage({
+      ...event.registrationPage,
+      ...normalizeRegistrationPagePatch(patch),
+    });
+    event.updatedAt = nowIso();
     return copy(event);
   },
 
@@ -2809,7 +2820,7 @@ export const memoryAdapter: DataAdapter = {
       const current = store();
       const attendance = buildUniqueAttendanceReport(await registrations.listForEvent(event.id)).summary;
       const checklist = current.checklist.filter((item) => item.eventId === event.id);
-      const revenueCents = current.budget.filter((item) => item.eventId === event.id && item.type === "revenue").reduce((sum, item) => sum + (item.actualCents ?? item.estimatedCents), 0) +
+      const revenueCents = current.budget.filter((item) => item.eventId === event.id && item.type === "revenue").reduce((sum, item) => sum + (item.actualCents ?? 0), 0) +
         current.sponsorships.filter((sponsor) => sponsor.eventId === event.id && sponsor.status === "confirmed").reduce((sum, sponsor) => sum + (sponsor.amountCents ?? 0), 0);
       return buildPostEventCopyFallback(event, {
         uniqueRegistered: attendance.uniqueRegistered,

@@ -339,6 +339,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       get: (id) => client.get<Event | null>(`/events/${id}`),
       create: (draft) => client.post<Event>("/events", draft),
       update: (id, patch) => client.patch<Event>(`/events/${id}`, patch),
+      updateRegistrationPage: (id, patch) => client.patch<Event>(`/events/${id}/registration-page`, patch),
       remove: async (id) => {
         await client.del(`/events/${id}`);
       },

@@ -7,6 +7,7 @@ import {
   registrationInvitationHtml,
   registrationPageIsCustomized,
   normalizeRegistrationPage,
+  normalizeRegistrationPagePatch,
 } from "./registrationPage";
 
 describe("registration page settings", () => {
@@ -145,5 +146,12 @@ describe("registration page settings", () => {
       postEventThankYou: "We appreciated having you with us.",
       postEventWrapUp: "The event welcomed our community and completed the planned program.",
     });
+  });
+
+  it("keeps partial updates partial while applying the same validation", () => {
+    expect(normalizeRegistrationPagePatch({ postEventSubject: "  Thank you  ", unknown: "ignored" })).toEqual({
+      postEventSubject: "Thank you",
+    });
+    expect(normalizeRegistrationPagePatch(null)).toEqual({});
   });
 });

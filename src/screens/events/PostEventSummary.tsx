@@ -6,20 +6,29 @@
  * is a view of the truth rather than a separate report someone has to keep up to date.
  */
 
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  Copy,
   Download,
   DollarSign,
   FileText,
+  Mail,
   MapPin,
+  Save,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/hooks/use-toast";
 import {
   EmptyState,
   ErrorNotice,
@@ -34,15 +43,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { usePreferences } from "@/app/preferences";
 import { formatMoney, sumCents } from "@/data/money";
 import { attendanceNamesCsv, buildUniqueAttendanceReport, type UniqueAttendeeRecord } from "@/data/attendanceReport";
+import { normalizeRegistrationPage } from "@/data/registrationPage";
 import {
   useBudget,
   useChecklist,
   useEvent,
   useEventRegistrations,
+  usePostEventCopyGenerator,
   useRunOfShow,
   useSponsorships,
   useTeamHours,
+  useUpdateRegistrationPage,
 } from "@/data/hooks";
+
+async function copyDraft(value: string, label: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast({ title: `${label} copied` });
+  } catch {
+    toast({ title: "Couldn't copy", description: "Select the text and copy it manually." });
+  }
+}
 
 export default function PostEventSummary({ id }: { id: string }) {
   const { date: formatDate } = usePreferences();
@@ -53,6 +74,19 @@ export default function PostEventSummary({ id }: { id: string }) {
   const { data: runOfShow } = useRunOfShow(id);
   const { data: sponsorships } = useSponsorships(id);
   const { data: teamHours } = useTeamHours(id);
+  const generateCopy = usePostEventCopyGenerator();
+  const updateEvent = useUpdateRegistrationPage();
+  const [postEventSubject, setPostEventSubject] = useState("");
+  const [thankYouMessage, setThankYouMessage] = useState("");
+  const [postEventWrapUp, setPostEventWrapUp] = useState("");
+
+  useEffect(() => {
+    if (!event) return;
+    const page = normalizeRegistrationPage(event.registrationPage);
+    setPostEventSubject(page.postEventSubject);
+    setThankYouMessage(page.postEventThankYou);
+    setPostEventWrapUp(page.postEventWrapUp);
+  }, [event]);
 
   if (isError) return <ErrorNotice error={error} title="Couldn't load this event" onRetry={() => void refetch()} />;
   if (isLoading) return <LoadingRows rows={6} />;
@@ -119,6 +153,50 @@ export default function PostEventSummary({ id }: { id: string }) {
   const checklistDone = (checklist ?? []).filter((item) => item.completed).length;
   const checklistTotal = checklist?.length ?? 0;
   const totalHours = (teamHours ?? []).reduce((sum, entry) => sum + entry.hours, 0);
+
+  const generatePostEventDrafts = () => {
+    generateCopy.mutate(
+      { eventId: event.id },
+      {
+        onSuccess: (suggestion) => {
+          setPostEventSubject(suggestion.subject);
+          setThankYouMessage(suggestion.thankYouMessage);
+          setPostEventWrapUp(suggestion.wrapUp);
+          toast({
+            title: "Post-event drafts are ready",
+            description: suggestion.source === "ai" ? "Review every word, make any edits, then save." : "A clear starter draft is ready to edit and save.",
+          });
+        },
+        onError: (error) => toast({ title: "Couldn't create the drafts", description: error.message }),
+      },
+    );
+  };
+
+  const savePostEventDrafts = () => {
+    updateEvent.mutate(
+      {
+        id: event.id,
+        patch: {
+          postEventSubject,
+          postEventThankYou: thankYouMessage,
+          postEventWrapUp,
+        },
+      },
+      {
+        onSuccess: () => toast({ title: "Post-event drafts saved", description: "They will still be here when you return." }),
+        onError: (error) => toast({ title: "Couldn't save the drafts", description: error.message }),
+      },
+    );
+  };
+
+  const openThankYouEmail = () => {
+    const body = thankYouMessage.trim();
+    if (!body) {
+      toast({ title: "Write or generate the thank-you message first" });
+      return;
+    }
+    window.location.href = `mailto:?subject=${encodeURIComponent(postEventSubject.trim())}&body=${encodeURIComponent(body)}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -198,6 +276,45 @@ export default function PostEventSummary({ id }: { id: string }) {
           sublabel={revenue > 0 ? `${formatMoney(revenue)} revenue` : "Cost-only event"}
         />
       </div>
+
+      <Panel>
+        <PanelHeader
+          title="Post-event communications"
+          description="Turn the real event results into an editable thank-you email and internal wrap-up. Nothing sends automatically."
+          actions={
+            <Button type="button" onClick={generatePostEventDrafts} disabled={generateCopy.isPending}>
+              <Sparkles className="mr-1.5 size-4" />{generateCopy.isPending ? "Creating drafts..." : "Generate with AI"}
+            </Button>
+          }
+        />
+        <div className="grid gap-6 border-t border-hairline p-5 lg:grid-cols-2">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="post-event-subject">Thank-you email subject</Label>
+              <Input id="post-event-subject" value={postEventSubject} maxLength={160} disabled={generateCopy.isPending} placeholder={`Thank you for joining ${event.title}`} onChange={(input) => setPostEventSubject(input.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="post-event-thank-you">Attendee thank-you message</Label>
+              <Textarea id="post-event-thank-you" value={thankYouMessage} maxLength={3000} rows={10} disabled={generateCopy.isPending} placeholder="Thank guests and share the event's measured attendance without exposing internal details." onChange={(input) => setThankYouMessage(input.target.value)} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => void copyDraft(thankYouMessage, "Thank-you message")} disabled={!thankYouMessage.trim()}><Copy className="mr-1.5 size-4" />Copy</Button>
+              <Button type="button" variant="outline" onClick={openThankYouEmail} disabled={!thankYouMessage.trim()}><Mail className="mr-1.5 size-4" />Open email draft</Button>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="post-event-wrap-up">Internal post-event wrap-up</Label>
+              <Textarea id="post-event-wrap-up" value={postEventWrapUp} maxLength={4000} rows={15} disabled={generateCopy.isPending} placeholder="Summarize attendance, delivery, and recorded results for your team." onChange={(input) => setPostEventWrapUp(input.target.value)} />
+              <p className="text-xs text-muted-foreground">The generator only uses measured event records. Review and edit the draft before sharing it.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => void copyDraft(postEventWrapUp, "Post-event wrap-up")} disabled={!postEventWrapUp.trim()}><Copy className="mr-1.5 size-4" />Copy wrap-up</Button>
+          </div>
+        </div>
+        <div className="flex justify-end border-t border-hairline px-5 py-4">
+          <Button type="button" onClick={savePostEventDrafts} disabled={updateEvent.isPending}><Save className="mr-1.5 size-4" />{updateEvent.isPending ? "Saving..." : "Save drafts"}</Button>
+        </div>
+      </Panel>
 
       <Panel className="overflow-hidden">
         <PanelHeader

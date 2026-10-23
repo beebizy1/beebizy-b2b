@@ -133,10 +133,9 @@ export function PublicEventPage({ token }: { token: string }) {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em]" style={{ color: registrationPage.accentColor }}>About the event</p>
             <h2 className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">{registrationPage.aboutHeading || "About the event"}</h2>
-            {registrationPage.welcomeMessage || event.description ? <p className="whitespace-pre-line mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">{registrationPage.welcomeMessage || event.description}</p> : null}
+            {registrationPage.aboutBody || registrationPage.welcomeMessage || event.description ? <p className="whitespace-pre-line mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">{registrationPage.aboutBody || registrationPage.welcomeMessage || event.description}</p> : null}
           </div>
           <div className="space-y-5 self-center">
-            {registrationPage.aboutImageUrl ? <img src={registrationPage.aboutImageUrl} alt={`${event.title} venue`} className="aspect-[3/2] w-full rounded-2xl object-cover" /> : null}
             <dl className="divide-y divide-black/10 border-y border-black/10 text-sm text-slate-700">
               <div className="flex gap-4 py-4"><CalendarDays className="mt-0.5 size-5 shrink-0" style={{ color: registrationPage.accentColor }} aria-hidden="true" /><div><dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Date and time</dt><dd className="mt-1 font-semibold">{formatInZone(event.date, timeZone, "full")}</dd></div></div>
               {event.location ? <div className="flex gap-4 py-4"><MapPin className="mt-0.5 size-5 shrink-0" style={{ color: registrationPage.accentColor }} aria-hidden="true" /><div><dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Location</dt><dd className="mt-1 font-semibold">{event.location}</dd></div></div> : null}
@@ -223,10 +222,11 @@ export function PublicEventPage({ token }: { token: string }) {
           </Panel>
         ) : null}
 
-        {registrationPage.showAgenda && (agenda ?? []).length > 0 ? (
-          <section id="agenda" className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.72fr)]">
+        {registrationPage.showAgenda && ((agenda ?? []).length > 0 || Boolean(registrationPage.agendaIntroduction)) ? (
+          <section id="agenda">
           <Panel>
             <PanelHeader title="Agenda" description={`Times shown in ${timeZoneLabel(timeZone, new Date(event.date))}, the venue\u2019s zone`} />
+            {registrationPage.agendaIntroduction ? <p className="whitespace-pre-line border-t border-hairline px-5 py-4 text-sm leading-6 text-muted-foreground">{registrationPage.agendaIntroduction}</p> : null}
             {eventDays.map((day) => {
               const dayAgenda = (agenda ?? []).filter((cue) => cue.dayNumber === day.dayNumber);
               if (dayAgenda.length === 0) return null;
@@ -260,8 +260,8 @@ export function PublicEventPage({ token }: { token: string }) {
                 </section>
               );
             })}
+            {(agenda ?? []).length === 0 ? <p className="border-t border-hairline px-5 py-4 text-sm text-muted-foreground">Detailed times will appear here when the schedule is ready.</p> : null}
           </Panel>
-          {registrationPage.agendaImageUrl ? <img src={registrationPage.agendaImageUrl} alt={`Guests at ${event.title}`} className="aspect-[4/3] w-full rounded-2xl object-cover lg:sticky lg:top-6" /> : null}
           </section>
         ) : null}
 

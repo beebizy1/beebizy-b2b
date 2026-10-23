@@ -53,6 +53,7 @@ import {
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
+import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
 import { rfpDraftPatchSchema, rfpDraftSchema, rfpResponseSchema, publicProposalSchema } from "../src/data/rfp.ts";
@@ -289,7 +290,11 @@ async function handlePublic(segments: string[], method: string, request: Request
     const secret = process.env.CRON_SECRET?.trim();
     if (!secret) return json({ error: "Notification maintenance is not configured." }, 503);
     if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
-    return json({ ok: true, roleNotifications: await processDueMemberRoleNotifications() });
+    const [roleNotifications, outbidNotifications] = await Promise.all([
+      processDueMemberRoleNotifications(),
+      processDueAuctionOutbidNotifications(),
+    ]);
+    return json({ ok: true, roleNotifications, outbidNotifications });
   }
 
   if (segments[0] === "billing" && segments[1] === "webhook") {
@@ -722,7 +727,7 @@ async function handleAuthed(
         const eventSponsorships = sponsorships as Sponsorship[];
         const budgetRevenueCents = budgetItems
           .filter((item) => item.type === "revenue")
-          .reduce((sum, item) => sum + (item.actualCents ?? item.estimatedCents), 0);
+          .reduce((sum, item) => sum + (item.actualCents ?? 0), 0);
         const sponsorRevenueCents = eventSponsorships
           .filter((sponsor) => sponsor.status === "confirmed")
           .reduce((sum, sponsor) => sum + (sponsor.amountCents ?? 0), 0);
@@ -844,6 +849,7 @@ async function handleAuthed(
       if (!a && method === "POST") return json(await repos.events.create(ctx, body), 201);
       if (a && !b && method === "GET") return json(await repos.events.get(ctx, a));
       if (a && !b && method === "PATCH") return json(await repos.events.update(ctx, a, body));
+      if (a && b === "registration-page" && method === "PATCH") return json(await repos.events.updateRegistrationPage(ctx, a, body));
       if (a && !b && method === "DELETE") {
         await repos.events.remove(ctx, a);
         return json({ ok: true });

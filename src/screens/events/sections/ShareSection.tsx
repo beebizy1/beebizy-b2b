@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, ImagePlus, Mail, Palette, Plus, Save, Ticket, Trash2, UserRound } from "lucide-react";
+import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, ImagePlus, Mail, Palette, Plus, Save, Sparkles, Ticket, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useShareEvent, useSponsorships, useTickets, useUpdateEvent, useUploadAuctionImage } from "@/data/hooks";
+import { useRegistrationCopyGenerator, useShareEvent, useSponsorships, useTickets, useUpdateRegistrationPage, useUploadAuctionImage } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import {
@@ -35,6 +35,16 @@ const REGISTRATION_TYPE_PRESETS = [
   { label: "Open event", types: ["Guest"] },
   { label: "Professional", types: ["Attendee", "Sponsor", "Speaker", "Staff"] },
 ] as const;
+
+const DESIGN_FIELDS: readonly (keyof RegistrationPageSettings)[] = [
+  "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
+  "heroImageUrl", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
+  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization",
+];
+
+function registrationDesignPatch(settings: RegistrationPageSettings): Partial<RegistrationPageSettings> {
+  return Object.fromEntries(DESIGN_FIELDS.map((field) => [field, settings[field]])) as Partial<RegistrationPageSettings>;
+}
 
 function newSpeaker(): RegistrationSpeaker {
   return {
@@ -127,6 +137,8 @@ function RegistrationPreview({ event, settings, sponsors }: { event: Event; sett
           <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{settings.headline || event.title}</h3>
           <p className="whitespace-pre-line mt-2 text-sm leading-6 text-slate-600">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
         </div>
+        {settings.aboutBody ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{settings.aboutHeading || "About the event"}</p><p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{settings.aboutBody}</p></div> : null}
+        {settings.agendaIntroduction ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Agenda</p><p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{settings.agendaIntroduction}</p></div> : null}
         <span className="inline-flex rounded-md px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>Register now</span>
         {settings.showSpeakers && settings.speakers.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Featured speakers</p><div className="mt-3 flex -space-x-2">{settings.speakers.slice(0, 4).map((speaker) => speaker.photoUrl ? <img key={speaker.id} src={speaker.photoUrl} alt={speaker.name} className="size-10 rounded-full border-2 border-white object-cover" /> : <span key={speaker.id} className="grid size-10 place-items-center rounded-full border-2 border-white bg-slate-100 text-xs font-bold text-slate-600">{speaker.name.slice(0, 1)}</span>)}</div></div> : null}
         {settings.showSponsors && sponsors.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Sponsors</p><div className="mt-3 flex flex-wrap items-center gap-4">{sponsors.slice(0, 4).map((sponsor) => sponsor.logoUrl ? <img key={sponsor.id} src={sponsor.logoUrl} alt={sponsor.companyName} className="h-7 w-20 object-contain" /> : <span key={sponsor.id} className="text-xs font-semibold text-slate-500">{sponsor.companyName}</span>)}</div></div> : null}
@@ -139,8 +151,9 @@ export default function ShareSection({ event }: { event: Event }) {
   const [, navigate] = useLocation();
   const search = useSearch();
   const share = useShareEvent();
-  const update = useUpdateEvent();
+  const update = useUpdateRegistrationPage();
   const uploadImage = useUploadAuctionImage();
+  const generateCopy = useRegistrationCopyGenerator();
   const { data: tickets } = useTickets(event.id);
   const { data: sponsorships } = useSponsorships(event.id);
   const [activeWorkspace, setActiveWorkspace] = useState<"design" | "pricing" | "sender" | null>(null);
@@ -168,7 +181,7 @@ export default function ShareSection({ event }: { event: Event }) {
       const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
       setDraft(registrationPage);
       setGuestTypesInput(registrationPage.registrationTypes.join(", "));
-      await update.mutateAsync({ id: event.id, patch: { registrationPage } });
+      await update.mutateAsync({ id: event.id, patch: registrationDesignPatch(registrationPage) });
       await share.mutateAsync({ id: event.id });
       toast({ title: "Registration site published", description: "Copy the link and send it to your guests." });
     } catch (error) {
@@ -188,7 +201,7 @@ export default function ShareSection({ event }: { event: Event }) {
     setDraft(registrationPage);
     setGuestTypesInput(registrationPage.registrationTypes.join(", "));
     update.mutate(
-      { id: event.id, patch: { registrationPage } },
+      { id: event.id, patch: registrationDesignPatch(registrationPage) },
       {
         onSuccess: () => {
           toast({ title: "Registration site saved", description: "The public page now uses this design." });
@@ -222,6 +235,32 @@ export default function ShareSection({ event }: { event: Event }) {
       ...current,
       speakers: current.speakers.map((speaker, speakerIndex) => speakerIndex === index ? { ...speaker, ...patch } : speaker),
     }));
+  };
+
+  const draftRegistrationCopy = () => {
+    generateCopy.mutate(
+      {
+        eventId: event.id,
+        aboutHeading: draft.aboutHeading,
+        aboutBody: draft.aboutBody,
+        agendaIntroduction: draft.agendaIntroduction,
+      },
+      {
+        onSuccess: (suggestion) => {
+          setDraft((current) => ({
+            ...current,
+            aboutHeading: suggestion.aboutHeading,
+            aboutBody: suggestion.aboutBody,
+            agendaIntroduction: suggestion.agendaIntroduction,
+          }));
+          toast({
+            title: "About and agenda drafted",
+            description: suggestion.source === "ai" ? "Review the wording, make any edits, then save." : "A clear starter draft is ready to edit and save.",
+          });
+        },
+        onError: (error) => toast({ title: "Couldn't draft the copy", description: error.message }),
+      },
+    );
   };
 
   useEffect(() => {
@@ -297,7 +336,16 @@ export default function ShareSection({ event }: { event: Event }) {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-about-heading">About section heading</Label>
-                <Input id="registration-about-heading" value={draft.aboutHeading} maxLength={160} placeholder="About the event" onChange={(event) => setDraft((current) => ({ ...current, aboutHeading: event.target.value }))} />
+                <Input id="registration-about-heading" value={draft.aboutHeading} maxLength={160} placeholder="About the event" disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, aboutHeading: event.target.value }))} />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:col-span-2">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Need help with the wording?</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Beebizy uses the event details and run of show to create a starter draft. You stay in control and can edit every word.</p>
+                </div>
+                <Button type="button" variant="outline" onClick={draftRegistrationCopy} disabled={generateCopy.isPending}>
+                  <Sparkles className="mr-1.5 size-4" />{generateCopy.isPending ? "Drafting..." : "Draft About & Agenda with AI"}
+                </Button>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Large invitation photo</Label>
@@ -311,19 +359,15 @@ export default function ShareSection({ event }: { event: Event }) {
                 </div>
                 <p className="text-xs text-muted-foreground">This full-width image appears at the top of the invitation email and registration page. Large phone photos resize automatically.</p>
               </div>
-              <div className="space-y-1.5">
-                <Label>About section photo</Label>
-                <div className="space-y-2 rounded-lg border border-hairline p-3">
-                  {draft.aboutImageUrl ? <img src={draft.aboutImageUrl} alt="About the event" className="aspect-[3/2] w-full rounded-lg object-cover" /> : <div className="grid aspect-[3/2] w-full place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><ImagePlus className="size-5 text-muted-foreground" /></div>}
-                  <div className="flex flex-wrap gap-2"><label className="inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-input bg-background px-3 text-xs font-semibold hover:bg-accent"><ImagePlus className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.aboutImageUrl ? "Replace" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, aboutImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload the about photo", description: error.message }) }); }} /></label>{draft.aboutImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, aboutImageUrl: null }))}>Remove</Button> : null}</div>
-                </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-about-body">About section</Label>
+                <Textarea id="registration-about-body" value={draft.aboutBody} maxLength={3000} rows={7} placeholder="Tell guests why you are gathering, who the event is for, and what makes it special." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, aboutBody: event.target.value }))} />
+                <p className="text-xs text-muted-foreground">This is editable text on the public registration page, not a photo.</p>
               </div>
-              <div className="space-y-1.5">
-                <Label>Agenda section photo</Label>
-                <div className="space-y-2 rounded-lg border border-hairline p-3">
-                  {draft.agendaImageUrl ? <img src={draft.agendaImageUrl} alt="Guests at the event" className="aspect-[3/2] w-full rounded-lg object-cover" /> : <div className="grid aspect-[3/2] w-full place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><ImagePlus className="size-5 text-muted-foreground" /></div>}
-                  <div className="flex flex-wrap gap-2"><label className="inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-input bg-background px-3 text-xs font-semibold hover:bg-accent"><ImagePlus className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.agendaImageUrl ? "Replace" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, agendaImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload the agenda photo", description: error.message }) }); }} /></label>{draft.agendaImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, agendaImageUrl: null }))}>Remove</Button> : null}</div>
-                </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="registration-agenda-introduction">Agenda introduction</Label>
+                <Textarea id="registration-agenda-introduction" value={draft.agendaIntroduction} maxLength={1500} rows={5} placeholder="Give guests a short overview of what to expect before the detailed schedule." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, agendaIntroduction: event.target.value }))} />
+                <p className="text-xs text-muted-foreground">The timed agenda below still comes from the run of show.</p>
               </div>
               <fieldset className="space-y-3 rounded-xl border border-hairline p-4 sm:col-span-2">
                 <legend className="px-1 text-sm font-semibold text-foreground">Featured speakers</legend>

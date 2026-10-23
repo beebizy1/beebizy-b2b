@@ -16,6 +16,7 @@ import {
 } from "@tanstack/react-query";
 import { useData } from "./provider";
 import type { DataAdapter } from "./adapter";
+import type { RegistrationPageSettings } from "./registrationPage";
 import { prepareImageForUpload } from "./imageUpload";
 import type {
   GuestDraft,
@@ -343,6 +344,18 @@ export function useUpdateEvent() {
       for (const key of [...eventDerivedKeys(vars.id), qk.locations]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
+    },
+  });
+}
+
+export function useUpdateRegistrationPage() {
+  const adapter = useData();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; patch: Partial<RegistrationPageSettings> }) => adapter.events.updateRegistrationPage(vars.id, vars.patch),
+    onSuccess: (updated, vars) => {
+      queryClient.setQueryData(qk.event(vars.id), updated);
+      queryClient.invalidateQueries({ queryKey: qk.events });
     },
   });
 }

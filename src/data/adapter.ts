@@ -168,6 +168,7 @@ import type { AccountExperience } from "./accountExperience";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
 import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "./eventCopy";
+import type { RegistrationPageSettings } from "./registrationPage";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
 
 /** CRUD over an owner-scoped top-level collection. */
@@ -189,6 +190,7 @@ export interface EventScopedRepository<T, TDraft, TPatch> {
 
 export interface EventsRepository extends Omit<OwnedRepository<Event, EventDraft, EventPatch>, "list"> {
   list(filter?: EventFilter): Promise<Event[]>;
+  updateRegistrationPage(id: string, patch: Partial<RegistrationPageSettings>): Promise<Event>;
   /** Idempotent: returns the existing token if the event already has one. */
   share(id: string): Promise<{ shareToken: string }>;
   /**

@@ -228,6 +228,34 @@ export const memberRoleNotifications = pgTable(
   ],
 );
 
+/** Failed outbid emails are retained here until a scheduled retry succeeds. */
+export const auctionOutbidNotifications = pgTable(
+  "auction_outbid_notifications",
+  {
+    id: id(),
+    eventId: text("event_id").notNull(),
+    bidId: text("bid_id").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    bidderName: text("bidder_name").notNull(),
+    eventTitle: text("event_title").notNull(),
+    itemTitle: text("item_title").notNull(),
+    currentBidCents: bigint("current_bid_cents", { mode: "number" }).notNull(),
+    auctionUrl: text("auction_url").notNull(),
+    status: text("status").notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("auction_outbid_notifications_bid_email_idx").on(table.bidId, table.recipientEmail),
+    index("auction_outbid_notifications_due_idx").on(table.status, table.nextAttemptAt),
+    check("auction_outbid_notifications_status_check", sql`${table.status} in ('pending', 'sent')`),
+  ],
+);
+
 export const userSettings = pgTable("user_settings", {
   /** Clerk user id. */
   userId: text("user_id").primaryKey(),

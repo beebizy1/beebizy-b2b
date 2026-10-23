@@ -343,7 +343,7 @@ export async function notifyAuctionOutbid(input: {
   auctionUrl: string;
 }): Promise<EmailOutcome> {
   const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(input.currentBidCents / 100);
-  return sendEmail({
+  const message: EmailMessage = {
     to: input.to,
     replyTo: "hello@beebizy.com",
     idempotencyKey: `auction-outbid-${input.bidId}-${input.to.toLowerCase()}`,
@@ -359,7 +359,12 @@ export async function notifyAuctionOutbid(input: {
       details: [["Auction", input.eventTitle], ["Item", input.itemTitle], ["Current bid", amount]],
       action: { label: "Return to the auction", url: input.auctionUrl },
     }),
-  });
+  };
+  let outcome = await sendEmail(message);
+  for (let attempt = 1; attempt < 3 && outcome.status === "failed"; attempt += 1) {
+    outcome = await sendEmail(message);
+  }
+  return outcome;
 }
 
 export async function notifyAuctionWinner(input: {

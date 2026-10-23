@@ -185,6 +185,25 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
   };
 }
 
+const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
+  "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
+  "heroImageUrl", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
+  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "postEventSubject",
+  "postEventThankYou", "postEventWrapUp",
+];
+
+/** Validates only supplied fields so independent editors cannot overwrite one another. */
+export function normalizeRegistrationPagePatch(value: unknown): Partial<RegistrationPageSettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const normalized = normalizeRegistrationPage({ ...DEFAULT_REGISTRATION_PAGE, ...input });
+  const patch: Record<string, unknown> = {};
+  for (const key of REGISTRATION_PAGE_KEYS) {
+    if (Object.hasOwn(input, key)) patch[key] = normalized[key];
+  }
+  return patch as Partial<RegistrationPageSettings>;
+}
+
 export function registrationPageIsCustomized(value: unknown): boolean {
   const page = normalizeRegistrationPage(value);
   return page.template !== DEFAULT_REGISTRATION_PAGE.template ||
