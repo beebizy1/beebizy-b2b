@@ -49,4 +49,18 @@ describe("registration welcome-message formatting", () => {
     expect(sender).toContain("This event does not require tickets");
     expect(sender).toContain("Edit invitation design");
   });
+
+  it("shows organizers the full RSVP-page layout while they design an invitation", () => {
+    const builder = readFileSync(new URL("../events/sections/ShareSection.tsx", import.meta.url), "utf8");
+
+    expect(builder).toContain("Invitation & RSVP page");
+    expect(builder).toContain("RSVP page preview");
+    expect(builder).toContain("This is the page guests open from the invitation link");
+    expect(builder).toContain("When:");
+    expect(builder).toContain("Where:");
+    expect(builder).toContain("Confirm your attendance");
+    expect(builder).toContain("Add an About section so guests know what makes this event special.");
+    expect(builder).toContain("Confirmed sponsor logos will appear here.");
+    expect(builder).toContain('const ctaLabel = hasTickets || Boolean(settings.paymentUrl) ? "View registration" : "RSVP"');
+  });
 });

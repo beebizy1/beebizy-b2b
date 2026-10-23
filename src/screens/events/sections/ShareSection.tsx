@@ -118,32 +118,39 @@ function CopyRow({ label, url, hint }: { label: string; url: string; hint: strin
   );
 }
 
-function RegistrationPreview({ event, settings, sponsors }: { event: Event; settings: RegistrationPageSettings; sponsors: Sponsorship[] }) {
+function RegistrationPreview({ event, settings, sponsors, hasTickets }: { event: Event; settings: RegistrationPageSettings; sponsors: Sponsorship[]; hasTickets: boolean }) {
   const template = registrationPageTemplate(settings.template);
   const style = { backgroundColor: template.background } as CSSProperties;
+  const dateLabel = new Date(event.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const ctaLabel = hasTickets || Boolean(settings.paymentUrl) ? "View registration" : "RSVP";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-hairline shadow-sm" style={style}>
-      {settings.heroImageUrl && settings.heroImageDisplay === "banner" ? (
-        <div className="h-40 bg-cover bg-center" style={{ backgroundImage: `url(${settings.heroImageUrl})` }} />
-      ) : settings.heroImageUrl ? (
-        <div className="grid h-32 place-items-center p-5" style={{ backgroundColor: `${settings.accentColor}10` }}><img src={settings.heroImageUrl} alt="Event logo" className="max-h-20 max-w-[75%] object-contain" /></div>
-      ) : (
-        <div className="grid h-24 place-items-center" style={{ backgroundColor: `${settings.accentColor}18` }}>
-          <Image className="size-6" style={{ color: settings.accentColor }} aria-hidden="true" />
+      <section className="relative isolate min-h-80 overflow-hidden bg-[#17130a] text-white" style={settings.heroImageUrl && settings.heroImageDisplay === "banner" ? { backgroundImage: `url(${settings.heroImageUrl})`, backgroundPosition: "center", backgroundSize: "cover" } : undefined}>
+        <div className="absolute inset-0 -z-10 bg-black/65" aria-hidden="true" />
+        <div className="flex min-h-80 flex-col justify-end p-6">
+          {settings.heroImageUrl && settings.heroImageDisplay === "logo" ? <span className="mb-5 inline-flex w-fit rounded-xl bg-background p-3 shadow-lg"><img src={settings.heroImageUrl} alt="Event logo" className="max-h-16 max-w-40 object-contain" /></span> : null}
+          {!settings.heroImageUrl ? <span className="mb-5 grid size-12 place-items-center rounded-xl bg-white/10"><Image className="size-5" aria-hidden="true" /></span> : null}
+          <p className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: settings.accentColor }}>{event.category}</p>
+          <h3 className="mt-2 text-3xl font-extrabold tracking-tight">{settings.headline || event.title}</h3>
+          <p className="whitespace-pre-line mt-3 text-sm leading-6 text-white/80">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
+          <dl className="mt-5 grid gap-2 text-xs text-white/85">
+            <div><dt className="inline font-bold text-white">When: </dt><dd className="inline">{dateLabel}</dd></div>
+            {event.location ? <div><dt className="inline font-bold text-white">Where: </dt><dd className="inline">{event.location}</dd></div> : null}
+          </dl>
+          <span className="mt-5 inline-flex w-fit rounded-lg px-4 py-2.5 text-sm font-bold text-white" style={{ backgroundColor: settings.accentColor }}>{ctaLabel}</span>
         </div>
-      )}
-      <div className="space-y-4 p-6" style={{ backgroundColor: template.surface }}>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: settings.accentColor }}>{event.category}</p>
-          <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{settings.headline || event.title}</h3>
-          <p className="whitespace-pre-line mt-2 text-sm leading-6 text-slate-600">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
-        </div>
-        {settings.aboutBody ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{settings.aboutHeading || "About the event"}</p><p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{settings.aboutBody}</p></div> : null}
-        {settings.agendaIntroduction ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Agenda</p><p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{settings.agendaIntroduction}</p></div> : null}
-        <span className="inline-flex rounded-md px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: settings.accentColor }}>Register now</span>
-        {settings.showSpeakers && settings.speakers.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Featured speakers</p><div className="mt-3 flex -space-x-2">{settings.speakers.slice(0, 4).map((speaker) => speaker.photoUrl ? <img key={speaker.id} src={speaker.photoUrl} alt={speaker.name} className="size-10 rounded-full border-2 border-white object-cover" /> : <span key={speaker.id} className="grid size-10 place-items-center rounded-full border-2 border-white bg-slate-100 text-xs font-bold text-slate-600">{speaker.name.slice(0, 1)}</span>)}</div></div> : null}
-        {settings.showSponsors && sponsors.length > 0 ? <div className="border-t border-slate-200 pt-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Sponsors</p><div className="mt-3 flex flex-wrap items-center gap-4">{sponsors.slice(0, 4).map((sponsor) => sponsor.logoUrl ? <img key={sponsor.id} src={sponsor.logoUrl} alt={sponsor.companyName} className="h-7 w-20 object-contain" /> : <span key={sponsor.id} className="text-xs font-semibold text-slate-500">{sponsor.companyName}</span>)}</div></div> : null}
+      </section>
+      <div className="space-y-5 p-6" style={{ backgroundColor: template.surface }}>
+        <section>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{settings.aboutHeading || "About the event"}</p>
+          <p className={`mt-2 whitespace-pre-line text-sm leading-6 ${settings.aboutBody ? "text-slate-600" : "italic text-slate-400"}`}>{settings.aboutBody || "Add an About section so guests know what makes this event special."}</p>
+          {settings.aboutImageUrl ? <img src={settings.aboutImageUrl} alt="" className="mt-3 h-28 w-full rounded-xl object-cover" /> : null}
+        </section>
+        {settings.showAgenda ? <section className="border-t border-hairline pt-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Agenda</p><p className={`mt-2 whitespace-pre-line text-sm leading-6 ${settings.agendaIntroduction ? "text-slate-600" : "italic text-slate-400"}`}>{settings.agendaIntroduction || "Add an agenda introduction or timed Run of Show items."}</p>{settings.agendaImageUrl ? <img src={settings.agendaImageUrl} alt="" className="mt-3 h-28 w-full rounded-xl object-cover" /> : null}</section> : null}
+        <section className="rounded-xl border border-hairline bg-background p-4"><p className="text-xs font-bold text-slate-900">Confirm your attendance</p><p className="mt-1 text-xs leading-5 text-slate-500">Guests choose their guest type, enter their name, and submit their RSVP.</p><span className="mt-3 inline-flex rounded-md px-3 py-2 text-xs font-bold text-white" style={{ backgroundColor: settings.accentColor }}>{ctaLabel}</span></section>
+        {settings.showSpeakers ? <section className="border-t border-hairline pt-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Featured speakers</p>{settings.speakers.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-3">{settings.speakers.slice(0, 4).map((speaker) => <div key={speaker.id} className="rounded-xl bg-surface-sunken p-3">{speaker.photoUrl ? <img src={speaker.photoUrl} alt={speaker.name} className="aspect-square w-full rounded-lg object-cover" /> : <span className="grid aspect-square w-full place-items-center rounded-lg bg-surface-sunken text-lg font-bold text-slate-500">{speaker.name.slice(0, 1)}</span>}<p className="mt-2 text-xs font-bold text-slate-800">{speaker.name}</p><p className="text-[10px] text-slate-500">{speaker.title || speaker.organization}</p></div>)}</div> : <p className="mt-2 text-xs italic text-slate-400">Add speakers if this event has people appearing on stage.</p>}</section> : null}
+        {settings.showSponsors ? <section className="border-t border-hairline pt-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Sponsors</p>{sponsors.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-4">{sponsors.slice(0, 4).map((sponsor) => sponsor.logoUrl ? <img key={sponsor.id} src={sponsor.logoUrl} alt={sponsor.companyName} className="h-8 w-24 object-contain" /> : <span key={sponsor.id} className="text-xs font-semibold text-slate-500">{sponsor.companyName}</span>)}</div> : <p className="mt-2 text-xs italic text-slate-400">Confirmed sponsor logos will appear here.</p>}</section> : null}
       </div>
     </div>
   );
@@ -305,10 +312,10 @@ export default function ShareSection({ event }: { event: Event }) {
       {activeWorkspace === "sender" ? <div id="guided-invitation-sender"><TicketInvitationBuilder event={event} guided onDone={returnToLaunchGuide} onEditDesign={revealInvitationDesign} /></div> : null}
       {activeWorkspace === null || activeWorkspace === "design" ? <details className="rounded-xl border border-hairline bg-background" open={showDetails} onToggle={(event) => { setShowDetails(event.currentTarget.open); if (!event.currentTarget.open && activeWorkspace === "design") setActiveWorkspace(null); }}>
         <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground">{activeWorkspace === "design" ? "Invitation design and preview" : "Advanced public links and settings"}</summary>
-        <div id="registration-site-builder" className="grid gap-6 border-t border-hairline p-5 xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
+        <div id="registration-site-builder" className="grid gap-6 border-t border-hairline p-5 2xl:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
       <div className="space-y-6">
         {activeWorkspace === "design" ? <Panel>
-          <PanelHeader title="Registration site builder" description="Choose a starting point, then make the guest page match this event" actions={<Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill>} />
+          <PanelHeader title="Invitation & RSVP page" description="Design the page guests open from the invitation's RSVP link" actions={<Pill tone={event.shareToken ? "success" : "neutral"}>{event.shareToken ? "Published" : "Not published"}</Pill>} />
           <div className="space-y-6 p-5">
             <fieldset>
               <legend className="flex items-center gap-2 text-sm font-semibold text-foreground"><Palette className="size-4" /> Template</legend>
@@ -461,7 +468,7 @@ export default function ShareSection({ event }: { event: Event }) {
               </div>
             </details>
             <div className="flex flex-wrap gap-2 border-t border-hairline pt-4">
-              <Button onClick={() => save(true)} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save design and continue"}</Button>
+              <Button onClick={() => save(true)} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save invitation and continue"}</Button>
               {eventUrl ? <Button asChild variant="outline"><a href={eventUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Open live page</a></Button> : null}
             </div>
           </div>
@@ -513,7 +520,7 @@ export default function ShareSection({ event }: { event: Event }) {
       </div>
 
       <div className="space-y-6">
-        {activeWorkspace === "design" ? <Panel><PanelHeader title="Live preview" description="Guests see this look and feel" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} sponsors={(sponsorships ?? []).filter((sponsor) => sponsor.status === "confirmed")} /></div></Panel> : null}
+        {activeWorkspace === "design" ? <Panel><PanelHeader title="RSVP page preview" description="This is the page guests open from the invitation link" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} sponsors={(sponsorships ?? []).filter((sponsor) => sponsor.status === "confirmed")} hasTickets={onSale.length > 0} /></div></Panel> : null}
         {activeWorkspace !== "design" ? <Panel>
           <PanelHeader title="What guests can access" description="Only the public event experience" />
           <div className="space-y-3 px-5 py-4 text-sm">
