@@ -67,10 +67,11 @@ function EventHeading({ event, timeZone, token, registrationLabel }: { event: Ev
   const calendarEnd = new Date(event.endDate ?? new Date(new Date(event.date).getTime() + 2 * 60 * 60_000)).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(settings.headline || event.title)}&dates=${calendarStart}/${calendarEnd}&details=${encodeURIComponent(settings.welcomeMessage || event.description || "")}&location=${encodeURIComponent(event.location ?? "")}`;
   return (
-    <section className={cn("relative isolate min-h-[34rem] overflow-hidden bg-[#17130a] text-white", settings.heroImageUrl && "bg-cover bg-center")} style={settings.heroImageUrl ? { backgroundImage: `url(${settings.heroImageUrl})` } : undefined} aria-label={`${event.title} invitation`}>
+    <section className={cn("relative isolate min-h-[34rem] overflow-hidden bg-[#17130a] text-white", settings.heroImageUrl && settings.heroImageDisplay === "banner" && "bg-cover bg-center")} style={settings.heroImageUrl && settings.heroImageDisplay === "banner" ? { backgroundImage: `url(${settings.heroImageUrl})` } : undefined} aria-label={`${event.title} invitation`}>
       <div className="absolute inset-0 -z-10 bg-black/55" aria-hidden="true" />
       <div className="mx-auto flex min-h-[34rem] max-w-7xl items-center px-6 py-16 sm:py-24">
         <div className="max-w-2xl">
+          {settings.heroImageUrl && settings.heroImageDisplay === "logo" ? <span className="mb-8 inline-flex rounded-2xl bg-white p-4 shadow-lg"><img src={settings.heroImageUrl} alt="Event logo" className="max-h-24 max-w-56 object-contain" /></span> : null}
           <p className="text-xs font-black uppercase tracking-[0.2em]" style={{ color: settings.accentColor }}>You&apos;re invited</p>
           <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">{settings.headline || event.title}</h1>
           <dl className="mt-8 space-y-3 text-sm font-semibold sm:text-base">

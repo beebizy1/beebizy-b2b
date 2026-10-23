@@ -53,6 +53,7 @@ describe("registration page settings", () => {
       agendaIntroduction: "",
       welcomeMessage: "Register below and we will see you there.",
       heroImageUrl: "https://images.example.com/garden.jpg",
+      heroImageDisplay: "banner",
       aboutImageUrl: "https://images.example.com/venue.jpg",
       agendaImageUrl: "/demo-registration/gala-networking.png",
       showAgenda: false,
@@ -83,6 +84,8 @@ describe("registration page settings", () => {
       .toMatchObject({ accentColor: DEFAULT_REGISTRATION_PAGE.accentColor, heroImageUrl: null });
     expect(normalizeRegistrationPage({ heroImageUrl: "/demo-registration/gala-hero.png" }).heroImageUrl)
       .toBe("/demo-registration/gala-hero.png");
+    expect(normalizeRegistrationPage({ heroImageDisplay: "logo" }).heroImageDisplay).toBe("logo");
+    expect(normalizeRegistrationPage({ heroImageDisplay: "something-else" }).heroImageDisplay).toBe("banner");
   });
 
   it("counts template, color and guest-type choices as invitation design work", () => {
@@ -113,6 +116,17 @@ describe("registration page settings", () => {
     expect(html).toContain("the agenda, and registration options");
     expect(html).toContain("Sent by Cedar Grove School using Beebizy");
     expect(html).not.toContain("Welcome <friends>");
+  });
+
+  it("keeps a logo contained instead of cropping it like a banner", () => {
+    const html = registrationInvitationHtml({
+      ...DEFAULT_REGISTRATION_PAGE,
+      heroImageUrl: "https://images.example.com/logo.png",
+      heroImageDisplay: "logo",
+    }, "School Gala", null, "https://beebizy.example/e/token");
+    expect(html).toContain('alt="Event logo"');
+    expect(html).toContain("object-fit:contain");
+    expect(html).not.toContain("max-height:280px;object-fit:cover");
   });
 
   it("preserves long multi-paragraph welcome copy separately from the About heading", () => {

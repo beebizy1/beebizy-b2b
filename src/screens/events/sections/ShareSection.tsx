@@ -38,7 +38,7 @@ const REGISTRATION_TYPE_PRESETS = [
 
 const DESIGN_FIELDS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
-  "heroImageUrl", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
+  "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
   "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization",
 ];
 
@@ -124,8 +124,10 @@ function RegistrationPreview({ event, settings, sponsors }: { event: Event; sett
 
   return (
     <div className="overflow-hidden rounded-2xl border border-hairline shadow-sm" style={style}>
-      {settings.heroImageUrl ? (
+      {settings.heroImageUrl && settings.heroImageDisplay === "banner" ? (
         <div className="h-40 bg-cover bg-center" style={{ backgroundImage: `url(${settings.heroImageUrl})` }} />
+      ) : settings.heroImageUrl ? (
+        <div className="grid h-32 place-items-center p-5" style={{ backgroundColor: `${settings.accentColor}10` }}><img src={settings.heroImageUrl} alt="Event logo" className="max-h-20 max-w-[75%] object-contain" /></div>
       ) : (
         <div className="grid h-24 place-items-center" style={{ backgroundColor: `${settings.accentColor}18` }}>
           <Image className="size-6" style={{ color: settings.accentColor }} aria-hidden="true" />
@@ -310,26 +312,68 @@ export default function ShareSection({ event }: { event: Event }) {
           <div className="space-y-6 p-5">
             <fieldset>
               <legend className="flex items-center gap-2 text-sm font-semibold text-foreground"><Palette className="size-4" /> Template</legend>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
                 {REGISTRATION_PAGE_TEMPLATES.map((template) => {
                   const selected = draft.template === template.id;
                   return (
-                    <button key={template.id} type="button" aria-pressed={selected} onClick={() => setDraft((current) => ({ ...current, template: template.id, accentColor: template.accentColor }))} className="rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm" style={{ borderColor: selected ? draft.accentColor : undefined, backgroundColor: template.background }}>
-                      <span className="mb-3 block h-2 rounded-full" style={{ backgroundColor: template.accentColor }} />
-                      <span className="block text-sm font-semibold text-slate-900">{template.name}</span>
-                      <span className="mt-1 block text-xs leading-5 text-slate-600">{template.description}</span>
+                    <button key={template.id} type="button" aria-pressed={selected} onClick={() => setDraft((current) => ({ ...current, template: template.id, accentColor: template.accentColor }))} className="rounded-xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-sm sm:p-3" style={{ borderColor: selected ? draft.accentColor : undefined, backgroundColor: template.background }}>
+                      <span className="mb-2 block h-1.5 rounded-full sm:mb-3 sm:h-2" style={{ backgroundColor: template.accentColor }} />
+                      <span className="block text-xs font-semibold text-slate-900 sm:text-sm">{template.name}</span>
+                      <span className="mt-1 hidden text-xs leading-5 text-slate-600 sm:block">{template.description}</span>
                     </button>
                   );
                 })}
               </div>
             </fieldset>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <section className="space-y-5 rounded-2xl border border-hairline bg-surface-sunken/40 p-4 sm:p-5">
+              <div>
+                <h3 className="text-base font-bold text-foreground">Make four quick edits</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Pick a color, add a banner or logo, write the welcome, and introduce the agenda. The template handles the rest.</p>
+              </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="template-color">1. Color</Label>
+                  <div className="flex items-center gap-2">
+                    <input id="template-color" type="color" value={draft.accentColor} onChange={(event) => setDraft((current) => ({ ...current, accentColor: event.target.value.toUpperCase() }))} className="h-10 w-14 cursor-pointer rounded-lg border border-input bg-background p-1" />
+                    <Input aria-label="Template color hex value" value={draft.accentColor} maxLength={7} onChange={(event) => setDraft((current) => ({ ...current, accentColor: event.target.value }))} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>2. Banner or logo</Label>
+                  <div className="flex gap-2" role="group" aria-label="Image display style">
+                    <Button type="button" size="sm" aria-pressed={draft.heroImageDisplay === "banner"} variant={draft.heroImageDisplay === "banner" ? "default" : "outline"} onClick={() => setDraft((current) => ({ ...current, heroImageDisplay: "banner" }))}>Banner</Button>
+                    <Button type="button" size="sm" aria-pressed={draft.heroImageDisplay === "logo"} variant={draft.heroImageDisplay === "logo" ? "default" : "outline"} onClick={() => setDraft((current) => ({ ...current, heroImageDisplay: "logo" }))}>Logo</Button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+                  {draft.heroImageUrl ? <img src={draft.heroImageUrl} alt={draft.heroImageDisplay === "logo" ? "Event logo" : "Event banner"} className={`h-20 w-32 rounded-lg border border-hairline bg-white ${draft.heroImageDisplay === "logo" ? "object-contain p-2" : "object-cover"}`} /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-background"><Image className="size-5 text-muted-foreground" /></div>}
+                  <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent">
+                    <Image className="mr-1.5 size-4" />{uploadImage.isPending ? "Uploading..." : draft.heroImageUrl ? "Replace" : "Upload"}
+                    <input type="file" accept="image/*" className="sr-only" disabled={uploadImage.isPending} onChange={(inputEvent) => { const file = inputEvent.target.files?.[0]; if (!file) return; uploadImage.mutate(file, { onSuccess: (url) => setDraft((current) => ({ ...current, heroImageUrl: url })), onError: (error) => toast({ title: "Couldn't upload image", description: error.message }) }); }} />
+                  </label>
+                  {draft.heroImageUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => setDraft((current) => ({ ...current, heroImageUrl: null }))}>Remove</Button> : null}
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="template-welcome">3. Welcome text</Label>
+                  <Textarea id="template-welcome" value={draft.welcomeMessage} maxLength={2000} rows={6} placeholder={event.description ?? "Tell guests why you would love them to attend."} onChange={(event) => setDraft((current) => ({ ...current, welcomeMessage: event.target.value }))} />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><Label htmlFor="template-agenda">4. Agenda introduction</Label><Button asChild type="button" size="sm" variant="ghost"><a href={`/app/events/${event.id}/run-of-show`}>Edit timed agenda</a></Button></div>
+                  <Textarea id="template-agenda" value={draft.agendaIntroduction} maxLength={1500} rows={4} placeholder="Give guests a short overview of what to expect." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, agendaIntroduction: event.target.value }))} />
+                  <p className="text-xs text-muted-foreground">Timed agenda items come from the Run of Show.</p>
+                </div>
+              </div>
+            </section>
+
+            <details className="rounded-xl border border-hairline bg-background">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-foreground">More page options</summary>
+              <div className="grid gap-4 border-t border-hairline p-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-headline">Headline</Label>
                 <Input id="registration-headline" value={draft.headline} maxLength={120} placeholder={event.title} onChange={(e) => setDraft((current) => ({ ...current, headline: e.target.value }))} />
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="hidden space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-welcome">Welcome message</Label>
                 <Textarea id="registration-welcome" value={draft.welcomeMessage} maxLength={2000} rows={7} placeholder={event.description ?? "Tell guests what makes this event special."} onChange={(e) => setDraft((current) => ({ ...current, welcomeMessage: e.target.value }))} />
                 <p className="text-xs text-muted-foreground">Blank lines become separate paragraphs in the preview, invitation email, and public page.</p>
@@ -347,7 +391,7 @@ export default function ShareSection({ event }: { event: Event }) {
                   <Sparkles className="mr-1.5 size-4" />{generateCopy.isPending ? "Drafting..." : "Draft About & Agenda with AI"}
                 </Button>
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="hidden space-y-1.5 sm:col-span-2">
                 <Label>Large invitation photo</Label>
                 <div className="flex flex-wrap items-center gap-3">
                   {draft.heroImageUrl ? <img src={draft.heroImageUrl} alt="Invitation" className="h-20 w-32 rounded-lg border border-hairline object-cover" /> : <div className="grid h-20 w-32 place-items-center rounded-lg border border-dashed border-hairline bg-surface-sunken"><Image className="size-5 text-muted-foreground" /></div>}
@@ -364,7 +408,7 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Textarea id="registration-about-body" value={draft.aboutBody} maxLength={3000} rows={7} placeholder="Tell guests why you are gathering, who the event is for, and what makes it special." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, aboutBody: event.target.value }))} />
                 <p className="text-xs text-muted-foreground">This is editable text on the public registration page, not a photo.</p>
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="hidden space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-agenda-introduction">Agenda introduction</Label>
                 <Textarea id="registration-agenda-introduction" value={draft.agendaIntroduction} maxLength={1500} rows={5} placeholder="Give guests a short overview of what to expect before the detailed schedule." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, agendaIntroduction: event.target.value }))} />
                 <p className="text-xs text-muted-foreground">The timed agenda below still comes from the run of show.</p>
@@ -400,7 +444,7 @@ export default function ShareSection({ event }: { event: Event }) {
                 </div>
                 <p className="text-xs text-muted-foreground">These labels are customer-facing. Choose a preset or enter client-specific types separated by commas. Guests select one when they register.</p>
               </div>
-              <div className="space-y-1.5">
+              <div className="hidden space-y-1.5">
                 <Label htmlFor="registration-color">Brand color</Label>
                 <div className="flex items-center gap-2">
                   <input id="registration-color" type="color" value={draft.accentColor} onChange={(e) => setDraft((current) => ({ ...current, accentColor: e.target.value.toUpperCase() }))} className="h-9 w-12 cursor-pointer rounded border border-input bg-background p-1" />
@@ -414,7 +458,8 @@ export default function ShareSection({ event }: { event: Event }) {
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show confirmed sponsors</span><Switch checked={draft.showSponsors} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showSponsors: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
               </div>
-            </div>
+              </div>
+            </details>
             <div className="flex flex-wrap gap-2 border-t border-hairline pt-4">
               <Button onClick={() => save(true)} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save design and continue"}</Button>
               {eventUrl ? <Button asChild variant="outline"><a href={eventUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Open live page</a></Button> : null}

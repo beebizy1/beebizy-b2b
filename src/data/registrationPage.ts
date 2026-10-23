@@ -1,5 +1,6 @@
 export const REGISTRATION_PAGE_TEMPLATE_IDS = ["warm", "garden", "coastal"] as const;
 export type RegistrationPageTemplateId = (typeof REGISTRATION_PAGE_TEMPLATE_IDS)[number];
+export type RegistrationHeroDisplay = "banner" | "logo";
 
 export interface RegistrationSpeaker {
   id: string;
@@ -19,6 +20,7 @@ export interface RegistrationPageSettings {
   agendaIntroduction: string;
   welcomeMessage: string;
   heroImageUrl: string | null;
+  heroImageDisplay: RegistrationHeroDisplay;
   aboutImageUrl: string | null;
   agendaImageUrl: string | null;
   /** Optional organizer-owned checkout. Beebizy does not process this payment. */
@@ -80,6 +82,7 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   agendaIntroduction: "",
   welcomeMessage: "",
   heroImageUrl: null,
+  heroImageDisplay: "banner",
   aboutImageUrl: null,
   agendaImageUrl: null,
   paymentUrl: null,
@@ -169,6 +172,7 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     agendaIntroduction: text(input.agendaIntroduction, 1_500),
     welcomeMessage: text(input.welcomeMessage, 2_000),
     heroImageUrl: safeImageUrl(input.heroImageUrl),
+    heroImageDisplay: input.heroImageDisplay === "logo" ? "logo" : "banner",
     aboutImageUrl: safeImageUrl(input.aboutImageUrl),
     agendaImageUrl: safeImageUrl(input.agendaImageUrl),
     ...(Object.hasOwn(input, "paymentUrl") ? { paymentUrl: safeImageUrl(input.paymentUrl) } : {}),
@@ -187,7 +191,7 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
 
 const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
-  "heroImageUrl", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
+  "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
   "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "postEventSubject",
   "postEventThankYou", "postEventWrapUp",
 ];
@@ -251,7 +255,9 @@ export function registrationInvitationHtml(
   const welcome = escapeHtml(page.welcomeMessage || eventDescription || "We would love to see you there.").replace(/\r?\n/g, "<br />");
   const link = escapeHtml(url);
   const hero = page.heroImageUrl
-    ? `<img src="${escapeHtml(page.heroImageUrl)}" alt="" width="600" style="display:block;width:100%;max-height:280px;object-fit:cover;border:0;" />`
+    ? page.heroImageDisplay === "logo"
+      ? `<div style="padding:28px;text-align:center;background:${template.background};"><img src="${escapeHtml(page.heroImageUrl)}" alt="Event logo" width="180" style="display:inline-block;width:auto;max-width:180px;max-height:100px;object-fit:contain;border:0;" /></div>`
+      : `<img src="${escapeHtml(page.heroImageUrl)}" alt="" width="600" style="display:block;width:100%;max-height:280px;object-fit:cover;border:0;" />`
     : "";
   const greeting = recipientName
     ? `<p style="margin:0 0 12px;color:#475569;font-size:16px;line-height:1.5;">Hi ${escapeHtml(recipientName)},</p>`
