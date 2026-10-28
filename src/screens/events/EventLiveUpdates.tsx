@@ -16,7 +16,7 @@ const icons: Record<TeamUpdateKind, typeof Radio> = { schedule: Clock3, "vendor-
 export default function EventLiveUpdates({ event }: { event: Event }) {
   const { data } = useTeamUpdates(event.id);
   const post = usePostTeamUpdate();
-  const { when } = usePreferences();
+  const { when } = usePreferences(event.timeZone);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<TeamUpdateKind>("schedule");
   const [message, setMessage] = useState("");

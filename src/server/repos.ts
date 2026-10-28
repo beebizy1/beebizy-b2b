@@ -99,7 +99,7 @@ import { workspaceInviteInsertSelection } from "./workspaceMemberInsert.ts";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../data/feedback.ts";
 import { buildAttention, computeEventHealth, computePortfolio } from "../data/derive.ts";
 import { describeHistoryChange } from "../data/history.ts";
-import { daysBetweenInZone } from "../lib/datetime.ts";
+import { daysBetweenInZone, isValidTimeZone } from "../lib/datetime.ts";
 import { parseFloorplanDraft, readStoredFloorplan, writeStoredFloorplan } from "../data/floorplan.ts";
 import { teamUpdateFromHistory, teamUpdateKind } from "../data/teamUpdates.ts";
 import { volunteerCompletionTransition, type AssignmentCompletionAction } from "../data/assignmentCompletion.ts";
@@ -365,6 +365,8 @@ export const events = {
     requireWorkspaceAccess(ctx);
     const id = newId("evt");
     const createdAt = new Date();
+    const eventTimeZone = optStr(body, "timeZone");
+    if (eventTimeZone && !isValidTimeZone(eventTimeZone)) throw new HttpError(400, "Choose a valid event time zone.");
     const values = {
       id,
       workspaceId: ctx.workspaceId,
@@ -373,6 +375,7 @@ export const events = {
       description: optStr(body, "description"),
       startsAt: parseDate(body.date, "date"),
       endsAt: parseOptionalDate(body.endDate, "endDate"),
+      timeZone: eventTimeZone,
       venue: optStr(body, "location"),
       locationId: optStr(body, "locationId"),
       capacity: optInt(body, "capacity"),
@@ -420,6 +423,7 @@ export const events = {
       description: values.description,
       date: values.startsAt.toISOString(),
       endDate: values.endsAt?.toISOString() ?? null,
+      timeZone: values.timeZone,
       location: values.venue ?? (location ? [location.name, location.city].filter(Boolean).join(", ") : null),
       locationId: values.locationId,
       locationRecord: location,
@@ -499,9 +503,13 @@ export const events = {
       registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
       navigation: (b) => normalizeEventNavigation(b.navigation),
       locationId: (b) => optStr(b, "locationId"),
+      timeZone: (b) => optStr(b, "timeZone"),
     });
     if ("experience" in body && ctx.canSwitchExperience && !ctx.eventScopeId) {
       patch.experience = requestedExperience(ctx, body.experience);
+    }
+    if ("timeZone" in body && patch.timeZone && !isValidTimeZone(String(patch.timeZone))) {
+      throw new HttpError(400, "Choose a valid event time zone.");
     }
     if ("date" in body) patch.startsAt = parseDate(body.date, "date");
     if ("endDate" in body) patch.endsAt = parseOptionalDate(body.endDate, "endDate");
@@ -519,6 +527,7 @@ export const events = {
     if ("navigation" in body) after.navigation = normalizeEventNavigation(patch.navigation);
     if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
     if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
+    if ("timeZone" in body) after.timeZone = patch.timeZone as string | null;
     if ("location" in body) after.location = patch.venue as string | null;
     if ("locationId" in body) {
       const locationId = patch.locationId as string | null;
@@ -927,14 +936,14 @@ export const events = {
 /**
  * Public: resolves a share token with no session at all.
  *
- * The workspace joins in for one reason — its time zone. The guest has no settings of
- * their own, so the event has to arrive already knowing which zone its times are in.
+ * The workspace joins to provide a legacy fallback for events created before event-owned
+ * time zones. The guest has no settings of their own, so the event arrives with its zone.
  */
 export async function eventByShareToken(
   token: string,
 ): Promise<{ event: Event; timeZone: string } | null> {
   const [row] = await db
-    .select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone })
+    .select({ event: s.events, location: s.locations, workspaceTimeZone: s.workspaces.timeZone })
     .from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
@@ -947,7 +956,7 @@ export async function eventByShareToken(
       location: row.location,
       registrationCount: counts.get(row.event.id) ?? 0,
     }),
-    timeZone: row.timeZone,
+    timeZone: row.event.timeZone ?? row.workspaceTimeZone,
   };
 }
 
@@ -1236,7 +1245,7 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
   const email = link.after.email;
   if ((kind !== "checklist" && kind !== "run-of-show" && kind !== "volunteer") || typeof assignmentId !== "string" || typeof email !== "string") return null;
 
-  const [eventRow] = await db.select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone }).from(s.events)
+  const [eventRow] = await db.select({ event: s.events, location: s.locations, workspaceTimeZone: s.workspaces.timeZone }).from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId))).limit(1);
@@ -1245,7 +1254,7 @@ export async function publicAssignment(token: string): Promise<PublicAssignmentP
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
     eventEndDate: eventRow.event.endsAt?.toISOString() ?? null,
-    timeZone: eventRow.timeZone,
+    timeZone: eventRow.event.timeZone ?? eventRow.workspaceTimeZone,
     location: eventRow.location
       ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
       : eventRow.event.venue,
@@ -1393,7 +1402,7 @@ export async function publicCheckInStation(token: string): Promise<PublicCheckIn
   const access = await publicVolunteerCheckInAccess(token);
   if (!access) return null;
   const { link, shift, station } = access;
-  const [eventRow] = await db.select({ event: s.events, location: s.locations, timeZone: s.workspaces.timeZone }).from(s.events)
+  const [eventRow] = await db.select({ event: s.events, location: s.locations, workspaceTimeZone: s.workspaces.timeZone }).from(s.events)
     .leftJoin(s.locations, eq(s.events.locationId, s.locations.id))
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId))).limit(1);
@@ -1414,7 +1423,7 @@ export async function publicCheckInStation(token: string): Promise<PublicCheckIn
   return {
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
-    timeZone: eventRow.timeZone,
+    timeZone: eventRow.event.timeZone ?? eventRow.workspaceTimeZone,
     location: eventRow.location
       ? [eventRow.location.name, eventRow.location.city].filter(Boolean).join(", ")
       : eventRow.event.venue,
@@ -1440,7 +1449,7 @@ export async function publicAttendanceDashboard(token: string): Promise<PublicAt
     .limit(1);
   if (!link) return null;
 
-  const [eventRow] = await db.select({ event: s.events, timeZone: s.workspaces.timeZone })
+  const [eventRow] = await db.select({ event: s.events, workspaceTimeZone: s.workspaces.timeZone })
     .from(s.events)
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(and(eq(s.events.id, link.eventId), eq(s.events.workspaceId, link.workspaceId)))
@@ -1474,7 +1483,7 @@ export async function publicAttendanceDashboard(token: string): Promise<PublicAt
   return {
     eventTitle: displayTitle,
     eventDate: eventRow.event.startsAt.toISOString(),
-    timeZone: eventRow.timeZone,
+    timeZone: eventRow.event.timeZone ?? eventRow.workspaceTimeZone,
     generatedAt: new Date().toISOString(),
     summary: {
       registrationRows: report.summary.registrationRows,
@@ -4155,7 +4164,7 @@ async function publicAuctionItem(itemId: string): Promise<PublicAuctionItem | nu
 }
 
 export async function publicAuction(token: string): Promise<PublicAuctionPayload | null> {
-  const [eventRow] = await db.select({ event: s.events, timeZone: s.workspaces.timeZone }).from(s.events)
+  const [eventRow] = await db.select({ event: s.events, workspaceTimeZone: s.workspaces.timeZone }).from(s.events)
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(eq(s.events.auctionPublicToken, token)).limit(1);
   if (!eventRow || eventRow.event.status === "cancelled") return null;
@@ -4201,7 +4210,7 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
   return {
     eventTitle: eventRow.event.title,
     eventDate: eventRow.event.startsAt.toISOString(),
-    timeZone: eventRow.timeZone,
+    timeZone: eventRow.event.timeZone ?? eventRow.workspaceTimeZone,
     settings,
     categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))].sort(),
     items,

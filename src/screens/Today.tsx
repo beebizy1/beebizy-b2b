@@ -21,6 +21,7 @@ import { useAccountExperience } from "@/app/useAccountExperience";
 import { useEvents, useGuests, useLocations, useRegistrations } from "@/data/hooks";
 import { eventLocationLabel } from "./events/calendar";
 import type { Event, UserSettings } from "@/data/entities";
+import { formatInZone } from "@/lib/datetime";
 import SantaClaraDashboard from "./SantaClaraDashboard";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -101,7 +102,7 @@ function groupEvents(
 }
 
 function PortfolioDashboard() {
-  const { date: formatDate, grouping } = usePreferences();
+  const { timeZone, grouping } = usePreferences();
   const { data: events, isLoading: eventsLoading, isError, error, refetch } = useEvents();
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const { data: guests, isLoading: guestsLoading } = useGuests();
@@ -209,7 +210,7 @@ function PortfolioDashboard() {
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-foreground">{event.title}</p>
                     <p className="truncate text-sm text-muted-foreground">
-                      {formatDate(event.date, "dayMonthYear")} • {eventLocationLabel(event)}
+                      {formatInZone(event.date, event.timeZone ?? timeZone, "dayMonthYear")} • {eventLocationLabel(event)}
                     </p>
                   </div>
                   <span

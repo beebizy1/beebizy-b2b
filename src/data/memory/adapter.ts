@@ -385,6 +385,7 @@ const events: EventsRepository = {
       description: draft.description ?? null,
       date: draft.date,
       endDate: draft.endDate ?? null,
+      timeZone: draft.timeZone ?? null,
       location: draft.location ?? (location ? `${location.name}, ${location.city ?? ""}`.replace(/, $/, "") : null),
       locationId: draft.locationId ?? null,
       locationRecord: location,
@@ -510,7 +511,7 @@ const events: EventsRepository = {
         store().volunteerNeeds.filter((need) => need.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showVolunteerSignup),
         store().volunteers.filter((shift) => shift.eventId === event.id),
       ),
-      timeZone: store().settings.timeZone,
+      timeZone: event.timeZone ?? store().settings.timeZone,
     });
   },
 

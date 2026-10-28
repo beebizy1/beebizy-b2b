@@ -22,6 +22,7 @@ import {
   useEvent,
   useLocations,
   useShareAuction,
+  useSettings,
   useTemplates,
   useUpdateEvent,
 } from "@/data/hooks";
@@ -31,30 +32,21 @@ import type { AccountExperience } from "@/data/accountExperience";
 import { eventDetailsReturnTarget, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import EventLaunchContextBar from "./EventLaunchContextBar";
 import { useEventLaunchProgress } from "./useEventLaunchProgress";
+import {
+  COMMON_TIME_ZONES,
+  fromDateTimeLocalInputInZone,
+  localTimeZone,
+  toDateTimeLocalInputInZone,
+} from "@/lib/datetime";
 
 const NO_VENUE = "__none__";
 const NO_TEMPLATE = "__blank__";
-
-/** `<input type="datetime-local">` wants `YYYY-MM-DDTHH:mm` in local time, not an ISO instant. */
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function fromLocalInput(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
 
 function defaultStart(): string {
   const date = new Date();
   date.setDate(date.getDate() + 30);
   date.setHours(9, 0, 0, 0);
-  return toLocalInput(date.toISOString());
+  return toDateTimeLocalInputInZone(date.toISOString(), localTimeZone());
 }
 
 interface FormState {
@@ -63,6 +55,7 @@ interface FormState {
   description: string;
   start: string;
   end: string;
+  timeZone: string;
   locationId: string;
   freeTextVenue: string;
   capacity: string;
@@ -77,6 +70,7 @@ const EMPTY: FormState = {
   description: "",
   start: defaultStart(),
   end: "",
+  timeZone: localTimeZone(),
   locationId: NO_VENUE,
   freeTextVenue: "",
   capacity: "",
@@ -92,6 +86,7 @@ export default function EventForm({ id }: { id?: string }) {
   const { experience, canSwitchExperience } = useAccountExperience();
   const { data: locations } = useLocations();
   const { data: templates } = useTemplates();
+  const { data: settings } = useSettings();
   const { data: existing, isLoading, isError, error } = useEvent(id ?? "");
 
   const createEvent = useCreateEvent();
@@ -114,8 +109,9 @@ export default function EventForm({ id }: { id?: string }) {
       experience: existing.experience ?? "standard",
       title: existing.title,
       description: existing.description ?? "",
-      start: toLocalInput(existing.date),
-      end: toLocalInput(existing.endDate),
+      start: toDateTimeLocalInputInZone(existing.date, existing.timeZone ?? settings?.timeZone ?? localTimeZone()),
+      end: toDateTimeLocalInputInZone(existing.endDate, existing.timeZone ?? settings?.timeZone ?? localTimeZone()),
+      timeZone: existing.timeZone ?? settings?.timeZone ?? localTimeZone(),
       locationId: existing.locationId ?? NO_VENUE,
       freeTextVenue: existing.locationId ? "" : (existing.location ?? ""),
       capacity: existing.capacity === null ? "" : String(existing.capacity),
@@ -124,17 +120,28 @@ export default function EventForm({ id }: { id?: string }) {
       templateId: NO_TEMPLATE,
     });
     setFundraiserHasAuction(existing.category === "Fundraiser" && existing.auctionPublicToken ? true : null);
-  }, [existing]);
+  }, [existing, settings?.timeZone]);
+
+  useEffect(() => {
+    if (!isEdit && settings?.timeZone) setForm((current) => ({ ...current, timeZone: settings.timeZone }));
+  }, [isEdit, settings?.timeZone]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
   };
 
+  const timeZoneOptions = useMemo(
+    () => [...new Set([form.timeZone, ...COMMON_TIME_ZONES])],
+    [form.timeZone],
+  );
+
   const problems = useMemo(() => {
     const found: Partial<Record<keyof FormState, string>> = {};
     if (!form.title.trim()) found.title = "Give the event a name.";
     if (!form.start) found.start = "Pick a start date and time.";
-    if (form.end && form.start && new Date(form.end) < new Date(form.start)) {
+    else if (!fromDateTimeLocalInputInZone(form.start, form.timeZone)) found.start = "Choose a valid local time in this event's time zone.";
+    if (form.end && !fromDateTimeLocalInputInZone(form.end, form.timeZone)) found.end = "Choose a valid local end time in this event's time zone.";
+    if (form.end && form.start && form.end < form.start) {
       found.end = "The end can't be before the start.";
     }
     if (form.capacity.trim() !== "") {
@@ -148,7 +155,7 @@ export default function EventForm({ id }: { id?: string }) {
     setTouched(true);
     if (Object.keys(problems).length > 0 || (form.category === "Fundraiser" && fundraiserHasAuction === null)) return;
 
-    const startIso = fromLocalInput(form.start);
+    const startIso = fromDateTimeLocalInputInZone(form.start, form.timeZone);
     if (!startIso) return;
 
     const draft: EventDraft = {
@@ -156,7 +163,8 @@ export default function EventForm({ id }: { id?: string }) {
       title: form.title.trim(),
       description: form.description.trim() || null,
       date: startIso,
-      endDate: fromLocalInput(form.end),
+      endDate: fromDateTimeLocalInputInZone(form.end, form.timeZone),
+      timeZone: form.timeZone,
       locationId: form.locationId === NO_VENUE ? null : form.locationId,
       location: form.locationId === NO_VENUE ? form.freeTextVenue.trim() || null : null,
       capacity: form.capacity.trim() === "" ? null : Number.parseInt(form.capacity, 10),
@@ -358,6 +366,17 @@ export default function EventForm({ id }: { id?: string }) {
           <p className="text-xs text-muted-foreground">
             Add an end date on a later day to organize the run of show as Day 1, Day 2, and beyond.
           </p>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="event-time-zone">Event time zone</Label>
+            <Select value={form.timeZone} onValueChange={(value) => set("timeZone", value)}>
+              <SelectTrigger id="event-time-zone"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {timeZoneOptions.map((zone) => <SelectItem key={zone} value={zone}>{zone}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Public pages, invitations, and event-day schedules use this event's zone, even when the planner works somewhere else.</p>
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="venue">Venue</Label>

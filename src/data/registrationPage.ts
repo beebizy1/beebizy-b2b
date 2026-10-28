@@ -11,6 +11,13 @@ export interface RegistrationSpeaker {
   photoUrl: string | null;
 }
 
+export interface RegistrationInfoPage {
+  id: string;
+  navLabel: string;
+  title: string;
+  body: string;
+}
+
 export interface RegistrationPageSettings {
   template: RegistrationPageTemplateId;
   accentColor: string;
@@ -32,6 +39,8 @@ export interface RegistrationPageSettings {
   speakers: RegistrationSpeaker[];
   registrationTypes: string[];
   collectOrganization: boolean;
+  /** Optional public detail pages linked from the guest navigation. */
+  infoPages: RegistrationInfoPage[];
   postEventSubject: string;
   postEventThankYou: string;
   postEventWrapUp: string;
@@ -93,6 +102,7 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   speakers: [],
   registrationTypes: ["General"],
   collectOrganization: true,
+  infoPages: [],
   postEventSubject: "",
   postEventThankYou: "",
   postEventWrapUp: "",
@@ -149,6 +159,26 @@ function registrationTypes(value: unknown): string[] {
   return result.length > 0 ? result : [...DEFAULT_REGISTRATION_PAGE.registrationTypes];
 }
 
+function infoPages(value: unknown): RegistrationInfoPage[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((item, index): RegistrationInfoPage[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const input = item as Record<string, unknown>;
+    const navLabel = text(input.navLabel, 40);
+    const title = text(input.title, 160);
+    if (!navLabel || !title) return [];
+    const id = (text(input.id, 80) || `info-${index + 1}`)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || `info-${index + 1}`;
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, navLabel, title, body: text(input.body, 4_000) }];
+  }).slice(0, 6);
+}
+
 export function normalizeRegistrationPage(value: unknown): RegistrationPageSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {
     ...LEGACY_REGISTRATION_PAGE,
@@ -183,6 +213,7 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     speakers: speakers(input.speakers),
     registrationTypes: registrationTypes(input.registrationTypes),
     collectOrganization: typeof input.collectOrganization === "boolean" ? input.collectOrganization : true,
+    infoPages: infoPages(input.infoPages),
     postEventSubject: text(input.postEventSubject, 160),
     postEventThankYou: text(input.postEventThankYou, 3_000),
     postEventWrapUp: text(input.postEventWrapUp, 4_000),
@@ -192,7 +223,7 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
 const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
-  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "postEventSubject",
+  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "postEventSubject",
   "postEventThankYou", "postEventWrapUp",
 ];
 
@@ -214,6 +245,7 @@ export function registrationPageIsCustomized(value: unknown): boolean {
     page.accentColor !== DEFAULT_REGISTRATION_PAGE.accentColor ||
     Boolean(page.headline || page.aboutHeading || page.aboutBody || page.agendaIntroduction || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
     page.speakers.length > 0 ||
+    page.infoPages.length > 0 ||
     page.registrationTypes.join("\u0000") !== DEFAULT_REGISTRATION_PAGE.registrationTypes.join("\u0000");
 }
 

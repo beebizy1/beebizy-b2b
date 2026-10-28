@@ -64,7 +64,7 @@ import PostEventSummary from "@/screens/events/PostEventSummary";
 import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
 import FeedbackInbox from "@/screens/FeedbackInbox";
-import { PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
+import { PublicEventInfoPage, PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
 import PublicAuctionPage from "@/screens/public/PublicAuction";
 import PublicAuctionDonationPage from "@/screens/public/PublicAuctionDonation";
 import PublicItemIntakePage from "@/screens/public/PublicItemIntake";
@@ -210,6 +210,7 @@ function Routes() {
       <Route path="/certificate/:token">{(params) => <PublicExperienceCertificatePage token={params.token} />}</Route>
       <Route path="/give/:token">{(params) => <PublicDonationCampaignPage token={params.token} />}</Route>
       <Route path="/e/:token/register/:segment">{(params) => <PublicRegistrationPage token={params.token} segment={params.segment} />}</Route>
+      <Route path="/e/:token/info/:pageId">{(params) => <PublicEventInfoPage token={params.token} pageId={params.pageId} />}</Route>
       <Route path="/e/:token/volunteer">{(params) => <PublicVolunteerSignupPage token={params.token} />}</Route>
       <Route path="/e/:token">{(params) => <PublicEventPage token={params.token} />}</Route>
       <Route path="/assignment/:token">{(params) => <PublicAssignment token={params.token} />}</Route>

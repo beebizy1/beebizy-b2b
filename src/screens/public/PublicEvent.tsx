@@ -24,16 +24,18 @@ import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 
-export function PublicFrame({ children, event, wide = false }: { children: React.ReactNode; event?: Event; wide?: boolean }) {
+export function PublicFrame({ children, event, wide = false, token, invitationToken = null, activeInfoPageId = null }: { children: React.ReactNode; event?: Event; wide?: boolean; token?: string; invitationToken?: string | null; activeInfoPageId?: string | null }) {
   const settings = normalizeRegistrationPage(event?.registrationPage);
   const template = registrationPageTemplate(settings.template);
   const style = { backgroundColor: template.background } as CSSProperties;
+  const eventPath = token ? invitationAwarePath(`/e/${token}`, invitationToken) : null;
+  const sectionPath = (hash: string) => eventPath ? `${eventPath}${hash}` : hash;
   return (
     <div className="min-h-dvh" style={style}>
       <header className="border-b border-black/5 bg-white/85 backdrop-blur">
-        <div className={cn("mx-auto flex items-center justify-between px-6 py-5", wide ? "max-w-7xl" : "max-w-4xl")}>
-          <BrandLogo size="sm" />
-          {event && wide ? <div className="flex items-center gap-6"><nav aria-label="Event page" className="hidden items-center gap-6 text-sm font-semibold text-slate-700 md:flex"><a href="#about" className="hover:text-slate-950">About</a>{settings.showAgenda ? <a href="#agenda" className="hover:text-slate-950">Agenda</a> : null}{settings.showSpeakers && settings.speakers.length > 0 ? <a href="#speakers" className="hover:text-slate-950">Speakers</a> : null}{settings.showSponsors ? <a href="#sponsors" className="hover:text-slate-950">Sponsors</a> : null}</nav><Button asChild size="sm"><a href="#register">Register</a></Button></div> : event ? <span className="text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: settings.accentColor }}>Registration</span> : null}
+        <div className={cn("mx-auto px-6", wide ? "max-w-7xl" : "max-w-4xl")}>
+          <div className="flex items-center justify-between py-5"><BrandLogo size="sm" />{event && wide ? <Button asChild size="sm"><a href={sectionPath("#register")}>Register</a></Button> : event ? <span className="text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: settings.accentColor }}>Registration</span> : null}</div>
+          {event && wide && token ? <nav aria-label="Event page" className="flex gap-2 overflow-x-auto pb-4 text-sm font-semibold text-slate-700"><Link href={eventPath!} className={cn("shrink-0 rounded-full px-3 py-1.5 hover:bg-black/5 hover:text-slate-950", activeInfoPageId === null && "bg-black/5 text-slate-950")}>Event</Link>{settings.infoPages.map((page) => <Link key={page.id} href={invitationAwarePath(`/e/${token}/info/${encodeURIComponent(page.id)}`, invitationToken)} className={cn("shrink-0 rounded-full px-3 py-1.5 hover:bg-black/5 hover:text-slate-950", activeInfoPageId === page.id && "bg-black/5 text-slate-950")}>{page.navLabel}</Link>)}{settings.showAgenda ? <a href={sectionPath("#agenda")} className="shrink-0 rounded-full px-3 py-1.5 hover:bg-black/5 hover:text-slate-950">Agenda</a> : null}{settings.showSpeakers && settings.speakers.length > 0 ? <a href={sectionPath("#speakers")} className="shrink-0 rounded-full px-3 py-1.5 hover:bg-black/5 hover:text-slate-950">Speakers</a> : null}{settings.showSponsors ? <a href={sectionPath("#sponsors")} className="shrink-0 rounded-full px-3 py-1.5 hover:bg-black/5 hover:text-slate-950">Sponsors</a> : null}</nav> : null}
         </div>
       </header>
       <main className={wide ? "" : "mx-auto max-w-4xl px-6 py-10"}>{children}</main>
@@ -71,7 +73,7 @@ function EventHeading({ event, timeZone, token, registrationLabel, invitationTok
     : "#register";
   const calendarStart = new Date(event.date).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const calendarEnd = new Date(event.endDate ?? new Date(new Date(event.date).getTime() + 2 * 60 * 60_000)).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(settings.headline || event.title)}&dates=${calendarStart}/${calendarEnd}&details=${encodeURIComponent(settings.welcomeMessage || event.description || "")}&location=${encodeURIComponent(event.location ?? "")}`;
+  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(settings.headline || event.title)}&dates=${calendarStart}/${calendarEnd}&details=${encodeURIComponent(settings.welcomeMessage || event.description || "")}&location=${encodeURIComponent(event.location ?? "")}&ctz=${encodeURIComponent(timeZone)}`;
   return (
     <section className={cn("relative isolate min-h-[34rem] overflow-hidden bg-[#17130a] text-white", settings.heroImageUrl && settings.heroImageDisplay === "banner" && "bg-cover bg-center")} style={settings.heroImageUrl && settings.heroImageDisplay === "banner" ? { backgroundImage: `url(${settings.heroImageUrl})` } : undefined} aria-label={`${event.title} invitation`}>
       <div className="absolute inset-0 -z-10 bg-black/55" aria-hidden="true" />
@@ -134,7 +136,7 @@ export function PublicEventPage({ token }: { token: string }) {
   );
 
   return (
-    <PublicFrame event={event} wide>
+    <PublicFrame event={event} wide token={token} invitationToken={invitationToken}>
       <EventHeading event={event} timeZone={timeZone} token={token} registrationLabel={onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "RSVP"} invitationToken={invitationToken} />
       <div className="mx-auto max-w-7xl space-y-6 px-6 py-12 md:py-16">
         <section id="about" className="grid gap-8 border-b border-black/10 pb-12 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)] md:pb-16">
@@ -308,6 +310,29 @@ export function PublicEventPage({ token }: { token: string }) {
             <Button asChild size="lg" className="font-black text-slate-950"><a href="#register">{onSale.length > 0 || registrationPage.paymentUrl ? "View registration" : "RSVP"}<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></a></Button>
           </div>
         </section>
+      </div>
+    </PublicFrame>
+  );
+}
+
+export function PublicEventInfoPage({ token, pageId }: { token: string; pageId: string }) {
+  const { data: shared, isLoading, isError, error } = useEventByShareToken(token);
+  const event = shared?.event ?? null;
+  const invitationToken = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("invite");
+  if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
+  if (isError) return <PublicFrame><ErrorNotice error={error} title="Couldn't load this event" /></PublicFrame>;
+  if (!event) return <EventNotFound />;
+  const settings = normalizeRegistrationPage(event.registrationPage);
+  const page = settings.infoPages.find((candidate) => candidate.id === decodeURIComponent(pageId));
+  if (!page) return <EventNotFound />;
+  return (
+    <PublicFrame event={event} wide token={token} invitationToken={invitationToken} activeInfoPageId={page.id}>
+      <div className="mx-auto max-w-4xl px-6 py-12 md:py-20">
+        <Link href={invitationAwarePath(`/e/${token}`, invitationToken)} className="text-sm font-semibold text-slate-600 hover:text-slate-950">← Back to {event.title}</Link>
+        <p className="mt-10 text-xs font-black uppercase tracking-[0.18em]" style={{ color: settings.accentColor }}>{page.navLabel}</p>
+        <h1 className="mt-3 text-4xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-6xl">{page.title}</h1>
+        <div className="whitespace-pre-line mt-8 rounded-3xl border border-black/10 bg-white p-6 text-base leading-8 text-slate-700 shadow-sm sm:p-10 sm:text-lg">{page.body || "More details will be added here soon."}</div>
+        <div className="mt-8"><Button asChild size="lg"><Link href={`${invitationAwarePath(`/e/${token}`, invitationToken)}#register`}>RSVP for this event<ArrowRight className="ml-1.5 size-4" aria-hidden="true" /></Link></Button></div>
       </div>
     </PublicFrame>
   );

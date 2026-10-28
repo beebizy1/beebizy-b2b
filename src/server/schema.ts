@@ -323,6 +323,8 @@ export const events = pgTable(
     description: text("description"),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }),
+    /** Venue-local zone. Null rows predate per-event time zones and use the workspace fallback. */
+    timeZone: text("time_zone"),
     /** Free-text venue for events with no saved location. */
     venue: text("venue"),
     /** Set null rather than cascade: losing a venue must not delete its events. */

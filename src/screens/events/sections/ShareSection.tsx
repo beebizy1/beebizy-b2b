@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { EmptyState, Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useRegistrationCopyGenerator, useShareEvent, useSponsorships, useTickets, useUpdateRegistrationPage, useUploadAuctionImage } from "@/data/hooks";
+import { useRegistrationCopyGenerator, useSettings, useShareEvent, useSponsorships, useTickets, useUpdateRegistrationPage, useUploadAuctionImage } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import {
@@ -18,6 +18,7 @@ import {
   normalizeRegistrationPage,
   registrationInvitationHtml,
   registrationPageTemplate,
+  type RegistrationInfoPage,
   type RegistrationSpeaker,
   type RegistrationPageSettings,
 } from "@/data/registrationPage";
@@ -29,6 +30,7 @@ import { useEventLaunchProgress } from "../useEventLaunchProgress";
 import TicketInvitationBuilder from "./TicketInvitationBuilder";
 import GuidedTicketPricing from "./GuidedTicketPricing";
 import EventQrCard from "./EventQrCard";
+import { formatInZone, localTimeZone } from "@/lib/datetime";
 
 const REGISTRATION_TYPE_PRESETS = [
   { label: "School gala", types: ["Parent/Guardian", "Alumni", "Faculty/Staff", "Friend of school"] },
@@ -39,7 +41,7 @@ const REGISTRATION_TYPE_PRESETS = [
 const DESIGN_FIELDS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
-  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization",
+  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages",
 ];
 
 function registrationDesignPatch(settings: RegistrationPageSettings): Partial<RegistrationPageSettings> {
@@ -54,6 +56,15 @@ function newSpeaker(): RegistrationSpeaker {
     organization: "",
     bio: "",
     photoUrl: null,
+  };
+}
+
+function newInfoPage(): RegistrationInfoPage {
+  return {
+    id: `info-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    navLabel: "",
+    title: "",
+    body: "",
   };
 }
 
@@ -118,14 +129,15 @@ function CopyRow({ label, url, hint }: { label: string; url: string; hint: strin
   );
 }
 
-function RegistrationPreview({ event, settings, sponsors, hasTickets }: { event: Event; settings: RegistrationPageSettings; sponsors: Sponsorship[]; hasTickets: boolean }) {
+function RegistrationPreview({ event, settings, sponsors, hasTickets, timeZone }: { event: Event; settings: RegistrationPageSettings; sponsors: Sponsorship[]; hasTickets: boolean; timeZone: string }) {
   const template = registrationPageTemplate(settings.template);
   const style = { backgroundColor: template.background } as CSSProperties;
-  const dateLabel = new Date(event.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const dateLabel = formatInZone(event.date, timeZone, "dayMonthYearTime");
   const ctaLabel = hasTickets || Boolean(settings.paymentUrl) ? "View registration" : "RSVP";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-hairline shadow-sm" style={style}>
+      {settings.infoPages.length > 0 ? <nav aria-label="Preview information pages" className="flex flex-wrap gap-2 border-b border-hairline bg-background px-5 py-3 text-xs font-semibold"><span className="rounded-full bg-primary px-3 py-1 text-primary-foreground">Event</span>{settings.infoPages.map((page) => <span key={page.id} className="rounded-full border border-hairline px-3 py-1 text-muted-foreground">{page.navLabel}</span>)}</nav> : null}
       <section className="relative isolate min-h-80 overflow-hidden bg-[#17130a] text-white" style={settings.heroImageUrl && settings.heroImageDisplay === "banner" ? { backgroundImage: `url(${settings.heroImageUrl})`, backgroundPosition: "center", backgroundSize: "cover" } : undefined}>
         <div className="absolute inset-0 -z-10 bg-black/65" aria-hidden="true" />
         <div className="flex min-h-80 flex-col justify-end p-6">
@@ -165,6 +177,7 @@ export default function ShareSection({ event }: { event: Event }) {
   const generateCopy = useRegistrationCopyGenerator();
   const { data: tickets } = useTickets(event.id);
   const { data: sponsorships } = useSponsorships(event.id);
+  const { data: workspaceSettings } = useSettings();
   const [activeWorkspace, setActiveWorkspace] = useState<"design" | "pricing" | "sender" | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
@@ -243,6 +256,13 @@ export default function ShareSection({ event }: { event: Event }) {
     setDraft((current) => ({
       ...current,
       speakers: current.speakers.map((speaker, speakerIndex) => speakerIndex === index ? { ...speaker, ...patch } : speaker),
+    }));
+  };
+
+  const updateInfoPage = (index: number, patch: Partial<RegistrationInfoPage>) => {
+    setDraft((current) => ({
+      ...current,
+      infoPages: current.infoPages.map((page, pageIndex) => pageIndex === index ? { ...page, ...patch } : page),
     }));
   };
 
@@ -377,8 +397,9 @@ export default function ShareSection({ event }: { event: Event }) {
               <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-foreground">More page options</summary>
               <div className="grid gap-4 border-t border-hairline p-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="registration-headline">Headline</Label>
+                <Label htmlFor="registration-headline">Main invitation headline</Label>
                 <Input id="registration-headline" value={draft.headline} maxLength={120} placeholder={event.title} onChange={(e) => setDraft((current) => ({ ...current, headline: e.target.value }))} />
+                <p className="text-xs text-muted-foreground">This replaces the event name in the main hero. It does not create a separate page.</p>
               </div>
               <div className="hidden space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-welcome">Welcome message</Label>
@@ -415,6 +436,22 @@ export default function ShareSection({ event }: { event: Event }) {
                 <Textarea id="registration-about-body" value={draft.aboutBody} maxLength={3000} rows={7} placeholder="Tell guests why you are gathering, who the event is for, and what makes it special." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, aboutBody: event.target.value }))} />
                 <p className="text-xs text-muted-foreground">This is editable text on the public registration page, not a photo.</p>
               </div>
+              <fieldset className="space-y-4 rounded-xl border border-hairline p-4 sm:col-span-2">
+                <legend className="px-1 text-sm font-semibold text-foreground">Guest information pages</legend>
+                <div><p className="text-xs leading-5 text-muted-foreground">Create separate tabs such as Room block, Travel, Parking, or Dress code. These pages do not change the event title or main invitation.</p></div>
+                {draft.infoPages.length === 0 ? <div className="rounded-lg border border-dashed border-hairline bg-surface-sunken p-4 text-center text-xs text-muted-foreground">No extra information pages yet.</div> : null}
+                <div className="space-y-4">
+                  {draft.infoPages.map((page, index) => (
+                    <div key={page.id} className="grid gap-3 rounded-xl border border-hairline bg-background p-4 sm:grid-cols-2">
+                      <div className="space-y-1"><Label htmlFor={`info-nav-${index}`}>Tab label</Label><Input id={`info-nav-${index}`} value={page.navLabel} maxLength={40} placeholder="Room block" onChange={(inputEvent) => updateInfoPage(index, { navLabel: inputEvent.target.value })} /></div>
+                      <div className="space-y-1"><Label htmlFor={`info-title-${index}`}>Page heading</Label><Input id={`info-title-${index}`} value={page.title} maxLength={160} placeholder="Hotel room block" onChange={(inputEvent) => updateInfoPage(index, { title: inputEvent.target.value })} /></div>
+                      <div className="space-y-1 sm:col-span-2"><Label htmlFor={`info-body-${index}`}>Page details</Label><Textarea id={`info-body-${index}`} value={page.body} maxLength={4000} rows={5} placeholder="Add the booking link, deadline, address, and any instructions guests need." onChange={(inputEvent) => updateInfoPage(index, { body: inputEvent.target.value })} /></div>
+                      <div className="flex justify-end sm:col-span-2"><Button type="button" size="sm" variant="ghost" onClick={() => setDraft((current) => ({ ...current, infoPages: current.infoPages.filter((_, pageIndex) => pageIndex !== index) }))}><Trash2 className="mr-1.5 size-4" aria-hidden="true" />Remove page</Button></div>
+                    </div>
+                  ))}
+                </div>
+                <Button type="button" size="sm" variant="outline" disabled={draft.infoPages.length >= 6} onClick={() => setDraft((current) => ({ ...current, infoPages: [...current.infoPages, newInfoPage()] }))}><Plus className="mr-1.5 size-4" aria-hidden="true" />Add information page</Button>
+              </fieldset>
               <div className="hidden space-y-1.5 sm:col-span-2">
                 <Label htmlFor="registration-agenda-introduction">Agenda introduction</Label>
                 <Textarea id="registration-agenda-introduction" value={draft.agendaIntroduction} maxLength={1500} rows={5} placeholder="Give guests a short overview of what to expect before the detailed schedule." disabled={generateCopy.isPending} onChange={(event) => setDraft((current) => ({ ...current, agendaIntroduction: event.target.value }))} />
@@ -520,7 +557,7 @@ export default function ShareSection({ event }: { event: Event }) {
       </div>
 
       <div className="space-y-6">
-        {activeWorkspace === "design" ? <Panel><PanelHeader title="RSVP page preview" description="This is the page guests open from the invitation link" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} sponsors={(sponsorships ?? []).filter((sponsor) => sponsor.status === "confirmed")} hasTickets={onSale.length > 0} /></div></Panel> : null}
+        {activeWorkspace === "design" ? <Panel><PanelHeader title="RSVP page preview" description="This is the page guests open from the invitation link" /><div className="p-4"><RegistrationPreview event={event} settings={normalizeRegistrationPage(draft)} sponsors={(sponsorships ?? []).filter((sponsor) => sponsor.status === "confirmed")} hasTickets={onSale.length > 0} timeZone={event.timeZone ?? workspaceSettings?.timeZone ?? localTimeZone()} /></div></Panel> : null}
         {activeWorkspace !== "design" ? <Panel>
           <PanelHeader title="What guests can access" description="Only the public event experience" />
           <div className="space-y-3 px-5 py-4 text-sm">

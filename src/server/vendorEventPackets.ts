@@ -19,16 +19,17 @@ export async function sendVendorEventPackets(ctx: RequestContext, eventId: strin
     db.select({ name: s.workspaces.name, legalName: s.workspaces.legalName, timeZone: s.workspaces.timeZone }).from(s.workspaces).where(eq(s.workspaces.id, ctx.workspaceId)).limit(1),
   ]);
   if (!workspace) throw new HttpError(404, "That workspace no longer exists.");
+  const eventTimeZone = event.timeZone ?? workspace.timeZone;
   const requestedFloorplans = new Set(draft.floorplanIds);
   const selectedPlans = plans.filter((plan) => requestedFloorplans.has(plan.id));
   if (selectedPlans.length !== requestedFloorplans.size) throw new HttpError(409, "One of the selected floorplans is no longer available.");
   if (selectedPlans.reduce((total, plan) => total + plan.items.length, 0) > 2_000) throw new HttpError(400, "The selected floorplans contain too many objects to attach safely.");
   if (new Set(selectedPlans.flatMap((plan) => plan.items.flatMap((item) => item.imageUrl ? [item.imageUrl] : []))).size > 50) throw new HttpError(400, "Choose floorplans with no more than 50 uploaded images in one email.");
-  const attachments = await vendorPacketAttachments(event, cues, selectedPlans, draft.includeRunOfShow, workspace.timeZone);
+  const attachments = await vendorPacketAttachments(event, cues, selectedPlans, draft.includeRunOfShow, eventTimeZone);
   const attachmentNames = attachments.map((attachment) => attachment.filename);
-  const eventWhen = formatInZone(event.date, workspace.timeZone, "full");
+  const eventWhen = formatInZone(event.date, eventTimeZone, "full");
   const eventLocation = event.locationRecord?.name ?? event.location ?? "Location to be confirmed";
-  const contentFingerprint = vendorPacketSnapshotFingerprint({ draft, event, eventWhen, eventLocation, timeZone: workspace.timeZone, cues, plans: selectedPlans });
+  const contentFingerprint = vendorPacketSnapshotFingerprint({ draft, event, eventWhen, eventLocation, timeZone: eventTimeZone, cues, plans: selectedPlans });
   const senderName = workspace.legalName || workspace.name;
 
   if (draft.testEmail) {

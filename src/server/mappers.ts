@@ -90,6 +90,7 @@ export function toEvent(
     description: row.description,
     date: isoRequired(row.startsAt),
     endDate: iso(row.endsAt),
+    timeZone: row.timeZone,
     location: row.venue ?? (location ? [location.name, location.city].filter(Boolean).join(", ") : null),
     locationId: row.locationId,
     locationRecord: location,

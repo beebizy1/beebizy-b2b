@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
-import { useRegistrations, useSendTicketInvitations, useTicketInvitations, useTickets, useUpdateRegistrationPage, useUploadAuctionImage } from "@/data/hooks";
+import { useRegistrations, useSendTicketInvitations, useSettings, useTicketInvitations, useTickets, useUpdateRegistrationPage, useUploadAuctionImage } from "@/data/hooks";
 import { readSpreadsheetFile } from "@/data/import";
 import { REGISTRATION_PAGE_TEMPLATES, normalizeRegistrationPage, registrationPageTemplate } from "@/data/registrationPage";
 import { eventInvitationRecipients, parseTicketInvitationRecipients, ticketInvitationRsvpPath } from "@/data/ticketInvitations";
 import type { TicketInvitationRecipientDraft } from "@/data/ticketInvitations";
 import type { Event } from "@/data/entities";
 import { toast } from "@/hooks/use-toast";
+import { formatInZone, localTimeZone } from "@/lib/datetime";
 
 const STEPS = [
   ["1", "Design invite"],
@@ -28,7 +29,7 @@ function SendControls({ recipientCount, consent, onConsentChange, busy, onSend, 
   return <div className="space-y-4"><label className="flex items-start gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={consent} onChange={(event) => onConsentChange(event.target.checked)} className="mt-1 size-4 accent-[hsl(var(--primary))]" /><span>I confirm these guests expect communication about this event.</span></label><Button type="button" disabled={!recipientCount || !consent || busy} onClick={onSend}><Send className="mr-1.5 size-4" />{busy ? "Sending invitations…" : `Send ${recipientCount || ""} invitation${recipientCount === 1 ? "" : "s"}`}</Button>{tracking}</div>;
 }
 
-function InvitationPreview({ design, event, headline, message }: { design: ReturnType<typeof normalizeRegistrationPage>; event: Event; headline: string; message: string }) {
+function InvitationPreview({ design, event, headline, message, timeZone }: { design: ReturnType<typeof normalizeRegistrationPage>; event: Event; headline: string; message: string; timeZone: string }) {
   const template = registrationPageTemplate(design.template);
   return <div className="overflow-hidden rounded-xl border border-hairline shadow-sm" style={{ backgroundColor: template.surface }}>
     {design.heroImageUrl ? <div className={`grid h-32 w-full place-items-center ${design.heroImageDisplay === "logo" ? "bg-surface-sunken p-5" : ""}`}>{design.heroImageDisplay === "logo" ? <img src={design.heroImageUrl} alt="Event logo" className="max-h-20 max-w-[75%] object-contain" /> : <img src={design.heroImageUrl} alt="" className="h-32 w-full object-cover" />}</div> : <div className="grid h-20 place-items-center" style={{ backgroundColor: `${design.accentColor}18` }}><Mail className="size-6" style={{ color: design.accentColor }} /></div>}
@@ -36,7 +37,7 @@ function InvitationPreview({ design, event, headline, message }: { design: Retur
       <p className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: design.accentColor }}>You&apos;re invited</p>
       <h3 className="text-xl font-bold text-foreground">{headline}</h3>
       <p className="whitespace-pre-line text-sm leading-6 text-muted-foreground">{message}</p>
-      <dl className="space-y-1 rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground"><div><dt className="inline font-semibold text-foreground">When: </dt><dd className="inline">{new Date(event.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</dd></div>{event.location ? <div><dt className="inline font-semibold text-foreground">Where: </dt><dd className="inline">{event.location}</dd></div> : null}</dl>
+      <dl className="space-y-1 rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground"><div><dt className="inline font-semibold text-foreground">When: </dt><dd className="inline">{formatInZone(event.date, timeZone, "dayMonthYearTime")}</dd></div>{event.location ? <div><dt className="inline font-semibold text-foreground">Where: </dt><dd className="inline">{event.location}</dd></div> : null}</dl>
       {design.agendaIntroduction ? <div className="border-t border-hairline pt-3"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Agenda</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{design.agendaIntroduction}</p></div> : null}
       <span className="inline-flex rounded-md px-3 py-2 text-xs font-bold text-primary-foreground" style={{ backgroundColor: design.accentColor }}>View invitation &amp; RSVP</span>
     </div>
@@ -48,6 +49,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone,
   const { data: registrations } = useRegistrations();
   const sendInvitations = useSendTicketInvitations();
   const { data: tickets } = useTickets(event.id);
+  const { data: workspaceSettings } = useSettings();
   const updateEvent = useUpdateRegistrationPage();
   const uploadImage = useUploadAuctionImage();
   const [design, setDesign] = useState(() => normalizeRegistrationPage(event.registrationPage));
@@ -63,6 +65,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone,
   const headline = design.headline.trim() || event.title;
   const message = design.welcomeMessage.trim() || event.description || "We would love to see you there.";
   const hasTickets = (tickets ?? []).some((ticket) => ticket.isActive);
+  const timeZone = event.timeZone ?? workspaceSettings?.timeZone ?? localTimeZone();
   const rsvpPreviewPath = event.shareToken ? ticketInvitationRsvpPath(event.shareToken, { hasTickets, preview: true }) : null;
   const saveDesign = async () => {
     const registrationPage = normalizeRegistrationPage({ ...design, paymentUrl: null });
@@ -142,7 +145,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone,
       <section className="grid gap-6 p-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Invitation guests receive</p>
-          <InvitationPreview design={design} event={event} headline={headline} message={message} />
+          <InvitationPreview design={design} event={event} headline={headline} message={message} timeZone={timeZone} />
           <div className="flex flex-wrap gap-2">
             {onEditDesign ? <Button type="button" variant="outline" onClick={onEditDesign}>Edit invitation design</Button> : null}
             {rsvpPreviewPath ? <Button asChild type="button" variant="outline"><a href={rsvpPreviewPath} target="_blank" rel="noopener noreferrer">Open RSVP page</a></Button> : null}
@@ -196,7 +199,7 @@ export default function TicketInvitationBuilder({ event, guided = false, onDone,
 
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live invitation preview</p>
-          <InvitationPreview design={design} event={event} headline={headline} message={message} />
+          <InvitationPreview design={design} event={event} headline={headline} message={message} timeZone={timeZone} />
         </div>
       </section>
 

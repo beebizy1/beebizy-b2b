@@ -39,6 +39,7 @@ import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
 import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
 import { effectivePlan, PLAN_NAMES } from "@/data/plans";
+import { COMMON_TIME_ZONES } from "@/lib/datetime";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
 
@@ -48,30 +49,6 @@ const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
  * be running events in; a zone already stored outside the list still displays, because
  * the trigger renders the stored value rather than only what it can find here.
  */
-const TIME_ZONES = [
-  "America/Los_Angeles",
-  "America/Denver",
-  "America/Chicago",
-  "America/New_York",
-  "America/Toronto",
-  "America/Mexico_City",
-  "America/Sao_Paulo",
-  "Europe/London",
-  "Europe/Dublin",
-  "Europe/Paris",
-  "Europe/Berlin",
-  "Europe/Madrid",
-  "Africa/Lagos",
-  "Africa/Johannesburg",
-  "Asia/Dubai",
-  "Asia/Kolkata",
-  "Asia/Singapore",
-  "Asia/Tokyo",
-  "Australia/Sydney",
-  "Pacific/Auckland",
-  "UTC",
-];
-
 /**
  * Who is in the workspace, and what they may do.
  *
@@ -445,7 +422,7 @@ export default function Settings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TIME_ZONES.map((zone) => (
+                {COMMON_TIME_ZONES.map((zone) => (
                   <SelectItem key={zone} value={zone}>
                     {zone.replace(/_/g, " ")}
                   </SelectItem>

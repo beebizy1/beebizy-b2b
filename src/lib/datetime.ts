@@ -23,6 +23,30 @@ export interface CivilDay {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+export const COMMON_TIME_ZONES = [
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Toronto",
+  "America/Mexico_City",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Dublin",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Madrid",
+  "Africa/Lagos",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
+] as const;
+
 /**
  * A stored zone can go stale — the IANA database drops names, and a hand-edited
  * settings row can hold anything. An unknown zone makes `Intl` throw, and a thrown
@@ -52,6 +76,15 @@ export function resolveTimeZone(timeZone: string | null | undefined): string {
   }
   zoneValidity.set(timeZone, resolved);
   return resolved;
+}
+
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Formatters are expensive to build and get hit once per row; keep them. */
@@ -85,6 +118,64 @@ export function fromDateTimeLocalInput(value: string): string | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+interface WallClockParts extends CivilDay {
+  hour: number;
+  minute: number;
+}
+
+function wallClockPartsInZone(instant: Date, timeZone: string): WallClockParts {
+  const parts = formatter(resolveTimeZone(timeZone), {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
+}
+
+/** Format an instant for a datetime-local control in the event venue's zone. */
+export function toDateTimeLocalInputInZone(
+  iso: string | Date | null | undefined,
+  timeZone: string,
+): string {
+  const instant = parse(iso);
+  if (!instant) return "";
+  const parts = wallClockPartsInZone(instant, timeZone);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
+}
+
+/** Convert a venue-local datetime control value into the exact stored UTC instant. */
+export function fromDateTimeLocalInputInZone(value: string, timeZone: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const target: WallClockParts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+  if (target.month < 1 || target.month > 12 || target.day < 1 || target.day > 31 || target.hour > 23 || target.minute > 59) return null;
+
+  const targetAsUtc = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute);
+  let guess = targetAsUtc;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const actual = wallClockPartsInZone(new Date(guess), timeZone);
+    const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute);
+    const correction = targetAsUtc - actualAsUtc;
+    if (correction === 0) break;
+    guess += correction;
+  }
+  const resolved = wallClockPartsInZone(new Date(guess), timeZone);
+  if (resolved.year !== target.year || resolved.month !== target.month || resolved.day !== target.day || resolved.hour !== target.hour || resolved.minute !== target.minute) return null;
+  return new Date(guess).toISOString();
 }
 
 /**

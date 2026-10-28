@@ -216,7 +216,7 @@ function NeedEditor({ onSubmit, onCancel, days, defaultDay }: { onSubmit: (draft
 }
 
 export default function VolunteersPanel({ event, allowSpreadsheetImport = false, selectedDay = 1 }: { event: Event; allowSpreadsheetImport?: boolean; selectedDay?: number }) {
-  const { timeZone } = usePreferences();
+  const { timeZone } = usePreferences(event.timeZone);
   const { data, isLoading, isError, error, refetch } = useVolunteers(event.id);
   const { data: needRows, isLoading: needsLoading } = useVolunteerNeeds(event.id);
   const add = useAddVolunteer();

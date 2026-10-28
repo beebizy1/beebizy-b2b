@@ -47,12 +47,12 @@ export interface Preferences {
 /** Guards the module default against a write on every render. */
 let lastAppliedCurrency = "";
 
-export function usePreferences(): Preferences {
+export function usePreferences(timeZoneOverride?: string | null): Preferences {
   const { data } = useSettings();
   // Settings load once and are cached forever, but the first paint happens before they
   // arrive. Falling back to the defaults keeps dates rendering rather than flashing
   // placeholders — and the defaults are the same ones the server writes.
-  const timeZone = data?.timeZone ?? DEFAULT_USER_SETTINGS.timeZone;
+  const timeZone = timeZoneOverride ?? data?.timeZone ?? DEFAULT_USER_SETTINGS.timeZone;
   const currency = data?.currency ?? DEFAULT_USER_SETTINGS.currency;
   const grouping = data?.homeGrouping ?? DEFAULT_USER_SETTINGS.homeGrouping;
 

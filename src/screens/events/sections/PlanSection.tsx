@@ -1088,7 +1088,7 @@ function RunOfShowRecoveryDialog({
 
 export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event: Event; selectedDay?: number }) {
   const [location, navigate] = useLocation();
-  const { timeZone, timeZoneLabel } = usePreferences();
+  const { timeZone, timeZoneLabel } = usePreferences(event.timeZone);
   const { data: cues, isLoading } = useRunOfShow(event.id);
   const { data: syncedDrafts } = useRunOfShowDrafts(event.id);
   const { data: eventHistory } = useEventHistory(event.id);
