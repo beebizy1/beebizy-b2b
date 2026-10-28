@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
-import { dayNumberInZone, dayNumberOf } from "@/lib/datetime";
+import { dayNumberInZone, dayNumberOf, formatInZone } from "@/lib/datetime";
 import type { Event, EventStatus } from "@/data/entities";
 import { eventLocationLabel } from "./calendar";
 
@@ -70,8 +70,9 @@ function buildGrid(monthAnchor: Date): Date[] {
 }
 
 function occupiesDay(event: Event, day: number, timeZone: string): boolean {
-  const start = dayNumberInZone(new Date(event.date), timeZone);
-  const end = event.endDate ? dayNumberInZone(new Date(event.endDate), timeZone) : start;
+  const eventTimeZone = event.timeZone ?? timeZone;
+  const start = dayNumberInZone(new Date(event.date), eventTimeZone);
+  const end = event.endDate ? dayNumberInZone(new Date(event.endDate), eventTimeZone) : start;
   return day >= start && day <= end;
 }
 
@@ -176,12 +177,13 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
 
                   <ul className="space-y-1">
                     {dayEvents.slice(0, 3).map((event) => {
-                      const isStart = dayNumberInZone(new Date(event.date), timeZone) === cellDay(day);
+                      const eventTimeZone = event.timeZone ?? timeZone;
+                      const isStart = dayNumberInZone(new Date(event.date), eventTimeZone) === cellDay(day);
                       return (
                         <li key={event.id}>
                           <Link
                             href={`/app/events/${event.id}`}
-                            title={`${event.title} · ${eventLocationLabel(event)} · ${formatDate(event.date, "time")}`}
+                            title={`${event.title} · ${eventLocationLabel(event)} · ${formatInZone(event.date, eventTimeZone, "time")}`}
                             className={cn(
                               "block truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
                               STATUS_CHIP[event.status],
@@ -189,7 +191,7 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
                           >
                             {isStart ? (
                               <span data-numeric className="mr-1 font-semibold">
-                                {formatDate(event.date, "time")}
+                                {formatInZone(event.date, eventTimeZone, "time")}
                               </span>
                             ) : (
                               <span className="mr-1" aria-hidden="true">

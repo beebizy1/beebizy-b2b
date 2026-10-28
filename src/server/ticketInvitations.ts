@@ -51,10 +51,11 @@ export async function sendTicketInvitations(
   if (normalized.length === 0) throw new HttpError(400, "Add at least one valid name and email.");
   if (normalized.length > 500) throw new HttpError(400, "Send no more than 500 invitations at a time.");
 
-  const [event] = await db.select({ event: events, timeZone: workspaces.timeZone, workspaceName: workspaces.name, legalName: workspaces.legalName }).from(events)
+  const [event] = await db.select({ event: events, workspaceTimeZone: workspaces.timeZone, workspaceName: workspaces.name, legalName: workspaces.legalName }).from(events)
     .innerJoin(workspaces, eq(events.workspaceId, workspaces.id))
     .where(and(eq(events.id, eventId), eq(events.workspaceId, ctx.workspaceId))).limit(1);
   if (!event) throw new HttpError(404, "That event no longer exists.");
+  const eventTimeZone = event.event.timeZone ?? event.workspaceTimeZone;
   const [activeTicket] = await db.select({ id: ticketTypes.id }).from(ticketTypes).where(and(
     eq(ticketTypes.eventId, eventId),
     eq(ticketTypes.workspaceId, ctx.workspaceId),
@@ -75,7 +76,7 @@ export async function sendTicketInvitations(
     recipientName: input.recipient.name,
     eventTitle: event.event.title,
     startsAt: event.event.startsAt.toISOString(),
-    timeZone: event.timeZone,
+    timeZone: eventTimeZone,
     invitationUrl: input.invitationUrl,
     organizationName: event.legalName || event.workspaceName,
     headline: invitationDesign.headline || event.event.title,
@@ -87,7 +88,7 @@ export async function sendTicketInvitations(
       input.invitationUrl,
       input.recipient.name,
       event.legalName || event.workspaceName,
-      { dateLabel: formatInZone(event.event.startsAt, event.timeZone, "full"), location: event.event.venue },
+      { dateLabel: formatInZone(event.event.startsAt, eventTimeZone, "full"), location: event.event.venue },
     ),
     deliveryAttemptKey: input.attemptKey,
   });

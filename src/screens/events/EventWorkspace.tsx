@@ -410,7 +410,7 @@ function WorkspaceHeader({
 }) {
   const [location, navigate] = useLocation();
   const search = useSearch();
-  const prefs = usePreferences();
+  const prefs = usePreferences(event.timeZone);
   const updateEvent = useUpdateEvent();
   const deleteEvent = useDeleteEvent();
   const saveAsTemplate = useSaveEventAsTemplate();
@@ -757,7 +757,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const { data: health } = useEventHealth(id);
   const { data: identity } = useMe();
   const { experience } = useAccountExperience();
-  const { timeZone } = usePreferences();
+  const { timeZone } = usePreferences(event?.timeZone);
   const active = tabFromSlug(slug);
   const plan = effectivePlan(identity?.access);
   const returnTarget = eventDetailsReturnTarget(id, search);

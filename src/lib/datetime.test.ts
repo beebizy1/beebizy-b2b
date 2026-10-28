@@ -16,9 +16,11 @@ import {
   dayNumberOf,
   formatClockTime,
   formatInZone,
+  fromDateTimeLocalInputInZone,
   isSameDayInZone,
   NO_DATE,
   resolveTimeZone,
+  toDateTimeLocalInputInZone,
 } from "./datetime";
 
 const LA = "America/Los_Angeles";
@@ -93,6 +95,17 @@ describe("formatting", () => {
     expect(formatClockTime("00:00")).toBe("12 AM");
     expect(formatClockTime("12:00")).toBe("12 PM");
     expect(formatClockTime("not-a-time")).toBe(NO_DATE);
+  });
+});
+
+describe("event-local date entry", () => {
+  it("round-trips the wall-clock time in the event's zone", () => {
+    const chicago = "America/Chicago";
+    const instant = "2026-12-30T01:00:00.000Z";
+
+    expect(toDateTimeLocalInputInZone(instant, chicago)).toBe("2026-12-29T19:00");
+    expect(toDateTimeLocalInputInZone(instant, LA)).toBe("2026-12-29T17:00");
+    expect(fromDateTimeLocalInputInZone("2026-12-29T19:00", chicago)).toBe(instant);
   });
 });
 

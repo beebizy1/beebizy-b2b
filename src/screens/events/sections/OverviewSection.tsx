@@ -26,7 +26,7 @@ import { usePreferences } from "@/app/preferences";
 import { eventDayCount } from "@/data/eventDays";
 
 export default function OverviewSection({ event, health }: { event: Event; health: EventHealth | null | undefined }) {
-  const { timeZone } = usePreferences();
+  const { timeZone } = usePreferences(event.timeZone);
   const { data: checklist, isLoading: checklistLoading } = useChecklist(event.id);
   const { data: vendors } = useEventVendors(event.id);
   const { data: budget } = useBudget(event.id);

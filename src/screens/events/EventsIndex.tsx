@@ -27,9 +27,10 @@ import {
 import { useEvents, useLocations } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import { ALL_LOCATIONS, eventLocationLabel, filterEventsByLocation, UNASSIGNED_LOCATION } from "./calendar";
+import { formatInZone } from "@/lib/datetime";
 
 export default function EventsIndex() {
-  const { date: formatDate } = usePreferences();
+  const { timeZone } = usePreferences();
   const [locationId, setLocationId] = useState<string>(ALL_LOCATIONS);
   const [search, setSearch] = useState("");
 
@@ -183,7 +184,7 @@ export default function EventsIndex() {
                       ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDate(event.date, "dayMonthYear")}
+                      {formatInZone(event.date, event.timeZone ?? timeZone, "dayMonthYear")}
                     </TableCell>
                     <TableCell>
                       <EventStatusBadge status={event.status} />

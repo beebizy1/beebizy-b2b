@@ -17,7 +17,7 @@ export default function VendorEventPacketDialog({ event, bookings }: { event: Ev
   const { data: floorplans } = useFloorplans(event.id);
   const { data: history } = useEventHistory(event.id);
   const sendPacket = useSendVendorEventPacket();
-  const { when } = usePreferences();
+  const { when } = usePreferences(event.timeZone);
   const [open, setOpen] = useState(false);
   const [selectedVendorIds, setSelectedVendorIds] = useState<string[]>([]);
   const [includeRunOfShow, setIncludeRunOfShow] = useState(true);

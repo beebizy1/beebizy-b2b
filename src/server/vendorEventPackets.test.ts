@@ -10,6 +10,7 @@ const event: Event = {
   imageUrl: null, registrationCount: 0, shareToken: null, registrationPage: {
     template: "warm", headline: "", aboutHeading: "", aboutBody: "", agendaIntroduction: "", welcomeMessage: "", accentColor: "#FFD700", heroImageUrl: null, heroImageDisplay: "banner", aboutImageUrl: null, agendaImageUrl: null,
     paymentUrl: null, showAgenda: true, showSpeakers: true, showSponsors: true, showVolunteerSignup: true, speakers: [], registrationTypes: ["General"], collectOrganization: true,
+    infoPages: [],
     postEventSubject: "", postEventThankYou: "", postEventWrapUp: "",
   }, createdAt: "2026-10-01T00:00:00.000Z",
 };

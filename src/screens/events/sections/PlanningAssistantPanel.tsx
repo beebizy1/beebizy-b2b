@@ -216,7 +216,7 @@ function DraftMoneyInput({
 }
 
 export default function PlanningAssistantPanel({ event }: { event: Event }) {
-  const { timeZone } = usePreferences();
+  const { timeZone } = usePreferences(event.timeZone);
   const initialHeadcount = event.capacity ?? 200;
   const storageKey = planningDraftStorageKey(event);
   const [restoredDraft] = useState(() => readStoredPlanningDraft(event));

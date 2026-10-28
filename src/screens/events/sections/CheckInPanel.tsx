@@ -222,7 +222,7 @@ export function CheckInPanel({ event }: { event: Event }) {
   const addStation = useAddCheckInStation();
   const updateStation = useUpdateCheckInStation();
   const removeStation = useRemoveCheckInStation();
-  const { date: formatDate, timeZoneLabel } = usePreferences();
+  const { date: formatDate, timeZoneLabel } = usePreferences(event.timeZone);
   const { user } = useSession();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "confirmed" | "waiting" | "arrived" | "pending">("all");

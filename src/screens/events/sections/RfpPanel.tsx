@@ -549,7 +549,7 @@ function RfpCard({ eventId, rfp }: { eventId: string; rfp: RfpWithResponses }) {
 
 function NewRfp({ event }: { event: Event }) {
   const add = useAddRfp();
-  const { timeZone } = usePreferences();
+  const { timeZone } = usePreferences(event.timeZone);
   const initialEventType = (RFP_EVENT_TYPES as readonly string[]).includes(event.category) ? event.category : "Other";
   const [title, setTitle] = useState("");
   const [targetType, setTargetType] = useState<(typeof RFP_TARGET_TYPES)[number]>("vendor");

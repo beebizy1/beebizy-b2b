@@ -68,6 +68,8 @@ export interface Event extends OwnedRecord {
   /** Event start. */
   date: IsoDateTime;
   endDate: IsoDateTime | null;
+  /** Venue-local IANA zone. Older events fall back to the workspace zone. */
+  timeZone?: string | null;
   /** Free-text venue, kept for events with no `Location` record. */
   location: string | null;
   locationId: string | null;
@@ -96,6 +98,7 @@ export interface EventDraft {
   description?: string | null;
   date: IsoDateTime;
   endDate?: IsoDateTime | null;
+  timeZone?: string | null;
   location?: string | null;
   locationId?: string | null;
   capacity?: number | null;
@@ -2015,7 +2018,8 @@ export type TemplateDetail = Template & TemplateContents;
  *
  * It is one object because a guest has no session: the page cannot fetch the agenda or
  * the ticket types through the authenticated repositories, so the single public read has
- * to carry them. `timeZone` is the workspace's, not the reader's — an event page that
+ * to carry them. `timeZone` is the event's venue zone, with the workspace as a legacy
+ * fallback, never the reader's — an event page that
  * showed a guest in Berlin "6:00 PM" for a 6pm-Portland gala would be lying to them.
  */
 export interface PublicEventPayload {

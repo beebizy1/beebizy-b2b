@@ -118,6 +118,13 @@ describe("events", () => {
     expect(shared.timeZone).toBe(DEFAULT_USER_SETTINGS.timeZone);
   });
 
+  it("publishes the event's own time zone instead of the workspace default", async () => {
+    await memoryAdapter.events.update("evt-cab", { timeZone: "America/Chicago" });
+    const { shareToken } = await memoryAdapter.events.share("evt-cab");
+
+    expect((await memoryAdapter.events.getByShareToken(shareToken))?.timeZone).toBe("America/Chicago");
+  });
+
   it("publishes saved registration-site branding with the guest payload", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-cab");
     await memoryAdapter.events.update("evt-cab", {
@@ -140,6 +147,7 @@ describe("events", () => {
         speakers: [],
         registrationTypes: ["Investor", "Founder"],
         collectOrganization: true,
+        infoPages: [{ id: "room-block", navLabel: "Room block", title: "Hotel room block", body: "Book by November 30." }],
         postEventSubject: "",
         postEventThankYou: "",
         postEventWrapUp: "",
@@ -150,6 +158,7 @@ describe("events", () => {
       template: "garden",
       headline: "An evening in the garden",
       showAgenda: false,
+      infoPages: [{ id: "room-block", navLabel: "Room block", title: "Hotel room block", body: "Book by November 30." }],
     });
     expect((await memoryAdapter.events.getByShareToken(shareToken))?.agenda).toEqual([]);
     await expect(memoryAdapter.registrations.registerPublic(shareToken, {

@@ -63,6 +63,7 @@ describe("registration page settings", () => {
       speakers: [{ id: "keynote", name: "Amina Shah", title: "Founder", organization: "Bright Futures", bio: "Opening keynote.", photoUrl: "https://images.example.com/amina.jpg" }],
       registrationTypes: ["Investor", "Student"],
       collectOrganization: false,
+      infoPages: [],
       postEventSubject: "",
       postEventThankYou: "",
       postEventWrapUp: "",
@@ -95,6 +96,22 @@ describe("registration page settings", () => {
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, registrationTypes: ["Parent/Guardian"] })).toBe(true);
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, speakers: [{ id: "one", name: "Amina Shah", title: "", organization: "", bio: "", photoUrl: null }] })).toBe(true);
     expect(registrationPageIsCustomized({ ...DEFAULT_REGISTRATION_PAGE, showAgenda: false, collectOrganization: false })).toBe(false);
+  });
+
+  it("normalizes separate guest information pages without changing the main headline", () => {
+    const page = normalizeRegistrationPage({
+      headline: "Carlin's 50th Birthday Celebration",
+      infoPages: [
+        { id: "room-block", navLabel: "Room block", title: "Hotel room block", body: "Book by November 30." },
+        { id: "room-block", navLabel: "Duplicate", title: "Ignored", body: "Ignored" },
+        { id: "", navLabel: "", title: "", body: "" },
+      ],
+    }) as unknown as { headline: string; infoPages: Array<{ id: string; navLabel: string; title: string; body: string }> };
+
+    expect(page.headline).toBe("Carlin's 50th Birthday Celebration");
+    expect(page.infoPages).toEqual([
+      { id: "room-block", navLabel: "Room block", title: "Hotel room block", body: "Book by November 30." },
+    ]);
   });
 
   it("builds a safe, themed invitation that links to the registration page", () => {

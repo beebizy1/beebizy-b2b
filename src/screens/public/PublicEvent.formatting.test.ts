@@ -63,4 +63,26 @@ describe("registration welcome-message formatting", () => {
     expect(builder).toContain("Confirmed sponsor logos will appear here.");
     expect(builder).toContain('const ctaLabel = hasTickets || Boolean(settings.paymentUrl) ? "View registration" : "RSVP"');
   });
+
+  it("keeps the main event headline separate from clickable guest information pages", () => {
+    const publicPage = readFileSync(new URL("./PublicEvent.tsx", import.meta.url), "utf8");
+    const builder = readFileSync(new URL("../events/sections/ShareSection.tsx", import.meta.url), "utf8");
+    const app = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
+
+    expect(builder).toContain("Main invitation headline");
+    expect(builder).toContain("Guest information pages");
+    expect(builder).toContain("Add information page");
+    expect(publicPage).toContain("PublicEventInfoPage");
+    expect(publicPage).toContain("settings.infoPages");
+    expect(app).toContain('/e/:token/info/:pageId');
+  });
+
+  it("uses the event-owned time zone for the public page", () => {
+    const form = readFileSync(new URL("../events/EventForm.tsx", import.meta.url), "utf8");
+    const repos = readFileSync(new URL("../../server/repos.ts", import.meta.url), "utf8");
+
+    expect(form).toContain("Event time zone");
+    expect(form).toContain("fromDateTimeLocalInputInZone");
+    expect(repos).toContain("row.event.timeZone ?? row.workspaceTimeZone");
+  });
 });

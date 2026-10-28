@@ -597,7 +597,7 @@ export async function completeTicketOrder(input: {
   if (!changed) return;
 
   const [details] = await db
-    .select({ order: ticketOrders, event: events, ticket: ticketTypes, timeZone: workspaces.timeZone })
+    .select({ order: ticketOrders, event: events, ticket: ticketTypes, workspaceTimeZone: workspaces.timeZone })
     .from(ticketOrders)
     .innerJoin(events, eq(ticketOrders.eventId, events.id))
     .innerJoin(ticketTypes, eq(ticketOrders.ticketTypeId, ticketTypes.id))
@@ -622,7 +622,7 @@ export async function completeTicketOrder(input: {
     amountCents: details.order.amountCents,
     applicationFeeCents: details.order.applicationFeeCents,
     startsAt: details.event.startsAt.toISOString(),
-    timeZone: details.timeZone,
+    timeZone: details.event.timeZone ?? details.workspaceTimeZone,
   });
   await issueTicketReceipt(input.orderId);
 }
