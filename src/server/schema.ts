@@ -103,6 +103,8 @@ export const workspaces = pgTable("workspaces", {
    * false and are metered from the day they sign up.
    */
   eventQuotaExempt: boolean("event_quota_exempt").notNull().default(false),
+  /** Product-granted exception for customers who do not use Beebizy payment collection. */
+  stripeConnectExempt: boolean("stripe_connect_exempt").notNull().default(false),
   subscriptionPlan: subscriptionPlan("subscription_plan"),
   stripeCustomerId: text("stripe_customer_id").unique(),
   stripeSubscriptionId: text("stripe_subscription_id").unique(),

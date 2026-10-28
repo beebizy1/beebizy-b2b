@@ -23,8 +23,8 @@ import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
 import { workspaceFitsPlanSeatLimit } from "./entitlements.ts";
 import { workspaceInvites, workspaceMembers, workspaces } from "./schema.ts";
-import { SOLO_TRIAL_DAYS, type PlanId } from "../data/plans.ts";
-import type { WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
+import { SOLO_TRIAL_DAYS } from "../data/plans.ts";
+import type { WorkspaceAccess, WorkspaceAccessStatus } from "../data/workspaceAccess.ts";
 import {
   accountExperienceForEmail,
   canSwitchAccountExperience,
@@ -34,16 +34,6 @@ import { workspaceMemberInsertSelection } from "./workspaceMemberInsert.ts";
 import { VerifiedEmailCache } from "./verifiedEmailCache.ts";
 
 export type Role = "owner" | "admin" | "member";
-
-export interface WorkspaceAccess {
-  status: WorkspaceAccessStatus;
-  plan: PlanId | null;
-  betaStartedAt: string;
-  betaEndsAt: string;
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd: boolean;
-  billingPortalAvailable?: boolean;
-}
 
 export interface RequestContext {
   userId: string;
@@ -206,6 +196,7 @@ function accessForWorkspace(workspace: typeof workspaces.$inferSelect): Workspac
     currentPeriodEnd: workspace.subscriptionCurrentPeriodEnd?.toISOString() ?? null,
     cancelAtPeriodEnd: workspace.subscriptionCancelAtPeriodEnd,
     billingPortalAvailable: Boolean(workspace.stripeCustomerId),
+    stripeConnectExempt: workspace.stripeConnectExempt,
   };
 }
 

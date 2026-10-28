@@ -1111,6 +1111,19 @@ describe("feedback endpoint", () => {
     });
   });
 
+  it("returns the workspace Stripe-connect exception to the launch workflow", async () => {
+    vi.mocked(authorize).mockResolvedValue({
+      ...context,
+      access: { ...context.access, stripeConnectExempt: true },
+    });
+    const response = await handleRequest(new Request("http://localhost/api/me"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      access: { stripeConnectExempt: true },
+    });
+  });
+
   it("allows approved Beebizy product operators to preview another account experience", async () => {
     vi.mocked(authorize).mockResolvedValueOnce({ ...context, email: "tarang@beebizy.com" });
     const tarang = await handleRequest(new Request("http://localhost/api/me"));

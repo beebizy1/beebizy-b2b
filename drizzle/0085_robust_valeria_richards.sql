@@ -1,0 +1,1 @@
+ALTER TABLE "workspaces" ADD COLUMN "stripe_connect_exempt" boolean DEFAULT false NOT NULL;

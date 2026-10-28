@@ -27,13 +27,15 @@ import { usePreferences } from "@/app/preferences";
 import { formatMoney, sumCents } from "@/data/money";
 import { useAllTickets, useMe, useStartStripeConnect, useStripeConnectStatus } from "@/data/hooks";
 import { toast } from "@/hooks/use-toast";
+import { workspaceUsesStripeConnect } from "@/data/workspaceAccess";
 
 export default function TicketSales() {
   const { date: formatDate } = usePreferences();
   const [search, setSearch] = useState("");
   const { data: tickets, isLoading, isError, error, refetch } = useAllTickets();
   const { data: identity } = useMe();
-  const { data: connect, isLoading: connectLoading, isError: connectError, refetch: refetchConnect } = useStripeConnectStatus();
+  const stripeConnectEnabled = Boolean(identity) && workspaceUsesStripeConnect(identity?.access);
+  const { data: connect, isLoading: connectLoading, isError: connectError, refetch: refetchConnect } = useStripeConnectStatus({ enabled: Boolean(identity) && stripeConnectEnabled });
   const startConnect = useStartStripeConnect();
 
   const visible = useMemo(() => {
@@ -53,7 +55,7 @@ export default function TicketSales() {
     <div className="space-y-6">
       <PageHeader title="Ticket Sales" description="Every ticket type across every event, and how it is selling." />
 
-      <Panel className="flex flex-wrap items-center gap-4 p-5">
+      {stripeConnectEnabled ? <Panel className="flex flex-wrap items-center gap-4 p-5">
         <span className={`grid size-11 place-items-center rounded-xl ${connect?.ready ? "bg-success-tint text-success-text" : "bg-primary-muted text-primary"}`}>
           {connect?.ready ? <CheckCircle2 className="size-5" aria-hidden="true" /> : <CreditCard className="size-5" aria-hidden="true" />}
         </span>
@@ -87,7 +89,7 @@ export default function TicketSales() {
         ) : !connect?.ready ? (
           <span className="text-sm text-muted-foreground">A workspace owner must finish setup.</span>
         ) : null}
-      </Panel>
+      </Panel> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatTile label="Tickets sold" value={String(sold)} icon={Ticket} />

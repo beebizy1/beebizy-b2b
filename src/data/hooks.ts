@@ -922,8 +922,8 @@ export function useAllTickets() {
   return useAdapterQuery(qk.allTickets, (a) => a.tickets.listAll());
 }
 
-export function useStripeConnectStatus() {
-  return useAdapterQuery(qk.stripeConnect, (a) => a.billing.connectStatus());
+export function useStripeConnectStatus(options?: { enabled?: boolean }) {
+  return useAdapterQuery(qk.stripeConnect, (a) => a.billing.connectStatus(), { enabled: options?.enabled ?? true });
 }
 
 export function useStartStripeConnect() {

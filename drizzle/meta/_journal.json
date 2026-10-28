@@ -596,6 +596,20 @@
       "when": 1793223792141,
       "tag": "0084_backfill_event_time_zones",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1793225876025,
+      "tag": "0085_robust_valeria_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1793225890636,
+      "tag": "0086_exempt_carlin_stripe_connect",
+      "breakpoints": true
     }
   ]
 }
