@@ -8,6 +8,7 @@ import { HttpError, newId, type RequestContext } from "./auth.ts";
 import { notifyAuctionDonorThankYou, sendEmail } from "./notify.ts";
 import * as s from "./schema.ts";
 import { databaseErrorMessage } from "./errorMessage.ts";
+import { auctionPaymentMode, bidderPaymentReady } from "../data/auctionPayments.ts";
 
 const DEFAULT_CATEGORIES = [
   "Experiences",
@@ -577,7 +578,7 @@ export async function fundraisingDashboard(ctx: RequestContext, eventId: string)
 }
 
 export async function publicBidderProfile(auctionToken: string, bidderToken: string): Promise<PublicBidderProfile | null> {
-  const [row] = await db.select({ bidder: s.auctionBidders }).from(s.auctionBidders)
+  const [row] = await db.select({ bidder: s.auctionBidders, auctionPayLater: s.events.auctionPayLater }).from(s.auctionBidders)
     .innerJoin(s.events, eq(s.auctionBidders.eventId, s.events.id))
     .where(and(eq(s.auctionBidders.publicToken, bidderToken), eq(s.events.auctionPublicToken, auctionToken))).limit(1);
   if (!row) return null;
@@ -641,11 +642,15 @@ export async function createPublicPledge(
   channel: "in_room" | "remote",
 ): Promise<FundraisingPledge> {
   if (!Number.isInteger(amountCents) || amountCents < 100) throw new HttpError(400, "Enter a giving amount of at least $1.");
-  const [row] = await db.select({ bidder: s.auctionBidders }).from(s.auctionBidders)
+  const [row] = await db.select({ bidder: s.auctionBidders, auctionPayLater: s.events.auctionPayLater, stripeConnectedAccountId: s.workspaces.stripeConnectedAccountId }).from(s.auctionBidders)
     .innerJoin(s.events, eq(s.auctionBidders.eventId, s.events.id))
+    .innerJoin(s.workspaces, eq(s.auctionBidders.workspaceId, s.workspaces.id))
     .where(and(eq(s.auctionBidders.publicToken, bidderToken), eq(s.events.auctionPublicToken, auctionToken))).limit(1);
   if (!row) throw new HttpError(404, "This bidder registration is not available.");
-  if (!row.bidder.paymentMethodId) throw new HttpError(409, "Add a card or wallet before making a pledge.");
+  const paymentMode = auctionPaymentMode({ auctionPayLater: row.auctionPayLater, stripeConnectedAccountId: row.stripeConnectedAccountId });
+  if (!bidderPaymentReady(paymentMode, Boolean(row.bidder.paymentMethodId))) {
+    throw new HttpError(409, "Add a card or wallet before making a pledge.");
+  }
   const id = newId("pledge");
   let pledge: typeof s.fundraisingPledges.$inferSelect | undefined;
   try {

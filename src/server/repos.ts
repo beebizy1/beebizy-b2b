@@ -136,6 +136,9 @@ import { allocateAuctionBidder } from "./auctionBidderAllocation.ts";
 import { errorMessages } from "./errorMessage.ts";
 import { roleChangeOwnerGuard, roleRemovalOwnerGuard } from "./workspaceMemberRoleGuards.ts";
 import { validRunOfShowOrder } from "../data/runOfShowOrder.ts";
+import { deferBidderRecoveryEmail } from "./bidderRecovery.ts";
+import { validBidderEmail } from "../data/bidderOnboarding.ts";
+import { auctionPaymentMode, bidderPaymentReady } from "../data/auctionPayments.ts";
 
 /**
  * Where a notification should send someone. Configurable because the private-beta origin
@@ -4164,7 +4167,7 @@ async function publicAuctionItem(itemId: string): Promise<PublicAuctionItem | nu
 }
 
 export async function publicAuction(token: string): Promise<PublicAuctionPayload | null> {
-  const [eventRow] = await db.select({ event: s.events, workspaceTimeZone: s.workspaces.timeZone }).from(s.events)
+  const [eventRow] = await db.select({ event: s.events, workspaceTimeZone: s.workspaces.timeZone, stripeConnectedAccountId: s.workspaces.stripeConnectedAccountId }).from(s.events)
     .innerJoin(s.workspaces, eq(s.events.workspaceId, s.workspaces.id))
     .where(eq(s.events.auctionPublicToken, token)).limit(1);
   if (!eventRow || eventRow.event.status === "cancelled") return null;
@@ -4212,6 +4215,7 @@ export async function publicAuction(token: string): Promise<PublicAuctionPayload
     eventDate: eventRow.event.startsAt.toISOString(),
     timeZone: eventRow.event.timeZone ?? eventRow.workspaceTimeZone,
     settings,
+    paymentMode: auctionPaymentMode({ auctionPayLater: eventRow.event.auctionPayLater, stripeConnectedAccountId: eventRow.stripeConnectedAccountId }),
     categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))].sort(),
     items,
     announcements: announcements.map((announcement) => ({ ...announcement, sentAt: announcement.sentAt.toISOString() })),
@@ -4228,7 +4232,7 @@ export async function registerPublicAuctionBidder(token: string, body: Body): Pr
   const settings = normalizeAuctionPageSettings(event.auctionPage);
   if (!settings.registrationOpen) throw new HttpError(409, "Bidder registration is closed.");
   const email = str(body, "email").trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid email address.");
+  if (!validBidderEmail(email)) throw new HttpError(400, "Enter a valid email address.");
   const phone = str(body, "phone").trim();
   if (phone.replace(/\D/g, "").length < 10) throw new HttpError(400, "Enter a valid mobile phone number.");
   const grades = Array.isArray(body.grades) ? body.grades.filter((value): value is string => typeof value === "string").slice(0, 5) : [];
@@ -4266,7 +4270,34 @@ export async function registerPublicAuctionBidder(token: string, body: Body): Pr
     }))).onConflictDoNothing();
   }
   const [bidderRow] = await db.select().from(s.auctionBidders).where(eq(s.auctionBidders.id, bidder.id)).limit(1);
+  await recoverPublicAuctionBidder(token, { email });
   return { ...toAuctionBidder(bidderRow!), grades };
+}
+
+export async function recoverPublicAuctionBidder(token: string, body: Body): Promise<{ sent: true }> {
+  const email = str(body, "email").trim().toLowerCase();
+  if (!validBidderEmail(email)) throw new HttpError(400, "Enter a valid email address.");
+  const [row] = await db.select({
+    bidderId: s.auctionBidders.id,
+    bidderName: s.auctionBidders.name,
+    bidderToken: s.auctionBidders.publicToken,
+    paddleNumber: s.auctionBidders.paddleNumber,
+    eventTitle: s.events.title,
+  }).from(s.auctionBidders)
+    .innerJoin(s.events, eq(s.auctionBidders.eventId, s.events.id))
+    .where(and(eq(s.events.auctionPublicToken, token), eq(s.auctionBidders.email, email)))
+    .orderBy(desc(s.auctionBidders.createdAt))
+    .limit(1);
+  if (row) deferBidderRecoveryEmail({
+    auctionToken: token,
+    bidderId: row.bidderId,
+    bidderName: row.bidderName,
+    bidderToken: row.bidderToken,
+    email,
+    eventTitle: row.eventTitle,
+    paddleNumber: row.paddleNumber,
+  });
+  return { sent: true };
 }
 
 export async function placePublicAuctionBid(
@@ -4281,9 +4312,15 @@ export async function placePublicAuctionBid(
     name: s.auctionBidders.name,
     email: s.auctionBidders.email,
     paymentMethodId: s.auctionBidders.paymentMethodId,
-  }).from(s.auctionBidders).where(eq(s.auctionBidders.publicToken, bidderToken)).limit(1);
+    auctionPayLater: s.events.auctionPayLater,
+    stripeConnectedAccountId: s.workspaces.stripeConnectedAccountId,
+  }).from(s.auctionBidders)
+    .innerJoin(s.events, eq(s.auctionBidders.eventId, s.events.id))
+    .innerJoin(s.workspaces, eq(s.auctionBidders.workspaceId, s.workspaces.id))
+    .where(and(eq(s.auctionBidders.publicToken, bidderToken), eq(s.events.auctionPublicToken, auctionToken))).limit(1);
   if (!bidder) throw new HttpError(404, "This bidder registration is not available.");
-  if (!bidder.paymentMethodId) throw new HttpError(409, "Add a card or wallet before placing a bid.");
+  const paymentMode = auctionPaymentMode({ auctionPayLater: bidder.auctionPayLater, stripeConnectedAccountId: bidder.stripeConnectedAccountId });
+  if (!bidderPaymentReady(paymentMode, Boolean(bidder.paymentMethodId))) throw new HttpError(409, "Add a card or wallet before placing a bid.");
   const [before] = await db.select({
     eventId: s.auctionItems.eventId,
     bidderId: s.auctionItems.winningBidderId,

@@ -386,6 +386,9 @@ async function handlePublic(segments: string[], method: string, request: Request
     if (method === "POST" && segments[3] === "bidders" && segments.length === 4) {
       return json(await repos.registerPublicAuctionBidder(segments[2], await readBody(request)), 201);
     }
+    if (method === "POST" && segments[3] === "bidders" && segments[4] === "recover" && segments.length === 5) {
+      return json(await repos.recoverPublicAuctionBidder(segments[2], await readBody(request)));
+    }
     if (segments[3] === "bidders" && segments[4] && segments.length === 5 && method === "GET") {
       const bidder = await publicBidderProfile(segments[2], segments[4]);
       return bidder ? json(bidder) : json({ error: "This bidder registration is not available." }, 404);

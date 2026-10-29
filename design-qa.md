@@ -158,3 +158,44 @@ Passed. The page matches the reference structure, uses Beebizy's requested non-b
 - [P3] Real events with more than six sponsors may benefit from optional tier headings in a future iteration.
 
 final result: passed
+
+# Bidder onboarding design QA
+
+final result: passed
+
+## Comparison target
+
+- Source: `/Users/tarang/.codex/generated_images/01a0594f-bbf5-7a92-b2a3-e2e1e5da3519/exec-770f9969-4469-4976-804f-4e824d1ff51c.png`
+- Source pixels: 853 x 1844, the same 0.463 mobile aspect ratio as the implementation target.
+- Implementation: `http://localhost:3000/auction/a4bec1c9-7627-4a8b-927a-cabb1a23af3f`
+- Browser viewport: 390 x 844 CSS px in the Codex in-app browser.
+- Compared state: unregistered guest taps **Place bid** and sees the bidder-number bottom sheet over the intended auction item.
+
+## Findings and fixes
+
+- [Fixed P1] The first implementation allowed the primary **Get my bidder number** action to fall below a short phone viewport. The sheet now uses a fixed mobile height, a scrolling field region, and a pinned action footer. The button is visible at 390 x 844.
+- [Fixed P2] The first implementation covered almost the entire auction item. The final sheet is capped at 72vh, leaving the item image and bid context visible behind the overlay.
+- [Fixed P2] A separate registration banner still delayed the catalog. It was removed. Guests now browse immediately and enter setup only from **Place bid**.
+- No actionable P0, P1, or P2 differences remain.
+
+## Required fidelity surfaces
+
+- Fonts and typography: uses the product's existing Plus Jakarta Sans family with the source's bold navy hierarchy, readable 14-16px supporting copy, and clear required-field labels.
+- Spacing and layout rhythm: the cream page, rounded item surface, 24px sheet radius, compact field rhythm, and fixed footer track the selected direction. The sheet preserves visible auction context instead of becoming a full-screen form.
+- Colors and visual tokens: uses existing Beebizy cream, primary yellow, navy foreground, muted gray, success, and hairline tokens. Contrast remains readable in the tested light theme.
+- Image quality and asset fidelity: the real auction item image and existing Beebizy logo are preserved. No placeholders, CSS drawings, or replacement assets were introduced.
+- Copy and content: keeps the selected 30-second promise, three-field setup, delayed payment reassurance, explicit **Place bid** action, and returning-bidder recovery. Email remains required because it carries the private bidder link and auction notifications.
+
+## Interaction verification
+
+- Catalog loads before registration.
+- **Place bid** opens the bidder-number sheet.
+- Full name, mobile number, and email enable the primary action; no grade question or auto-charge consent is present.
+- **Already registered? Email my private link** opens a privacy-preserving recovery state.
+- Payment setup is deferred until after bidder creation and bid intent.
+- Browser console contained no new application errors. The existing Clerk development-key warning remains outside this flow.
+
+## Follow-up polish
+
+- P3: organizers can still provide a verbose auction welcome message. A later content-setting improvement could offer shorter bidder-facing default copy.
+

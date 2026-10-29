@@ -766,6 +766,14 @@ describe("raffle", () => {
 });
 
 describe("auction proxy bidding", () => {
+  it("keeps Pay later scoped to the Annual Partner Gala demo", async () => {
+    const galaToken = (await memoryAdapter.auction.share("evt-gala")).auctionPublicToken;
+    const otherToken = (await memoryAdapter.auction.share("evt-support-offsite")).auctionPublicToken;
+
+    expect((await memoryAdapter.auction.getPublic(galaToken))?.paymentMode).toBe("pay_later");
+    expect((await memoryAdapter.auction.getPublic(otherToken))?.paymentMode).toBe("unavailable");
+  });
+
   it("keeps a maximum private and charges only the amount needed to lead", async () => {
     const item = await memoryAdapter.auction.create("evt-support-offsite", {
       title: "Weekend stay",

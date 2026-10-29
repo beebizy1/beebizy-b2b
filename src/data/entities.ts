@@ -15,6 +15,7 @@ import type { Cents } from "./money.ts";
 import type { RegistrationPageSettings } from "./registrationPage.ts";
 import type { AccountExperience } from "./accountExperience.ts";
 import type { EventNavigationSettings } from "./eventNavigation.ts";
+import type { AuctionPaymentMode } from "./auctionPayments.ts";
 
 /* ------------------------------------------------------------------ primitives */
 
@@ -1596,6 +1597,7 @@ export interface PublicAuctionPayload {
   eventDate: IsoDateTime;
   timeZone: string;
   settings: AuctionPageSettings;
+  paymentMode: AuctionPaymentMode;
   categories: string[];
   items: PublicAuctionItem[];
   announcements?: Array<{ id: string; message: string; sentAt: IsoDateTime }>;
