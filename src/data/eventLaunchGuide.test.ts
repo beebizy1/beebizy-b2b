@@ -2,15 +2,43 @@ import { describe, expect, it } from "vitest";
 import {
   eventDetailsReturnTarget,
   eventLaunchCompletion,
+  eventPaymentsRequired,
   eventLaunchDetailsHref,
   eventLaunchRegistrationsHref,
   eventLaunchStepHref,
   eventLaunchUnlocks,
   nextEventLaunchStep,
   openEventLaunchStep,
+  visibleEventLaunchStepIds,
 } from "./eventLaunchGuide";
 
 describe("event launch guide", () => {
+  it("never blocks a Stripe-exempt workspace on the payment step", () => {
+    expect(eventPaymentsRequired({
+      hasPaidTicket: true,
+      isFundraiser: true,
+      hasAuction: true,
+      stripeConnectExempt: true,
+    })).toBe(false);
+    expect(eventPaymentsRequired({
+      hasPaidTicket: true,
+      isFundraiser: false,
+      hasAuction: false,
+      stripeConnectExempt: false,
+    })).toBe(true);
+  });
+
+  it("removes the entire payment step only for an exempt workspace", () => {
+    expect(visibleEventLaunchStepIds(true)).toEqual([
+      "event",
+      "invite-list",
+      "invite-design",
+      "tickets",
+      "send",
+    ]);
+    expect(visibleEventLaunchStepIds(false)).toContain("payments");
+  });
+
   it("keeps the organizer on the first unfinished step even when later work is already done", () => {
     const completion = eventLaunchCompletion({
       inviteeCount: 10,

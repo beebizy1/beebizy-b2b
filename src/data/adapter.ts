@@ -162,8 +162,8 @@ import type {
   VolunteerNeedDraft,
   VolunteerNeedPatch,
 } from "./entities";
-import type { BillingInterval, PlanId } from "./plans";
-import type { WorkspaceAccessStatus } from "./workspaceAccess";
+import type { BillingInterval } from "./plans";
+import type { WorkspaceAccess } from "./workspaceAccess";
 import type { AccountExperience } from "./accountExperience";
 import type { PlanningBrief, PlanningPreviewBrief, PlanningSuggestions } from "./planner";
 import type { AssistantChatMessage, AssistantTurn } from "./assistantChat";
@@ -527,15 +527,7 @@ export interface Identity {
   canSwitchExperience: boolean;
   /** Present only for a collaborator whose seat is restricted to one event. */
   eventScope: { id: string; title: string } | null;
-  access: {
-    status: WorkspaceAccessStatus;
-    plan: PlanId | null;
-    betaStartedAt: string;
-    betaEndsAt: string;
-    currentPeriodEnd: string | null;
-    cancelAtPeriodEnd: boolean;
-    billingPortalAvailable?: boolean;
-  };
+  access: WorkspaceAccess;
 }
 
 export interface DataAdapter {

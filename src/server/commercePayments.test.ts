@@ -3,7 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./db", () => ({ db: {} }));
 vi.mock("./notify", () => ({ notifyTicketOrderConfirmation: vi.fn() }));
 
-const { requireCheckoutMatch, stripeConnectReturnUrls, ticketCheckoutSessionParams } = await import("./commercePayments");
+const { requireCheckoutMatch, requireStripeConnectAvailable, stripeConnectReturnUrls, ticketCheckoutSessionParams } = await import("./commercePayments");
+
+describe("Stripe Connect workspace exemption", () => {
+  it("rejects onboarding for an exempt workspace before Stripe setup can begin", () => {
+    expect(() => requireStripeConnectAvailable({ stripeConnectExempt: true })).toThrow(
+      expect.objectContaining({ status: 403 }),
+    );
+  });
+
+  it("keeps onboarding available for a normal workspace", () => {
+    expect(() => requireStripeConnectAvailable({ stripeConnectExempt: false })).not.toThrow();
+  });
+});
 
 describe("Stripe Connect launch-guide return", () => {
   it("returns onboarding to the event's master step list", () => {

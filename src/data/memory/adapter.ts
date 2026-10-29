@@ -2762,6 +2762,7 @@ export const memoryAdapter: DataAdapter = {
         betaEndsAt: ends.toISOString(),
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
+        stripeConnectExempt: false,
       },
     };
   },

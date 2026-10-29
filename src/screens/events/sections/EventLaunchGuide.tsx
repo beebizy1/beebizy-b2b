@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronDown, CreditCard, ListChecks, Mail, Palette, PartyPopper, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMe, useStartStripeConnect } from "@/data/hooks";
 import {
   eventLaunchDetailsHref,
@@ -40,7 +41,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
   const { data: identity } = useMe();
   const startConnect = useStartStripeConnect();
   const [selectedStep, setSelectedStep] = useState<{ id: EventLaunchStepId; wasComplete: boolean } | null>(null);
-  const { activeTickets, completion, connect, connectLoading, contactableInvitees, paymentsRequired, unlocked } = useEventLaunchProgress(event);
+  const { activeTickets, completion, connect, connectLoading, contactableInvitees, identityLoading, paymentsRequired, stripeConnectExempt, unlocked } = useEventLaunchProgress(event);
   const focusedComplete = focusStep ? completion[focusStep] : false;
   const focusedUnlocked = focusStep ? unlocked[focusStep] : false;
 
@@ -49,6 +50,18 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
     setSelectedStep({ id: focusStep, wasComplete: focusedComplete });
   }, [focusStep, focusedComplete, focusedUnlocked]);
 
+  if (identityLoading) {
+    return (
+      <Panel className="overflow-hidden border-primary/20">
+        <PanelHeader title="Launch your event" description={`${event.title} · Loading your launch steps…`} />
+        <div className="space-y-3 p-5">
+          {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-16 w-full" />)}
+        </div>
+      </Panel>
+    );
+  }
+
+  const sendStepNumber = stripeConnectExempt ? 5 : 6;
   const steps: LaunchStep[] = [
     {
       number: 1,
@@ -67,7 +80,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       summary: "Add names one by one or upload a spreadsheet.",
       complete: completion["invite-list"],
       icon: Users,
-      detail: <p>You have {contactableInvitees.length} {contactableInvitees.length === 1 ? "person" : "people"} with an email address on this event's list. Step 6 will load them automatically.</p>,
+      detail: <p>You have {contactableInvitees.length} {contactableInvitees.length === 1 ? "person" : "people"} with an email address on this event's list. Step {sendStepNumber} will load them automatically.</p>,
       action: <Button asChild size="sm"><a href={eventLaunchRegistrationsHref(event.id)}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</a></Button>,
     },
     {
@@ -90,7 +103,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       detail: <p>{activeTickets.length > 0 ? `${activeTickets.length} ticket ${activeTickets.length === 1 ? "option is" : "options are"} ready.` : "No tickets needed. Guests will RSVP directly from the invitation."}</p>,
       action: <Button type="button" size="sm" variant={activeTickets.length > 0 ? "default" : "outline"} onClick={onPriceTickets}>{activeTickets.length > 0 ? "Review ticket prices" : "Add tickets instead"}</Button>,
     },
-    {
+    ...(!stripeConnectExempt ? [{
       number: 5,
       id: "payments",
       title: "Connect your school's bank account",
@@ -99,9 +112,9 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       icon: CreditCard,
       detail: !paymentsRequired ? <p>This event uses free RSVP only, so no bank connection is needed.</p> : connect?.ready ? <div className="space-y-2"><p>Stripe is connected. Stripe will send paid ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div> : <div className="space-y-2"><p>Stripe is the secure payment service that sends money to the school.</p><p><strong>1.</strong> Click Connect below.</p><p><strong>2.</strong> The school owner fills out Stripe's form.</p><p><strong>3.</strong> Stripe sends ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div>,
       action: !paymentsRequired ? <Pill tone="success">Not needed for free RSVP</Pill> : connect?.ready ? <Button asChild variant="outline" size="lg"><a href={eventLaunchPath(event.id)}>Stripe connected · Continue to next step</a></Button> : identity?.role === "owner" ? <Button type="button" size="lg" className="w-full text-base font-bold shadow-sm sm:w-auto" disabled={connectLoading || startConnect.isPending} onClick={() => startConnect.mutate(eventLaunchPath(event.id), { onSuccess: (status) => { if (status.onboardingUrl) window.location.assign(status.onboardingUrl); }, onError: (error) => toast({ title: "Couldn't open Stripe", description: error.message }) })}>{startConnect.isPending ? "Opening Stripe…" : connect?.accountId ? "Continue connecting Stripe" : "Connect Stripe bank account"}</Button> : <p className="text-xs font-medium text-muted-foreground">Ask the Beebizy workspace owner to connect Stripe.</p>,
-    },
+    } satisfies LaunchStep] : []),
     {
-      number: 6,
+      number: sendStepNumber,
       id: "send",
       title: "Send out invitations",
       summary: "Send each guest the designed invite and unique event link.",
@@ -112,14 +125,15 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
     },
   ];
 
-  const completedCount = Object.values(completion).filter(Boolean).length;
+  const completedCount = steps.filter((step) => step.complete).length;
+  const totalSteps = steps.length;
   const nextStep = nextEventLaunchStep(completion);
   const openStep = openEventLaunchStep(selectedStep?.id ?? null, selectedStep?.wasComplete ?? false, completion);
 
   return (
     <Panel className="overflow-hidden border-primary/20">
-      <PanelHeader title="Launch your event" description={`${event.title} · Follow these six steps in order. Finish one, then move to the next.`} actions={<Pill tone={completedCount === 6 ? "success" : "warning"}>{completedCount} of 6 done</Pill>} />
-      <div className="h-1.5 bg-surface-sunken"><div className="h-full bg-primary transition-[width]" style={{ width: `${(completedCount / 6) * 100}%` }} /></div>
+      <PanelHeader title="Launch your event" description={`${event.title} · Follow these ${totalSteps} steps in order. Finish one, then move to the next.`} actions={<Pill tone={completedCount === totalSteps ? "success" : "warning"}>{completedCount} of {totalSteps} done</Pill>} />
+      <div className="h-1.5 bg-surface-sunken"><div className="h-full bg-primary transition-[width]" style={{ width: `${(completedCount / totalSteps) * 100}%` }} /></div>
       <ol className="divide-y divide-hairline">
         {steps.map((step) => {
           const Icon = step.icon;

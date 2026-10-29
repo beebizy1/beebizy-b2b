@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { platformFeeCents } from "../data/commerce.ts";
 import { bidIncrementCents, coveredFeesCents, deductibleAmountCents } from "../data/fundraising.ts";
 import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
+import { workspaceUsesStripeConnect } from "../data/workspaceAccess.ts";
 import { SCHOOL_GRADES, type AuctionOrder, type DonationCheckoutResult, type FundraisingReceipt, type FundraisingReceiptLineItem, type PublicBidderBill, type PublicTicketOrderStatus, type StripeConnectStatus, type TicketCheckoutResult, type TicketOrder } from "../data/entities.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
@@ -65,6 +66,12 @@ function requireOwner(ctx: RequestContext): void {
   if (ctx.role !== "owner") throw new HttpError(403, "Only the workspace owner can connect the payment account.");
 }
 
+export function requireStripeConnectAvailable(workspace: { stripeConnectExempt?: boolean }): void {
+  if (!workspaceUsesStripeConnect(workspace)) {
+    throw new HttpError(403, "Stripe connection is not available for this workspace.");
+  }
+}
+
 function accountStatus(account: Stripe.Account | null): StripeConnectStatus {
   return {
     accountId: account?.id ?? null,
@@ -105,6 +112,7 @@ export async function syncStripeConnectedAccount(account: Stripe.Account): Promi
 
 export async function getStripeConnectStatus(ctx: RequestContext): Promise<StripeConnectStatus> {
   const workspace = await workspaceRow(ctx.workspaceId);
+  if (!workspaceUsesStripeConnect(workspace)) return accountStatus(null);
   if (!workspace.stripeConnectedAccountId) return accountStatus(null);
   try {
     const account = await stripeClient().accounts.retrieve(workspace.stripeConnectedAccountId);
@@ -124,8 +132,9 @@ export async function createStripeConnectOnboarding(
   returnTo?: unknown,
 ): Promise<StripeConnectStatus> {
   requireOwner(ctx);
-  const stripe = stripeClient();
   const workspace = await workspaceRow(ctx.workspaceId);
+  requireStripeConnectAvailable(workspace);
+  const stripe = stripeClient();
   let accountId = workspace.stripeConnectedAccountId;
 
   if (!accountId) {

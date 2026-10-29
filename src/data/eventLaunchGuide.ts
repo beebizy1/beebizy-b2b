@@ -7,9 +7,24 @@ export interface EventLaunchProgressInput {
   invitationsSent: boolean;
 }
 
+export interface EventPaymentRequirementInput {
+  hasPaidTicket: boolean;
+  isFundraiser: boolean;
+  hasAuction: boolean;
+  stripeConnectExempt: boolean;
+}
+
+export function eventPaymentsRequired(input: EventPaymentRequirementInput): boolean {
+  return !input.stripeConnectExempt && (input.hasPaidTicket || input.isFundraiser || input.hasAuction);
+}
+
 export const EVENT_LAUNCH_STEP_IDS = ["event", "invite-list", "invite-design", "tickets", "payments", "send"] as const;
 export type EventLaunchStepId = (typeof EVENT_LAUNCH_STEP_IDS)[number];
 export type EventLaunchCompletion = Record<EventLaunchStepId, boolean>;
+
+export function visibleEventLaunchStepIds(stripeConnectExempt: boolean): EventLaunchStepId[] {
+  return EVENT_LAUNCH_STEP_IDS.filter((step) => step !== "payments" || !stripeConnectExempt);
+}
 
 export interface EventDetailsReturnTarget {
   href: string;

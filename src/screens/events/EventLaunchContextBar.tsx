@@ -2,7 +2,9 @@ import { ArrowLeft, Check, Lock } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { EVENT_LAUNCH_STEP_IDS, type EventLaunchCompletion, type EventLaunchStepId } from "@/data/eventLaunchGuide";
+import { EVENT_LAUNCH_STEP_IDS, visibleEventLaunchStepIds, type EventLaunchCompletion, type EventLaunchStepId } from "@/data/eventLaunchGuide";
+import { useMe } from "@/data/hooks";
+import { workspaceUsesStripeConnect } from "@/data/workspaceAccess";
 
 const STEPS = [
   "Event",
@@ -30,6 +32,17 @@ export default function EventLaunchContextBar({
   unlocked?: EventLaunchCompletion;
   onStepSelect?: (step: EventLaunchStepId) => void;
 }) {
+  const { data: identity, isLoading: identityLoading } = useMe();
+  if (identityLoading) {
+    return (
+      <section aria-label="Loading event launch progress" className="sticky top-3 z-20 rounded-2xl border border-primary/30 bg-card p-5 shadow-md">
+        <span className="text-sm font-medium text-muted-foreground">Loading launch steps…</span>
+      </section>
+    );
+  }
+  const visibleStepIds = visibleEventLaunchStepIds(!workspaceUsesStripeConnect(identity?.access));
+  const activeStepId = EVENT_LAUNCH_STEP_IDS[activeStep - 1];
+  const visibleActiveStep = Math.max(1, visibleStepIds.indexOf(activeStepId) + 1);
   const backContent = (
     <>
       <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
@@ -42,7 +55,7 @@ export default function EventLaunchContextBar({
       <div className="flex flex-col gap-3 border-b border-hairline bg-primary-muted/35 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-text">Launch your event</p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{eventTitle} · Step {activeStep} of {STEPS.length}</p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{eventTitle} · Step {visibleActiveStep} of {visibleStepIds.length}</p>
         </div>
         {backHref ? (
           <Button asChild variant="outline" size="sm" className="shrink-0 bg-background">
@@ -54,13 +67,14 @@ export default function EventLaunchContextBar({
           </Button>
         )}
       </div>
-      <ol className="workspace-scrollbar flex gap-2 overflow-x-auto px-4 py-3 sm:grid sm:grid-cols-6 sm:px-5">
-        {STEPS.map((label, index) => {
-          const id = EVENT_LAUNCH_STEP_IDS[index]!;
+      <ol className={cn("workspace-scrollbar flex gap-2 overflow-x-auto px-4 py-3 sm:grid sm:px-5", visibleStepIds.length === 5 ? "sm:grid-cols-5" : "sm:grid-cols-6")}>
+        {visibleStepIds.map((id, index) => {
+          const originalIndex = EVENT_LAUNCH_STEP_IDS.indexOf(id);
+          const label = STEPS[originalIndex]!;
           const number = index + 1;
-          const current = number === activeStep;
-          const complete = completion?.[id] ?? number < activeStep;
-          const available = unlocked?.[id] ?? number <= activeStep;
+          const current = id === activeStepId;
+          const complete = completion?.[id] ?? originalIndex < activeStep - 1;
+          const available = unlocked?.[id] ?? originalIndex < activeStep;
           const content = (
             <>
               <span className={cn(
