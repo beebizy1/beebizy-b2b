@@ -1549,6 +1549,7 @@ const auction: AuctionRepository = {
     }));
     return {
       eventTitle: event.title, eventDate: event.date, timeZone: store().settings.timeZone, settings,
+      paymentMode: event.id === "evt-gala" ? "pay_later" : "unavailable",
       categories: [...new Set(items.map((item) => item.category).filter((value): value is string => Boolean(value)))],
       items,
     };
@@ -1562,6 +1563,9 @@ const auction: AuctionRepository = {
     };
     memoryAuctionBidders.push(bidder);
     return copy(bidder);
+  },
+  async recoverPublic() {
+    return { sent: true };
   },
   async placePublicBid(token, bidderToken, itemId, maximumAmountCents) {
     const event = required(store().events.find((row) => row.auctionPublicToken === token), "This auction link is no longer active.");

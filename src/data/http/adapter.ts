@@ -482,6 +482,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
         method: "POST",
         body: JSON.stringify(draft),
       }),
+      recoverPublic: (token, email) => publicRequest<{ sent: true }>(`/public/auctions/${token}/bidders/recover`, {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
       placePublicBid: (token, bidderToken, itemId, maximumAmountCents) =>
         publicRequest<PublicAuctionBidResult>(`/public/auctions/${token}/bidders/${bidderToken}/items/${itemId}/bids`, {
           method: "POST",

@@ -293,6 +293,7 @@ export interface AuctionRepository extends EventScopedRepository<AuctionItem, Au
     token: string,
     draft: { name: string; email: string; phone: string; participantType: "gala" | "remote"; grades?: string[]; autoChargeOptIn?: boolean },
   ): Promise<AuctionBidder>;
+  recoverPublic(token: string, email: string): Promise<{ sent: true }>;
   placePublicBid(
     token: string,
     bidderToken: string,

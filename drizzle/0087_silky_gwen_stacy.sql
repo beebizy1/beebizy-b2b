@@ -1,0 +1,1 @@
+ALTER TABLE "events" ADD COLUMN "auction_pay_later" boolean DEFAULT false NOT NULL;

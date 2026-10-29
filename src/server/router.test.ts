@@ -22,6 +22,7 @@ vi.mock("./repos", () => {
     publicVolunteerSignup: vi.fn(),
     publicAuction: vi.fn(),
     registerPublicAuctionBidder: vi.fn(),
+    recoverPublicAuctionBidder: vi.fn(),
     placePublicAuctionBid: vi.fn(),
     publicAuctionDonor: vi.fn(),
     submitPublicAuctionDonation: vi.fn(),
@@ -170,7 +171,7 @@ const { processDueMemberRoleNotifications } = await import("./memberRoleNotifica
 const { processDueAuctionOutbidNotifications } = await import("./auctionOutbidNotifications");
 const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
 const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await import("./runOfShowDrafts");
-const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
+const { publicAuction, recoverPublicAuctionBidder, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
 
@@ -968,6 +969,22 @@ describe("public commerce endpoints", () => {
     expect(registerPublicAuctionBidder).toHaveBeenCalledWith("auction-token", {
       name: "Ada", email: "ada@example.com", participantType: "remote",
     });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("emails a returning bidder's private paddle link without exposing account existence", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(recoverPublicAuctionBidder).mockResolvedValue({ sent: true });
+
+    const response = await handleRequest(new Request("http://localhost/api/public/auctions/auction-token/bidders/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "ada@example.com" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ sent: true });
+    expect(recoverPublicAuctionBidder).toHaveBeenCalledWith("auction-token", { email: "ada@example.com" });
     expect(authorize).not.toHaveBeenCalled();
   });
 

@@ -1122,6 +1122,13 @@ export function useRegisterAuctionBidder() {
   );
 }
 
+export function useRecoverAuctionBidder() {
+  return useAdapterMutation(
+    (a, vars: { token: string; email: string }) => a.auction.recoverPublic(vars.token, vars.email),
+    () => [],
+  );
+}
+
 export function usePlaceAuctionBid() {
   return useAdapterMutation(
     (a, vars: { token: string; bidderToken: string; itemId: string; maximumAmountCents: number }) =>

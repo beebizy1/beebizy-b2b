@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, Eye, Gavel, Gift, Heart, ReceiptText, Search, Share2, SlidersHorizontal, UserRoundPlus, WalletCards, X } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, Eye, Gavel, Gift, Heart, ReceiptText, Search, Share2, SlidersHorizontal, X } from "lucide-react";
 import QRCode from "qrcode";
 import { PublicFrame } from "./PublicEvent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { EmptyState, LoadingRows, Panel, Pill } from "@/components/primitives";
 import {
   useCreateFundraisingPledge,
@@ -12,12 +11,15 @@ import {
   usePlaceAuctionBid,
   usePublicAuction,
   usePublicBidderProfile,
+  useRecoverAuctionBidder,
   useRegisterAuctionBidder,
   useSetAuctionWatch,
   useSetupBidderWallet,
 } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { toast } from "@/hooks/use-toast";
+import BidderSetupSheet from "./BidderSetupSheet";
+import { bidderPaymentReady } from "@/data/auctionPayments";
 
 function bidderStorageKey(token: string) {
   return `beebizy:auction:${token}:bidder`;
@@ -26,6 +28,7 @@ function bidderStorageKey(token: string) {
 export default function PublicAuctionPage({ token }: { token: string }) {
   const { data: auction, isLoading, refetch } = usePublicAuction(token);
   const register = useRegisterAuctionBidder();
+  const recoverBidder = useRecoverAuctionBidder();
   const bid = usePlaceAuctionBid();
   const setupWallet = useSetupBidderWallet();
   const setWatch = useSetAuctionWatch();
@@ -44,9 +47,8 @@ export default function PublicAuctionPage({ token }: { token: string }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [participantType, setParticipantType] = useState<"gala" | "remote">("gala");
-  const [grades, setGrades] = useState<string[]>([]);
-  const [autoChargeOptIn, setAutoChargeOptIn] = useState(false);
+  const [bidderSheetOpen, setBidderSheetOpen] = useState(false);
+  const [bidIntentItemId, setBidIntentItemId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("ending");
@@ -62,6 +64,17 @@ export default function PublicAuctionPage({ token }: { token: string }) {
   const [showPaddle, setShowPaddle] = useState(false);
   const [paddleQr, setPaddleQr] = useState("");
   const { data: bidderProfile, isLoading: bidderProfileLoading } = usePublicBidderProfile(token, bidderToken || null);
+
+  const openBidderSetup = (itemId: string | null = null) => {
+    setBidIntentItemId(itemId);
+    setBidderSheetOpen(true);
+  };
+
+  const returnToBidIntent = () => {
+    setBidderSheetOpen(false);
+    if (!bidIntentItemId) return;
+    window.requestAnimationFrame(() => document.getElementById(`item-${bidIntentItemId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(Date.now()), 15_000);
@@ -112,86 +125,60 @@ export default function PublicAuctionPage({ token }: { token: string }) {
   if (!auction) {
     return <PublicFrame><Panel><EmptyState icon={Gavel} title="This auction is not active" description="Ask the organizer for the current auction link." /></Panel></PublicFrame>;
   }
+  const paymentReady = bidderPaymentReady(auction.paymentMode, bidderProfile?.hasPaymentMethod === true);
 
   return (
     <PublicFrame>
       <div className="space-y-6 pb-24 sm:pb-0">
-        <section className="rounded-3xl bg-[#17130a] px-6 py-8 text-white sm:px-8">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ffd700]">Beebizy auction</p>
+        <section className="rounded-3xl border border-primary/20 bg-primary-muted/35 px-6 py-7 text-foreground sm:px-8">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Beebizy auction</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">{auction.settings.title || auction.eventTitle}</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">{auction.settings.welcomeMessage}</p>
-          <p className="mt-5 flex items-center gap-2 text-sm text-white/75">
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{auction.settings.welcomeMessage}</p>
+          {!bidderToken ? <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-foreground">Browse first. Register only when you bid. Getting a private bidder number takes about 30 seconds.</p> : null}
+          <p className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
             <CalendarDays className="size-4" aria-hidden="true" />
             {new Date(auction.eventDate).toLocaleDateString(undefined, { dateStyle: "long" })}
           </p>
           {auction.settings.closesAt ? (
-            <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#ffd700]"><Clock3 className="size-4" />Silent auction closes in {Math.max(0, Math.ceil((new Date(auction.settings.closesAt).getTime() - clockNow) / 60_000))} minutes</p>
+            <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-primary-text"><Clock3 className="size-4" />Silent auction closes in {Math.max(0, Math.ceil((new Date(auction.settings.closesAt).getTime() - clockNow) / 60_000))} minutes</p>
           ) : null}
-          {auction.donationToken ? <Button className="mt-5 border-white bg-white text-[#17130a] hover:bg-white/90 hover:text-[#17130a]" variant="outline" onClick={() => window.location.assign(`/give/${auction.donationToken}`)}><Gift className="mr-1.5 size-4" />Make a donation</Button> : null}
+          {auction.donationToken ? <Button className="mt-5" variant="outline" onClick={() => window.location.assign(`/give/${auction.donationToken}`)}><Gift className="mr-1.5 size-4" />Make a donation</Button> : null}
         </section>
         {(auction.announcements ?? []).map((announcement) => <div key={announcement.id} className="rounded-xl border border-primary/25 bg-primary-muted px-4 py-3 text-sm font-medium text-foreground">{announcement.message}</div>)}
 
-        {!bidderToken ? (
-          <Panel className="p-6">
-            <div className="flex items-start gap-3">
-              <span className="grid size-10 place-items-center rounded-xl bg-primary-muted text-primary"><UserRoundPlus className="size-5" /></span>
-              <div><h2 className="font-semibold text-foreground">Register to bid</h2><p className="text-sm text-muted-foreground">One quick registration works for every item in this auction.</p></div>
-            </div>
-            {auction.settings.registrationOpen ? (
-              <form
-                className="mt-5 grid gap-4 sm:grid-cols-2"
-                onSubmit={(formEvent) => {
-                  formEvent.preventDefault();
-                  register.mutate({ token, draft: { name, email, phone, participantType, grades, autoChargeOptIn } }, {
-                    onSuccess: (bidder) => {
-                      localStorage.setItem(bidderStorageKey(token), bidder.publicToken);
-                      setBidderToken(bidder.publicToken);
-                      toast({ title: "You're ready to bid" });
-                    },
-                    onError: (error) => toast({ title: "Couldn't register", description: error.message }),
-                  });
-                }}
-              >
-                <div className="space-y-1.5"><Label htmlFor="auction-name">Full name</Label><Input id="auction-name" value={name} onChange={(event) => setName(event.target.value)} required /></div>
-                <div className="space-y-1.5"><Label htmlFor="auction-email">Email</Label><Input id="auction-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
-                <div className="space-y-1.5"><Label htmlFor="auction-phone">Mobile phone</Label><Input id="auction-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="auction-participation">How are you joining?</Label>
-                  <select id="auction-participation" value={participantType} onChange={(event) => setParticipantType(event.target.value as "gala" | "remote")} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                    <option value="gala">At the gala</option>
-                    {auction.settings.allowRemoteBidders ? <option value="remote">Bidding remotely</option> : null}
-                  </select>
-                </div>
-                <div className="space-y-2 sm:col-span-2"><Label>Family grade(s)</Label><div className="flex flex-wrap gap-2">{["TK", "K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "Alumni", "Faculty/Staff", "Friend of school"].map((grade) => <label key={grade} className={`cursor-pointer rounded-full border px-3 py-1 text-xs ${grades.includes(grade) ? "border-primary bg-primary-muted font-semibold" : "border-hairline"}`}><input type="checkbox" className="sr-only" checked={grades.includes(grade)} onChange={() => setGrades((current) => current.includes(grade) ? current.filter((item) => item !== grade) : [...current, grade])} />{grade}</label>)}</div></div>
-                <label className="flex items-start gap-2 text-sm text-muted-foreground sm:col-span-2"><input type="checkbox" checked={autoChargeOptIn} onChange={(event) => setAutoChargeOptIn(event.target.checked)} className="mt-1" /><span>Charge my saved card automatically for winning bids and gifts. My card will not be charged unless I win or give.</span></label>
-                <div className="sm:col-span-2"><Button type="submit" disabled={!name.trim() || !email.trim() || phone.replace(/\D/g, "").length < 10 || register.isPending}>{register.isPending ? "Registering..." : "Register to bid"}</Button></div>
-              </form>
-            ) : <p className="mt-4 text-sm text-muted-foreground">Bidder registration is closed.</p>}
-          </Panel>
-        ) : (
+        {bidderToken ? (
           <div className="grid gap-3 rounded-xl border border-success/20 bg-success-tint px-4 py-3 text-sm text-success-text sm:flex sm:flex-wrap sm:items-center">
             <div className="flex items-center gap-3 sm:contents">
               <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
               <button type="button" className="rounded-lg bg-primary px-3 py-2 font-black text-primary-foreground shadow-sm" onClick={() => setShowPaddle(true)}>Paddle {bidderProfile?.paddleNumber ?? "assigned"}</button>
             </div>
-            <span className="min-w-0 leading-5 sm:flex-1">{bidderProfile?.hasPaymentMethod ? "You're ready to bid." : "Add a card or wallet before your first bid."}</span>
-            {!bidderProfile?.hasPaymentMethod ? <Button className="w-full sm:w-auto" size="sm" disabled={setupWallet.isPending} onClick={() => setupWallet.mutate({ token, bidderToken }, { onSuccess: (result) => window.location.assign(result.url), onError: (error) => toast({ title: "Couldn't open wallet setup", description: error.message }) })}><WalletCards className="mr-1.5 size-4" />{setupWallet.isPending ? "Opening..." : "Add card or wallet"}</Button> : null}
+            <span className="min-w-0 leading-5 sm:flex-1">{paymentReady ? auction.paymentMode === "pay_later" ? "You're ready to bid. Payment is collected after the auction." : "You're ready to bid." : "Browse freely. We’ll ask for secure payment when you place a bid."}</span>
             <Button className="w-full sm:w-auto" size="sm" variant={myBidsOnly ? "default" : "outline"} onClick={() => setMyBidsOnly((value) => !value)}>My bids {(bidderProfile?.outbidItemIds.length ?? 0) > 0 ? `(${bidderProfile?.outbidItemIds.length} outbid)` : ""}</Button>
           </div>
-        )}
+        ) : null}
 
         {mobileTab !== "give" ? <><div className="flex gap-2 overflow-x-auto pb-1">
           <Button size="sm" variant={category === "all" ? "default" : "outline"} onClick={() => setCategory("all")}>All</Button>
           {auction.categories.map((itemCategory) => <Button key={itemCategory} size="sm" variant={category === itemCategory ? "default" : "outline"} className="shrink-0" onClick={() => setCategory(itemCategory)}>{itemCategory}</Button>)}
         </div>
-        <div className="flex flex-wrap gap-3">
-          <div className="relative min-w-[15rem] flex-1">
+        <div className="space-y-3">
+          <div className="relative w-full">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search auction items" className="pl-9" />
           </div>
-          <label className="flex items-center gap-2 rounded-md border border-input bg-background px-3"><SlidersHorizontal className="size-4 text-muted-foreground" /><select value={filter} onChange={(event) => setFilter(event.target.value)} className="h-9 bg-transparent text-sm outline-none"><option value="all">All items</option><option value="silent">Silent auction</option><option value="live">Live auction</option><option value="no-bids">No bids yet</option><option value="ending">Ending soon</option><option value="buy-now">Buy it now</option><option value="watching">Items I'm watching</option></select></label>
-          <select value={sort} onChange={(event) => setSort(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="ending">Ending soon</option><option value="bids">Most bids</option><option value="low">Lowest current bid</option><option value="value">Highest value</option><option value="new">Newest</option></select>
-          <div className="flex items-center gap-2"><Input className="w-28" inputMode="decimal" value={minimumPrice} onChange={(event) => setMinimumPrice(event.target.value)} placeholder="Min $" aria-label="Minimum current bid" /><span className="text-muted-foreground">to</span><Input className="w-28" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} placeholder="Max $" aria-label="Maximum current bid" /></div>
+          <details className="rounded-xl border border-hairline bg-background sm:hidden">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold"><SlidersHorizontal className="size-4 text-primary" />Filters and sort</summary>
+            <div className="grid gap-3 border-t border-hairline p-4">
+              <select aria-label="Filter auction items" value={filter} onChange={(event) => setFilter(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="all">All items</option><option value="silent">Silent auction</option><option value="live">Live auction</option><option value="no-bids">No bids yet</option><option value="ending">Ending soon</option><option value="buy-now">Buy it now</option><option value="watching">Items I'm watching</option></select>
+              <select aria-label="Sort auction items" value={sort} onChange={(event) => setSort(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="ending">Ending soon</option><option value="bids">Most bids</option><option value="low">Lowest current bid</option><option value="value">Highest value</option><option value="new">Newest</option></select>
+              <div className="flex items-center gap-2"><Input className="min-w-0 flex-1" inputMode="decimal" value={minimumPrice} onChange={(event) => setMinimumPrice(event.target.value)} placeholder="Min $" aria-label="Minimum current bid" /><span className="text-muted-foreground">to</span><Input className="min-w-0 flex-1" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} placeholder="Max $" aria-label="Maximum current bid" /></div>
+            </div>
+          </details>
+          <div className="hidden flex-wrap gap-3 sm:flex">
+            <label className="flex items-center gap-2 rounded-md border border-input bg-background px-3"><SlidersHorizontal className="size-4 text-muted-foreground" /><select value={filter} onChange={(event) => setFilter(event.target.value)} className="h-9 bg-transparent text-sm outline-none"><option value="all">All items</option><option value="silent">Silent auction</option><option value="live">Live auction</option><option value="no-bids">No bids yet</option><option value="ending">Ending soon</option><option value="buy-now">Buy it now</option><option value="watching">Items I'm watching</option></select></label>
+            <select value={sort} onChange={(event) => setSort(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="ending">Ending soon</option><option value="bids">Most bids</option><option value="low">Lowest current bid</option><option value="value">Highest value</option><option value="new">Newest</option></select>
+            <div className="flex items-center gap-2"><Input className="w-28" inputMode="decimal" value={minimumPrice} onChange={(event) => setMinimumPrice(event.target.value)} placeholder="Min $" aria-label="Minimum current bid" /><span className="text-muted-foreground">to</span><Input className="w-28" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} placeholder="Max $" aria-label="Maximum current bid" /></div>
+          </div>
         </div>
 
         {items.length === 0 ? (
@@ -236,8 +223,10 @@ export default function PublicAuctionPage({ token }: { token: string }) {
                     </dl>
                     {(item.bidHistory?.length ?? 0) > 0 ? <details className="rounded-lg border border-hairline p-3"><summary className="cursor-pointer text-sm font-semibold">Bid history</summary><ul className="mt-2 divide-y divide-hairline">{item.bidHistory!.map((history, index) => <li key={`${history.placedAt}-${index}`} className="flex items-center justify-between gap-3 py-2 text-xs"><span>{history.bidderLabel}</span><span className="text-muted-foreground">{formatMoney(history.amountCents)} · {new Date(history.placedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></li>)}</ul></details> : null}
                     {closesAt ? <p className="text-xs font-medium text-muted-foreground">{closesAt > now ? `${Math.ceil((closesAt - now) / 60_000)} minutes left` : "Closed"}{item.extensionMinutes ? ` · Extended +${item.extensionMinutes} min` : ""}</p> : null}
-                    {biddingOpen && bidderToken && bidderProfile?.hasPaymentMethod && item.buyNowCents ? <Button className="w-full" variant="outline" disabled={buyNow.isPending} onClick={() => buyNow.mutate({ token, bidderToken, itemId: item.id }, { onSuccess: (result) => toast({ title: `You bought ${item.title}`, description: `${formatMoney(result.amountCents)} was added to your event bill.` }), onError: (error) => toast({ title: "Buy it now failed", description: error.message }) })}>Buy now for {formatMoney(item.buyNowCents)}</Button> : null}
-                    {biddingOpen && bidderToken && bidderProfile?.hasPaymentMethod ? (
+                    {biddingOpen && bidderToken && paymentReady && item.buyNowCents ? <Button className="w-full" variant="outline" disabled={buyNow.isPending} onClick={() => buyNow.mutate({ token, bidderToken, itemId: item.id }, { onSuccess: (result) => toast({ title: `You bought ${item.title}`, description: `${formatMoney(result.amountCents)} was added to your event bill.` }), onError: (error) => toast({ title: "Buy it now failed", description: error.message }) })}>Buy now for {formatMoney(item.buyNowCents)}</Button> : null}
+                    {biddingOpen && !bidderToken ? (
+                      auction.settings.registrationOpen ? <Button className="w-full text-base font-bold" size="lg" onClick={() => openBidderSetup(item.id)}><Gavel className="mr-2 size-4" />Place bid</Button> : <Pill tone="warning">Bidder registration is closed</Pill>
+                    ) : biddingOpen && bidderToken && paymentReady ? (
                       <div className="space-y-2">
                         <Button className="w-full" disabled={bid.isPending} onClick={() => place(minimum)}>Bid {formatMoney(minimum)}</Button>
                       {item.itemType !== "live" ? <form
@@ -257,8 +246,8 @@ export default function PublicAuctionPage({ token }: { token: string }) {
                       </form> : <p className="text-xs text-muted-foreground">Remote live bids are sent to the auctioneer. The room console is the source of truth for the winner.</p>}
                       {item.itemType !== "live" ? <p className="text-xs text-muted-foreground">We'll bid the minimum needed to keep you winning, up to your max. Others never see it.</p> : null}
                       </div>
-                    ) : biddingOpen && bidderToken && !bidderProfile?.hasPaymentMethod ? (
-                      <Button className="w-full" variant="outline" onClick={() => setupWallet.mutate({ token, bidderToken }, { onSuccess: (result) => window.location.assign(result.url) })}>Add card or wallet to bid</Button>
+                    ) : biddingOpen && bidderToken && !paymentReady ? (
+                      <Button className="w-full" onClick={() => openBidderSetup(item.id)}>Continue to secure bidding</Button>
                     ) : !biddingOpen ? (
                       <Pill tone="warning">{opensAt !== null && now < opensAt ? "Bidding has not opened" : "Bidding closed"}</Pill>
                     ) : null}
@@ -271,11 +260,44 @@ export default function PublicAuctionPage({ token }: { token: string }) {
 
         {bidderToken && (mobileTab === "give" || mobileTab === "auction") ? (
           <Panel className="p-6">
-            <div className="flex flex-wrap items-start gap-4"><div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.15em] text-primary">Fund-a-Need</p><h2 className="mt-1 text-xl font-bold">Raise your paddle from anywhere</h2><p className="mt-1 text-sm text-muted-foreground">Gifts are added to your single event bill. No goods or services are provided.</p></div><div className="flex flex-wrap gap-2">{[100_00, 250_00, 500_00, 1_000_00].map((amount) => <Button key={amount} variant="outline" disabled={pledge.isPending || !bidderProfile?.hasPaymentMethod} onClick={() => pledge.mutate({ token, bidderToken, amountCents: amount, channel: bidderProfile?.checkedInAt ? "in_room" : "remote" }, { onSuccess: () => toast({ title: `${formatMoney(amount)} pledge recorded` }), onError: (error) => toast({ title: "Couldn't record pledge", description: error.message }) })}>{formatMoney(amount)}</Button>)}</div></div>
-            <form className="mt-4 flex max-w-sm gap-2" onSubmit={(event) => { event.preventDefault(); const cents = Math.round(Number(customGift) * 100); if (cents < 100) return; pledge.mutate({ token, bidderToken, amountCents: cents, channel: bidderProfile?.checkedInAt ? "in_room" : "remote" }, { onSuccess: () => { setCustomGift(""); toast({ title: `${formatMoney(cents)} pledge recorded` }); }, onError: (error) => toast({ title: "Couldn't record pledge", description: error.message }) }); }}><Input type="number" min="1" step="0.01" value={customGift} onChange={(event) => setCustomGift(event.target.value)} placeholder="Custom amount" /><Button type="submit" disabled={!bidderProfile?.hasPaymentMethod || pledge.isPending}>Give</Button></form>
+            <div className="flex flex-wrap items-start gap-4"><div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.15em] text-primary">Fund-a-Need</p><h2 className="mt-1 text-xl font-bold">Raise your paddle from anywhere</h2><p className="mt-1 text-sm text-muted-foreground">Gifts are added to your single event bill. No goods or services are provided.</p></div><div className="flex flex-wrap gap-2">{[100_00, 250_00, 500_00, 1_000_00].map((amount) => <Button key={amount} variant="outline" disabled={pledge.isPending || !paymentReady} onClick={() => pledge.mutate({ token, bidderToken, amountCents: amount, channel: bidderProfile?.checkedInAt ? "in_room" : "remote" }, { onSuccess: () => toast({ title: `${formatMoney(amount)} pledge recorded` }), onError: (error) => toast({ title: "Couldn't record pledge", description: error.message }) })}>{formatMoney(amount)}</Button>)}</div></div>
+            <form className="mt-4 flex max-w-sm gap-2" onSubmit={(event) => { event.preventDefault(); const cents = Math.round(Number(customGift) * 100); if (cents < 100) return; pledge.mutate({ token, bidderToken, amountCents: cents, channel: bidderProfile?.checkedInAt ? "in_room" : "remote" }, { onSuccess: () => { setCustomGift(""); toast({ title: `${formatMoney(cents)} pledge recorded` }); }, onError: (error) => toast({ title: "Couldn't record pledge", description: error.message }) }); }}><Input type="number" min="1" step="0.01" value={customGift} onChange={(event) => setCustomGift(event.target.value)} placeholder="Custom amount" /><Button type="submit" disabled={!paymentReady || pledge.isPending}>Give</Button></form>
           </Panel>
         ) : null}
       </div>
+      <BidderSetupSheet
+        open={bidderSheetOpen}
+        onOpenChange={setBidderSheetOpen}
+        bidderToken={bidderToken}
+        bidderProfile={bidderProfile}
+        bidderProfileLoading={bidderProfileLoading}
+        paymentMode={auction.paymentMode}
+        name={name}
+        email={email}
+        phone={phone}
+        onNameChange={setName}
+        onEmailChange={setEmail}
+        onPhoneChange={setPhone}
+        registering={register.isPending}
+        onRegister={() => register.mutate({ token, draft: { name, email, phone, participantType: "gala", grades: [], autoChargeOptIn: false } }, {
+          onSuccess: (bidder) => {
+            localStorage.setItem(bidderStorageKey(token), bidder.publicToken);
+            setBidderToken(bidder.publicToken);
+            toast({ title: `Paddle ${bidder.paddleNumber ?? "assigned"}`, description: "One secure step remains before your first bid." });
+          },
+          onError: (error) => toast({ title: "Couldn't get your bidder number", description: error.message }),
+        })}
+        recovering={recoverBidder.isPending}
+        onRecover={async (recoveryEmail) => {
+          await recoverBidder.mutateAsync({ token, email: recoveryEmail });
+        }}
+        settingUpWallet={setupWallet.isPending}
+        onSetupWallet={() => setupWallet.mutate({ token, bidderToken }, {
+          onSuccess: (result) => window.location.assign(result.url),
+          onError: (error) => toast({ title: "Couldn't open secure setup", description: error.message }),
+        })}
+        onReady={returnToBidIntent}
+      />
       {bidderToken ? <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-hairline bg-background/95 px-2 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden" aria-label="Bidder navigation">
         {([
           ["auction", "Auction", Gavel],

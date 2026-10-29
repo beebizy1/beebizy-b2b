@@ -4,6 +4,7 @@ import { platformFeeCents } from "../data/commerce.ts";
 import { bidIncrementCents, coveredFeesCents, deductibleAmountCents } from "../data/fundraising.ts";
 import { normalizeAuctionPageSettings } from "../data/auctionSettings.ts";
 import { workspaceUsesStripeConnect } from "../data/workspaceAccess.ts";
+import { auctionPaymentMode } from "../data/auctionPayments.ts";
 import { SCHOOL_GRADES, type AuctionOrder, type DonationCheckoutResult, type FundraisingReceipt, type FundraisingReceiptLineItem, type PublicBidderBill, type PublicTicketOrderStatus, type StripeConnectStatus, type TicketCheckoutResult, type TicketOrder } from "../data/entities.ts";
 import { db } from "./db.ts";
 import { HttpError, newId, type RequestContext } from "./auth.ts";
@@ -1219,9 +1220,13 @@ export async function createBidderWalletSetup(
     .innerJoin(workspaces, eq(auctionBidders.workspaceId, workspaces.id))
     .where(and(eq(auctionBidders.publicToken, bidderToken), eq(events.auctionPublicToken, auctionToken))).limit(1);
   if (!row) throw new HttpError(404, "This bidder registration is not available.");
-  if (!row.workspace.stripeConnectedAccountId) throw new HttpError(409, "The organizer has not connected auction payments yet.");
+  const paymentMode = auctionPaymentMode({ auctionPayLater: row.event.auctionPayLater, stripeConnectedAccountId: row.workspace.stripeConnectedAccountId });
+  if (paymentMode === "pay_later") throw new HttpError(409, "This auction collects payment later and does not need card setup.");
+  if (paymentMode === "unavailable") throw new HttpError(409, "The organizer has not connected auction payments yet.");
+  const accountId = row.workspace.stripeConnectedAccountId;
+  if (!accountId) throw new HttpError(409, "The organizer has not connected auction payments yet.");
   const stripe = stripeClient();
-  const options = { stripeAccount: row.workspace.stripeConnectedAccountId };
+  const options = { stripeAccount: accountId };
   let customerId = row.bidder.stripeCustomerId;
   if (!customerId) {
     const customer = await stripe.customers.create({

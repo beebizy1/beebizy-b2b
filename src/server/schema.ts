@@ -341,6 +341,8 @@ export const events = pgTable(
     navigation: jsonb("navigation").$type<EventNavigationSettings>().notNull().default({ hiddenTabIds: [] }),
     auctionPublicToken: text("auction_public_token").unique(),
     auctionPage: jsonb("auction_page").$type<AuctionPageSettings>(),
+    /** Event-specific manual collection. Bidders can participate without storing a card. */
+    auctionPayLater: boolean("auction_pay_later").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
