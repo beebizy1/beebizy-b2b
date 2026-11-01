@@ -1231,6 +1231,7 @@ const vendorPaperwork: VendorPaperworkRepository = {
       ...booking.paperwork,
       revision: clientRevision,
       contractRequired: draft.contractRequired,
+      contractSigningUrl: draft.contractSigningUrl?.trim() || null,
       contractStatus: draft.contractRequired
         ? booking.paperwork.signedContractUrl ? booking.paperwork.contractStatus : "waiting"
         : "not-required",
@@ -1241,6 +1242,7 @@ const vendorPaperwork: VendorPaperworkRepository = {
       minimumCoverageCents: draft.minimumCoverageCents ?? null,
       additionalInsured: draft.additionalInsured?.trim() || null,
       instructions: draft.instructions?.trim() || null,
+      reminderIntervalDays: draft.reminderIntervalDays ?? 3,
     };
     return copy(booking);
   },
@@ -1263,8 +1265,8 @@ const vendorPaperwork: VendorPaperworkRepository = {
     if (!booking.paperwork.contractRequired && !booking.paperwork.coiRequired) {
       throw new DataError("invalid", "Choose a contract, a certificate of insurance, or both.");
     }
-    if (booking.paperwork.contractRequired && !booking.paperwork.contractFileUrl) {
-      throw new DataError("invalid", "Upload the contract before sending the request.");
+    if (booking.paperwork.contractRequired && !booking.paperwork.contractFileUrl && !booking.paperwork.contractSigningUrl) {
+      throw new DataError("invalid", "Upload the contract or add an e-signature link before sending the request.");
     }
     if (!booking.vendor?.contactEmail) throw new DataError("invalid", "Add the vendor's email before sending.");
     const sentAt = nowIso();
@@ -1272,6 +1274,20 @@ const vendorPaperwork: VendorPaperworkRepository = {
     booking.paperwork.requestedAt = sentAt;
     booking.paperwork.deliveredAt = sentAt;
     booking.paperwork.deliveryError = null;
+    booking.paperwork.nextReminderAt = booking.paperwork.reminderIntervalDays > 0
+      ? new Date(Date.now() + booking.paperwork.reminderIntervalDays * 86_400_000).toISOString()
+      : null;
+    return copy(booking);
+  },
+  async analyzeCoi(eventId, bookingId) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.id === bookingId && row.eventId === eventId),
+      "That vendor booking no longer exists.",
+    );
+    if (!booking.paperwork.coiFileUrl) throw new DataError("conflict", "The vendor has not uploaded a certificate of insurance yet.");
+    booking.paperwork.coiAnalysisStatus = "unavailable";
+    booking.paperwork.coiAnalysisError = "OpenAI document review is not configured.";
     return copy(booking);
   },
   async review(eventId, bookingId, review) {
@@ -1284,6 +1300,9 @@ const vendorPaperwork: VendorPaperworkRepository = {
     if (review.coiStatus) booking.paperwork.coiStatus = review.coiStatus;
     booking.paperwork.reviewedAt = nowIso();
     booking.paperwork.reviewedBy = "demo@beebizy.com";
+    const complete = (!booking.paperwork.contractRequired || booking.paperwork.contractStatus === "approved") &&
+      (!booking.paperwork.coiRequired || booking.paperwork.coiStatus === "approved");
+    if (complete) booking.paperwork.nextReminderAt = null;
     return copy(booking);
   },
   async getPublic(token) {
@@ -1309,11 +1328,18 @@ const vendorPaperwork: VendorPaperworkRepository = {
       booking.paperwork.coiUploadedAt = uploadedAt;
       booking.paperwork.coiExpiresAt = details?.expiresAt ?? null;
       booking.paperwork.coiCoverageCents = details?.coverageCents ?? null;
-      const expired = details?.expiresAt ? new Date(details.expiresAt).getTime() < Date.now() : false;
+      booking.paperwork.coiAnalysisStatus = "unavailable";
+      booking.paperwork.coiAnalysisError = "OpenAI document review is not configured.";
+      const expired = details?.expiresAt
+        ? new Date(details.expiresAt).getTime() < new Date(requireEvent(booking.eventId).date).getTime()
+        : false;
       const underinsured = booking.paperwork.minimumCoverageCents !== null &&
         (details?.coverageCents ?? 0) < booking.paperwork.minimumCoverageCents;
       booking.paperwork.coiStatus = expired || underinsured ? "needs-changes" : "received";
     }
+    const allReceived = (!booking.paperwork.contractRequired || Boolean(booking.paperwork.signedContractUrl)) &&
+      (!booking.paperwork.coiRequired || Boolean(booking.paperwork.coiFileUrl));
+    if (allReceived) booking.paperwork.nextReminderAt = null;
     return memoryPaperworkPayload(booking);
   },
 };

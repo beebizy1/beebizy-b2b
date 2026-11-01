@@ -441,6 +441,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       },
       sendRequest: (eventId, bookingId) =>
         client.post<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/send`),
+      analyzeCoi: (eventId, bookingId) =>
+        client.post<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/analyze-coi`),
       review: (eventId, bookingId, review) =>
         client.patch<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/review`, review),
       getPublic: async (token) => {

@@ -36,7 +36,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { DEFAULT_FEEDBACK_CATEGORY, DEPOSIT_STATUSES, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
-import type { AuctionPageSettings, ImportedSpreadsheetField, RfpSpaceRequirement } from "../data/entities.ts";
+import type { AuctionPageSettings, ImportedSpreadsheetField, RfpSpaceRequirement, VendorCoiAnalysis } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 import type { RegistrationPageSettings } from "../data/registrationPage.ts";
@@ -553,6 +553,7 @@ export const eventVendors = pgTable(
     contractStatus: text("contract_status").notNull().default("not-required"),
     contractFileUrl: text("contract_file_url"),
     contractFileName: text("contract_file_name"),
+    contractSigningUrl: text("contract_signing_url"),
     signedContractUrl: text("signed_contract_url"),
     signedContractName: text("signed_contract_name"),
     signedContractUploadedAt: timestamp("signed_contract_uploaded_at", { withTimezone: true }),
@@ -570,8 +571,16 @@ export const eventVendors = pgTable(
     paperworkRequestedAt: timestamp("paperwork_requested_at", { withTimezone: true }),
     paperworkDeliveredAt: timestamp("paperwork_delivered_at", { withTimezone: true }),
     paperworkDeliveryError: text("paperwork_delivery_error"),
+    paperworkReminderIntervalDays: integer("paperwork_reminder_interval_days").notNull().default(3),
+    paperworkNextReminderAt: timestamp("paperwork_next_reminder_at", { withTimezone: true }),
+    paperworkReminderCount: integer("paperwork_reminder_count").notNull().default(0),
     paperworkReviewedAt: timestamp("paperwork_reviewed_at", { withTimezone: true }),
     paperworkReviewedBy: text("paperwork_reviewed_by"),
+    coiAnalysisStatus: text("coi_analysis_status").notNull().default("not-run"),
+    coiAnalysis: jsonb("coi_analysis").$type<VendorCoiAnalysis>(),
+    coiAnalysisError: text("coi_analysis_error"),
+    coiAnalyzedAt: timestamp("coi_analyzed_at", { withTimezone: true }),
+    coiAnalysisModel: text("coi_analysis_model"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

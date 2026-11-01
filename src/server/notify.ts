@@ -277,6 +277,43 @@ export async function notifyVendorPaperworkRequest(input: {
   });
 }
 
+export async function notifyVendorPaperworkReminder(input: {
+  bookingId: string;
+  reminderNumber: number;
+  to: string;
+  vendorName: string;
+  organizerName: string;
+  replyTo: string | null;
+  eventTitle: string;
+  missing: string[];
+  url: string;
+}): Promise<EmailOutcome> {
+  const title = `Reminder: paperwork needed for ${input.eventTitle}`;
+  const missing = input.missing.join(" and ");
+  return sendEmail({
+    to: input.to,
+    fromName: input.organizerName,
+    replyTo: input.replyTo,
+    idempotencyKey: `vendor-paperwork-reminder-${input.bookingId}-${input.reminderNumber}`,
+    subject: title,
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      `${input.organizerName} is still waiting for your ${missing}.`,
+      "Use the same private link below. No account is needed.",
+      "",
+      input.url,
+    ].join("\n"),
+    html: brandedEmail({
+      title,
+      greeting: `Hi ${input.vendorName},`,
+      paragraphs: [`${input.organizerName} is still waiting for your ${missing}.`, "Use the same private link to finish in one place."],
+      details: [["Event", input.eventTitle], ["Still needed", missing]],
+      action: { label: "Finish paperwork", url: input.url },
+    }),
+  });
+}
+
 /** Sends one receipt after a free registration or confirmed Stripe payment. */
 export async function notifyTicketOrderConfirmation(input: {
   orderId: string;

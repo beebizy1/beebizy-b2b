@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays, Check, CheckCircle2, Download, FileSignature, MapPin, ShieldCheck, Upload } from "lucide-react";
+import { CalendarDays, Check, CheckCircle2, Download, ExternalLink, FileSignature, MapPin, ShieldCheck, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,6 +69,7 @@ export default function PublicVendorPaperwork({ token }: { token: string }) {
         <div className="space-y-4 p-5 sm:p-8">
           {paperwork.contractRequired ? (
             <DocumentStep number={1} icon={FileSignature} title="Sign the contract" done={contractDone} status={paperwork.contractStatus}>
+              {paperwork.contractSigningUrl ? <Button asChild className="mb-3 w-full sm:w-auto"><a href={paperwork.contractSigningUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 size-4" />Open secure e-signature</a></Button> : null}
               {paperwork.contractFileUrl ? <Button asChild variant="outline" className="w-full sm:w-auto"><a href={paperwork.contractFileUrl} target="_blank" rel="noreferrer"><Download className="mr-2 size-4" />Download {paperwork.contractFileName ?? "contract"}</a></Button> : null}
               <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><Input type="file" accept=".pdf,.doc,.docx,image/*" onChange={(event) => setContract(event.target.files?.[0] ?? null)} /><Button disabled={!contract || upload.isPending} onClick={() => void uploadFile("contract")}><Upload className="mr-2 size-4" />{upload.isPending ? "Uploading…" : "Upload signed contract"}</Button></div>
               {paperwork.signedContractName ? <p className="mt-2 text-xs text-success-text">Uploaded: {paperwork.signedContractName}</p> : null}

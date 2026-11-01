@@ -11,6 +11,7 @@ import {
   notifyTeamUpdate,
   notifyVolunteerAssignment,
   notifyVendorEventPacket,
+  notifyVendorPaperworkReminder,
   notifyWorkspaceRoleChanged,
   notifyWorkAssignment,
 } from "./notify";
@@ -298,6 +299,28 @@ describe("vendor event packet email", () => {
     expect(body.html).toContain('<html lang="en" dir="ltr">');
     expect(body.attachments).toHaveLength(2);
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("vendor-event-packet-packet-request-1-vendor-1");
+  });
+});
+
+describe("vendor paperwork reminder email", () => {
+  it("uses one stable key per reminder and keeps the private upload link", async () => {
+    const fetch = configureDelivery();
+    expect(await notifyVendorPaperworkReminder({
+      bookingId: "booking-1",
+      reminderNumber: 2,
+      to: "vendor@example.com",
+      vendorName: "Rental Company",
+      organizerName: "Cedar Grove School",
+      replyTo: "planner@example.com",
+      eventTitle: "Spring Gala",
+      missing: ["signed contract", "certificate of insurance"],
+      url: "https://beebizy.test/vendor-paperwork/private-token",
+    })).toEqual({ status: "sent" });
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body.text).toContain("signed contract and certificate of insurance");
+    expect(body.text).toContain("/vendor-paperwork/private-token");
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe("vendor-paperwork-reminder-booking-1-2");
   });
 });
 

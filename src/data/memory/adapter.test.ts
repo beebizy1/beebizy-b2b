@@ -922,6 +922,20 @@ describe("vendor paperwork", () => {
     const booking = (await memoryAdapter.eventVendors.list("evt-gala"))[0]!;
     await expect(memoryAdapter.vendorPaperwork.sendRequest("evt-gala", booking.id)).rejects.toThrow(/choose a contract/i);
   });
+
+  it("accepts an external e-signature link and schedules reminders without a contract upload", async () => {
+    const booking = (await memoryAdapter.eventVendors.list("evt-gala"))[0]!;
+    await memoryAdapter.vendorPaperwork.saveDraft("evt-gala", booking.id, {
+      contractRequired: true,
+      coiRequired: false,
+      contractSigningUrl: "https://demo.docusign.net/signing/example",
+      reminderIntervalDays: 7,
+    }, 500);
+    const sent = await memoryAdapter.vendorPaperwork.sendRequest("evt-gala", booking.id);
+    expect(sent.paperwork.contractSigningUrl).toContain("docusign.net");
+    expect(sent.paperwork.nextReminderAt).toBeTruthy();
+    expect(sent.paperwork.reminderIntervalDays).toBe(7);
+  });
 });
 
 describe("analytics", () => {

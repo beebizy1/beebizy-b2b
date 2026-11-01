@@ -73,11 +73,13 @@ export async function saveVendorPaperworkDraft(
       paperworkRevision: clientRevision,
       contractRequired: draft.contractRequired,
       contractStatus,
+      contractSigningUrl: draft.contractSigningUrl?.trim() || null,
       coiRequired: draft.coiRequired,
       coiStatus,
       minimumCoverageCents: draft.minimumCoverageCents ?? null,
       additionalInsured: draft.additionalInsured?.trim() || null,
       paperworkInstructions: draft.instructions?.trim() || null,
+      paperworkReminderIntervalDays: draft.reminderIntervalDays ?? 3,
       updatedAt: new Date(),
     })
     .where(and(
@@ -116,8 +118,8 @@ export async function sendVendorPaperworkRequest(ctx: RequestContext, eventId: s
   if (!current.booking.contractRequired && !current.booking.coiRequired) {
     throw new HttpError(400, "Choose a contract, a certificate of insurance, or both.");
   }
-  if (current.booking.contractRequired && !current.booking.contractFileUrl) {
-    throw new HttpError(400, "Upload the contract before sending the request.");
+  if (current.booking.contractRequired && !current.booking.contractFileUrl && !current.booking.contractSigningUrl) {
+    throw new HttpError(400, "Upload the contract or add an e-signature link before sending the request.");
   }
   if (!current.vendor.contactEmail) throw new HttpError(400, "Add the vendor's email before sending.");
   const token = current.booking.paperworkPublicToken ?? crypto.randomUUID();
@@ -139,6 +141,9 @@ export async function sendVendorPaperworkRequest(ctx: RequestContext, eventId: s
     paperworkRequestedAt: requestedAt,
     paperworkDeliveredAt: deliveryError ? null : requestedAt,
     paperworkDeliveryError: deliveryError,
+    paperworkNextReminderAt: current.booking.paperworkReminderIntervalDays > 0
+      ? new Date(requestedAt.getTime() + (deliveryError ? 1 : current.booking.paperworkReminderIntervalDays) * 86_400_000)
+      : null,
     updatedAt: requestedAt,
   }).where(eq(s.eventVendors.id, bookingId));
   await recordHistory(ctx, eventId, bookingId, `Paperwork request ${deliveryError ? "failed" : "sent"} for ${current.vendor.name}`, {
@@ -166,11 +171,16 @@ export async function reviewVendorPaperwork(
     throw new HttpError(409, "The vendor has not uploaded a certificate of insurance yet.");
   }
   const reviewedAt = new Date();
+  const contractComplete = !current.booking.contractRequired ||
+    (review.contractStatus ?? current.booking.contractStatus) === "approved";
+  const coiComplete = !current.booking.coiRequired ||
+    (review.coiStatus ?? current.booking.coiStatus) === "approved";
   await db.update(s.eventVendors).set({
     ...(review.contractStatus ? { contractStatus: review.contractStatus } : {}),
     ...(review.coiStatus ? { coiStatus: review.coiStatus } : {}),
     paperworkReviewedAt: reviewedAt,
     paperworkReviewedBy: ctx.email ?? ctx.userId,
+    ...(contractComplete && coiComplete ? { paperworkNextReminderAt: null } : {}),
     updatedAt: reviewedAt,
   }).where(eq(s.eventVendors.id, bookingId));
   await recordHistory(ctx, eventId, bookingId, `Reviewed paperwork for ${current.vendor.name}`, {
@@ -224,7 +234,7 @@ export async function savePublicVendorPaperworkUpload(
     }).where(eq(s.eventVendors.id, booking.id));
   } else {
     if (!booking.coiRequired) throw new HttpError(409, "A certificate of insurance is not requested for this event.");
-    const expired = details.expiresAt ? details.expiresAt.getTime() < Date.now() : false;
+    const expired = details.expiresAt ? details.expiresAt.getTime() < new Date(payload.eventDate).getTime() : false;
     const underinsured = booking.minimumCoverageCents !== null &&
       (details.coverageCents ?? 0) < booking.minimumCoverageCents;
     await db.update(s.eventVendors).set({
@@ -234,8 +244,20 @@ export async function savePublicVendorPaperworkUpload(
       coiExpiresAt: details.expiresAt ?? null,
       coiCoverageCents: details.coverageCents ?? null,
       coiStatus: expired || underinsured ? "needs-changes" : "received",
+      coiAnalysisStatus: "not-run",
+      coiAnalysis: null,
+      coiAnalysisError: null,
+      coiAnalyzedAt: null,
+      coiAnalysisModel: null,
       updatedAt: uploadedAt,
     }).where(eq(s.eventVendors.id, booking.id));
+  }
+  const [latest] = await db.select().from(s.eventVendors).where(eq(s.eventVendors.id, booking.id)).limit(1);
+  const allReceived = latest &&
+    (!latest.contractRequired || Boolean(latest.signedContractUrl)) &&
+    (!latest.coiRequired || Boolean(latest.coiFileUrl));
+  if (allReceived) {
+    await db.update(s.eventVendors).set({ paperworkNextReminderAt: null }).where(eq(s.eventVendors.id, booking.id));
   }
   return (await publicVendorPaperwork(token))!;
 }

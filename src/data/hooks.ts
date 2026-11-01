@@ -656,6 +656,14 @@ export function useSendVendorPaperworkRequest() {
   );
 }
 
+export function useAnalyzeVendorCoi() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; bookingId: string }) =>
+      a.vendorPaperwork.analyzeCoi(vars.eventId, vars.bookingId),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
 export function useReviewVendorPaperwork() {
   return useAdapterMutation(
     (a, vars: { eventId: string; bookingId: string; review: VendorPaperworkReview }) =>

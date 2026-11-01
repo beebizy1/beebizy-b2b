@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, ClipboardCheck, Copy, FileCheck2, FileText, Send, ShieldCheck } from "lucide-react";
+import { Check, CheckCircle2, ClipboardCheck, Copy, FileCheck2, FileText, Send, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Pill } from "@/components/primitives";
 import type { EventVendor, VendorPaperworkDraft, VendorPaperworkReview } from "@/data/entities";
 import {
   useReviewVendorPaperwork,
+  useAnalyzeVendorCoi,
   useSaveVendorPaperworkDraft,
   useSendVendorPaperworkRequest,
   useUploadVendorContract,
@@ -26,10 +27,12 @@ interface StoredDraft {
 function draftFromBooking(booking: EventVendor): VendorPaperworkDraft {
   return {
     contractRequired: booking.paperwork.contractRequired,
+    contractSigningUrl: booking.paperwork.contractSigningUrl,
     coiRequired: booking.paperwork.coiRequired,
     minimumCoverageCents: booking.paperwork.minimumCoverageCents,
     additionalInsured: booking.paperwork.additionalInsured,
     instructions: booking.paperwork.instructions,
+    reminderIntervalDays: booking.paperwork.reminderIntervalDays,
   };
 }
 
@@ -76,6 +79,7 @@ export default function VendorPaperworkDialog({ eventId, booking }: { eventId: s
   const saveDraft = useSaveVendorPaperworkDraft();
   const uploadContract = useUploadVendorContract();
   const sendRequest = useSendVendorPaperworkRequest();
+  const analyzeCoi = useAnalyzeVendorCoi();
   const review = useReviewVendorPaperwork();
   const [open, setOpen] = useState(false);
   const [stored, setStored] = useState<StoredDraft>({ revision: booking.paperwork.revision, draft: draftFromBooking(booking) });
@@ -88,7 +92,7 @@ export default function VendorPaperworkDialog({ eventId, booking }: { eventId: s
   const contractReceived = Boolean(booking.paperwork.signedContractUrl);
   const coiReceived = Boolean(booking.paperwork.coiFileUrl);
   const canSend = (stored.draft.contractRequired || stored.draft.coiRequired) &&
-    (!stored.draft.contractRequired || Boolean(booking.paperwork.contractFileUrl)) &&
+    (!stored.draft.contractRequired || Boolean(booking.paperwork.contractFileUrl || stored.draft.contractSigningUrl)) &&
     Boolean(booking.vendor?.contactEmail);
   const requestUrl = booking.paperwork.publicToken
     ? `${window.location.origin}/vendor-paperwork/${booking.paperwork.publicToken}`
@@ -216,7 +220,9 @@ export default function VendorPaperworkDialog({ eventId, booking }: { eventId: s
               </label>
               {stored.draft.contractRequired ? (
                 <div className="ml-0 rounded-lg bg-surface-sunken p-3 sm:ml-10">
-                  <Label htmlFor={`contract-${booking.id}`}>Contract file</Label>
+                  <Label htmlFor={`signing-${booking.id}`}>E-signature link <span className="font-normal text-muted-foreground">DocuSign, Dropbox Sign, or another provider</span></Label>
+                  <Input id={`signing-${booking.id}`} className="mt-1" type="url" value={stored.draft.contractSigningUrl ?? ""} placeholder="https://…" onChange={(event) => updateDraft({ contractSigningUrl: event.target.value })} />
+                  <Label className="mt-3 block" htmlFor={`contract-${booking.id}`}>Contract file <span className="font-normal text-muted-foreground">Optional when a signing link is provided</span></Label>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Input id={`contract-${booking.id}`} type="file" accept=".pdf,.doc,.docx,image/*" className="max-w-sm" disabled={uploadContract.isPending} onChange={async (event) => {
                       const file = event.target.files?.[0];
@@ -228,7 +234,7 @@ export default function VendorPaperworkDialog({ eventId, booking }: { eventId: s
                         toast({ title: "Couldn't upload the contract", description: error instanceof Error ? error.message : "Try again." });
                       }
                     }} />
-                    {booking.paperwork.contractFileName ? <Pill tone="success">{booking.paperwork.contractFileName}</Pill> : <Pill tone="warning">Required before sending</Pill>}
+                    {booking.paperwork.contractFileName ? <Pill tone="success">{booking.paperwork.contractFileName}</Pill> : stored.draft.contractSigningUrl ? <Pill tone="success">Signing link ready</Pill> : <Pill tone="warning">Add a file or link</Pill>}
                   </div>
                 </div>
               ) : null}
@@ -245,6 +251,7 @@ export default function VendorPaperworkDialog({ eventId, booking }: { eventId: s
                 </div>
               ) : null}
               <div><Label htmlFor={`instructions-${booking.id}`}>Anything else? <span className="font-normal text-muted-foreground">Optional</span></Label><Textarea id={`instructions-${booking.id}`} className="mt-1" rows={3} value={stored.draft.instructions ?? ""} placeholder="Add one short note for the vendor." onChange={(event) => updateDraft({ instructions: event.target.value })} /></div>
+              <div className="flex flex-wrap items-center gap-2"><Label htmlFor={`reminders-${booking.id}`}>Automatic reminders</Label><select id={`reminders-${booking.id}`} className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={stored.draft.reminderIntervalDays ?? 3} onChange={(event) => updateDraft({ reminderIntervalDays: Number(event.target.value) })}><option value={0}>Off</option><option value={1}>Every day</option><option value={3}>Every 3 days</option><option value={7}>Every week</option></select><span className="text-xs text-muted-foreground">Stops when all files arrive or the event starts.</span></div>
               <p className={saveState === "failed" ? "text-xs text-danger-text" : "text-xs text-muted-foreground"} aria-live="polite">
                 {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "device-only" ? "Saved on this device. Reconnecting…" : "Could not save on this device."}
               </p>
@@ -268,6 +275,7 @@ export default function VendorPaperworkDialog({ eventId, booking }: { eventId: s
               <div className="mt-4 space-y-3">
                 {stored.draft.contractRequired && contractReceived ? <ReviewRow label="Signed contract" url={booking.paperwork.signedContractUrl!} status={booking.paperwork.contractStatus} onReview={(status) => void reviewDocument({ contractStatus: status })} pending={review.isPending} /> : null}
                 {stored.draft.coiRequired && coiReceived ? <ReviewRow label="Certificate of insurance" url={booking.paperwork.coiFileUrl!} status={booking.paperwork.coiStatus} onReview={(status) => void reviewDocument({ coiStatus: status })} pending={review.isPending} /> : null}
+                {stored.draft.coiRequired && coiReceived ? <CoiAnalysisCard booking={booking} pending={analyzeCoi.isPending} onAnalyze={async () => { try { const result = await analyzeCoi.mutateAsync({ eventId, bookingId: booking.id }); toast({ title: result.paperwork.coiAnalysisStatus === "ready" ? "COI analyzed" : "Manual review remains available", description: result.paperwork.coiAnalysisError ?? undefined }); } catch (error) { toast({ title: "Couldn't analyze the COI", description: error instanceof Error ? error.message : "Try again." }); } }} /> : null}
               </div>
             </section>
           ) : null}
@@ -292,4 +300,10 @@ function DocumentCard({ title, status, fileName, fileUrl }: { title: string; sta
 
 function ReviewRow({ label, url, status, onReview, pending }: { label: string; url: string; status: EventVendor["paperwork"]["contractStatus"]; onReview: (status: "approved" | "needs-changes") => void; pending: boolean }) {
   return <div className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-white p-3"><a href={url} target="_blank" rel="noreferrer" className="mr-auto text-sm font-medium underline">Open {label.toLowerCase()}</a><Pill tone={documentTone(status)}>{status.replace("-", " ")}</Pill><Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => onReview("needs-changes")}>Ask to replace</Button><Button type="button" size="sm" disabled={pending} onClick={() => onReview("approved")}><Check className="mr-1 size-3.5" />Approve</Button></div>;
+}
+
+function CoiAnalysisCard({ booking, pending, onAnalyze }: { booking: EventVendor; pending: boolean; onAnalyze: () => void }) {
+  const paperwork = booking.paperwork;
+  const analysis = paperwork.coiAnalysis;
+  return <div className="rounded-lg border border-hairline bg-white p-3"><div className="flex flex-wrap items-center gap-2"><Sparkles className="size-4" /><span className="text-sm font-medium">Document check</span><Pill className="ml-auto" tone={paperwork.coiAnalysisStatus === "ready" ? "success" : paperwork.coiAnalysisStatus === "failed" ? "danger" : "neutral"}>{paperwork.coiAnalysisStatus.replace("-", " ")}</Pill><Button type="button" variant="outline" size="sm" disabled={pending} onClick={onAnalyze}>{pending ? "Checking…" : "Check again"}</Button></div>{analysis ? <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2"><div><dt className="text-muted-foreground">Named insured</dt><dd className="font-medium">{analysis.namedInsured ?? "Not found"}</dd></div><div><dt className="text-muted-foreground">Carrier</dt><dd className="font-medium">{analysis.carrier ?? "Not found"}</dd></div><div><dt className="text-muted-foreground">Expiration</dt><dd className="font-medium">{analysis.expirationDate ?? "Not found"}</dd></div><div><dt className="text-muted-foreground">Confidence</dt><dd className="font-medium capitalize">{analysis.confidence}</dd></div></dl> : <p className="mt-2 text-xs text-muted-foreground">{paperwork.coiAnalysisError ?? "OpenAI can read the uploaded certificate when an API key is connected. Expiration and coverage checks still work without it."}</p>}</div>;
 }

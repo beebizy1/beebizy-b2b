@@ -383,6 +383,20 @@ export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 export const VENDOR_DOCUMENT_STATUSES = ["not-required", "waiting", "received", "approved", "needs-changes"] as const;
 export type VendorDocumentStatus = (typeof VENDOR_DOCUMENT_STATUSES)[number];
 
+export type VendorCoiAnalysisStatus = "not-run" | "ready" | "unavailable" | "failed";
+
+export interface VendorCoiAnalysis {
+  namedInsured: string | null;
+  carrier: string | null;
+  policyNumber: string | null;
+  effectiveDate: string | null;
+  expirationDate: string | null;
+  generalLiabilityCents: Cents | null;
+  additionalInsured: boolean | null;
+  confidence: "low" | "medium" | "high";
+  notes: string[];
+}
+
 /** One vendor's event-specific contract and insurance checklist. */
 export interface VendorPaperwork {
   revision: number;
@@ -390,6 +404,7 @@ export interface VendorPaperwork {
   contractStatus: VendorDocumentStatus;
   contractFileUrl: string | null;
   contractFileName: string | null;
+  contractSigningUrl: string | null;
   signedContractUrl: string | null;
   signedContractName: string | null;
   signedContractUploadedAt: IsoDateTime | null;
@@ -407,16 +422,26 @@ export interface VendorPaperwork {
   requestedAt: IsoDateTime | null;
   deliveredAt: IsoDateTime | null;
   deliveryError: string | null;
+  reminderIntervalDays: number;
+  nextReminderAt: IsoDateTime | null;
+  reminderCount: number;
   reviewedAt: IsoDateTime | null;
   reviewedBy: string | null;
+  coiAnalysisStatus: VendorCoiAnalysisStatus;
+  coiAnalysis: VendorCoiAnalysis | null;
+  coiAnalysisError: string | null;
+  coiAnalyzedAt: IsoDateTime | null;
+  coiAnalysisModel: string | null;
 }
 
 export interface VendorPaperworkDraft {
   contractRequired: boolean;
   coiRequired: boolean;
+  contractSigningUrl?: string | null;
   minimumCoverageCents?: Cents | null;
   additionalInsured?: string | null;
   instructions?: string | null;
+  reminderIntervalDays?: number;
 }
 
 export interface VendorPaperworkReview {
@@ -439,6 +464,7 @@ export const EMPTY_VENDOR_PAPERWORK: VendorPaperwork = {
   contractStatus: "not-required",
   contractFileUrl: null,
   contractFileName: null,
+  contractSigningUrl: null,
   signedContractUrl: null,
   signedContractName: null,
   signedContractUploadedAt: null,
@@ -456,8 +482,16 @@ export const EMPTY_VENDOR_PAPERWORK: VendorPaperwork = {
   requestedAt: null,
   deliveredAt: null,
   deliveryError: null,
+  reminderIntervalDays: 3,
+  nextReminderAt: null,
+  reminderCount: 0,
   reviewedAt: null,
   reviewedBy: null,
+  coiAnalysisStatus: "not-run",
+  coiAnalysis: null,
+  coiAnalysisError: null,
+  coiAnalyzedAt: null,
+  coiAnalysisModel: null,
 };
 
 /** A vendor attached to a specific event. */

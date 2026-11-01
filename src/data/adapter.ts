@@ -258,6 +258,7 @@ export interface VendorPaperworkRepository {
   saveDraft(eventId: string, bookingId: string, draft: VendorPaperworkDraft, clientRevision: number): Promise<EventVendor>;
   uploadContract(eventId: string, bookingId: string, file: File): Promise<EventVendor>;
   sendRequest(eventId: string, bookingId: string): Promise<EventVendor>;
+  analyzeCoi(eventId: string, bookingId: string): Promise<EventVendor>;
   review(eventId: string, bookingId: string, review: VendorPaperworkReview): Promise<EventVendor>;
   getPublic(token: string): Promise<PublicVendorPaperwork | null>;
   uploadPublic(

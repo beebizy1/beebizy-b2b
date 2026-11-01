@@ -120,6 +120,8 @@ vi.mock("./vendorPaperwork", () => ({
   saveVendorPaperworkDraft: vi.fn(),
   sendVendorPaperworkRequest: vi.fn(),
 }));
+vi.mock("./vendorCoiAnalysis", () => ({ analyzePublicVendorCoi: vi.fn(), analyzeVendorCoi: vi.fn() }));
+vi.mock("./vendorPaperworkReminders", () => ({ processDueVendorPaperworkReminders: vi.fn() }));
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
 }));
@@ -175,6 +177,8 @@ const { createCheckoutSession, handleStripeWebhook } = await import("./billing")
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
 const { publicVendorPaperwork, saveVendorPaperworkDraft } = await import("./vendorPaperwork");
+const { analyzeVendorCoi } = await import("./vendorCoiAnalysis");
+const { processDueVendorPaperworkReminders } = await import("./vendorPaperworkReminders");
 const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
 const { processDueAuctionOutbidNotifications } = await import("./auctionOutbidNotifications");
 const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
@@ -203,12 +207,14 @@ describe("notification maintenance", () => {
     expect((await handleRequest(new Request("http://localhost/api/notifications/maintenance"))).status).toBe(401);
     vi.mocked(processDueMemberRoleNotifications).mockResolvedValue({ processed: 2, sent: 1, queued: 1, superseded: 0 });
     vi.mocked(processDueAuctionOutbidNotifications).mockResolvedValue({ processed: 1, sent: 0, queued: 1 });
+    vi.mocked(processDueVendorPaperworkReminders).mockResolvedValue({ processed: 1, sent: 1, failed: 0 });
     const response = await handleRequest(new Request("http://localhost/api/notifications/maintenance", { headers: { authorization: "Bearer maintenance-secret" } }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       ok: true,
       roleNotifications: { processed: 2, sent: 1, queued: 1, superseded: 0 },
       outbidNotifications: { processed: 1, sent: 0, queued: 1 },
+      vendorPaperworkReminders: { processed: 1, sent: 1, failed: 0 },
     });
     vi.unstubAllEnvs();
   });
@@ -1081,6 +1087,19 @@ describe("vendor paperwork endpoint", () => {
     }));
     expect(response.status).toBe(200);
     expect(saveVendorPaperworkDraft).toHaveBeenCalledWith(context, "event-gala", "booking-1", draft, 201);
+  });
+
+  it("routes a manual COI analysis retry", async () => {
+    const context = {
+      userId: "user-laila", workspaceId: "workspace-school", email: "laila@beebizy.com", role: "member" as const,
+      eventScopeId: null,
+      access: { status: "beta" as const, plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(analyzeVendorCoi).mockResolvedValue({ id: "booking-1" } as never);
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/vendor-paperwork/booking-1/analyze-coi", { method: "POST" }));
+    expect(response.status).toBe(200);
+    expect(analyzeVendorCoi).toHaveBeenCalledWith(context, "event-gala", "booking-1");
   });
 });
 
