@@ -380,6 +380,120 @@ export type VendorPatch = Partial<VendorDraft>;
 export const BOOKING_STATUSES = ["pending", "confirmed", "cancelled"] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
+export const VENDOR_DOCUMENT_STATUSES = ["not-required", "waiting", "received", "approved", "needs-changes"] as const;
+export type VendorDocumentStatus = (typeof VENDOR_DOCUMENT_STATUSES)[number];
+
+export type VendorCoiAnalysisStatus = "not-run" | "ready" | "unavailable" | "failed";
+
+export interface VendorCoiAnalysis {
+  namedInsured: string | null;
+  carrier: string | null;
+  policyNumber: string | null;
+  effectiveDate: string | null;
+  expirationDate: string | null;
+  generalLiabilityCents: Cents | null;
+  additionalInsured: boolean | null;
+  confidence: "low" | "medium" | "high";
+  notes: string[];
+}
+
+/** One vendor's event-specific contract and insurance checklist. */
+export interface VendorPaperwork {
+  revision: number;
+  contractRequired: boolean;
+  contractStatus: VendorDocumentStatus;
+  contractFileUrl: string | null;
+  contractFileName: string | null;
+  contractSigningUrl: string | null;
+  signedContractUrl: string | null;
+  signedContractName: string | null;
+  signedContractUploadedAt: IsoDateTime | null;
+  coiRequired: boolean;
+  coiStatus: VendorDocumentStatus;
+  coiFileUrl: string | null;
+  coiFileName: string | null;
+  coiUploadedAt: IsoDateTime | null;
+  coiExpiresAt: IsoDateTime | null;
+  coiCoverageCents: Cents | null;
+  minimumCoverageCents: Cents | null;
+  additionalInsured: string | null;
+  instructions: string | null;
+  publicToken: string | null;
+  requestedAt: IsoDateTime | null;
+  deliveredAt: IsoDateTime | null;
+  deliveryError: string | null;
+  reminderIntervalDays: number;
+  nextReminderAt: IsoDateTime | null;
+  reminderCount: number;
+  reviewedAt: IsoDateTime | null;
+  reviewedBy: string | null;
+  coiAnalysisStatus: VendorCoiAnalysisStatus;
+  coiAnalysis: VendorCoiAnalysis | null;
+  coiAnalysisError: string | null;
+  coiAnalyzedAt: IsoDateTime | null;
+  coiAnalysisModel: string | null;
+}
+
+export interface VendorPaperworkDraft {
+  contractRequired: boolean;
+  coiRequired: boolean;
+  contractSigningUrl?: string | null;
+  minimumCoverageCents?: Cents | null;
+  additionalInsured?: string | null;
+  instructions?: string | null;
+  reminderIntervalDays?: number;
+}
+
+export interface VendorPaperworkReview {
+  contractStatus?: Extract<VendorDocumentStatus, "approved" | "needs-changes">;
+  coiStatus?: Extract<VendorDocumentStatus, "approved" | "needs-changes">;
+}
+
+export interface PublicVendorPaperwork {
+  eventTitle: string;
+  eventDate: IsoDateTime;
+  eventLocation: string | null;
+  vendorName: string;
+  organizerName: string;
+  paperwork: VendorPaperwork;
+}
+
+export const EMPTY_VENDOR_PAPERWORK: VendorPaperwork = {
+  revision: 0,
+  contractRequired: false,
+  contractStatus: "not-required",
+  contractFileUrl: null,
+  contractFileName: null,
+  contractSigningUrl: null,
+  signedContractUrl: null,
+  signedContractName: null,
+  signedContractUploadedAt: null,
+  coiRequired: false,
+  coiStatus: "not-required",
+  coiFileUrl: null,
+  coiFileName: null,
+  coiUploadedAt: null,
+  coiExpiresAt: null,
+  coiCoverageCents: null,
+  minimumCoverageCents: null,
+  additionalInsured: null,
+  instructions: null,
+  publicToken: null,
+  requestedAt: null,
+  deliveredAt: null,
+  deliveryError: null,
+  reminderIntervalDays: 3,
+  nextReminderAt: null,
+  reminderCount: 0,
+  reviewedAt: null,
+  reviewedBy: null,
+  coiAnalysisStatus: "not-run",
+  coiAnalysis: null,
+  coiAnalysisError: null,
+  coiAnalyzedAt: null,
+  coiAnalysisModel: null,
+};
+
 /** A vendor attached to a specific event. */
 export interface EventVendor {
   id: string;
@@ -389,6 +503,7 @@ export interface EventVendor {
   status: BookingStatus;
   feeCents: Cents | null;
   vendor: Vendor | null;
+  paperwork: VendorPaperwork;
   createdAt: IsoDateTime;
 }
 
@@ -801,6 +916,7 @@ export const HISTORY_RESOURCES = [
   "event",
   "registration",
   "vendor-booking",
+  "vendor-paperwork",
   "vendor-packet",
   "checklist",
   "check-in-station",

@@ -34,6 +34,7 @@ import type {
   TicketsRepository,
   VendorMessagesRepository,
   VendorEventPacketsRepository,
+  VendorPaperworkRepository,
 } from "../adapter";
 import { DataError } from "../adapter";
 import { calculateProxyBid, platformFeeCents } from "../commerce";
@@ -81,6 +82,8 @@ import type {
   EventVendor,
   EventVendorDraft,
   EventVendorPatch,
+  PublicVendorPaperwork,
+  VendorPaperworkDraft,
   Floorplan,
   FloorplanDraft,
   Location,
@@ -137,6 +140,7 @@ import type {
   PublicVolunteerSignupDraft,
   WorkspaceMember,
 } from "../entities";
+import { EMPTY_VENDOR_PAPERWORK } from "../entities";
 import { buildSeed, DEMO_OWNER_ID, type MemoryDb } from "./seed";
 import { describeHistoryChange } from "../history";
 import { buildRuleBasedSuggestions, type PastEventPlanningRecord } from "../planner";
@@ -1190,11 +1194,155 @@ const eventVendors = eventScoped<EventVendor, EventVendorDraft, EventVendorPatch
     status: draft.status ?? "pending",
     feeCents: draft.feeCents ?? null,
     vendor: store().vendors.find((v) => v.id === draft.vendorId) ?? null,
+    paperwork: { ...EMPTY_VENDOR_PAPERWORK },
     createdAt: nowIso(),
   }),
   "vendor-booking",
   (a, b) => a.createdAt.localeCompare(b.createdAt),
 );
+
+function memoryPaperworkPayload(booking: EventVendor): PublicVendorPaperwork {
+  const event = requireEvent(booking.eventId);
+  return {
+    eventTitle: event.title,
+    eventDate: event.date,
+    eventLocation: event.locationRecord?.name ?? event.location,
+    vendorName: booking.vendor?.name ?? "Vendor",
+    organizerName: "Beebizy event team",
+    paperwork: copy(booking.paperwork),
+  };
+}
+
+function memoryDocumentUrl(file: File): string {
+  return typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+    ? URL.createObjectURL(file)
+    : `memory://vendor-paperwork/${encodeURIComponent(file.name)}`;
+}
+
+const vendorPaperwork: VendorPaperworkRepository = {
+  async saveDraft(eventId, bookingId, draft: VendorPaperworkDraft, clientRevision) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.id === bookingId && row.eventId === eventId),
+      "That vendor booking no longer exists.",
+    );
+    if (clientRevision <= booking.paperwork.revision) return copy(booking);
+    booking.paperwork = {
+      ...booking.paperwork,
+      revision: clientRevision,
+      contractRequired: draft.contractRequired,
+      contractSigningUrl: draft.contractSigningUrl?.trim() || null,
+      contractStatus: draft.contractRequired
+        ? booking.paperwork.signedContractUrl ? booking.paperwork.contractStatus : "waiting"
+        : "not-required",
+      coiRequired: draft.coiRequired,
+      coiStatus: draft.coiRequired
+        ? booking.paperwork.coiFileUrl ? booking.paperwork.coiStatus : "waiting"
+        : "not-required",
+      minimumCoverageCents: draft.minimumCoverageCents ?? null,
+      additionalInsured: draft.additionalInsured?.trim() || null,
+      instructions: draft.instructions?.trim() || null,
+      reminderIntervalDays: draft.reminderIntervalDays ?? 3,
+    };
+    return copy(booking);
+  },
+  async uploadContract(eventId, bookingId, file) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.id === bookingId && row.eventId === eventId),
+      "That vendor booking no longer exists.",
+    );
+    booking.paperwork.contractFileUrl = memoryDocumentUrl(file);
+    booking.paperwork.contractFileName = file.name;
+    return copy(booking);
+  },
+  async sendRequest(eventId, bookingId) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.id === bookingId && row.eventId === eventId),
+      "That vendor booking no longer exists.",
+    );
+    if (!booking.paperwork.contractRequired && !booking.paperwork.coiRequired) {
+      throw new DataError("invalid", "Choose a contract, a certificate of insurance, or both.");
+    }
+    if (booking.paperwork.contractRequired && !booking.paperwork.contractFileUrl && !booking.paperwork.contractSigningUrl) {
+      throw new DataError("invalid", "Upload the contract or add an e-signature link before sending the request.");
+    }
+    if (!booking.vendor?.contactEmail) throw new DataError("invalid", "Add the vendor's email before sending.");
+    const sentAt = nowIso();
+    booking.paperwork.publicToken ??= crypto.randomUUID();
+    booking.paperwork.requestedAt = sentAt;
+    booking.paperwork.deliveredAt = sentAt;
+    booking.paperwork.deliveryError = null;
+    booking.paperwork.nextReminderAt = booking.paperwork.reminderIntervalDays > 0
+      ? new Date(Date.now() + booking.paperwork.reminderIntervalDays * 86_400_000).toISOString()
+      : null;
+    return copy(booking);
+  },
+  async analyzeCoi(eventId, bookingId) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.id === bookingId && row.eventId === eventId),
+      "That vendor booking no longer exists.",
+    );
+    if (!booking.paperwork.coiFileUrl) throw new DataError("conflict", "The vendor has not uploaded a certificate of insurance yet.");
+    booking.paperwork.coiAnalysisStatus = "unavailable";
+    booking.paperwork.coiAnalysisError = "OpenAI document review is not configured.";
+    return copy(booking);
+  },
+  async review(eventId, bookingId, review) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.id === bookingId && row.eventId === eventId),
+      "That vendor booking no longer exists.",
+    );
+    if (review.contractStatus) booking.paperwork.contractStatus = review.contractStatus;
+    if (review.coiStatus) booking.paperwork.coiStatus = review.coiStatus;
+    booking.paperwork.reviewedAt = nowIso();
+    booking.paperwork.reviewedBy = "demo@beebizy.com";
+    const complete = (!booking.paperwork.contractRequired || booking.paperwork.contractStatus === "approved") &&
+      (!booking.paperwork.coiRequired || booking.paperwork.coiStatus === "approved");
+    if (complete) booking.paperwork.nextReminderAt = null;
+    return copy(booking);
+  },
+  async getPublic(token) {
+    await wait();
+    const booking = store().eventVendors.find((row) => row.paperwork.publicToken === token);
+    return booking ? memoryPaperworkPayload(booking) : null;
+  },
+  async uploadPublic(token, kind, file, details) {
+    await wait();
+    const booking = required(
+      store().eventVendors.find((row) => row.paperwork.publicToken === token),
+      "This paperwork link is no longer active.",
+    );
+    const uploadedAt = nowIso();
+    if (kind === "contract") {
+      booking.paperwork.signedContractUrl = memoryDocumentUrl(file);
+      booking.paperwork.signedContractName = file.name;
+      booking.paperwork.signedContractUploadedAt = uploadedAt;
+      booking.paperwork.contractStatus = "received";
+    } else {
+      booking.paperwork.coiFileUrl = memoryDocumentUrl(file);
+      booking.paperwork.coiFileName = file.name;
+      booking.paperwork.coiUploadedAt = uploadedAt;
+      booking.paperwork.coiExpiresAt = details?.expiresAt ?? null;
+      booking.paperwork.coiCoverageCents = details?.coverageCents ?? null;
+      booking.paperwork.coiAnalysisStatus = "unavailable";
+      booking.paperwork.coiAnalysisError = "OpenAI document review is not configured.";
+      const expired = details?.expiresAt
+        ? new Date(details.expiresAt).getTime() < new Date(requireEvent(booking.eventId).date).getTime()
+        : false;
+      const underinsured = booking.paperwork.minimumCoverageCents !== null &&
+        (details?.coverageCents ?? 0) < booking.paperwork.minimumCoverageCents;
+      booking.paperwork.coiStatus = expired || underinsured ? "needs-changes" : "received";
+    }
+    const allReceived = (!booking.paperwork.contractRequired || Boolean(booking.paperwork.signedContractUrl)) &&
+      (!booking.paperwork.coiRequired || Boolean(booking.paperwork.coiFileUrl));
+    if (allReceived) booking.paperwork.nextReminderAt = null;
+    return memoryPaperworkPayload(booking);
+  },
+};
 
 const checklist = eventScoped<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>(
   () => store().checklist,
@@ -2910,6 +3058,7 @@ export const memoryAdapter: DataAdapter = {
   vendors,
   vendorMessages,
   vendorEventPackets,
+  vendorPaperwork,
   eventVendors,
   checklist,
   runOfShow,

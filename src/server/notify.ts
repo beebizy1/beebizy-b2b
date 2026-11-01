@@ -233,6 +233,87 @@ export async function notifyVendorEventPacket(input: {
   });
 }
 
+/** One private link where a vendor can finish every requested document without an account. */
+export async function notifyVendorPaperworkRequest(input: {
+  requestId: string;
+  to: string;
+  vendorName: string;
+  organizerName: string;
+  replyTo: string | null;
+  eventTitle: string;
+  needsContract: boolean;
+  needsCoi: boolean;
+  url: string;
+}): Promise<EmailOutcome> {
+  const requested = [
+    input.needsContract ? "signed contract" : null,
+    input.needsCoi ? "certificate of insurance" : null,
+  ].filter(Boolean).join(" and ");
+  const title = `Paperwork requested for ${input.eventTitle}`;
+  return sendEmail({
+    to: input.to,
+    fromName: input.organizerName,
+    replyTo: input.replyTo,
+    idempotencyKey: `vendor-paperwork-${input.requestId}`,
+    subject: title,
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      `${input.organizerName} needs your ${requested} for ${input.eventTitle}.`,
+      "Open the secure link below. You do not need a Beebizy account.",
+      "",
+      input.url,
+    ].join("\n"),
+    html: brandedEmail({
+      title,
+      greeting: `Hi ${input.vendorName},`,
+      paragraphs: [
+        `${input.organizerName} needs your ${requested}.`,
+        "Open the link, upload the requested files, and you are done. No account is needed.",
+      ],
+      details: [["Event", input.eventTitle], ["Requested", requested]],
+      action: { label: "Upload paperwork", url: input.url },
+    }),
+  });
+}
+
+export async function notifyVendorPaperworkReminder(input: {
+  bookingId: string;
+  reminderNumber: number;
+  to: string;
+  vendorName: string;
+  organizerName: string;
+  replyTo: string | null;
+  eventTitle: string;
+  missing: string[];
+  url: string;
+}): Promise<EmailOutcome> {
+  const title = `Reminder: paperwork needed for ${input.eventTitle}`;
+  const missing = input.missing.join(" and ");
+  return sendEmail({
+    to: input.to,
+    fromName: input.organizerName,
+    replyTo: input.replyTo,
+    idempotencyKey: `vendor-paperwork-reminder-${input.bookingId}-${input.reminderNumber}`,
+    subject: title,
+    text: [
+      `Hi ${input.vendorName},`,
+      "",
+      `${input.organizerName} is still waiting for your ${missing}.`,
+      "Use the same private link below. No account is needed.",
+      "",
+      input.url,
+    ].join("\n"),
+    html: brandedEmail({
+      title,
+      greeting: `Hi ${input.vendorName},`,
+      paragraphs: [`${input.organizerName} is still waiting for your ${missing}.`, "Use the same private link to finish in one place."],
+      details: [["Event", input.eventTitle], ["Still needed", missing]],
+      action: { label: "Finish paperwork", url: input.url },
+    }),
+  });
+}
+
 /** Sends one receipt after a free registration or confirmed Stripe payment. */
 export async function notifyTicketOrderConfirmation(input: {
   orderId: string;

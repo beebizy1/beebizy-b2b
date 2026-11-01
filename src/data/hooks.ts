@@ -44,6 +44,8 @@ import type {
   EventRoi,
   EventVendorDraft,
   EventVendorPatch,
+  VendorPaperworkDraft,
+  VendorPaperworkReview,
   Floorplan,
   OpenTask,
   ProductFeedbackDraft,
@@ -128,6 +130,7 @@ export const qk = {
   vendors: ["vendors"] as const,
   vendor: (id: string) => ["vendors", "detail", id] as const,
   vendorThread: (vendorId: string) => ["vendors", "thread", vendorId] as const,
+  publicVendorPaperwork: (token: string) => ["vendors", "paperwork", "public", token] as const,
 
   eventVendors: (eventId: string) => ["eventVendors", eventId] as const,
   checkInStations: (eventId: string) => ["checkInStations", eventId] as const,
@@ -626,6 +629,65 @@ export function useSendVendorEventPacket() {
   return useAdapterMutation(
     (a, vars: { eventId: string; draft: VendorEventPacketDraft }) => a.vendorEventPackets.send(vars.eventId, vars.draft),
     (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId), qk.vendors],
+  );
+}
+
+export function useSaveVendorPaperworkDraft() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; bookingId: string; draft: VendorPaperworkDraft; clientRevision: number }) =>
+      a.vendorPaperwork.saveDraft(vars.eventId, vars.bookingId, vars.draft, vars.clientRevision),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useUploadVendorContract() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; bookingId: string; file: File }) =>
+      a.vendorPaperwork.uploadContract(vars.eventId, vars.bookingId, vars.file),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useSendVendorPaperworkRequest() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; bookingId: string }) =>
+      a.vendorPaperwork.sendRequest(vars.eventId, vars.bookingId),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId), qk.vendors],
+  );
+}
+
+export function useAnalyzeVendorCoi() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; bookingId: string }) =>
+      a.vendorPaperwork.analyzeCoi(vars.eventId, vars.bookingId),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function useReviewVendorPaperwork() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; bookingId: string; review: VendorPaperworkReview }) =>
+      a.vendorPaperwork.review(vars.eventId, vars.bookingId, vars.review),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId)],
+  );
+}
+
+export function usePublicVendorPaperwork(token: string) {
+  return useAdapterQuery(
+    qk.publicVendorPaperwork(token),
+    (a) => a.vendorPaperwork.getPublic(token),
+    { enabled: !!token },
+  );
+}
+
+export function useUploadPublicVendorPaperwork() {
+  return useAdapterMutation(
+    (a, vars: { token: string; kind: "contract" | "coi"; file: File; expiresAt?: string | null; coverageCents?: number | null }) =>
+      a.vendorPaperwork.uploadPublic(vars.token, vars.kind, vars.file, {
+        expiresAt: vars.expiresAt,
+        coverageCents: vars.coverageCents,
+      }),
+    (vars) => [qk.publicVendorPaperwork(vars.token)],
   );
 }
 

@@ -34,13 +34,15 @@ import {
   useVendors,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
-import { BOOKING_STATUSES, type BookingStatus, type Event } from "@/data/entities";
+import { BOOKING_STATUSES, type BookingStatus, type Event, type EventVendor } from "@/data/entities";
 import VendorCsvImportDialog from "@/screens/vendors/VendorCsvImportDialog";
 import VendorEventPacketDialog from "./VendorEventPacketDialog";
+import VendorPaperworkDialog from "./VendorPaperworkDialog";
 
 const COURSES = ["Breakfast", "Starter", "Main", "Dessert", "Lunch", "Canapés", "Drinks", "Other"];
 
 function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingId: string } & {
+  booking: EventVendor;
   name: string;
   category: string;
   vendorId: string;
@@ -153,6 +155,8 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
         </Link>
       </Button>
 
+      <VendorPaperworkDialog eventId={eventId} booking={props.booking} />
+
       <Button
         variant="outline"
         size="sm"
@@ -260,6 +264,7 @@ export function VendorsPanel({ event }: { event: Event }) {
               key={booking.id}
               eventId={event.id}
               bookingId={booking.id}
+              booking={booking}
               vendorId={booking.vendorId}
               name={booking.vendor?.name ?? "Removed vendor"}
               category={booking.vendor?.category ?? "—"}

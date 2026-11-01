@@ -875,6 +875,69 @@ describe("locations", () => {
   });
 });
 
+describe("vendor paperwork", () => {
+  it("autosaves with revision fencing and completes the no-login upload flow", async () => {
+    const booking = (await memoryAdapter.eventVendors.list("evt-gala")).find((row) => row.vendorId === "ven-goldengate")!;
+    const contract = new File(["contract"], "venue-contract.pdf", { type: "application/pdf" });
+
+    await memoryAdapter.vendorPaperwork.saveDraft("evt-gala", booking.id, {
+      contractRequired: true,
+      coiRequired: true,
+      minimumCoverageCents: 100_000_000,
+      additionalInsured: "Beebizy Demo School",
+      instructions: "Upload both files here.",
+    }, 200);
+    await memoryAdapter.vendorPaperwork.saveDraft("evt-gala", booking.id, {
+      contractRequired: false,
+      coiRequired: false,
+    }, 199);
+
+    const fenced = (await memoryAdapter.eventVendors.list("evt-gala")).find((row) => row.id === booking.id)!;
+    expect(fenced.paperwork).toMatchObject({ revision: 200, contractRequired: true, coiRequired: true });
+
+    await memoryAdapter.vendorPaperwork.uploadContract("evt-gala", booking.id, contract);
+    const sent = await memoryAdapter.vendorPaperwork.sendRequest("evt-gala", booking.id);
+    expect(sent.paperwork.publicToken).toBeTruthy();
+    expect(sent.paperwork.deliveredAt).toBeTruthy();
+
+    const token = sent.paperwork.publicToken!;
+    await memoryAdapter.vendorPaperwork.uploadPublic(token, "contract", new File(["signed"], "signed.pdf", { type: "application/pdf" }));
+    const underinsured = await memoryAdapter.vendorPaperwork.uploadPublic(
+      token,
+      "coi",
+      new File(["insurance"], "coi.pdf", { type: "application/pdf" }),
+      { expiresAt: new Date(Date.now() + 86_400_000).toISOString(), coverageCents: 50_000_000 },
+    );
+    expect(underinsured.paperwork.contractStatus).toBe("received");
+    expect(underinsured.paperwork.coiStatus).toBe("needs-changes");
+
+    const approved = await memoryAdapter.vendorPaperwork.review("evt-gala", booking.id, {
+      contractStatus: "approved",
+      coiStatus: "approved",
+    });
+    expect(approved.paperwork).toMatchObject({ contractStatus: "approved", coiStatus: "approved" });
+  });
+
+  it("does not send an empty request", async () => {
+    const booking = (await memoryAdapter.eventVendors.list("evt-gala"))[0]!;
+    await expect(memoryAdapter.vendorPaperwork.sendRequest("evt-gala", booking.id)).rejects.toThrow(/choose a contract/i);
+  });
+
+  it("accepts an external e-signature link and schedules reminders without a contract upload", async () => {
+    const booking = (await memoryAdapter.eventVendors.list("evt-gala"))[0]!;
+    await memoryAdapter.vendorPaperwork.saveDraft("evt-gala", booking.id, {
+      contractRequired: true,
+      coiRequired: false,
+      contractSigningUrl: "https://demo.docusign.net/signing/example",
+      reminderIntervalDays: 7,
+    }, 500);
+    const sent = await memoryAdapter.vendorPaperwork.sendRequest("evt-gala", booking.id);
+    expect(sent.paperwork.contractSigningUrl).toContain("docusign.net");
+    expect(sent.paperwork.nextReminderAt).toBeTruthy();
+    expect(sent.paperwork.reminderIntervalDays).toBe(7);
+  });
+});
+
 describe("analytics", () => {
   it("computes portfolio totals from one pass, not a query per event", async () => {
     const portfolio = await memoryAdapter.analytics.portfolio();

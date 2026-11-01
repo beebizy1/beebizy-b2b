@@ -67,6 +67,7 @@ import type {
   PublicRegistrationResult,
   PublicRfpPayload,
   PublicVendorConversation,
+  PublicVendorPaperwork,
   RaffleItem,
   RaffleTicket,
   Registration,
@@ -218,9 +219,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     }
     return payload as T;
   };
-  const publicUpload = async <T>(path: string, file: File): Promise<T> => {
+  const publicUpload = async <T>(path: string, file: File, fields?: Record<string, string>): Promise<T> => {
     const form = new FormData();
     form.set("file", file);
+    for (const [key, value] of Object.entries(fields ?? {})) form.set(key, value);
     let response: Response;
     try {
       response = await fetch(`${options.baseUrl ?? "/api"}${path}`, { method: "POST", body: form });
@@ -427,6 +429,37 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     vendorEventPackets: {
       send: (eventId, draft) => client.post<VendorEventPacketResult>(`/events/${eventId}/vendor-packets`, draft),
+    },
+
+    vendorPaperwork: {
+      saveDraft: (eventId, bookingId, draft, clientRevision) =>
+        client.put<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}`, { draft, clientRevision }),
+      uploadContract: (eventId, bookingId, file) => {
+        const form = new FormData();
+        form.set("file", file);
+        return client.upload<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/contract`, form);
+      },
+      sendRequest: (eventId, bookingId) =>
+        client.post<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/send`),
+      analyzeCoi: (eventId, bookingId) =>
+        client.post<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/analyze-coi`),
+      review: (eventId, bookingId, review) =>
+        client.patch<EventVendor>(`/events/${eventId}/vendor-paperwork/${bookingId}/review`, review),
+      getPublic: async (token) => {
+        try {
+          return await publicRequest<PublicVendorPaperwork>(`/public/vendor-paperwork/${token}`);
+        } catch (error) {
+          if (error instanceof DataError && error.code === "not-found") return null;
+          throw error;
+        }
+      },
+      uploadPublic: (token, kind, file, details) =>
+        publicUpload<PublicVendorPaperwork>(`/public/vendor-paperwork/${token}/${kind}`, file, {
+          ...(details?.expiresAt ? { expiresAt: details.expiresAt } : {}),
+          ...(details?.coverageCents !== null && details?.coverageCents !== undefined
+            ? { coverageCents: String(details.coverageCents) }
+            : {}),
+        }),
     },
 
     eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],

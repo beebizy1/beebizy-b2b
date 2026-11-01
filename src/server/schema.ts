@@ -36,7 +36,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { DEFAULT_FEEDBACK_CATEGORY, DEPOSIT_STATUSES, FEEDBACK_CATEGORIES, VOLUNTEER_STATUSES } from "../data/entities.ts";
-import type { AuctionPageSettings, ImportedSpreadsheetField, RfpSpaceRequirement } from "../data/entities.ts";
+import type { AuctionPageSettings, ImportedSpreadsheetField, RfpSpaceRequirement, VendorCoiAnalysis } from "../data/entities.ts";
 import { SOLO_LIMITS } from "../data/plans.ts";
 import { WORKSPACE_SUBSCRIPTION_STATUSES } from "../data/workspaceAccess.ts";
 import type { RegistrationPageSettings } from "../data/registrationPage.ts";
@@ -548,6 +548,39 @@ export const eventVendors = pgTable(
     status: bookingStatus("status").notNull().default("pending"),
     feeCents: bigint("fee_cents", { mode: "number" }),
     notes: text("notes"),
+    paperworkRevision: bigint("paperwork_revision", { mode: "number" }).notNull().default(0),
+    contractRequired: boolean("contract_required").notNull().default(false),
+    contractStatus: text("contract_status").notNull().default("not-required"),
+    contractFileUrl: text("contract_file_url"),
+    contractFileName: text("contract_file_name"),
+    contractSigningUrl: text("contract_signing_url"),
+    signedContractUrl: text("signed_contract_url"),
+    signedContractName: text("signed_contract_name"),
+    signedContractUploadedAt: timestamp("signed_contract_uploaded_at", { withTimezone: true }),
+    coiRequired: boolean("coi_required").notNull().default(false),
+    coiStatus: text("coi_status").notNull().default("not-required"),
+    coiFileUrl: text("coi_file_url"),
+    coiFileName: text("coi_file_name"),
+    coiUploadedAt: timestamp("coi_uploaded_at", { withTimezone: true }),
+    coiExpiresAt: timestamp("coi_expires_at", { withTimezone: true }),
+    coiCoverageCents: bigint("coi_coverage_cents", { mode: "number" }),
+    minimumCoverageCents: bigint("minimum_coverage_cents", { mode: "number" }),
+    additionalInsured: text("additional_insured"),
+    paperworkInstructions: text("paperwork_instructions"),
+    paperworkPublicToken: text("paperwork_public_token").unique(),
+    paperworkRequestedAt: timestamp("paperwork_requested_at", { withTimezone: true }),
+    paperworkDeliveredAt: timestamp("paperwork_delivered_at", { withTimezone: true }),
+    paperworkDeliveryError: text("paperwork_delivery_error"),
+    paperworkReminderIntervalDays: integer("paperwork_reminder_interval_days").notNull().default(3),
+    paperworkNextReminderAt: timestamp("paperwork_next_reminder_at", { withTimezone: true }),
+    paperworkReminderCount: integer("paperwork_reminder_count").notNull().default(0),
+    paperworkReviewedAt: timestamp("paperwork_reviewed_at", { withTimezone: true }),
+    paperworkReviewedBy: text("paperwork_reviewed_by"),
+    coiAnalysisStatus: text("coi_analysis_status").notNull().default("not-run"),
+    coiAnalysis: jsonb("coi_analysis").$type<VendorCoiAnalysis>(),
+    coiAnalysisError: text("coi_analysis_error"),
+    coiAnalyzedAt: timestamp("coi_analyzed_at", { withTimezone: true }),
+    coiAnalysisModel: text("coi_analysis_model"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
