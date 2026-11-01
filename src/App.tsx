@@ -77,6 +77,7 @@ import PublicAssignment from "@/screens/public/PublicAssignment";
 import PublicCheckIn from "@/screens/public/PublicCheckIn";
 import PublicRfp from "@/screens/public/PublicRfp";
 import PublicVendorConversation from "@/screens/public/PublicVendorConversation";
+import PublicVendorPaperwork from "@/screens/public/PublicVendorPaperwork";
 import PublicAttendanceDashboard from "@/screens/public/PublicAttendanceDashboard";
 import PublicFloorplan from "@/screens/public/PublicFloorplan";
 import { isDemoSession } from "@/app/demo";
@@ -219,6 +220,7 @@ function Routes() {
       <Route path="/floorplan/:token">{(params) => <PublicFloorplan token={params.token} />}</Route>
       <Route path="/rfp/:token">{(params) => <PublicRfp token={params.token} />}</Route>
       <Route path="/vendor-conversation/:token">{(params) => <PublicVendorConversation token={params.token} />}</Route>
+      <Route path="/vendor-paperwork/:token">{(params) => <PublicVendorPaperwork token={params.token} />}</Route>
 
       {/*
         Legacy links from the previous route layout, plus the two this rebuild moved when

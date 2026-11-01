@@ -6,15 +6,16 @@
 
 import { describe, expect, it } from "vitest";
 import { buildAttention, computeEventHealth, daysUntil, describeWhen, fundraisingCents, ticketRevenueCents } from "./derive";
-import type {
-  AuctionItem,
-  BudgetItem,
-  ChecklistItem,
-  Event,
-  EventVendor,
-  RaffleItem,
-  Sponsorship,
-  TicketType,
+import {
+  EMPTY_VENDOR_PAPERWORK,
+  type AuctionItem,
+  type BudgetItem,
+  type ChecklistItem,
+  type Event,
+  type EventVendor,
+  type RaffleItem,
+  type Sponsorship,
+  type TicketType,
 } from "./entities";
 import { DEFAULT_REGISTRATION_PAGE } from "./registrationPage";
 
@@ -74,6 +75,7 @@ function booking(status: EventVendor["status"], category: string): EventVendor {
     notes: null,
     status,
     feeCents: 100_000,
+    paperwork: { ...EMPTY_VENDOR_PAPERWORK },
     vendor: {
       id: `ven-${category}`,
       ownerId: "owner",

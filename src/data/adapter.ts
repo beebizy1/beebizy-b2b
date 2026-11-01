@@ -109,6 +109,7 @@ import type {
   RfpPatch,
   PublicRfpPayload,
   PublicVendorConversation,
+  PublicVendorPaperwork,
   RfpResponse,
   RfpResponseDraft,
   RfpResponseStatus,
@@ -154,6 +155,8 @@ import type {
   VendorDraft,
   VendorMessage,
   VendorMessageDraft,
+  VendorPaperworkDraft,
+  VendorPaperworkReview,
   VendorPatch,
   VolunteerShift,
   VolunteerShiftDraft,
@@ -248,6 +251,21 @@ export interface VendorMessagesRepository {
 
 export interface VendorEventPacketsRepository {
   send(eventId: string, draft: VendorEventPacketDraft): Promise<VendorEventPacketResult>;
+}
+
+export interface VendorPaperworkRepository {
+  /** Revision-fenced autosave. A stale browser response cannot overwrite newer work. */
+  saveDraft(eventId: string, bookingId: string, draft: VendorPaperworkDraft, clientRevision: number): Promise<EventVendor>;
+  uploadContract(eventId: string, bookingId: string, file: File): Promise<EventVendor>;
+  sendRequest(eventId: string, bookingId: string): Promise<EventVendor>;
+  review(eventId: string, bookingId: string, review: VendorPaperworkReview): Promise<EventVendor>;
+  getPublic(token: string): Promise<PublicVendorPaperwork | null>;
+  uploadPublic(
+    token: string,
+    kind: "contract" | "coi",
+    file: File,
+    details?: { expiresAt?: string | null; coverageCents?: number | null },
+  ): Promise<PublicVendorPaperwork>;
 }
 
 export interface RaffleRepository extends EventScopedRepository<RaffleItem, RaffleItemDraft, RaffleItemPatch> {
@@ -544,6 +562,7 @@ export interface DataAdapter {
   vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch>;
   vendorMessages: VendorMessagesRepository;
   vendorEventPackets: VendorEventPacketsRepository;
+  vendorPaperwork: VendorPaperworkRepository;
   eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: RunOfShowRepository;

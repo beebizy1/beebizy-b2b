@@ -52,6 +52,14 @@ import {
 } from "../src/server/commercePayments.ts";
 import { listTicketInvitations, openTicketInvitation, sendTicketInvitations } from "../src/server/ticketInvitations.ts";
 import { sendVendorEventPackets } from "../src/server/vendorEventPackets.ts";
+import {
+  publicVendorPaperwork,
+  reviewVendorPaperwork,
+  savePublicVendorPaperworkUpload,
+  saveVendorContractFile,
+  saveVendorPaperworkDraft,
+  sendVendorPaperworkRequest,
+} from "../src/server/vendorPaperwork.ts";
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
@@ -544,6 +552,45 @@ async function handlePublic(segments: string[], method: string, request: Request
     }
   }
 
+  if (segments[0] === "public" && segments[1] === "vendor-paperwork" && segments[2]) {
+    if (method === "GET" && segments.length === 3) {
+      const paperwork = await publicVendorPaperwork(segments[2]);
+      return paperwork ? json(paperwork) : json({ error: "This paperwork link is no longer active." }, 404);
+    }
+    if (method === "POST" && (segments[3] === "contract" || segments[3] === "coi") && segments.length === 4) {
+      if (!await publicVendorPaperwork(segments[2])) return json({ error: "This paperwork link is no longer active." }, 404);
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Document storage is not configured yet.");
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(400, "Choose a document to upload.");
+      if (file.size > 20_000_000) throw new HttpError(400, "Choose a document smaller than 20 MB.");
+      const allowed = file.type === "application/pdf" || file.type.startsWith("image/") ||
+        file.type === "application/msword" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      if (!allowed) throw new HttpError(400, "Choose a PDF, image, or Word document.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || `${segments[3]}-document`;
+      const blob = await put(`vendor-paperwork/public/${segments[2]}/${segments[3]}/${safeName}`, file, {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: file.type || "application/octet-stream",
+      });
+      const expiresAtValue = form.get("expiresAt");
+      const coverageValue = form.get("coverageCents");
+      const expiresAt = typeof expiresAtValue === "string" && expiresAtValue
+        ? z.string().datetime().transform((value) => new Date(value)).parse(expiresAtValue)
+        : null;
+      const coverageCents = typeof coverageValue === "string" && coverageValue
+        ? z.coerce.number().int().min(0).max(100_000_000_000).parse(coverageValue)
+        : null;
+      return json(await savePublicVendorPaperworkUpload(
+        segments[2],
+        segments[3],
+        { url: blob.url, name: file.name.slice(0, 200) },
+        { expiresAt, coverageCents },
+      ));
+    }
+    return json({ error: "Method not allowed" }, 405);
+  }
+
   return null;
 }
 
@@ -635,7 +682,8 @@ async function handleAuthed(
   url: URL,
 ): Promise<Response> {
   const [resource, a, b, c] = segments;
-  const body = resource === "uploads" ? {} : await readBody(request);
+  const isMultipart = request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") ?? false;
+  const body = resource === "uploads" || isMultipart ? {} : await readBody(request);
   requireScopedRoute(ctx, segments, method, body, url);
 
   switch (resource) {
@@ -1020,6 +1068,51 @@ async function handleAuthed(
             path: ["vendorIds"],
           }).parse(body);
           return json(await sendVendorEventPackets(ctx, a, input), 201);
+        }
+        if (b === "vendor-paperwork" && c) {
+          requireCapability(ctx, "vendorManagement");
+          const action = segments[4];
+          if (!action && method === "PUT") {
+            const input = z.object({
+              clientRevision: z.number().int().positive(),
+              draft: z.object({
+                contractRequired: z.boolean(),
+                coiRequired: z.boolean(),
+                minimumCoverageCents: z.number().int().min(0).max(100_000_000_000).nullable().optional(),
+                additionalInsured: z.string().trim().max(1_000).nullable().optional(),
+                instructions: z.string().trim().max(3_000).nullable().optional(),
+              }),
+            }).parse(body);
+            return json(await saveVendorPaperworkDraft(ctx, a, c, input.draft, input.clientRevision));
+          }
+          if (action === "contract" && method === "POST") {
+            if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "Document storage is not configured yet.");
+            const form = await request.formData();
+            const file = form.get("file");
+            if (!(file instanceof File)) throw new HttpError(400, "Choose a contract to upload.");
+            if (file.size > 20_000_000) throw new HttpError(400, "Choose a contract smaller than 20 MB.");
+            const allowed = file.type === "application/pdf" || file.type.startsWith("image/") ||
+              file.type === "application/msword" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            if (!allowed) throw new HttpError(400, "Choose a PDF, image, or Word document.");
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "contract";
+            const blob = await put(`vendor-paperwork/${ctx.workspaceId}/${a}/${c}/${safeName}`, file, {
+              access: "public",
+              addRandomSuffix: true,
+              contentType: file.type || "application/octet-stream",
+            });
+            return json(await saveVendorContractFile(ctx, a, c, { url: blob.url, name: file.name.slice(0, 200) }));
+          }
+          if (action === "send" && method === "POST") {
+            return json(await sendVendorPaperworkRequest(ctx, a, c));
+          }
+          if (action === "review" && method === "PATCH") {
+            const review = z.object({
+              contractStatus: z.enum(["approved", "needs-changes"]).optional(),
+              coiStatus: z.enum(["approved", "needs-changes"]).optional(),
+            }).refine((value) => value.contractStatus || value.coiStatus, "Choose at least one document to review.").parse(body);
+            return json(await reviewVendorPaperwork(ctx, a, c, review));
+          }
+          return notFound();
         }
         if (b === "rfps") {
           requireCapability(ctx, "vendorManagement");

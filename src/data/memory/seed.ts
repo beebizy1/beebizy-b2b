@@ -47,6 +47,7 @@ import type {
   VolunteerNeed,
   VolunteerShift,
 } from "../entities";
+import { EMPTY_VENDOR_PAPERWORK } from "../entities";
 import { DEFAULT_REGISTRATION_PAGE } from "../registrationPage";
 import { DEFAULT_USER_SETTINGS } from "../entities";
 
@@ -756,6 +757,7 @@ export function buildSeed(): MemoryDb {
       status,
       feeCents,
       vendor: vendorById.get(vendorId) ?? null,
+      paperwork: { ...EMPTY_VENDOR_PAPERWORK },
       createdAt: at(-30 + evSeq),
     };
   };

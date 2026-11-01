@@ -112,6 +112,14 @@ vi.mock("./ticketInvitations", () => ({
 vi.mock("./vendorEventPackets", () => ({
   sendVendorEventPackets: vi.fn(),
 }));
+vi.mock("./vendorPaperwork", () => ({
+  publicVendorPaperwork: vi.fn(),
+  reviewVendorPaperwork: vi.fn(),
+  savePublicVendorPaperworkUpload: vi.fn(),
+  saveVendorContractFile: vi.fn(),
+  saveVendorPaperworkDraft: vi.fn(),
+  sendVendorPaperworkRequest: vi.fn(),
+}));
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
 }));
@@ -166,6 +174,7 @@ const { deposits, vendorPaymentPlans, feedback, events, registrations, members, 
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
+const { publicVendorPaperwork, saveVendorPaperworkDraft } = await import("./vendorPaperwork");
 const { processDueMemberRoleNotifications } = await import("./memberRoleNotifications");
 const { processDueAuctionOutbidNotifications } = await import("./auctionOutbidNotifications");
 const { generateRegistrationCopy, generatePostEventCopy } = await import("./eventCopy");
@@ -526,6 +535,15 @@ describe("private vendor links", () => {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Confirmed" }),
     }))).status).toBe(201);
     expect(publicVendorReply).toHaveBeenCalledWith("private-token", { content: "Confirmed" });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("opens a token-scoped paperwork checklist without a login", async () => {
+    vi.mocked(authorize).mockClear();
+    vi.mocked(publicVendorPaperwork).mockResolvedValue({ vendorName: "Venue" } as never);
+    const response = await handleRequest(new Request("http://localhost/api/public/vendor-paperwork/private-token"));
+    expect(response.status).toBe(200);
+    expect(publicVendorPaperwork).toHaveBeenCalledWith("private-token");
     expect(authorize).not.toHaveBeenCalled();
   });
 });
@@ -1043,6 +1061,26 @@ describe("vendor event packet endpoint", () => {
     }));
     expect(response.status).toBe(400);
     expect(sendVendorEventPackets).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("vendor paperwork endpoint", () => {
+  it("validates and revision-fences the planner's autosaved request", async () => {
+    const context = {
+      userId: "user-laila", workspaceId: "workspace-school", email: "laila@beebizy.com", role: "member" as const,
+      eventScopeId: null,
+      access: { status: "beta" as const, plan: null, betaStartedAt: "2026-09-01T00:00:00.000Z", betaEndsAt: "2026-12-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(saveVendorPaperworkDraft).mockResolvedValue({ id: "booking-1" } as never);
+    const draft = { contractRequired: true, coiRequired: true, minimumCoverageCents: 100_000_000, additionalInsured: "School", instructions: "Upload both." };
+    const response = await handleRequest(new Request("http://localhost/api/events/event-gala/vendor-paperwork/booking-1", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientRevision: 201, draft }),
+    }));
+    expect(response.status).toBe(200);
+    expect(saveVendorPaperworkDraft).toHaveBeenCalledWith(context, "event-gala", "booking-1", draft, 201);
   });
 });
 
