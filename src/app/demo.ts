@@ -5,7 +5,9 @@ export function startDemoSession(): void {
 }
 
 export function isDemoSession(): boolean {
-  return typeof window !== "undefined" && window.sessionStorage.getItem(DEMO_SESSION_KEY) === "true";
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(DEMO_SESSION_KEY) === "true" ||
+    (import.meta.env.DEV && new URLSearchParams(window.location.search).get("demo") === "1");
 }
 
 export function endDemoSession(): void {

@@ -1,265 +1,102 @@
-/**
- * Overview: the whole event on one screen, without editing anything.
- *
- * Readiness is broken into the dimensions that produced it, because a 62% that hides
- * "vendors are fine, checklist is behind" is a number nobody can act on.
- */
+/** Event overview shaped like an operating brief: status first, then the next work and schedule. */
 
 import { Link } from "wouter";
-import { CheckSquare, Clock, Coins, History, Store, Ticket, Users } from "lucide-react";
-import {
-  EmptyState,
-  KeyValue,
-  LoadingRows,
-  Meter,
-  Panel,
-  PanelHeader,
-  Pill,
-} from "@/components/primitives";
-import { Button } from "@/components/ui/button";
-import { useBudget, useChecklist, useEventHistory, useEventVendors, useRunOfShow, useSponsorships, useTickets } from "@/data/hooks";
-import { formatMoney, sumCents } from "@/data/money";
-import { eventSectionHref } from "@/app/shell/nav";
+import { ArrowRight, CheckSquare, ChevronRight, ClipboardList, Clock, Store, Users } from "lucide-react";
+import { EmptyState, LoadingRows, Panel, ReadinessRing } from "@/components/primitives";
+import { useChecklist, useEventVendors, useRunOfShow } from "@/data/hooks";
+import { eventTabHref } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { formatClockTime } from "@/lib/datetime";
-import { usePreferences } from "@/app/preferences";
-import { eventDayCount } from "@/data/eventDays";
 
 export default function OverviewSection({ event, health }: { event: Event; health: EventHealth | null | undefined }) {
-  const { timeZone } = usePreferences(event.timeZone);
   const { data: checklist, isLoading: checklistLoading } = useChecklist(event.id);
   const { data: vendors } = useEventVendors(event.id);
-  const { data: budget } = useBudget(event.id);
-  const { data: tickets } = useTickets(event.id);
-  const { data: sponsorships } = useSponsorships(event.id);
   const { data: runOfShow, isLoading: rosLoading } = useRunOfShow(event.id);
-  const { data: history, isLoading: historyLoading } = useEventHistory(event.id);
-  const dayCount = Math.max(
-    eventDayCount(event.date, event.endDate, timeZone),
-    ...(runOfShow ?? []).map((cue) => cue.dayNumber),
-  );
-
-  const expenses = (budget ?? []).filter((item) => item.type === "expense");
-  const revenue = (budget ?? []).filter((item) => item.type === "revenue");
-  const plannedSpend = sumCents(expenses.map((item) => item.estimatedCents));
-  const actualSpend = sumCents(expenses.map((item) => item.actualCents));
-  const plannedRevenue = sumCents(revenue.map((item) => item.estimatedCents));
-  const ticketRevenue = sumCents((tickets ?? []).map((t) => t.priceCents * t.quantitySold));
-  const confirmedSponsorship = sumCents(
-    (sponsorships ?? []).filter((s) => s.status === "confirmed").map((s) => s.amountCents),
-  );
-
-  const openByCategory = new Map<string, number>();
-  for (const item of checklist ?? []) {
-    if (item.completed) continue;
-    openByCategory.set(item.category, (openByCategory.get(item.category) ?? 0) + 1);
-  }
-  const openCategories = [...openByCategory.entries()].sort((a, b) => b[1] - a[1]);
+  const confirmedVendors = (vendors ?? []).filter((vendor) => vendor.status === "confirmed").length;
+  const openTasks = (checklist ?? []).filter((item) => !item.completed).slice(0, 5);
+  const upcomingCues = [...(runOfShow ?? [])]
+    .sort((a, b) => a.dayNumber - b.dayNumber || a.startTime.localeCompare(b.startTime))
+    .slice(0, 5);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-      <div className="space-y-6">
-        <Panel>
-          <PanelHeader
-            title="Readiness breakdown"
-            description="What the score is made of, so you can see which part is behind"
-          />
-          <div className="space-y-5 p-5">
-            <Meter
-              label="Checklist complete"
-              value={health?.checklistDone ?? 0}
-              max={health?.checklistTotal || 1}
-              tone={
-                !health || health.checklistTotal === 0
-                  ? "neutral"
-                  : health.checklistDone / health.checklistTotal >= 0.8
-                    ? "success"
-                    : health.checklistDone / health.checklistTotal >= 0.5
-                      ? "warning"
-                      : "danger"
-              }
-              caption={health ? `${health.checklistDone} of ${health.checklistTotal}` : "—"}
-            />
-            <Meter
-              label="Vendors confirmed"
-              value={health?.vendorsConfirmed ?? 0}
-              max={health?.vendorsTotal || 1}
-              tone={
-                !health || health.vendorsTotal === 0
-                  ? "neutral"
-                  : health.vendorsConfirmed === health.vendorsTotal
-                    ? "success"
-                    : "warning"
-              }
-              caption={health ? `${health.vendorsConfirmed} of ${health.vendorsTotal}` : "—"}
-            />
-            <Meter
-              label="Capacity filled"
-              value={event.registrationCount}
-              max={event.capacity || 1}
-              tone={
-                event.capacity === null
-                  ? "neutral"
-                  : event.registrationCount > event.capacity
-                    ? "danger"
-                    : event.registrationCount / event.capacity >= 0.85
-                      ? "warning"
-                      : "brand"
-              }
-              caption={event.capacity ? `${event.registrationCount} of ${event.capacity}` : "No capacity set"}
-            />
+    <div className="space-y-5">
+      <section aria-label="Event summary" className="grid gap-4 md:grid-cols-3">
+        <Panel className="flex min-h-28 items-center gap-4 p-4">
+          <ReadinessRing value={health?.readiness ?? 0} size={66} label={`${event.title} readiness`} />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">Event Readiness</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {health ? `${health.vendorsConfirmed} of ${health.vendorsTotal} vendors confirmed` : "Calculating event progress"}
+            </p>
           </div>
         </Panel>
 
-        <Panel>
-          <PanelHeader
-            title="Run of show"
-            description={runOfShow?.length ? `${runOfShow.length} cues · ${dayCount}-day schedule` : "The order of the day"}
-            actions={
-              <Button asChild variant="outline" size="sm">
-                <Link href={eventSectionHref(event.id, "plan")}>Open plan</Link>
-              </Button>
-            }
-          />
-          {rosLoading ? (
-            <LoadingRows rows={3} className="p-4" />
-          ) : (runOfShow ?? []).length === 0 ? (
-            <EmptyState
-              icon={Clock}
-              title="No run of show yet"
-              description="Add cues in the Plan section, or start the event from a template that already has them."
-            />
-          ) : (
-            <ol className="divide-y divide-hairline">
-              {(runOfShow ?? []).slice(0, 6).map((cue) => (
-                <li key={cue.id} className="flex items-baseline gap-4 px-5 py-3">
-                  <span data-numeric className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold text-foreground">
-                    {formatClockTime(cue.startTime)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">{cue.title}</span>
-                    {dayCount > 1 ? (
-                      <span className="block text-[11px] font-semibold text-primary-text">Day {cue.dayNumber}</span>
-                    ) : null}
-                    {cue.responsible ? (
-                      <span className="block truncate text-xs text-muted-foreground">{cue.responsible}</span>
-                    ) : null}
-                  </span>
-                  {cue.duration ? (
-                    <span data-numeric className="shrink-0 text-xs text-muted-foreground">
-                      {cue.duration}m
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
-          )}
-        </Panel>
-      </div>
-
-      <div className="space-y-6">
-        <Panel>
-          <PanelHeader title="Budget" description="Booked, not forecast" />
-          <dl className="divide-y divide-hairline px-5 py-2">
-            <KeyValue label="Planned spend">{formatMoney(plannedSpend)}</KeyValue>
-            <KeyValue label="Actual spend">
-              <span className={actualSpend > plannedSpend ? "text-danger-text" : undefined}>
-                {formatMoney(actualSpend)}
-              </span>
-            </KeyValue>
-            <KeyValue label="Planned revenue">{formatMoney(plannedRevenue)}</KeyValue>
-            <KeyValue label="Ticket sales">{formatMoney(ticketRevenue)}</KeyValue>
-            <KeyValue label="Sponsorship confirmed">{formatMoney(confirmedSponsorship)}</KeyValue>
-            <KeyValue label="Fundraising total">{formatMoney(health?.fundraisingCents ?? 0)}</KeyValue>
-          </dl>
-          <div className="border-t border-hairline p-3">
-            <Button asChild variant="outline" size="sm" className="w-full">
-              <Link href={eventSectionHref(event.id, "budget")}>
-                <Coins className="mr-1.5 size-3.5" />
-                Open money
-              </Link>
-            </Button>
+        <Panel className="flex min-h-28 items-center gap-4 p-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-muted text-primary-text"><Store className="size-5" /></span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Vendors</p>
+            <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{confirmedVendors}/{vendors?.length ?? 0}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Confirmed</p>
           </div>
         </Panel>
 
-        <Panel>
-          <PanelHeader title="Open work by area" description="Where the incomplete checklist items sit" />
+        <Panel className="flex min-h-28 items-center gap-4 p-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-muted text-primary-text"><Users className="size-5" /></span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Registrations</p>
+            <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{event.registrationCount}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Registered</p>
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <Panel className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
+            <div className="flex items-center gap-2"><CheckSquare className="size-4 text-primary-text" /><h2 className="text-sm font-semibold text-foreground">Next Steps</h2></div>
+            <Link href={eventTabHref(event.id, "checklist")} className="inline-flex items-center gap-1 text-xs font-semibold text-primary-text hover:underline">View All Tasks <ArrowRight className="size-3" /></Link>
+          </div>
           {checklistLoading ? (
-            <LoadingRows rows={3} className="p-4" />
-          ) : openCategories.length === 0 ? (
-            <EmptyState icon={CheckSquare} title="Checklist is clear" description="Every item is ticked off." />
+            <LoadingRows rows={5} className="p-4" />
+          ) : openTasks.length === 0 ? (
+            <EmptyState icon={CheckSquare} title="Everything is complete" description="New open tasks will appear here." />
           ) : (
-            <ul className="flex flex-wrap gap-2 p-5">
-              {openCategories.map(([category, count]) => (
-                <li key={category}>
-                  <Pill tone={count >= 3 ? "warning" : "neutral"}>
-                    {category} · {count}
-                  </Pill>
+            <ul className="divide-y divide-hairline px-4">
+              {openTasks.map((item) => (
+                <li key={item.id}>
+                  <Link href={eventTabHref(event.id, "checklist")} className="flex items-center gap-3 py-2.5 text-sm hover:text-primary-text">
+                    <span className="size-3.5 shrink-0 rounded-[3px] border border-muted-foreground/45 bg-white" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">{item.title}</span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </Link>
                 </li>
               ))}
             </ul>
           )}
         </Panel>
 
-        <Panel>
-          <PanelHeader title="Planning history" description="Structured decisions retained for reporting and future recommendations" />
-          {historyLoading ? (
-            <LoadingRows rows={3} className="p-4" />
-          ) : (history ?? []).length === 0 ? (
-            <EmptyState icon={History} title="No changes recorded yet" description="Edits to the event, schedule, budget, and floorplan will appear here." />
+        <Panel className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
+            <div className="flex items-center gap-2"><ClipboardList className="size-4 text-primary-text" /><h2 className="text-sm font-semibold text-foreground">Run of Show</h2></div>
+            <Link href={eventTabHref(event.id, "run-of-show")} className="inline-flex items-center gap-1 text-xs font-semibold text-primary-text hover:underline">View Full Schedule <ArrowRight className="size-3" /></Link>
+          </div>
+          {rosLoading ? (
+            <LoadingRows rows={5} className="p-4" />
+          ) : upcomingCues.length === 0 ? (
+            <EmptyState icon={Clock} title="No schedule yet" description="Add the first cue in Run of Show." />
           ) : (
-            <ol className="divide-y divide-hairline">
-              {(history ?? []).slice(0, 6).map((entry) => (
-                <li key={entry.id} className="flex gap-3 px-5 py-3">
-                  <History className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">{entry.summary}</span>
-                    <time dateTime={entry.createdAt} className="text-xs text-muted-foreground">
-                      {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.createdAt))}
-                    </time>
-                  </span>
+            <ol className="relative px-5 py-3 before:absolute before:bottom-5 before:left-[1.65rem] before:top-5 before:w-px before:bg-primary/70">
+              {upcomingCues.map((cue) => (
+                <li key={cue.id} className="relative flex items-center gap-3 py-2">
+                  <span className="relative z-10 size-3 shrink-0 rounded-full border-2 border-primary bg-white" aria-hidden="true" />
+                  <time data-numeric className="w-16 shrink-0 font-mono text-xs font-semibold text-foreground">{formatClockTime(cue.startTime)}</time>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{cue.title}</span>
                 </li>
               ))}
             </ol>
           )}
         </Panel>
-
-        <Panel>
-          <PanelHeader title="Jump to" />
-          <div className="divide-y divide-hairline">
-            <Link
-              href={eventSectionHref(event.id, "guests")}
-              className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-accent/60"
-            >
-              <Users className="size-4 text-muted-foreground" aria-hidden="true" />
-              <span className="flex-1 font-medium text-foreground">Registrations</span>
-              <span data-numeric className="text-muted-foreground">
-                {event.registrationCount}
-              </span>
-            </Link>
-            <Link
-              href={eventSectionHref(event.id, "vendors")}
-              className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-accent/60"
-            >
-              <Store className="size-4 text-muted-foreground" aria-hidden="true" />
-              <span className="flex-1 font-medium text-foreground">Vendors</span>
-              <span data-numeric className="text-muted-foreground">
-                {vendors?.length ?? 0}
-              </span>
-            </Link>
-            <Link
-              href={eventSectionHref(event.id, "budget")}
-              className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-accent/60"
-            >
-              <Ticket className="size-4 text-muted-foreground" aria-hidden="true" />
-              <span className="flex-1 font-medium text-foreground">Ticket types</span>
-              <span data-numeric className="text-muted-foreground">
-                {tickets?.length ?? 0}
-              </span>
-            </Link>
-          </div>
-        </Panel>
-      </div>
+      </section>
     </div>
   );
 }

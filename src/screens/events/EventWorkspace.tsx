@@ -84,7 +84,6 @@ import {
   EventStatusBadge,
   LoadingRows,
   Panel,
-  ReadinessRing,
   RiskPill,
 } from "@/components/primitives";
 import {
@@ -553,56 +552,13 @@ function WorkspaceHeader({
         All events
       </Link>
 
-      <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex flex-wrap items-center gap-2.5">
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <h1 className="display-md text-foreground">{event.title}</h1>
             <EventStatusBadge status={event.status} />
           </div>
-
-          <dl className="grid max-w-4xl gap-2 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
-            <div className="flex min-w-0 items-start gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5">
-              <CalendarClock className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
-              <div className="min-w-0">
-              <dt className="text-[11px] font-semibold text-muted-foreground">When</dt>
-              <dd className="mt-0.5 text-foreground">
-                {formatRange(event, prefs)} <span className="text-muted-foreground/70">· {prefs.when(event.date)}</span>
-              </dd>
-              </div>
-            </div>
-            <div className="flex min-w-0 items-start gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
-              <div className="min-w-0">
-              <dt className="text-[11px] font-semibold text-muted-foreground">Where</dt>
-              <dd className="mt-0.5 truncate text-foreground">{event.locationRecord?.name ?? event.location ?? "No venue"}</dd>
-              </div>
-            </div>
-            <div className="flex min-w-0 items-start gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5">
-              <Users className="mt-0.5 size-4 shrink-0 text-primary-text" aria-hidden="true" />
-              <div className="min-w-0">
-              <dt className="text-[11px] font-semibold text-muted-foreground">Registrations</dt>
-              <dd data-numeric className="mt-0.5 text-foreground">
-                {event.registrationCount}
-                {event.capacity ? ` of ${event.capacity}` : ""} registered
-              </dd>
-              </div>
-            </div>
-          </dl>
-
-          {event.description ? (
-            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{event.description}</p>
-          ) : null}
-        </div>
-
-        <div className="flex w-full shrink-0 items-start justify-between gap-4 2xl:w-auto 2xl:justify-start">
-          {health ? (
-            <div className="hidden text-center sm:block">
-              <ReadinessRing value={health.readiness} size={64} label={`${event.title} readiness`} />
-              <p className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ready</p>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button asChild size="sm">
               <Link href={`/app/events/${event.id}/edit`}>
                 <Pencil className="mr-1.5 size-3.5" />
@@ -708,6 +664,24 @@ function WorkspaceHeader({
             </AlertDialog>
           </div>
         </div>
+
+        <dl className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <CalendarClock className="size-3.5 text-foreground/70" aria-hidden="true" />
+            <dt className="sr-only">When</dt>
+            <dd className="text-foreground">{formatRange(event, prefs)}</dd>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <MapPin className="size-3.5 text-foreground/70" aria-hidden="true" />
+            <dt className="sr-only">Where</dt>
+            <dd className="text-foreground">{event.locationRecord?.name ?? event.location ?? "No venue"}</dd>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Users className="size-3.5 text-foreground/70" aria-hidden="true" />
+            <dt className="sr-only">Registrations</dt>
+            <dd data-numeric className="text-foreground">{event.registrationCount} registered</dd>
+          </div>
+        </dl>
       </div>
 
       {health && experience === "standard" ? <RiskStrip health={health} eventId={event.id} /> : null}
@@ -918,7 +892,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
           canManageAccess={identity?.role === "owner"}
         />
       ) : null}
-      {!guidedInviteList && !launchWorkspace ? <EventLiveUpdates event={event} /> : null}
+      {!guidedInviteList && !launchWorkspace && active !== "overview" ? <EventLiveUpdates event={event} /> : null}
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}
