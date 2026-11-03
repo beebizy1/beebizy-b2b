@@ -33,18 +33,18 @@ import {
   ArrowUp,
   CalendarClock,
   ChevronDown,
-  Copy,
   Eye,
   EyeOff,
   FileSpreadsheet,
   GripVertical,
-  LayoutDashboard,
+  Link2,
   MailCheck,
   MapPin,
+  MoreHorizontal,
   Pencil,
   Plus,
-  Share2,
   Trash2,
+  Upload,
   UserPlus,
   Users,
   SlidersHorizontal,
@@ -95,7 +95,6 @@ import {
   useInviteMember,
   useMe,
   useMembers,
-  useSaveEventAsTemplate,
   useSendAssignmentSummaries,
   useUpdateEvent,
 } from "@/data/hooks";
@@ -493,7 +492,6 @@ function WorkspaceHeader({
   const prefs = usePreferences(event.timeZone);
   const updateEvent = useUpdateEvent();
   const deleteEvent = useDeleteEvent();
-  const saveAsTemplate = useSaveEventAsTemplate();
   const sendAssignmentSummaries = useSendAssignmentSummaries();
   const [importOpen, setImportOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
@@ -562,70 +560,54 @@ function WorkspaceHeader({
             <Button asChild size="sm">
               <Link href={`/app/events/${event.id}/edit`}>
                 <Pencil className="mr-1.5 size-3.5" />
-                Edit event
+                Edit Event
               </Link>
             </Button>
             {experience === "standard" ? (
               <Button asChild variant="outline" size="sm">
                 <Link href={active === "share" ? `/app/events/${event.id}` : eventSectionHref(event.id, "share")}>
-                  <Share2 className="mr-1.5 size-3.5" />
-                  {active === "share" ? "Back to event" : "Share"}
+                  <Upload className="mr-1.5 size-3.5" />
+                  {active === "share" ? "Back to Event" : "Share"}
                 </Link>
               </Button>
             ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  More actions
+                <Button variant="outline" size="sm" className="border-primary/80 bg-white hover:bg-primary-muted">
+                  <MoreHorizontal className="mr-1.5 size-4" />
+                  More Actions
                   <ChevronDown className="ml-1.5 size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
                 {experience === "standard" ? <DropdownMenuItem asChild>
                   <Link href={eventSectionHref(event.id, "share")}>
-                    <Share2 className="size-4" />
-                    Registration site
+                    <Link2 className="size-4" />
+                    Registration Site
                   </Link>
                 </DropdownMenuItem> : null}
                 <DropdownMenuItem asChild>
                   <Link href={`/app/events/${event.id}/summary`}>
-                    <LayoutDashboard className="size-4" />
-                    Attendance dashboard
+                    <Users className="size-4" />
+                    Attendance Dashboard
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setImportOpen(true)}>
                   <FileSpreadsheet className="size-4" />
-                  Import spreadsheet
+                  Import Spreadsheet
                 </DropdownMenuItem>
                 {canManageAccess ? <DropdownMenuItem onSelect={() => setAccessOpen(true)}>
                   <UserPlus className="size-4" />
-                  Manage event access
+                  Manage Event Access
                 </DropdownMenuItem> : null}
                 <DropdownMenuItem disabled={sendAssignmentSummaries.isPending} onSelect={emailResponsibilities}>
                   <MailCheck className="size-4" />
-                  {sendAssignmentSummaries.isPending ? "Sending assignments..." : "Email assignments"}
+                  {sendAssignmentSummaries.isPending ? "Sending Assignments..." : "Email Assignments"}
                 </DropdownMenuItem>
-                {experience === "standard" ? <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      saveAsTemplate.mutate(
-                        { eventId: event.id, name: `${event.title} template` },
-                        {
-                          onSuccess: () => toast({ title: "Saved as template", description: "Checklist, run of show and budget were copied into your library." }),
-                          onError: (error) => toast({ title: "Couldn't save template", description: error.message }),
-                        },
-                      );
-                    }}
-                  >
-                    <Copy className="mr-2 size-4" />
-                    Save as template
-                  </DropdownMenuItem>
-                </> : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-danger-text focus:text-danger-text" onSelect={() => setDeleteOpen(true)}>
                   <Trash2 className="size-4" />
-                  Delete event
+                  Delete Event
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

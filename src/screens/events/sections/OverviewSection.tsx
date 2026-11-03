@@ -20,7 +20,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
 
   return (
     <div className="space-y-5">
-      <section aria-label="Event summary" className="grid gap-4 md:grid-cols-3">
+      <section aria-label="Event summary" className="grid gap-5 md:grid-cols-3">
         <Panel className="flex min-h-28 items-center gap-4 p-4">
           <ReadinessRing value={health?.readiness ?? 0} size={66} label={`${event.title} readiness`} />
           <div className="min-w-0">
@@ -32,16 +32,16 @@ export default function OverviewSection({ event, health }: { event: Event; healt
         </Panel>
 
         <Panel className="flex min-h-28 items-center gap-4 p-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-muted text-primary-text"><Store className="size-5" /></span>
+          <Store className="size-7 shrink-0 text-[#9a6a00]" />
           <div>
             <p className="text-sm font-semibold text-foreground">Vendors</p>
-            <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{confirmedVendors}/{vendors?.length ?? 0}</p>
+            <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{confirmedVendors} / {vendors?.length ?? 0}</p>
             <p className="mt-1 text-xs text-muted-foreground">Confirmed</p>
           </div>
         </Panel>
 
         <Panel className="flex min-h-28 items-center gap-4 p-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-muted text-primary-text"><Users className="size-5" /></span>
+          <Users className="size-7 shrink-0 text-[#9a6a00]" />
           <div>
             <p className="text-sm font-semibold text-foreground">Registrations</p>
             <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{event.registrationCount}</p>

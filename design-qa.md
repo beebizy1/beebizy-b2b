@@ -1,11 +1,11 @@
 # Event Overview Design QA
 
-- Source visual truth: `/var/folders/vs/n9nh5qdx3ybf_r7xglw7v9zm0000gp/T/TemporaryItems/NSIRD_screencaptureui_I9wdkh/Screenshot 2026-11-03 at 12.32.48 PM.png`
-- Implementation screenshot: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-overview-final.png`
+- Source visual truth: `/var/folders/vs/n9nh5qdx3ybf_r7xglw7v9zm0000gp/T/codex-clipboard-640fdecc-3290-4371-a3fa-fbb33db582f7.png`
+- Implementation screenshot: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-color-format-final.png`
 - Comparison state: Event Overview with More actions open.
 - Browser: Codex in-app browser, local demo route.
-- Source pixels: 1712 x 1160. Reference product region normalized to 900 x 592.
-- Implementation pixels: 2087 x 1372. Event workspace region normalized to 900 x 465.
+- Source pixels: 1972 x 1304. Reference normalized to 900 x 595.
+- Implementation pixels: 2318 x 1525. Event workspace region normalized to 900 x 506.
 - Density normalization: both comparison crops resized to 900 CSS-reference pixels wide.
 
 ## Full-view comparison evidence
@@ -16,7 +16,7 @@ The longer tab rail and event-day row are intentional product constraints from t
 
 ## Focused-region comparison evidence
 
-The header and actions menu were compared at readable scale. Button hierarchy, yellow primary action, rounded white menu, icon alignment, destructive red action, metadata density, card borders, readiness ring, task checkboxes, schedule timeline, and yellow link accents match the reference design language.
+The header and actions menu were compared at readable scale. Button hierarchy, bright yellow primary action, yellow-outlined More Actions control, rounded white menu, title-case copy, gold summary icons, destructive red action, metadata density, card borders, centered readiness percentage, task checkboxes, schedule timeline, and yellow link accents match the reference design language.
 
 ## Required fidelity surfaces
 
@@ -38,9 +38,16 @@ The header and actions menu were compared at readable scale. Button hierarchy, y
 - Post-fix evidence: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-overview-final.png`
 - No actionable P0, P1, or P2 visual mismatches remain.
 
+### Pass 3
+
+- [P2] The readiness percentage sat underneath the ring instead of inside it, and the action/menu treatment was less yellow than the clarified reference.
+- Fix: Center the percentage inside the ring, use the clarified bright-yellow / gold / black / white treatment, match action capitalization and icons, and remove the non-reference template action from this menu.
+- Post-fix evidence: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-color-format-final.png`
+- No actionable P0, P1, or P2 visual mismatches remain.
+
 ## Primary interactions tested
 
-- More actions opens and contains Registration site, Attendance dashboard, Import spreadsheet, Manage event access, Email assignments, Save as template, and Delete event.
+- More Actions opens and contains Registration Site, Attendance Dashboard, Import Spreadsheet, Manage Event Access, Email Assignments, and Delete Event.
 - Spreadsheet import dialog opens from the dropdown.
 - Keyboard drag-and-drop reorders event tabs and survives an SPA remount.
 - Vendor Edit opens the correct record, saves a phone-number change, and returns to the event vendor list.
