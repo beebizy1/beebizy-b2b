@@ -338,7 +338,7 @@ export const events = pgTable(
     /** Unique so a token can be looked up directly instead of scanning. */
     shareToken: text("share_token").unique(),
     registrationPage: jsonb("registration_page").$type<RegistrationPageSettings>(),
-    navigation: jsonb("navigation").$type<EventNavigationSettings>().notNull().default({ hiddenTabIds: [] }),
+    navigation: jsonb("navigation").$type<EventNavigationSettings>().notNull().default({ hiddenTabIds: [], tabOrder: [] }),
     auctionPublicToken: text("auction_public_token").unique(),
     auctionPage: jsonb("auction_page").$type<AuctionPageSettings>(),
     createdAt: createdAt(),

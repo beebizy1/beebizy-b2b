@@ -29,6 +29,7 @@ export default function VendorForm({ id }: { id?: string }) {
   const requestedReturnTo = query.get("returnTo")?.trim() || "";
   const vendorHref = id ? `/app/vendors/${encodeURIComponent(id)}` : "/app/vendors";
   const returnTo = requestedReturnTo.startsWith("/app/") ? requestedReturnTo : vendorHref;
+  const backLabel = returnTo.startsWith("/app/events/") ? "Back to event vendors" : "All vendors";
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("Catering");
   const [description, setDescription] = useState("");
@@ -74,7 +75,7 @@ export default function VendorForm({ id }: { id?: string }) {
         className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
-        All vendors
+        {backLabel}
       </Link>
 
       <PageHeader
@@ -114,7 +115,7 @@ export default function VendorForm({ id }: { id?: string }) {
                     ? `${vendor.name} is booked on this event and saved in your directory.`
                     : `${vendor.name} is in your directory.`,
                 });
-                navigate(id ? vendorHref : eventId ? returnTo : `/app/vendors/${vendor.id}`);
+                navigate(id ? returnTo : eventId ? returnTo : `/app/vendors/${vendor.id}`);
               } catch (error) {
                 toast({ title: id ? "Couldn't update vendor" : "Couldn't add vendor", description: error instanceof Error ? error.message : String(error) });
               }
