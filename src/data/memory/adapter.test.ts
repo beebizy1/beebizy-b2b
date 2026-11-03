@@ -46,9 +46,9 @@ describe("events", () => {
   it("persists hidden event tabs per event without deleting their data", async () => {
     const beforeRaffle = await memoryAdapter.raffle.list("evt-gala");
 
-    await memoryAdapter.events.update("evt-gala", { navigation: { hiddenTabIds: ["raffle", "menu"] } });
+    await memoryAdapter.events.update("evt-gala", { navigation: { hiddenTabIds: ["raffle", "menu"], tabOrder: ["vendors", "overview"] } });
 
-    expect((await memoryAdapter.events.get("evt-gala"))?.navigation).toEqual({ hiddenTabIds: ["raffle", "menu"] });
+    expect((await memoryAdapter.events.get("evt-gala"))?.navigation).toEqual({ hiddenTabIds: ["raffle", "menu"], tabOrder: ["vendors", "overview"] });
     expect(await memoryAdapter.raffle.list("evt-gala")).toEqual(beforeRaffle);
     expect((await memoryAdapter.events.get("evt-cab"))?.navigation?.hiddenTabIds ?? []).toEqual([]);
   });

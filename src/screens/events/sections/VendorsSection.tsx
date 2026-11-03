@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { MessageSquare, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
+import { MessageSquare, Pencil, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +36,7 @@ import {
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { BOOKING_STATUSES, type BookingStatus, type Event, type EventVendor } from "@/data/entities";
 import VendorCsvImportDialog from "@/screens/vendors/VendorCsvImportDialog";
+import { vendorEditHref } from "@/screens/vendors/vendorRoutes";
 import VendorEventPacketDialog from "./VendorEventPacketDialog";
 import VendorPaperworkDialog from "./VendorPaperworkDialog";
 
@@ -152,6 +153,16 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
       <Button asChild variant="outline" size="sm">
         <Link href={`/app/vendors/${props.vendorId}`} aria-label={`Message ${props.name}`}>
           <MessageSquare className="size-3.5" />
+        </Link>
+      </Button>
+
+      <Button asChild variant="outline" size="sm">
+        <Link
+          href={`${vendorEditHref(props.vendorId)}?returnTo=${encodeURIComponent(`/app/events/${eventId}/vendors`)}`}
+          aria-label={`Edit ${props.name}`}
+        >
+          <Pencil className="mr-1.5 size-3.5" />
+          Edit
         </Link>
       </Button>
 

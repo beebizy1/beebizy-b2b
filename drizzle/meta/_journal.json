@@ -624,6 +624,13 @@
       "when": 1793567536426,
       "tag": "0088_tiresome_talisman",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1793738793343,
+      "tag": "0089_flawless_pet_avengers",
+      "breakpoints": true
     }
   ]
 }

@@ -8,17 +8,37 @@
  * old page never said: how ready this event is and what is wrong with it.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft,
   ArrowDown,
   ArrowUp,
   CalendarClock,
+  ChevronDown,
   Copy,
   Eye,
   EyeOff,
-  FileText,
+  FileSpreadsheet,
+  GripVertical,
+  LayoutDashboard,
   MailCheck,
   MapPin,
   Pencil,
@@ -41,7 +61,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -55,6 +74,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
@@ -81,8 +101,8 @@ import {
   useUpdateEvent,
 } from "@/data/hooks";
 import { usePreferences, type Preferences } from "@/app/preferences";
-import { eventSectionHref, eventSectionLabel, eventTabHref, eventTabsForEvent, orderedEventTabs, tabFromSlug, visibleEventTabs, type EventTabId } from "@/app/shell/nav";
-import type { HideableEventTabId } from "@/data/eventNavigation";
+import { eventSectionHref, eventSectionLabel, eventTabHref, eventTabsForEvent, orderedEventTabs, tabFromSlug, visibleEventTabs, type EventTab, type EventTabId } from "@/app/shell/nav";
+import { DEFAULT_EVENT_NAVIGATION, type EventNavigationSettings, type EventNavigationTabId, type HideableEventTabId } from "@/data/eventNavigation";
 import type { Event, EventHealth } from "@/data/entities";
 import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
@@ -130,48 +150,96 @@ function formatRange(event: Event, prefs: Preferences): string {
   return `${startText} – ${endText}`;
 }
 
+function SortableEventTab({
+  tab,
+  eventId,
+  dayNumber,
+  isActive,
+  activeRef,
+}: {
+  tab: EventTab;
+  eventId: string;
+  dayNumber: number;
+  isActive: boolean;
+  activeRef: RefObject<HTMLAnchorElement | null>;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 20 : undefined }}
+      className={cn(
+        "group flex shrink-0 snap-start items-stretch overflow-hidden rounded-lg border bg-card transition-[background-color,border-color,box-shadow,color]",
+        isActive
+          ? "border-primary/50 bg-primary-muted font-semibold text-foreground shadow-xs"
+          : "border-transparent font-medium text-muted-foreground hover:border-card-border hover:text-foreground",
+        isDragging && "cursor-grabbing shadow-lg ring-2 ring-primary/30",
+      )}
+    >
+      <button
+        type="button"
+        className="touch-none cursor-grab border-r border-transparent px-1.5 text-muted-foreground/50 transition-colors hover:border-hairline hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-label={`Drag ${tab.label} to rearrange`}
+        title={`Drag ${tab.label} to rearrange`}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-3.5" />
+      </button>
+      <Link
+        ref={isActive ? activeRef : undefined}
+        href={`${eventTabHref(eventId, tab.id)}?day=${dayNumber}`}
+        aria-current={isActive ? "page" : undefined}
+        className="flex items-center gap-2 whitespace-nowrap px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        {tab.icon ? (
+          <tab.icon className={cn("size-3.5 shrink-0", isActive && "text-primary-text")} aria-hidden="true" />
+        ) : null}
+        {tab.label}
+      </Link>
+    </div>
+  );
+}
+
 function SectionTabs({
   eventId,
   active,
   plan,
   experience,
   dayNumber,
-  hiddenTabIds,
-  onHiddenChange,
+  navigation,
+  onNavigationChange,
 }: {
   eventId: string;
   active: EventTabId;
   plan: PlanId;
   experience: AccountExperience;
   dayNumber: number;
-  hiddenTabIds: readonly HideableEventTabId[];
-  onHiddenChange(hiddenTabIds: HideableEventTabId[]): void;
+  navigation: EventNavigationSettings;
+  onNavigationChange(navigation: EventNavigationSettings): void;
 }) {
   const [, navigate] = useLocation();
   const activeRef = useRef<HTMLAnchorElement>(null);
-  const storageKey = `beebizy:event-tab-order:${experience}`;
   const baseTabs = visibleEventTabs(plan, experience);
-  const [order, setOrder] = useState<EventTabId[]>(() => {
-    try {
-      const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]");
-      return Array.isArray(parsed) ? parsed.filter((id): id is EventTabId => typeof id === "string") : [];
-    } catch {
-      return [];
-    }
-  });
-  const [hidden, setHidden] = useState<HideableEventTabId[]>([...hiddenTabIds]);
+  const [order, setOrder] = useState<EventNavigationTabId[]>([...navigation.tabOrder]);
+  const [hidden, setHidden] = useState<HideableEventTabId[]>([...navigation.hiddenTabIds]);
   const allTabs = orderedEventTabs(baseTabs, order);
   const tabs = eventTabsForEvent(allTabs, hidden);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
-  useEffect(() => setHidden([...hiddenTabIds]), [hiddenTabIds]);
+  useEffect(() => setHidden([...navigation.hiddenTabIds]), [navigation.hiddenTabIds]);
+  useEffect(() => setOrder([...navigation.tabOrder]), [navigation.tabOrder]);
 
-  const saveOrder = (next: EventTabId[]) => {
+  const saveOrder = (next: EventNavigationTabId[]) => {
     setOrder(next);
-    window.localStorage.setItem(storageKey, JSON.stringify(next));
+    onNavigationChange({ hiddenTabIds: hidden, tabOrder: next });
   };
 
-  const move = (id: EventTabId, direction: -1 | 1) => {
-    const ids = allTabs.map((tab) => tab.id);
+  const move = (id: EventNavigationTabId, direction: -1 | 1) => {
+    const ids = allTabs.map((tab) => tab.id as EventNavigationTabId);
     const from = ids.indexOf(id);
     const to = from + direction;
     if (from < 0 || to < 0 || to >= ids.length) return;
@@ -185,8 +253,17 @@ function SectionTabs({
       ? [...new Set([...hidden, id as HideableEventTabId])]
       : hidden.filter((tabId) => tabId !== id);
     setHidden(next);
-    onHiddenChange(next);
+    onNavigationChange({ hiddenTabIds: next, tabOrder: order });
     if (nextHidden && active === id) navigate(eventTabHref(eventId, "overview"));
+  };
+
+  const finishDrag = ({ active: dragged, over }: DragEndEvent) => {
+    if (!over || dragged.id === over.id) return;
+    const ids = allTabs.map((tab) => tab.id as EventNavigationTabId);
+    const from = ids.indexOf(dragged.id as EventNavigationTabId);
+    const to = ids.indexOf(over.id as EventNavigationTabId);
+    if (from < 0 || to < 0) return;
+    saveOrder(arrayMove(ids, from, to));
   };
 
   // Seventeen tabs do not fit on one row, so the bar scrolls. Without this, landing on
@@ -197,33 +274,25 @@ function SectionTabs({
 
   return (
     <div className="flex items-center gap-2">
-      <nav
-        aria-label="Event sections"
-        className="workspace-scrollbar flex min-w-0 flex-1 snap-x gap-1 overflow-x-auto py-2"
-      >
-      {tabs.map((tab) => {
-        const isActive = tab.id === active;
-        return (
-          <Link
-            key={tab.id}
-            ref={isActive ? activeRef : undefined}
-            href={`${eventTabHref(eventId, tab.id)}?day=${dayNumber}`}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              "flex snap-start items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition-[background-color,border-color,box-shadow,color]",
-              isActive
-                ? "border-primary/50 bg-primary-muted font-semibold text-foreground shadow-xs"
-                : "border-transparent font-medium text-muted-foreground hover:border-card-border hover:bg-card hover:text-foreground",
-            )}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={finishDrag}>
+        <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
+          <nav
+            aria-label="Event sections. Drag the handles to rearrange."
+            className="workspace-scrollbar flex min-w-0 flex-1 snap-x gap-1 overflow-x-auto py-2"
           >
-            {tab.icon ? (
-              <tab.icon className={cn("size-3.5 shrink-0", isActive && "text-primary-text")} aria-hidden="true" />
-            ) : null}
-            {tab.label}
-          </Link>
-        );
-      })}
-      </nav>
+            {tabs.map((tab) => (
+              <SortableEventTab
+                key={tab.id}
+                tab={tab}
+                eventId={eventId}
+                dayNumber={dayNumber}
+                isActive={tab.id === active}
+                activeRef={activeRef}
+              />
+            ))}
+          </nav>
+        </SortableContext>
+      </DndContext>
       <Dialog>
         <DialogTrigger asChild>
           <Button type="button" variant="outline" size="sm" className="shrink-0" aria-label="Arrange event tabs">
@@ -234,7 +303,7 @@ function SectionTabs({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Arrange event tabs</DialogTitle>
-            <DialogDescription>Move sections into your preferred order, or hide anything this event does not need. Hidden sections keep all their data and can be restored later.</DialogDescription>
+            <DialogDescription>Drag the handles in the tab bar, use these move buttons from the keyboard, or hide anything this event does not need. Changes save to this event for everyone.</DialogDescription>
           </DialogHeader>
           <ol className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
             {allTabs.map((tab, index) => {
@@ -244,16 +313,16 @@ function SectionTabs({
                 <span className="w-6 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                 <span className="min-w-0 flex-1 text-sm font-medium">{tab.label}</span>
                 {tab.id === "overview" ? <span className="text-[11px] text-muted-foreground">Always shown</span> : <Button type="button" variant="ghost" size="sm" aria-label={`${isHidden ? "Show" : "Hide"} ${tab.label}`} onClick={() => setTabHidden(tab.id, !isHidden)}>{isHidden ? <Eye className="mr-1.5 size-4" /> : <EyeOff className="mr-1.5 size-4" />}{isHidden ? "Show" : "Hide"}</Button>}
-                <Button type="button" variant="ghost" size="icon" disabled={index === 0} aria-label={`Move ${tab.label} up`} onClick={() => move(tab.id, -1)}>
+                <Button type="button" variant="ghost" size="icon" disabled={index === 0} aria-label={`Move ${tab.label} up`} onClick={() => move(tab.id as EventNavigationTabId, -1)}>
                   <ArrowUp className="size-4" />
                 </Button>
-                <Button type="button" variant="ghost" size="icon" disabled={index === allTabs.length - 1} aria-label={`Move ${tab.label} down`} onClick={() => move(tab.id, 1)}>
+                <Button type="button" variant="ghost" size="icon" disabled={index === allTabs.length - 1} aria-label={`Move ${tab.label} down`} onClick={() => move(tab.id as EventNavigationTabId, 1)}>
                   <ArrowDown className="size-4" />
                 </Button>
               </li>
             );})}
           </ol>
-          <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => saveOrder([])}>Reset default order</Button><Button type="button" variant="outline" onClick={() => { setHidden([]); onHiddenChange([]); }}>Show all sections</Button></div>
+          <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => saveOrder([])}>Reset default order</Button><Button type="button" variant="outline" onClick={() => { setHidden([]); onNavigationChange({ hiddenTabIds: [], tabOrder: order }); }}>Show all sections</Button></div>
         </DialogContent>
       </Dialog>
     </div>
@@ -282,10 +351,22 @@ function RiskStrip({ health, eventId }: { health: EventHealth; eventId: string }
   );
 }
 
-function EventAccessDialog({ event }: { event: Event }) {
+function EventAccessDialog({
+  event,
+  trigger,
+  open,
+  onOpenChange,
+}: {
+  event: Event;
+  trigger?: ReactNode;
+  open?: boolean;
+  onOpenChange?(open: boolean): void;
+}) {
   const invite = useInviteMember();
   const { data: members, isLoading } = useMembers();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const dialogOpen = open ?? internalOpen;
+  const setDialogOpen = onOpenChange ?? setInternalOpen;
   const [email, setEmail] = useState("");
   const peopleWithAccess = (members ?? []).filter(
     (member) => !member.eventScopeId || member.eventScopeId === event.id,
@@ -317,13 +398,13 @@ function EventAccessDialog({ event }: { event: Event }) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {open === undefined || trigger ? <DialogTrigger asChild>
+        {trigger ?? <Button type="button" variant="outline" size="sm">
           <UserPlus className="mr-1.5 size-3.5" />
           Event access
-        </Button>
-      </DialogTrigger>
+        </Button>}
+      </DialogTrigger> : null}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Who can open this event?</DialogTitle>
@@ -415,6 +496,9 @@ function WorkspaceHeader({
   const deleteEvent = useDeleteEvent();
   const saveAsTemplate = useSaveEventAsTemplate();
   const sendAssignmentSummaries = useSendAssignmentSummaries();
+  const [importOpen, setImportOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const days = eventDayOptions(event.date, event.endDate, prefs.timeZone);
   const selectedDay = selectedEventDay(search, days);
   const currentPath = location;
@@ -469,7 +553,7 @@ function WorkspaceHeader({
         All events
       </Link>
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="display-md text-foreground">{event.title}</h1>
@@ -519,62 +603,60 @@ function WorkspaceHeader({
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
+            <Button asChild size="sm">
               <Link href={`/app/events/${event.id}/edit`}>
                 <Pencil className="mr-1.5 size-3.5" />
-                Edit
+                Edit event
               </Link>
             </Button>
-            {experience === "standard" && active !== "share" ? (
-              <Button asChild size="sm">
-                <Link href={eventSectionHref(event.id, "share")}>
+            {experience === "standard" ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={active === "share" ? `/app/events/${event.id}` : eventSectionHref(event.id, "share")}>
                   <Share2 className="mr-1.5 size-3.5" />
-                  Registration site
+                  {active === "share" ? "Back to event" : "Share"}
                 </Link>
               </Button>
             ) : null}
-
-            {active === "share" ? <Button asChild variant="outline" size="sm"><Link href={`/app/events/${event.id}`}>Back to event workspace</Link></Button> : <>
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/app/events/${event.id}/summary`}>
-                  <FileText className="mr-1.5 size-3.5" />
-                  Attendance dashboard
-                </Link>
-              </Button>
-
-              <EventSpreadsheetImportDialog event={event} />
-
-              {canManageAccess ? <EventAccessDialog event={event} /> : null}
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                title="Send one consolidated responsibility email to each assigned person"
-                disabled={sendAssignmentSummaries.isPending}
-                onClick={emailResponsibilities}
-              >
-                <MailCheck className="mr-1.5 size-3.5" />
-                {sendAssignmentSummaries.isPending ? "Sending..." : "Email assignments"}
-              </Button>
-
-            {experience === "standard" ? <DropdownMenu>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" aria-label="More actions">
-                  ···
+                <Button variant="outline" size="sm">
+                  More actions
+                  <ChevronDown className="ml-1.5 size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem
+              <DropdownMenuContent align="end" className="w-60">
+                {experience === "standard" ? <DropdownMenuItem asChild>
+                  <Link href={eventSectionHref(event.id, "share")}>
+                    <Share2 className="size-4" />
+                    Registration site
+                  </Link>
+                </DropdownMenuItem> : null}
+                <DropdownMenuItem asChild>
+                  <Link href={`/app/events/${event.id}/summary`}>
+                    <LayoutDashboard className="size-4" />
+                    Attendance dashboard
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setImportOpen(true)}>
+                  <FileSpreadsheet className="size-4" />
+                  Import spreadsheet
+                </DropdownMenuItem>
+                {canManageAccess ? <DropdownMenuItem onSelect={() => setAccessOpen(true)}>
+                  <UserPlus className="size-4" />
+                  Manage event access
+                </DropdownMenuItem> : null}
+                <DropdownMenuItem disabled={sendAssignmentSummaries.isPending} onSelect={emailResponsibilities}>
+                  <MailCheck className="size-4" />
+                  {sendAssignmentSummaries.isPending ? "Sending assignments..." : "Email assignments"}
+                </DropdownMenuItem>
+                {experience === "standard" ? <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
                     onSelect={() => {
                       saveAsTemplate.mutate(
                         { eventId: event.id, name: `${event.title} template` },
                         {
-                          onSuccess: () =>
-                            toast({
-                              title: "Saved as template",
-                              description: "Checklist, run of show and budget were copied into your library.",
-                            }),
+                          onSuccess: () => toast({ title: "Saved as template", description: "Checklist, run of show and budget were copied into your library." }),
                           onError: (error) => toast({ title: "Couldn't save template", description: error.message }),
                         },
                       );
@@ -582,16 +664,19 @@ function WorkspaceHeader({
                   >
                     <Copy className="mr-2 size-4" />
                     Save as template
+                  </DropdownMenuItem>
+                </> : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-danger-text focus:text-danger-text" onSelect={() => setDeleteOpen(true)}>
+                  <Trash2 className="size-4" />
+                  Delete event
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu> : null}
+            </DropdownMenu>
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" aria-label="Delete event">
-                  <Trash2 className="size-3.5 text-danger-text" />
-                </Button>
-              </AlertDialogTrigger>
+            <EventSpreadsheetImportDialog event={event} open={importOpen} onOpenChange={setImportOpen} />
+            {canManageAccess ? <EventAccessDialog event={event} open={accessOpen} onOpenChange={setAccessOpen} /> : null}
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete “{event.title}”?</AlertDialogTitle>
@@ -621,7 +706,6 @@ function WorkspaceHeader({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            </>}
           </div>
         </div>
       </div>
@@ -630,7 +714,7 @@ function WorkspaceHeader({
       </div>
 
       {active !== "share" ? <div className="border-t border-hairline bg-surface-sunken/40 px-3 sm:px-4">
-        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} hiddenTabIds={event.navigation?.hiddenTabIds ?? []} onHiddenChange={(hiddenTabIds) => updateEvent.mutate({ id: event.id, patch: { navigation: { hiddenTabIds } } }, { onError: (error) => toast({ title: "Couldn't update event tabs", description: error.message }) })} />
+        <SectionTabs eventId={event.id} active={active} plan={plan} experience={experience} dayNumber={selectedDay} navigation={event.navigation ?? DEFAULT_EVENT_NAVIGATION} onNavigationChange={(navigation) => updateEvent.mutate({ id: event.id, patch: { navigation } }, { onError: (error) => toast({ title: "Couldn't update event tabs", description: error.message }) })} />
         <div className="flex items-center gap-2 overflow-x-auto border-t border-hairline py-2" aria-label="Event days">
           {days.map((day) => (
             <Button

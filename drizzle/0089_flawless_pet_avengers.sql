@@ -1,0 +1,1 @@
+ALTER TABLE "events" ALTER COLUMN "navigation" SET DEFAULT '{"hiddenTabIds":[],"tabOrder":[]}'::jsonb;
