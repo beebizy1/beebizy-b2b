@@ -247,7 +247,7 @@ export function ReadinessRing({ value, size = 56, label }: { value: number; size
     info: "stroke-info",
   };
   return (
-    <div className="inline-flex flex-col items-center gap-1">
+    <div className="relative inline-grid shrink-0 place-items-center" style={{ width: size, height: size }}>
       <svg
         width={size}
         height={size}
@@ -269,7 +269,7 @@ export function ReadinessRing({ value, size = 56, label }: { value: number; size
           className={cn("transition-[stroke-dashoffset] duration-700", strokeClass[tone])}
         />
       </svg>
-      <span data-numeric className="text-xs font-semibold text-foreground">
+      <span data-numeric className="absolute inset-0 grid place-items-center text-xs font-bold text-foreground" aria-hidden="true">
         {clamped}%
       </span>
     </div>
