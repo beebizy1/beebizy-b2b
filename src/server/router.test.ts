@@ -50,7 +50,7 @@ vi.mock("./repos", () => {
     floorplan: { ...child(), share: vi.fn() },
     auction: child(),
     sponsorships: child(),
-    eventVendors: child(),
+    eventVendors: { ...child(), reorder: vi.fn() },
     tickets: child(),
     raffle: child(),
     auctionDonors: child(),
@@ -172,7 +172,7 @@ vi.mock("./fundraisingUx", () => ({
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
-const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
+const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventVendors, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
 const { openTicketInvitation, sendTicketInvitations } = await import("./ticketInvitations");
 const { sendVendorEventPackets } = await import("./vendorEventPackets");
@@ -495,6 +495,27 @@ describe("run of show ordering", () => {
 
     expect(response.status).toBe(200);
     expect(runOfShow.reorder).toHaveBeenCalledWith(context, "event-1", 2, ["cue-2", "cue-1"]);
+  });
+});
+
+describe("vendor ordering", () => {
+  it("routes one complete vendor order to the atomic reorder operation", async () => {
+    const context = {
+      userId: "user-owner", workspaceId: "workspace-1", email: "owner@example.com", role: "owner" as const,
+      eventScopeId: null,
+      access: { status: "active" as const, plan: "enterprise" as const, betaStartedAt: "2026-01-01T00:00:00.000Z", betaEndsAt: "2027-01-01T00:00:00.000Z", currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(eventVendors.reorder).mockResolvedValue([]);
+
+    const response = await handleRequest(new Request("http://localhost/api/events/event-1/vendor-order", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orderedIds: ["vendor-2", "vendor-1"] }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(eventVendors.reorder).toHaveBeenCalledWith(context, "event-1", ["vendor-2", "vendor-1"]);
   });
 });
 

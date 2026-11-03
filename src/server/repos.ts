@@ -4385,12 +4385,16 @@ export const eventVendors = {
       .from(s.eventVendors)
       .leftJoin(s.vendors, eq(s.eventVendors.vendorId, s.vendors.id))
       .where(and(eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
-      .orderBy(asc(s.eventVendors.createdAt));
+      .orderBy(asc(s.eventVendors.sortOrder), asc(s.eventVendors.createdAt));
     return rows.map((row) => map.toEventVendor(row.booking, row.vendor));
   },
   async create(ctx: RequestContext, eventId: string, body: Body) {
     await requireOwnedEvent(ctx, eventId);
     const id = newId("ev");
+    const [orderRow] = await db
+      .select({ maxOrder: sql<number>`coalesce(max(${s.eventVendors.sortOrder}), 0)` })
+      .from(s.eventVendors)
+      .where(and(eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)));
     const values = {
       id,
       workspaceId: ctx.workspaceId,
@@ -4432,6 +4436,7 @@ export const eventVendors = {
       coiAnalysisError: null,
       coiAnalyzedAt: null,
       coiAnalysisModel: null,
+      sortOrder: Number(orderRow?.maxOrder ?? 0) + 1,
       createdAt: new Date(),
       updatedAt: null,
     };
@@ -4514,6 +4519,31 @@ export const eventVendors = {
         }),
       ),
     ]);
+  },
+  async reorder(ctx: RequestContext, eventId: string, orderedIds: string[]) {
+    await requireOwnedEvent(ctx, eventId);
+    const current = await eventVendors.list(ctx, eventId);
+    const existingIds = new Set(current.map((row) => row.id));
+    if (
+      orderedIds.length !== current.length
+      || new Set(orderedIds).size !== current.length
+      || orderedIds.some((id) => !existingIds.has(id))
+    ) {
+      throw new HttpError(409, "The vendor list changed while it was being reordered. Refresh and try again.");
+    }
+    const updatedAt = new Date();
+    const updates = orderedIds.map((id, index) => db
+        .update(s.eventVendors)
+        .set({ sortOrder: index + 1, updatedAt })
+        .where(and(
+          eq(s.eventVendors.id, id),
+          eq(s.eventVendors.workspaceId, ctx.workspaceId),
+          eq(s.eventVendors.eventId, eventId),
+        )));
+    if (updates.length > 0) {
+      await db.batch(updates as [typeof updates[number], ...typeof updates[number][]]);
+    }
+    return eventVendors.list(ctx, eventId);
   },
 };
 

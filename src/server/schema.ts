@@ -548,6 +548,7 @@ export const eventVendors = pgTable(
     status: bookingStatus("status").notNull().default("pending"),
     feeCents: bigint("fee_cents", { mode: "number" }),
     notes: text("notes"),
+    sortOrder: integer("sort_order").notNull().default(0),
     paperworkRevision: bigint("paperwork_revision", { mode: "number" }).notNull().default(0),
     contractRequired: boolean("contract_required").notNull().default(false),
     contractStatus: text("contract_status").notNull().default("not-required"),
@@ -585,7 +586,7 @@ export const eventVendors = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    index("event_vendors_event_idx").on(table.eventId),
+    index("event_vendors_event_idx").on(table.eventId, table.sortOrder),
     uniqueIndex("event_vendors_event_vendor_idx").on(table.eventId, table.vendorId),
   ],
 );

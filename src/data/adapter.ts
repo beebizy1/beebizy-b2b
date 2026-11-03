@@ -253,6 +253,12 @@ export interface VendorEventPacketsRepository {
   send(eventId: string, draft: VendorEventPacketDraft): Promise<VendorEventPacketResult>;
 }
 
+export interface EventVendorsRepository
+  extends EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch> {
+  /** Atomically persists the complete visible vendor order for one event. */
+  reorder(eventId: string, orderedIds: string[]): Promise<EventVendor[]>;
+}
+
 export interface VendorPaperworkRepository {
   /** Revision-fenced autosave. A stale browser response cannot overwrite newer work. */
   saveDraft(eventId: string, bookingId: string, draft: VendorPaperworkDraft, clientRevision: number): Promise<EventVendor>;
@@ -564,7 +570,7 @@ export interface DataAdapter {
   vendorMessages: VendorMessagesRepository;
   vendorEventPackets: VendorEventPacketsRepository;
   vendorPaperwork: VendorPaperworkRepository;
-  eventVendors: EventScopedRepository<EventVendor, EventVendorDraft, EventVendorPatch>;
+  eventVendors: EventVendorsRepository;
   checklist: EventScopedRepository<ChecklistItem, ChecklistItemDraft, ChecklistItemPatch>;
   runOfShow: RunOfShowRepository;
   runOfShowDrafts: RunOfShowDraftRepository;

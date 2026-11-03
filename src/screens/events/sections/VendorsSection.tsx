@@ -6,9 +6,26 @@
  * here rather than three clicks deep.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Link } from "wouter";
-import { MessageSquare, Pencil, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
+import { GripVertical, MessageSquare, Pencil, Plus, Save, Store, Trash2, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +47,7 @@ import {
   useMenu,
   useRemoveEventVendor,
   useRemoveMenuItem,
+  useReorderEventVendors,
   useUpdateEventVendor,
   useVendors,
 } from "@/data/hooks";
@@ -53,11 +71,16 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   contactEmail: string | null;
   contactPhone: string | null;
   city: string | null;
+  reorderDisabled: boolean;
 }) {
   const update = useUpdateEventVendor();
   const remove = useRemoveEventVendor();
   const [fee, setFee] = useState(centsToInput(props.feeCents));
   const [notes, setNotes] = useState(props.notes ?? "");
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: bookingId,
+    disabled: props.reorderDisabled,
+  });
 
   const commitFee = () => {
     const next = centsFromInput(fee);
@@ -81,7 +104,26 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   const contact = [props.contactEmail, props.contactPhone, props.city].filter(Boolean).join(" · ");
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3">
+    <li
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 10 : undefined,
+        opacity: isDragging ? 0.65 : 1,
+      }}
+      className="relative flex flex-wrap items-center gap-x-3 gap-y-2 bg-surface px-5 py-3 pl-12"
+    >
+      <button
+        type="button"
+        className="absolute left-4 top-4 cursor-grab rounded p-1 text-muted-foreground hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+        aria-label={`Move ${props.name}`}
+        disabled={props.reorderDisabled}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-4" />
+      </button>
       {/* The name used to share a line with a fee field, a status select and two buttons,
           which rendered "Golden Gate Catering" as "Gol…" in this column. Its own row now. */}
       <div className="min-w-0 basis-full">
@@ -189,7 +231,49 @@ export function VendorsPanel({ event }: { event: Event }) {
   const { data: bookings, isLoading, isError, error, refetch } = useEventVendors(event.id);
   const { data: directory } = useVendors();
   const addVendor = useAddEventVendor();
+  const reorder = useReorderEventVendors();
   const [vendorId, setVendorId] = useState("");
+  const serverOrder = useMemo(() => (bookings ?? []).map((booking) => booking.id), [bookings]);
+  const serverOrderKey = serverOrder.join("\u0000");
+  const [visibleOrder, setVisibleOrder] = useState<string[]>(serverOrder);
+  const orderedBookings = useMemo(() => {
+    const byId = new Map((bookings ?? []).map((booking) => [booking.id, booking]));
+    const ordered = visibleOrder.flatMap((id) => {
+      const booking = byId.get(id);
+      if (!booking) return [];
+      byId.delete(id);
+      return [booking];
+    });
+    return [...ordered, ...byId.values()];
+  }, [bookings, visibleOrder]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  useEffect(() => {
+    setVisibleOrder(serverOrderKey ? serverOrderKey.split("\u0000") : []);
+  }, [event.id, serverOrderKey]);
+
+  const finishReorder = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id || reorder.isPending) return;
+    const currentIds = orderedBookings.map((booking) => booking.id);
+    const oldIndex = currentIds.indexOf(String(active.id));
+    const newIndex = currentIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const orderedIds = arrayMove(currentIds, oldIndex, newIndex);
+    setVisibleOrder(orderedIds);
+    reorder.mutate(
+      { eventId: event.id, orderedIds },
+      {
+        onSuccess: () => toast({ title: "Vendor order saved", description: "This order now carries into the Run of Show and budget." }),
+        onError: (mutationError) => {
+          setVisibleOrder(serverOrder);
+          toast({ title: "Couldn't save vendor order", description: `${mutationError.message} The previous order was restored.` });
+        },
+      },
+    );
+  };
 
   const available = useMemo(() => {
     const booked = new Set((bookings ?? []).map((booking) => booking.vendorId));
@@ -269,25 +353,36 @@ export function VendorsPanel({ event }: { event: Event }) {
           description="Book from your directory above. Unconfirmed vendors on a near event show up on Today."
         />
       ) : (
-        <ul className="divide-y divide-hairline">
-          {(bookings ?? []).map((booking) => (
-            <VendorRow
-              key={booking.id}
-              eventId={event.id}
-              bookingId={booking.id}
-              booking={booking}
-              vendorId={booking.vendorId}
-              name={booking.vendor?.name ?? "Removed vendor"}
-              category={booking.vendor?.category ?? "—"}
-              status={booking.status}
-              feeCents={booking.feeCents}
-              notes={booking.notes}
-              contactEmail={booking.vendor?.contactEmail ?? null}
-              contactPhone={booking.vendor?.contactPhone ?? null}
-              city={booking.vendor?.city ?? null}
-            />
-          ))}
-        </ul>
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface-sunken px-5 py-2 text-xs text-muted-foreground">
+            <span>Drag vendors into the order you want. The same order is used throughout this event.</span>
+            {reorder.isPending ? <Pill tone="info"><Save className="mr-1 size-3" />Saving order to Beebizy…</Pill> : null}
+          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={finishReorder}>
+            <SortableContext items={orderedBookings.map((booking) => booking.id)} strategy={verticalListSortingStrategy}>
+              <ul className="divide-y divide-hairline">
+                {orderedBookings.map((booking) => (
+                  <VendorRow
+                    key={booking.id}
+                    eventId={event.id}
+                    bookingId={booking.id}
+                    booking={booking}
+                    vendorId={booking.vendorId}
+                    name={booking.vendor?.name ?? "Removed vendor"}
+                    category={booking.vendor?.category ?? "—"}
+                    status={booking.status}
+                    feeCents={booking.feeCents}
+                    notes={booking.notes}
+                    contactEmail={booking.vendor?.contactEmail ?? null}
+                    contactPhone={booking.vendor?.contactPhone ?? null}
+                    city={booking.vendor?.city ?? null}
+                    reorderDisabled={reorder.isPending}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        </div>
       )}
     </Panel>
   );

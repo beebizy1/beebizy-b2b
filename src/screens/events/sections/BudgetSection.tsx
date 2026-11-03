@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Coins, Copy, ExternalLink, Gavel, Handshake, Pencil, Plus, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
+import { Check, Coins, Copy, ExternalLink, Gavel, Handshake, Pencil, Plus, Store, Sparkles, Ticket, Trash2, Trophy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +36,7 @@ import {
   useUpdateAuctionDonor,
   useSendAuctionDonorThankYou,
   useBudget,
+  useEventVendors,
   useDrawRaffle,
   useEventRoi,
   useRaffleItems,
@@ -311,6 +312,7 @@ function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
 
 export function BudgetPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useBudget(event.id);
+  const { data: eventVendors } = useEventVendors(event.id);
   const add = useAddBudgetItem();
   const update = useUpdateBudgetItem();
   const [name, setName] = useState("");
@@ -325,6 +327,7 @@ export function BudgetPanel({ event }: { event: Event }) {
   const revenue = (items ?? []).filter((item) => item.type === "revenue");
   const plannedSpend = sumCents(expenses.map((item) => item.estimatedCents));
   const actualSpend = sumCents(expenses.map((item) => item.actualCents));
+  const vendorCommitted = sumCents((eventVendors ?? []).map((booking) => booking.feeCents));
   const headcount = event.capacity ?? Math.max(event.registrationCount, 100);
   const suggestedTotal = suggestedTotalBudgetCents(headcount);
   const suggestedLines = buildBudgetSuggestions(suggestedTotal);
@@ -390,7 +393,7 @@ export function BudgetPanel({ event }: { event: Event }) {
     <Panel>
       <PanelHeader
         title="Budget"
-        description={`${expenses.length} expense lines, ${revenue.length} revenue lines`}
+        description={`${expenses.length} expense lines, ${revenue.length} revenue lines · ${formatMoney(vendorCommitted)} in synced vendor commitments`}
         actions={
           <>
             <EventSpreadsheetImportDialog event={event} />
@@ -415,6 +418,43 @@ export function BudgetPanel({ event }: { event: Event }) {
           </>
         }
       />
+
+      {(eventVendors ?? []).length > 0 ? (
+        <section className="border-b border-hairline bg-primary-wash/45 px-5 py-4" aria-labelledby="vendor-commitments-title">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 id="vendor-commitments-title" className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Store className="size-4 text-primary-text" />
+                Vendor commitments
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Synced automatically from Vendors. Change a fee or vendor order once and it updates everywhere.
+              </p>
+            </div>
+            <div className="text-right">
+              <p data-numeric className="text-lg font-bold text-foreground">{formatMoney(vendorCommitted)}</p>
+              <Button asChild variant="link" size="sm" className="h-auto px-0 py-0 text-xs">
+                <a href={`/app/events/${event.id}/vendors`}>Edit vendor details</a>
+              </Button>
+            </div>
+          </div>
+          <ol className="mt-3 divide-y divide-hairline rounded-lg border border-hairline bg-surface">
+            {(eventVendors ?? []).map((booking, index) => (
+              <li key={booking.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm">
+                <span data-numeric className="w-5 shrink-0 text-xs font-bold text-muted-foreground">{index + 1}</span>
+                <div className="min-w-[12rem] flex-1">
+                  <p className="font-semibold text-foreground">{booking.vendor?.name ?? "Removed vendor"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{booking.notes || booking.vendor?.category || "Vendor"}</p>
+                </div>
+                <Pill tone={booking.status === "confirmed" ? "success" : booking.status === "cancelled" ? "danger" : "warning"}>
+                  {booking.status}
+                </Pill>
+                <span data-numeric className="w-28 text-right font-semibold text-foreground">{formatMoney(booking.feeCents)}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
       {adjustingTotal ? (
         <form
@@ -1916,12 +1956,17 @@ export function BudgetTotals({ event }: { event: Event }) {
  */
 export function BudgetRoiSummary({ event }: { event: Event }) {
   const { data: budget, isLoading } = useBudget(event.id);
+  const { data: eventVendors } = useEventVendors(event.id);
 
   const lines = budget ?? [];
   const expenses = lines.filter((line) => line.type === "expense");
   const revenues = lines.filter((line) => line.type === "revenue");
 
-  const estimatedSpend = sumCents(expenses.map((line) => line.estimatedCents));
+  const normalizedVendorNames = new Set((eventVendors ?? []).map((booking) => booking.vendor?.name.trim().toLowerCase()).filter(Boolean));
+  const vendorSpend = sumCents((eventVendors ?? [])
+    .filter((booking) => booking.feeCents !== null && !expenses.some((line) => normalizedVendorNames.has(line.name.trim().toLowerCase()) && line.name.trim().toLowerCase() === booking.vendor?.name.trim().toLowerCase()))
+    .map((booking) => booking.feeCents));
+  const estimatedSpend = sumCents(expenses.map((line) => line.estimatedCents)) + vendorSpend;
   const actualSpend = sumCents(expenses.map((line) => line.actualCents));
   const estimatedRevenue = sumCents(revenues.map((line) => line.estimatedCents));
   const actualRevenue = sumCents(revenues.map((line) => line.actualCents));
@@ -1943,7 +1988,7 @@ export function BudgetRoiSummary({ event }: { event: Event }) {
   return (
     <Panel>
       <PanelHeader
-        title="Summary & ROI"
+        title="Budget & return on investment"
         description={
           lines.length === 0
             ? "Add budget lines to see utilisation and return"
@@ -1978,13 +2023,13 @@ export function BudgetRoiSummary({ event }: { event: Event }) {
               <dd data-numeric className="mt-0.5 font-semibold text-foreground">{formatMoney(actualSpend)}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Projected ROI</dt>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Projected return</dt>
               <dd data-numeric className="mt-0.5 font-semibold text-foreground">
                 {projectedRoi === null ? "—" : `${projectedRoi}%`}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Actual ROI</dt>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Actual return</dt>
               <dd
                 data-numeric
                 className={cn(

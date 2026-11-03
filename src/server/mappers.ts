@@ -274,6 +274,7 @@ export function toEventVendor(
     status: row.status,
     feeCents: row.feeCents,
     vendor: vendor ? toVendor(vendor) : null,
+    sortOrder: row.sortOrder,
     paperwork: {
       revision: row.paperworkRevision,
       contractRequired: row.contractRequired,

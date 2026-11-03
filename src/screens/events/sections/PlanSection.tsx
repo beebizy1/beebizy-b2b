@@ -1094,6 +1094,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const { data: eventHistory } = useEventHistory(event.id);
   const { data: members } = useMembers();
   const { data: volunteers } = useVolunteers(event.id);
+  const { data: eventVendors } = useEventVendors(event.id);
   const add = useAddRunOfShowItem();
   const reorder = useReorderRunOfShow();
   const days = useMemo(
@@ -1310,6 +1311,50 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
           </Button>
         </span>
       </div>
+
+      {(eventVendors ?? []).length > 0 ? (
+        <section className="border-b border-hairline bg-surface px-5 py-4" aria-labelledby="run-of-show-vendors">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 id="run-of-show-vendors" className="text-sm font-semibold text-foreground">Vendor operations</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Automatically synced from Vendors, in the same order. Edit a vendor once and the details update here.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/app/events/${event.id}/vendors`}>
+                <Store className="mr-1.5 size-3.5" />
+                Edit vendors
+              </Link>
+            </Button>
+          </div>
+          <ol className="mt-3 grid gap-2 lg:grid-cols-2">
+            {(eventVendors ?? []).map((booking, index) => {
+              const contact = [booking.vendor?.contactEmail, booking.vendor?.contactPhone].filter(Boolean).join(" · ");
+              return (
+                <li key={booking.id} className="rounded-lg border border-hairline bg-surface-sunken px-3 py-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <span data-numeric className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-wash text-xs font-bold text-primary-text">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-foreground">{booking.vendor?.name ?? "Removed vendor"}</p>
+                        <Pill>{booking.vendor?.category ?? "Vendor"}</Pill>
+                        <Pill tone={booking.status === "confirmed" ? "success" : booking.status === "cancelled" ? "danger" : "warning"}>
+                          {booking.status}
+                        </Pill>
+                      </div>
+                      {booking.notes ? <p className="mt-1 text-xs text-foreground">{booking.notes}</p> : null}
+                      {contact ? <p className="mt-1 truncate text-xs text-muted-foreground">{contact}</p> : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
 
       {days.length > 1 ? (
         <div

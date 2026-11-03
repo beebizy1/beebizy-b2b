@@ -618,6 +618,14 @@ export function useUpdateEventVendor() {
   );
 }
 
+export function useReorderEventVendors() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; orderedIds: string[] }) =>
+      a.eventVendors.reorder(vars.eventId, vars.orderedIds),
+    (vars) => [qk.eventVendors(vars.eventId), qk.history(vars.eventId), ...eventDerivedKeys(vars.eventId)],
+  );
+}
+
 export function useRemoveEventVendor() {
   return useAdapterMutation(
     (a, vars: { eventId: string; id: string }) => a.eventVendors.remove(vars.eventId, vars.id),

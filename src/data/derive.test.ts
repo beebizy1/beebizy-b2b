@@ -75,6 +75,7 @@ function booking(status: EventVendor["status"], category: string): EventVendor {
     notes: null,
     status,
     feeCents: 100_000,
+    sortOrder: 1,
     paperwork: { ...EMPTY_VENDOR_PAPERWORK },
     vendor: {
       id: `ven-${category}`,
