@@ -269,7 +269,7 @@ export function ReadinessRing({ value, size = 56, label }: { value: number; size
           className={cn("transition-[stroke-dashoffset] duration-700", strokeClass[tone])}
         />
       </svg>
-      <span data-numeric className="absolute inset-0 grid place-items-center text-xs font-bold text-foreground" aria-hidden="true">
+      <span data-numeric className={cn("absolute inset-0 grid place-items-center font-bold text-foreground", size >= 72 ? "text-base" : "text-xs")} aria-hidden="true">
         {clamped}%
       </span>
     </div>

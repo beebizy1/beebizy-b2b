@@ -21,51 +21,51 @@ export default function OverviewSection({ event, health }: { event: Event; healt
   return (
     <div className="space-y-5">
       <section aria-label="Event summary" className="grid gap-5 md:grid-cols-3">
-        <Panel className="flex min-h-28 items-center gap-4 p-4">
-          <ReadinessRing value={health?.readiness ?? 0} size={66} label={`${event.title} readiness`} />
+        <Panel className="flex min-h-36 items-center gap-5 rounded-2xl p-6">
+          <ReadinessRing value={health?.readiness ?? 0} size={86} label={`${event.title} readiness`} />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">Event Readiness</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="text-lg font-bold text-foreground">Event Readiness</p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">
               {health ? `${health.vendorsConfirmed} of ${health.vendorsTotal} vendors confirmed` : "Calculating event progress"}
             </p>
           </div>
         </Panel>
 
-        <Panel className="flex min-h-28 items-center gap-4 p-4">
-          <Store className="size-7 shrink-0 text-[#9a6a00]" />
+        <Panel className="flex min-h-36 items-center gap-5 rounded-2xl p-6">
+          <Store className="size-8 shrink-0 text-[#9a6a00]" />
           <div>
-            <p className="text-sm font-semibold text-foreground">Vendors</p>
-            <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{confirmedVendors} / {vendors?.length ?? 0}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Confirmed</p>
+            <p className="text-lg font-bold text-foreground">Vendors</p>
+            <p data-numeric className="mt-2 text-4xl font-extrabold leading-none text-foreground">{confirmedVendors} / {vendors?.length ?? 0}</p>
+            <p className="mt-2 text-sm font-medium text-muted-foreground">Confirmed</p>
           </div>
         </Panel>
 
-        <Panel className="flex min-h-28 items-center gap-4 p-4">
-          <Users className="size-7 shrink-0 text-[#9a6a00]" />
+        <Panel className="flex min-h-36 items-center gap-5 rounded-2xl p-6">
+          <Users className="size-8 shrink-0 text-[#9a6a00]" />
           <div>
-            <p className="text-sm font-semibold text-foreground">Registrations</p>
-            <p data-numeric className="mt-1 text-2xl font-bold leading-none text-foreground">{event.registrationCount}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Registered</p>
+            <p className="text-lg font-bold text-foreground">Registrations</p>
+            <p data-numeric className="mt-2 text-4xl font-extrabold leading-none text-foreground">{event.registrationCount}</p>
+            <p className="mt-2 text-sm font-medium text-muted-foreground">Registered</p>
           </div>
         </Panel>
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
-        <Panel className="overflow-hidden">
-          <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
-            <div className="flex items-center gap-2"><CheckSquare className="size-4 text-primary-text" /><h2 className="text-sm font-semibold text-foreground">Next Steps</h2></div>
-            <Link href={eventTabHref(event.id, "checklist")} className="inline-flex items-center gap-1 text-xs font-semibold text-primary-text hover:underline">View All Tasks <ArrowRight className="size-3" /></Link>
+        <Panel className="min-h-[22rem] overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-6 py-5">
+            <div className="flex items-center gap-3"><CheckSquare className="size-5 text-primary-text" /><h2 className="text-lg font-bold text-foreground">Next Steps</h2></div>
+            <Link href={eventTabHref(event.id, "checklist")} className="inline-flex items-center gap-1 text-sm font-semibold text-primary-text hover:underline">View All Tasks <ArrowRight className="size-4" /></Link>
           </div>
           {checklistLoading ? (
             <LoadingRows rows={5} className="p-4" />
           ) : openTasks.length === 0 ? (
             <EmptyState icon={CheckSquare} title="Everything is complete" description="New open tasks will appear here." />
           ) : (
-            <ul className="divide-y divide-hairline px-4">
+            <ul className="divide-y divide-hairline px-6">
               {openTasks.map((item) => (
                 <li key={item.id}>
-                  <Link href={eventTabHref(event.id, "checklist")} className="flex items-center gap-3 py-2.5 text-sm hover:text-primary-text">
-                    <span className="size-3.5 shrink-0 rounded-[3px] border border-muted-foreground/45 bg-white" aria-hidden="true" />
+                  <Link href={eventTabHref(event.id, "checklist")} className="flex items-center gap-4 py-3.5 text-base hover:text-primary-text">
+                    <span className="size-4 shrink-0 rounded-[3px] border border-muted-foreground/45 bg-white" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate font-medium text-foreground">{item.title}</span>
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                   </Link>
@@ -75,22 +75,22 @@ export default function OverviewSection({ event, health }: { event: Event; healt
           )}
         </Panel>
 
-        <Panel className="overflow-hidden">
-          <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
-            <div className="flex items-center gap-2"><ClipboardList className="size-4 text-primary-text" /><h2 className="text-sm font-semibold text-foreground">Run of Show</h2></div>
-            <Link href={eventTabHref(event.id, "run-of-show")} className="inline-flex items-center gap-1 text-xs font-semibold text-primary-text hover:underline">View Full Schedule <ArrowRight className="size-3" /></Link>
+        <Panel className="min-h-[22rem] overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-6 py-5">
+            <div className="flex items-center gap-3"><ClipboardList className="size-5 text-primary-text" /><h2 className="text-lg font-bold text-foreground">Run of Show</h2></div>
+            <Link href={eventTabHref(event.id, "run-of-show")} className="inline-flex items-center gap-1 text-sm font-semibold text-primary-text hover:underline">View Full Schedule <ArrowRight className="size-4" /></Link>
           </div>
           {rosLoading ? (
             <LoadingRows rows={5} className="p-4" />
           ) : upcomingCues.length === 0 ? (
             <EmptyState icon={Clock} title="No schedule yet" description="Add the first cue in Run of Show." />
           ) : (
-            <ol className="relative px-5 py-3 before:absolute before:bottom-5 before:left-[1.65rem] before:top-5 before:w-px before:bg-primary/70">
+            <ol className="relative px-7 py-4 before:absolute before:bottom-7 before:left-[2.2rem] before:top-7 before:w-px before:bg-primary">
               {upcomingCues.map((cue) => (
-                <li key={cue.id} className="relative flex items-center gap-3 py-2">
-                  <span className="relative z-10 size-3 shrink-0 rounded-full border-2 border-primary bg-white" aria-hidden="true" />
-                  <time data-numeric className="w-16 shrink-0 font-mono text-xs font-semibold text-foreground">{formatClockTime(cue.startTime)}</time>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{cue.title}</span>
+                <li key={cue.id} className="relative flex items-center gap-4 py-3">
+                  <span className="relative z-10 size-4 shrink-0 rounded-full border-[3px] border-primary bg-white" aria-hidden="true" />
+                  <time data-numeric className="w-20 shrink-0 font-mono text-sm font-bold text-foreground">{formatClockTime(cue.startTime)}</time>
+                  <span className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">{cue.title}</span>
                 </li>
               ))}
             </ol>

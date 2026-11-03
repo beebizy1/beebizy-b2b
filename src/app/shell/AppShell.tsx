@@ -321,8 +321,10 @@ function AppShellFrame({
   const { open, setOpen } = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [pathname] = useLocation();
   const { experience } = useAccountExperience();
   const plan = effectivePlan(identity?.access);
+  const focusedEventWorkspace = /^\/app\/events\/[^/]+/.test(pathname);
 
   return (
     <div className="flex min-h-dvh bg-background">
@@ -330,7 +332,7 @@ function AppShellFrame({
         Skip to content
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 md:block">
+      <aside className={cn("fixed inset-y-0 left-0 z-50 hidden w-64 md:block", focusedEventWorkspace && "md:hidden")}>
         <SidebarContent
           canReviewFeedback={identity?.canReviewFeedback ?? false}
           plan={plan}
@@ -338,7 +340,7 @@ function AppShellFrame({
         />
       </aside>
 
-      <div className="fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-border bg-background px-4 md:hidden">
+      <div className={cn("fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-border bg-background px-4 md:hidden", focusedEventWorkspace && "hidden")}>
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="mr-2" aria-label="Open navigation">
@@ -358,11 +360,11 @@ function AppShellFrame({
         <BrandLogo size="sm" />
       </div>
 
-      <main id="main" className="flex min-h-dvh min-w-0 flex-1 flex-col pt-16 md:ml-64 md:pt-0">
+      <main id="main" className={cn("flex min-h-dvh min-w-0 flex-1 flex-col pt-16 md:ml-64 md:pt-0", focusedEventWorkspace && "bg-[#faf9f6] pt-0 md:ml-0")}>
         <DemoBanner />
         {mode === "live" ? <BetaBanner access={identity?.access} onFeedback={() => setFeedbackOpen(true)} /> : null}
         <div className="min-w-0 flex-1 p-4 pb-24 sm:p-6 sm:pb-28 lg:p-8 lg:pb-28">
-          <div className="content-enter mx-auto w-full max-w-[1720px]">{children}</div>
+          <div className={cn("content-enter mx-auto w-full max-w-[1720px]", focusedEventWorkspace && "max-w-none")}>{children}</div>
         </div>
       </main>
 
