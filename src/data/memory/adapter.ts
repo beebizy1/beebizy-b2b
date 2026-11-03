@@ -15,6 +15,7 @@ import type {
   CanvasesRepository,
   DataAdapter,
   EventScopedRepository,
+  EventVendorsRepository,
   EventsRepository,
   FloorplanRepository,
   MembersRepository,
@@ -1183,10 +1184,10 @@ const vendorEventPackets: VendorEventPacketsRepository = {
 
 /* -------------------------------------------------------- workspace records */
 
-const eventVendors = eventScoped<EventVendor, EventVendorDraft, EventVendorPatch>(
+const eventVendorsBase = eventScoped<EventVendor, EventVendorDraft, EventVendorPatch>(
   () => store().eventVendors,
   "ev",
-  (eventId, draft) => ({
+  (eventId, draft, sortOrder) => ({
     id: "",
     eventId,
     vendorId: draft.vendorId,
@@ -1195,11 +1196,26 @@ const eventVendors = eventScoped<EventVendor, EventVendorDraft, EventVendorPatch
     feeCents: draft.feeCents ?? null,
     vendor: store().vendors.find((v) => v.id === draft.vendorId) ?? null,
     paperwork: { ...EMPTY_VENDOR_PAPERWORK },
+    sortOrder,
     createdAt: nowIso(),
   }),
   "vendor-booking",
-  (a, b) => a.createdAt.localeCompare(b.createdAt),
+  (a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt),
 );
+const eventVendors: EventVendorsRepository = {
+  ...eventVendorsBase,
+  async reorder(eventId, orderedIds) {
+    await wait();
+    const rows = store().eventVendors.filter((row) => row.eventId === eventId);
+    const existingIds = new Set(rows.map((row) => row.id));
+    if (orderedIds.length !== rows.length || new Set(orderedIds).size !== rows.length || orderedIds.some((id) => !existingIds.has(id))) {
+      throw new DataError("conflict", "The vendor list changed while it was being reordered. Refresh and try again.");
+    }
+    const order = new Map(orderedIds.map((id, index) => [id, index + 1]));
+    for (const row of rows) row.sortOrder = order.get(row.id)!;
+    return copy(rows.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
+  },
+};
 
 function memoryPaperworkPayload(booking: EventVendor): PublicVendorPaperwork {
   const event = requireEvent(booking.eventId);

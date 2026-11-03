@@ -758,6 +758,7 @@ export function buildSeed(): MemoryDb {
       feeCents,
       vendor: vendorById.get(vendorId) ?? null,
       paperwork: { ...EMPTY_VENDOR_PAPERWORK },
+      sortOrder: evSeq,
       createdAt: at(-30 + evSeq),
     };
   };

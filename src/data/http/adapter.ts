@@ -462,7 +462,11 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
         }),
     },
 
-    eventVendors: eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"],
+    eventVendors: {
+      ...(eventScoped<EventVendor, never, never>(client, "vendors") as DataAdapter["eventVendors"]),
+      reorder: (eventId, orderedIds) =>
+        client.patch<EventVendor[]>(`/events/${eventId}/vendor-order`, { orderedIds }),
+    },
     checkInStations: eventScoped<CheckInStation, never, never>(client, "check-in-stations") as DataAdapter["checkInStations"],
     checklist: eventScoped<ChecklistItem, never, never>(client, "checklist") as DataAdapter["checklist"],
     runOfShow: {

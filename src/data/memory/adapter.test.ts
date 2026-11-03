@@ -861,6 +861,18 @@ describe("vendors", () => {
     expect(bookings.some((booking) => booking.vendorId === "ven-goldengate")).toBe(false);
     expect(await memoryAdapter.vendorMessages.list("ven-goldengate")).toEqual([]);
   });
+
+  it("persists one complete vendor order and rejects stale partial orders", async () => {
+    const before = await memoryAdapter.eventVendors.list("evt-skickoff");
+    const reversedIds = before.map((booking) => booking.id).reverse();
+
+    const reordered = await memoryAdapter.eventVendors.reorder("evt-skickoff", reversedIds);
+    expect(reordered.map((booking) => booking.id)).toEqual(reversedIds);
+    expect((await memoryAdapter.eventVendors.list("evt-skickoff")).map((booking) => booking.id)).toEqual(reversedIds);
+
+    await expect(memoryAdapter.eventVendors.reorder("evt-skickoff", reversedIds.slice(1))).rejects.toThrow(/list changed/i);
+    expect((await memoryAdapter.eventVendors.list("evt-skickoff")).map((booking) => booking.id)).toEqual(reversedIds);
+  });
 });
 
 describe("locations", () => {

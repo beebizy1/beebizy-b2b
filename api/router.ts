@@ -932,6 +932,12 @@ async function handleAuthed(
         }).parse(body);
         return json(await repos.runOfShow.reorder(ctx, a, input.dayNumber, input.orderedIds));
       }
+      if (a && b === "vendor-order" && !c && method === "PATCH") {
+        const input = z.object({
+          orderedIds: z.array(z.string().trim().min(1).max(200)).max(500),
+        }).parse(body);
+        return json(await repos.eventVendors.reorder(ctx, a, input.orderedIds));
+      }
 
       // Event subcollections: /api/events/:id/<sub>[/:childId]
       if (a && b) {

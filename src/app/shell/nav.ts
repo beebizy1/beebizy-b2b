@@ -195,7 +195,7 @@ export const EVENT_TABS: EventTab[] = [
     capability: "contingencyPlanning",
   },
   { id: "vendors", label: "Vendors", slug: "vendors", icon: Store, hint: "Bookings and confirmations", capability: "vendorManagement" },
-  { id: "budget", label: "Budget & ROI", slug: "budget", icon: DollarSign, hint: "Planned against actual, and the return" },
+  { id: "budget", label: "Budget & Return", slug: "budget", icon: DollarSign, hint: "Budget, revenue, and return on investment" },
   { id: "floorplan", label: "Floorplan", slug: "floorplan", icon: LayoutGrid, hint: "Room layout, tables and zones" },
   { id: "inspiration", label: "Inspiration", slug: "inspiration", icon: Sparkles, hint: "Mood board for decor, staging and lighting", capability: "inspirationBoards" },
   { id: "fundraising", label: "Fundraising", slug: "fundraising", icon: HandCoins, hint: "Sponsorships and what they brought in" },

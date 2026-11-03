@@ -504,6 +504,7 @@ export interface EventVendor {
   feeCents: Cents | null;
   vendor: Vendor | null;
   paperwork: VendorPaperwork;
+  sortOrder: number;
   createdAt: IsoDateTime;
 }
 
