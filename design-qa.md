@@ -1,11 +1,11 @@
 # Event Overview Design QA
 
 - Source visual truth: `/var/folders/vs/n9nh5qdx3ybf_r7xglw7v9zm0000gp/T/codex-clipboard-640fdecc-3290-4371-a3fa-fbb33db582f7.png`
-- Implementation screenshot: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-color-format-final.png`
+- Implementation screenshot: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-full-shell-final.png`
 - Comparison state: Event Overview with More actions open.
 - Browser: Codex in-app browser, local demo route.
 - Source pixels: 1972 x 1304. Reference normalized to 900 x 595.
-- Implementation pixels: 2318 x 1525. Event workspace region normalized to 900 x 506.
+- Implementation pixels: 2318 x 1525. Focused event workspace was reviewed at native scale and normalized against the 1972 x 1304 source.
 - Density normalization: both comparison crops resized to 900 CSS-reference pixels wide.
 
 ## Full-view comparison evidence
@@ -44,6 +44,13 @@ The header and actions menu were compared at readable scale. Button hierarchy, b
 - Fix: Center the percentage inside the ring, use the clarified bright-yellow / gold / black / white treatment, match action capitalization and icons, and remove the non-reference template action from this menu.
 - Post-fix evidence: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-color-format-final.png`
 - No actionable P0, P1, or P2 visual mismatches remain.
+
+### Pass 4
+
+- [P1] The global sidebar still squeezed the event workspace, typography and controls were materially smaller than the clarified full-screen reference, and the event-specific All Events / notification / avatar bar was missing.
+- Fix: Use a focused full-width shell on event routes, restore the event top bar, increase title/action/card typography and spacing, scope the exact black-yellow-white tokens to event workspaces, and increase summary and schedule density to the reference proportions.
+- Post-fix evidence: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-full-shell-final.png`
+- No actionable P0, P1, or P2 visual mismatches remain. The longer draggable tab rail and day selector remain intentional functional requirements from the same customer thread.
 
 ## Primary interactions tested
 

@@ -31,6 +31,7 @@ import {
   ArrowLeft,
   ArrowDown,
   ArrowUp,
+  Bell,
   CalendarClock,
   ChevronDown,
   Eye,
@@ -106,6 +107,7 @@ import { effectivePlan, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
 import { endAfterAddingEventDay, eventDayOptions, formatEventDayLabel, selectedEventDay } from "@/data/eventDays";
 import { useAccountExperience } from "@/app/useAccountExperience";
+import { useSession } from "@/app/session";
 import { eventDetailsReturnTarget, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import OverviewSection from "./sections/OverviewSection";
 import GuestsSection from "./sections/GuestsSection";
@@ -169,7 +171,7 @@ function SortableEventTab({
       className={cn(
         "group flex shrink-0 snap-start items-stretch overflow-hidden rounded-lg border bg-card transition-[background-color,border-color,box-shadow,color]",
         isActive
-          ? "border-primary/50 bg-primary-muted font-semibold text-foreground shadow-xs"
+          ? "border-primary/40 bg-[#fff2a8] font-semibold text-foreground shadow-xs"
           : "border-transparent font-medium text-muted-foreground hover:border-card-border hover:text-foreground",
         isDragging && "cursor-grabbing shadow-lg ring-2 ring-primary/30",
       )}
@@ -188,7 +190,7 @@ function SortableEventTab({
         ref={isActive ? activeRef : undefined}
         href={`${eventTabHref(eventId, tab.id)}?day=${dayNumber}`}
         aria-current={isActive ? "page" : undefined}
-        className="flex items-center gap-2 whitespace-nowrap px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex items-center gap-2 whitespace-nowrap px-4 py-3 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {tab.icon ? (
           <tab.icon className={cn("size-3.5 shrink-0", isActive && "text-primary-text")} aria-hidden="true" />
@@ -346,6 +348,34 @@ function RiskStrip({ health, eventId }: { health: EventHealth; eventId: string }
         </li>
       ))}
     </ul>
+  );
+}
+
+function EventWorkspaceTopBar() {
+  const { user } = useSession();
+  const initials = (user?.name ?? "Beebizy")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+  return (
+    <div className="flex min-h-16 items-center justify-between px-1 sm:px-3">
+      <Link href="/app/events" className="inline-flex items-center gap-3 text-base font-bold text-foreground hover:text-primary-text">
+        <ArrowLeft className="size-5" />
+        All Events
+      </Link>
+      <div className="flex items-center gap-4">
+        <button type="button" className="relative grid size-10 place-items-center rounded-full hover:bg-white" aria-label="Notifications">
+          <Bell className="size-5" />
+          <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary ring-2 ring-[#faf9f6]" aria-hidden="true" />
+        </button>
+        <Link href="/app/settings" className="flex items-center gap-2 rounded-full" aria-label="Account settings">
+          <span className="grid size-11 place-items-center rounded-full bg-neutral-200 text-sm font-bold text-black">{initials || "B"}</span>
+          <ChevronDown className="size-4" />
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -540,31 +570,23 @@ function WorkspaceHeader({
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-card-border bg-card shadow-sm">
-      <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
-      <Link
-        href="/app/events"
-        className="inline-flex items-center gap-1.5 rounded-md text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden="true" />
-        All events
-      </Link>
-
+    <section className="overflow-hidden rounded-[24px] border border-card-border bg-card shadow-sm">
+      <div className="space-y-5 px-5 py-6 sm:px-7 sm:py-7">
       <div className="space-y-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-            <h1 className="display-md text-foreground">{event.title}</h1>
+            <h1 className="text-3xl font-extrabold leading-tight tracking-[-0.035em] text-foreground lg:text-[44px]">{event.title}</h1>
             <EventStatusBadge status={event.status} />
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="h-12 px-5 text-base font-bold">
               <Link href={`/app/events/${event.id}/edit`}>
                 <Pencil className="mr-1.5 size-3.5" />
                 Edit Event
               </Link>
             </Button>
             {experience === "standard" ? (
-              <Button asChild variant="outline" size="sm">
+              <Button asChild variant="outline" size="sm" className="h-12 bg-white px-5 text-base font-bold">
                 <Link href={active === "share" ? `/app/events/${event.id}` : eventSectionHref(event.id, "share")}>
                   <Upload className="mr-1.5 size-3.5" />
                   {active === "share" ? "Back to Event" : "Share"}
@@ -573,13 +595,13 @@ function WorkspaceHeader({
             ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="border-primary/80 bg-white hover:bg-primary-muted">
+                <Button variant="outline" size="sm" className="h-12 border-2 border-primary bg-white px-5 text-base font-bold hover:bg-primary-muted">
                   <MoreHorizontal className="mr-1.5 size-4" />
                   More Actions
                   <ChevronDown className="ml-1.5 size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuContent align="end" className="w-60 p-2 text-base shadow-xl [&_[role=menuitem]]:py-3">
                 {experience === "standard" ? <DropdownMenuItem asChild>
                   <Link href={eventSectionHref(event.id, "share")}>
                     <Link2 className="size-4" />
@@ -647,7 +669,7 @@ function WorkspaceHeader({
           </div>
         </div>
 
-        <dl className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-muted-foreground">
+        <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-semibold text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <CalendarClock className="size-3.5 text-foreground/70" aria-hidden="true" />
             <dt className="sr-only">When</dt>
@@ -854,7 +876,8 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
   const launchWorkspace = active === "share";
 
   return (
-    <div className={cn("space-y-6", (guidedInviteList || launchWorkspace) && "mx-auto max-w-6xl")}>
+    <div className={cn("event-reference-theme space-y-6", (guidedInviteList || launchWorkspace) && "mx-auto max-w-6xl")}>
+      {!guidedInviteList && !launchWorkspace ? <EventWorkspaceTopBar /> : null}
       {guidedInviteList ? (
         <EventLaunchContextBar
           activeStep={2}

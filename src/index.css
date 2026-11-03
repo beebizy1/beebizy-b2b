@@ -462,6 +462,24 @@
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
+.event-reference-theme {
+  --background: 40 20% 98%;
+  --foreground: 0 0% 4%;
+  --surface-foreground: 0 0% 4%;
+  --card-foreground: 0 0% 4%;
+  --popover-foreground: 0 0% 4%;
+  --muted-foreground: 220 7% 36%;
+  --primary: 50 100% 50%;
+  --primary-hover: 48 100% 46%;
+  --primary-foreground: 0 0% 4%;
+  --primary-muted: 49 100% 88%;
+  --primary-wash: 48 100% 95%;
+  --primary-text: 39 100% 31%;
+  --brand-ink: 0 0% 4%;
+  --card-border: 220 12% 90%;
+  --hairline: 220 12% 91%;
+}
+
 
 @layer base {
   * {
