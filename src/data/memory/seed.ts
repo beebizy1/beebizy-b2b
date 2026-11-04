@@ -756,6 +756,8 @@ export function buildSeed(): MemoryDb {
       notes,
       status,
       feeCents,
+      arrivalTime: null,
+      departureTime: null,
       vendor: vendorById.get(vendorId) ?? null,
       paperwork: { ...EMPTY_VENDOR_PAPERWORK },
       sortOrder: evSeq,

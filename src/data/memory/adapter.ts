@@ -1194,6 +1194,8 @@ const eventVendorsBase = eventScoped<EventVendor, EventVendorDraft, EventVendorP
     notes: draft.notes ?? null,
     status: draft.status ?? "pending",
     feeCents: draft.feeCents ?? null,
+    arrivalTime: draft.arrivalTime ?? null,
+    departureTime: draft.departureTime ?? null,
     vendor: store().vendors.find((v) => v.id === draft.vendorId) ?? null,
     paperwork: { ...EMPTY_VENDOR_PAPERWORK },
     sortOrder,
@@ -1204,6 +1206,27 @@ const eventVendorsBase = eventScoped<EventVendor, EventVendorDraft, EventVendorP
 );
 const eventVendors: EventVendorsRepository = {
   ...eventVendorsBase,
+  async update(eventId, id, patch) {
+    const booking = required(
+      store().eventVendors.find((row) => row.id === id && row.eventId === eventId),
+      `Record ${id} no longer exists.`,
+    );
+    const vendorName = booking.vendor?.name;
+    const paymentPlan = vendorName
+      ? store().vendorPaymentPlans.find((row) => row.eventId === eventId && normalizedVendorName(row.vendorName) === normalizedVendorName(vendorName))
+      : undefined;
+    if (patch.feeCents !== undefined && paymentPlan) {
+      const nextTotal = patch.feeCents ?? 0;
+      const paidCents = store().deposits
+        .filter((row) => row.eventId === eventId && row.paymentPlanId === paymentPlan.id && row.status === "paid")
+        .reduce((total, row) => total + row.amountCents, 0);
+      if (nextTotal < paidCents) {
+        throw new DataError("invalid", "The contracted amount cannot be less than deposits already paid.");
+      }
+      paymentPlan.totalAmountCents = nextTotal;
+    }
+    return eventVendorsBase.update(eventId, id, patch);
+  },
   async reorder(eventId, orderedIds) {
     await wait();
     const rows = store().eventVendors.filter((row) => row.eventId === eventId);

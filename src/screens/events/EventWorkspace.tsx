@@ -25,12 +25,11 @@ import {
   horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft,
-  ArrowDown,
-  ArrowUp,
   Bell,
   CalendarClock,
   ChevronDown,
@@ -201,6 +200,51 @@ function SortableEventTab({
   );
 }
 
+function SortableArrangeTabRow({
+  tab,
+  index,
+  isHidden,
+  onHiddenChange,
+}: {
+  tab: EventTab;
+  index: number;
+  isHidden: boolean;
+  onHiddenChange(nextHidden: boolean): void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 30 : undefined }}
+      className={cn(
+        "flex items-center gap-2 rounded-lg border border-hairline bg-surface px-3 py-2",
+        isHidden && "bg-surface-sunken text-muted-foreground",
+        isDragging && "shadow-lg ring-2 ring-primary/30",
+      )}
+    >
+      <button
+        type="button"
+        className="touch-none cursor-grab rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+        aria-label={`Drag ${tab.label} to rearrange`}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-4" />
+      </button>
+      <span className="w-6 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium">{tab.label}</span>
+      {tab.id === "overview" ? (
+        <span className="text-[11px] text-muted-foreground">Always shown</span>
+      ) : (
+        <Button type="button" variant="ghost" size="sm" aria-label={`${isHidden ? "Show" : "Hide"} ${tab.label}`} onClick={() => onHiddenChange(!isHidden)}>
+          {isHidden ? <Eye className="mr-1.5 size-4" /> : <EyeOff className="mr-1.5 size-4" />}
+          {isHidden ? "Show" : "Hide"}
+        </Button>
+      )}
+    </li>
+  );
+}
+
 function SectionTabs({
   eventId,
   active,
@@ -236,15 +280,6 @@ function SectionTabs({
   const saveOrder = (next: EventNavigationTabId[]) => {
     setOrder(next);
     onNavigationChange({ hiddenTabIds: hidden, tabOrder: next });
-  };
-
-  const move = (id: EventNavigationTabId, direction: -1 | 1) => {
-    const ids = allTabs.map((tab) => tab.id as EventNavigationTabId);
-    const from = ids.indexOf(id);
-    const to = from + direction;
-    if (from < 0 || to < 0 || to >= ids.length) return;
-    [ids[from], ids[to]] = [ids[to]!, ids[from]!];
-    saveOrder(ids);
   };
 
   const setTabHidden = (id: EventTabId, nextHidden: boolean) => {
@@ -303,25 +338,23 @@ function SectionTabs({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Arrange event tabs</DialogTitle>
-            <DialogDescription>Drag the handles in the tab bar, use these move buttons from the keyboard, or hide anything this event does not need. Changes save to this event for everyone.</DialogDescription>
+            <DialogDescription>Drag and drop these rows into the order you want, or hide anything this event does not need. Changes save to this event for everyone.</DialogDescription>
           </DialogHeader>
-          <ol className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
-            {allTabs.map((tab, index) => {
-              const isHidden = hidden.includes(tab.id as HideableEventTabId);
-              return (
-              <li key={tab.id} className={cn("flex items-center gap-2 rounded-lg border border-hairline px-3 py-2", isHidden && "bg-surface-sunken text-muted-foreground")}>
-                <span className="w-6 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
-                <span className="min-w-0 flex-1 text-sm font-medium">{tab.label}</span>
-                {tab.id === "overview" ? <span className="text-[11px] text-muted-foreground">Always shown</span> : <Button type="button" variant="ghost" size="sm" aria-label={`${isHidden ? "Show" : "Hide"} ${tab.label}`} onClick={() => setTabHidden(tab.id, !isHidden)}>{isHidden ? <Eye className="mr-1.5 size-4" /> : <EyeOff className="mr-1.5 size-4" />}{isHidden ? "Show" : "Hide"}</Button>}
-                <Button type="button" variant="ghost" size="icon" disabled={index === 0} aria-label={`Move ${tab.label} up`} onClick={() => move(tab.id as EventNavigationTabId, -1)}>
-                  <ArrowUp className="size-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" disabled={index === allTabs.length - 1} aria-label={`Move ${tab.label} down`} onClick={() => move(tab.id as EventNavigationTabId, 1)}>
-                  <ArrowDown className="size-4" />
-                </Button>
-              </li>
-            );})}
-          </ol>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={finishDrag}>
+            <SortableContext items={allTabs.map((tab) => tab.id)} strategy={verticalListSortingStrategy}>
+              <ol className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
+                {allTabs.map((tab, index) => (
+                  <SortableArrangeTabRow
+                    key={tab.id}
+                    tab={tab}
+                    index={index}
+                    isHidden={hidden.includes(tab.id as HideableEventTabId)}
+                    onHiddenChange={(nextHidden) => setTabHidden(tab.id, nextHidden)}
+                  />
+                ))}
+              </ol>
+            </SortableContext>
+          </DndContext>
           <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => saveOrder([])}>Reset default order</Button><Button type="button" variant="outline" onClick={() => { setHidden([]); onNavigationChange({ hiddenTabIds: [], tabOrder: order }); }}>Show all sections</Button></div>
         </DialogContent>
       </Dialog>

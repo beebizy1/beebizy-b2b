@@ -67,10 +67,11 @@ import {
   useVolunteers,
   useVendors,
   useEventVendors,
+  useUpdateEventVendor,
   useEventHistory,
   useSendVendorMessage,
 } from "@/data/hooks";
-import type { ChecklistItem, Event, RunOfShowItem, Vendor, VolunteerShift, WorkspaceMember } from "@/data/entities";
+import type { ChecklistItem, Event, EventVendor, RunOfShowItem, Vendor, VolunteerShift, WorkspaceMember } from "@/data/entities";
 import { eventDayOptions, formatEventDayLabel, type EventDayOption } from "@/data/eventDays";
 import {
   parseDeletedRunOfShowCues,
@@ -91,6 +92,7 @@ import {
   type ServerDeletedRunOfShowCue,
 } from "@/data/runOfShowRecovery";
 import { moveRunOfShowCue } from "@/data/runOfShowOrder";
+import { orderVendorOperations } from "@/data/vendorOperations";
 
 function readRunOfShowDraft(eventId: string, cueId: string) {
   if (typeof window === "undefined") return null;
@@ -1086,6 +1088,50 @@ function RunOfShowRecoveryDialog({
   );
 }
 
+function VendorOperationRow({ eventId, booking, index }: { eventId: string; booking: EventVendor; index: number }) {
+  const update = useUpdateEventVendor();
+  const name = booking.vendor?.name ?? "Removed vendor";
+  const contact = [booking.vendor?.contactEmail, booking.vendor?.contactPhone].filter(Boolean).join(" · ");
+  const saveTime = (field: "arrivalTime" | "departureTime", value: string) => {
+    update.mutate(
+      { eventId, id: booking.id, patch: { [field]: value || null } },
+      { onError: (error) => toast({ title: "Couldn't update vendor timing", description: error.message }) },
+    );
+  };
+
+  return (
+    <li className="rounded-lg border border-hairline bg-surface-sunken px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <span data-numeric className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-wash text-xs font-bold text-primary-text">
+          {index + 1}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">{name}</p>
+            <Pill>{booking.vendor?.category ?? "Vendor"}</Pill>
+            <Pill tone={booking.status === "confirmed" ? "success" : booking.status === "cancelled" ? "danger" : "warning"}>
+              {booking.status}
+            </Pill>
+          </div>
+          {booking.notes ? <p className="mt-1 text-xs text-foreground">{booking.notes}</p> : null}
+          {contact ? <p className="mt-1 truncate text-xs text-muted-foreground">{contact}</p> : null}
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+              <span className="block">Arrival</span>
+              <Input type="time" value={booking.arrivalTime ?? ""} onChange={(event) => saveTime("arrivalTime", event.target.value)} aria-label={`Arrival time for ${name}`} className="h-8 w-32 bg-surface" />
+            </label>
+            <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+              <span className="block">Departure</span>
+              <Input type="time" value={booking.departureTime ?? ""} onChange={(event) => saveTime("departureTime", event.target.value)} aria-label={`Departure time for ${name}`} className="h-8 w-32 bg-surface" />
+            </label>
+            {!booking.arrivalTime ? <Pill tone="warning">Arrival time needed</Pill> : null}
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event: Event; selectedDay?: number }) {
   const [location, navigate] = useLocation();
   const { timeZone, timeZoneLabel } = usePreferences(event.timeZone);
@@ -1097,6 +1143,10 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
   const { data: eventVendors } = useEventVendors(event.id);
   const add = useAddRunOfShowItem();
   const reorder = useReorderRunOfShow();
+  const vendorOperations = useMemo(
+    () => orderVendorOperations(eventVendors ?? []),
+    [eventVendors],
+  );
   const days = useMemo(
     () => eventDayOptions(event.date, event.endDate, timeZone, Math.max(1, ...(cues ?? []).map((cue) => cue.dayNumber))),
     [cues, event.date, event.endDate, timeZone],
@@ -1329,29 +1379,9 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
             </Button>
           </div>
           <ol className="mt-3 grid gap-2 lg:grid-cols-2">
-            {(eventVendors ?? []).map((booking, index) => {
-              const contact = [booking.vendor?.contactEmail, booking.vendor?.contactPhone].filter(Boolean).join(" · ");
-              return (
-                <li key={booking.id} className="rounded-lg border border-hairline bg-surface-sunken px-3 py-2.5">
-                  <div className="flex items-start gap-2.5">
-                    <span data-numeric className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-wash text-xs font-bold text-primary-text">
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold text-foreground">{booking.vendor?.name ?? "Removed vendor"}</p>
-                        <Pill>{booking.vendor?.category ?? "Vendor"}</Pill>
-                        <Pill tone={booking.status === "confirmed" ? "success" : booking.status === "cancelled" ? "danger" : "warning"}>
-                          {booking.status}
-                        </Pill>
-                      </div>
-                      {booking.notes ? <p className="mt-1 text-xs text-foreground">{booking.notes}</p> : null}
-                      {contact ? <p className="mt-1 truncate text-xs text-muted-foreground">{contact}</p> : null}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
+            {vendorOperations.map((booking, index) => (
+              <VendorOperationRow key={booking.id} eventId={event.id} booking={booking} index={index} />
+            ))}
           </ol>
         </section>
       ) : null}

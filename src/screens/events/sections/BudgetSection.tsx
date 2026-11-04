@@ -37,6 +37,7 @@ import {
   useSendAuctionDonorThankYou,
   useBudget,
   useEventVendors,
+  useUpdateEventVendor,
   useDrawRaffle,
   useEventRoi,
   useRaffleItems,
@@ -81,6 +82,7 @@ import {
   type BudgetItem,
   type BudgetLineType,
   type Event,
+  type EventVendor,
   type SponsorshipTier,
 } from "@/data/entities";
 import EventSpreadsheetImportDialog from "../EventSpreadsheetImportDialog";
@@ -310,6 +312,42 @@ function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
   );
 }
 
+function VendorContractAmount({ eventId, booking }: { eventId: string; booking: EventVendor }) {
+  const update = useUpdateEventVendor();
+  const [draft, setDraft] = useState(centsToInput(booking.feeCents));
+
+  useEffect(() => setDraft(centsToInput(booking.feeCents)), [booking.feeCents]);
+
+  const commit = () => {
+    const next = centsFromInput(draft);
+    if (next === booking.feeCents) return;
+    update.mutate(
+      { eventId, id: booking.id, patch: { feeCents: next } },
+      {
+        onError: (error) => {
+          setDraft(centsToInput(booking.feeCents));
+          toast({ title: "Couldn't update contracted amount", description: error.message });
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-1 text-muted-foreground">
+      <span aria-hidden="true">$</span>
+      <Input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+        inputMode="decimal"
+        aria-label={`Contracted amount for ${booking.vendor?.name ?? "vendor"}`}
+        className="h-8 w-28 text-right font-semibold text-foreground"
+      />
+    </div>
+  );
+}
+
 export function BudgetPanel({ event }: { event: Event }) {
   const { data: items, isLoading, isError, error, refetch } = useBudget(event.id);
   const { data: eventVendors } = useEventVendors(event.id);
@@ -428,7 +466,7 @@ export function BudgetPanel({ event }: { event: Event }) {
                 Vendor commitments
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Synced automatically from Vendors. Change a fee or vendor order once and it updates everywhere.
+                Enter each contracted amount here. Vendor order and amounts sync automatically to Deposits and return calculations.
               </p>
             </div>
             <div className="text-right">
@@ -449,7 +487,7 @@ export function BudgetPanel({ event }: { event: Event }) {
                 <Pill tone={booking.status === "confirmed" ? "success" : booking.status === "cancelled" ? "danger" : "warning"}>
                   {booking.status}
                 </Pill>
-                <span data-numeric className="w-28 text-right font-semibold text-foreground">{formatMoney(booking.feeCents)}</span>
+                <VendorContractAmount eventId={event.id} booking={booking} />
               </li>
             ))}
           </ol>
