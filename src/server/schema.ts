@@ -547,8 +547,10 @@ export const eventVendors = pgTable(
       .references(() => vendors.id, { onDelete: "cascade" }),
     status: bookingStatus("status").notNull().default("pending"),
     feeCents: bigint("fee_cents", { mode: "number" }),
+    clientChargeCents: bigint("client_charge_cents", { mode: "number" }),
     notes: text("notes"),
     arrivalTime: text("arrival_time"),
+    serviceTime: text("service_time"),
     departureTime: text("departure_time"),
     sortOrder: integer("sort_order").notNull().default(0),
     paperworkRevision: bigint("paperwork_revision", { mode: "number" }).notNull().default(0),
@@ -590,6 +592,8 @@ export const eventVendors = pgTable(
   (table) => [
     index("event_vendors_event_idx").on(table.eventId, table.sortOrder),
     uniqueIndex("event_vendors_event_vendor_idx").on(table.eventId, table.vendorId),
+    check("event_vendors_fee_nonnegative_check", sql`${table.feeCents} is null or ${table.feeCents} >= 0`),
+    check("event_vendors_client_charge_nonnegative_check", sql`${table.clientChargeCents} is null or ${table.clientChargeCents} >= 0`),
   ],
 );
 

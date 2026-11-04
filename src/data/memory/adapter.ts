@@ -1194,7 +1194,9 @@ const eventVendorsBase = eventScoped<EventVendor, EventVendorDraft, EventVendorP
     notes: draft.notes ?? null,
     status: draft.status ?? "pending",
     feeCents: draft.feeCents ?? null,
+    clientChargeCents: draft.clientChargeCents ?? null,
     arrivalTime: draft.arrivalTime ?? null,
+    serviceTime: draft.serviceTime ?? null,
     departureTime: draft.departureTime ?? null,
     vendor: store().vendors.find((v) => v.id === draft.vendorId) ?? null,
     paperwork: { ...EMPTY_VENDOR_PAPERWORK },
@@ -1207,6 +1209,9 @@ const eventVendorsBase = eventScoped<EventVendor, EventVendorDraft, EventVendorP
 const eventVendors: EventVendorsRepository = {
   ...eventVendorsBase,
   async update(eventId, id, patch) {
+    if ((patch.feeCents ?? 0) < 0 || (patch.clientChargeCents ?? 0) < 0) {
+      throw new DataError("invalid", "Vendor cost and client charge cannot be negative.");
+    }
     const booking = required(
       store().eventVendors.find((row) => row.id === id && row.eventId === eventId),
       `Record ${id} no longer exists.`,

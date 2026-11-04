@@ -879,10 +879,12 @@ describe("vendors", () => {
 
     const timed = await memoryAdapter.eventVendors.update("evt-gala", booking.id, {
       arrivalTime: "11:30",
+      serviceTime: "19:00",
       departureTime: "19:00",
       feeCents: 2_000_000,
+      clientChargeCents: 2_600_000,
     });
-    expect(timed).toMatchObject({ arrivalTime: "11:30", departureTime: "19:00", feeCents: 2_000_000 });
+    expect(timed).toMatchObject({ arrivalTime: "11:30", serviceTime: "19:00", departureTime: "19:00", feeCents: 2_000_000, clientChargeCents: 2_600_000 });
     expect((await memoryAdapter.vendorPaymentPlans.list("evt-gala")).find((plan) => plan.vendorName === "Golden Gate Catering")?.totalAmountCents).toBe(2_000_000);
 
     await memoryAdapter.deposits.create("evt-gala", {
@@ -892,6 +894,7 @@ describe("vendors", () => {
     });
     await expect(memoryAdapter.eventVendors.update("evt-gala", booking.id, { feeCents: 999_999 })).rejects.toThrow(/deposits already paid/i);
     expect((await memoryAdapter.eventVendors.list("evt-gala")).find((row) => row.id === booking.id)?.feeCents).toBe(2_000_000);
+    await expect(memoryAdapter.eventVendors.update("evt-gala", booking.id, { clientChargeCents: -1 })).rejects.toThrow(/cannot be negative/i);
   });
 });
 

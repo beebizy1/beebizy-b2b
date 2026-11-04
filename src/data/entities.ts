@@ -502,7 +502,9 @@ export interface EventVendor {
   notes: string | null;
   status: BookingStatus;
   feeCents: Cents | null;
+  clientChargeCents: Cents | null;
   arrivalTime: string | null;
+  serviceTime: string | null;
   departureTime: string | null;
   vendor: Vendor | null;
   paperwork: VendorPaperwork;
@@ -515,7 +517,9 @@ export interface EventVendorDraft {
   notes?: string | null;
   status?: BookingStatus;
   feeCents?: Cents | null;
+  clientChargeCents?: Cents | null;
   arrivalTime?: string | null;
+  serviceTime?: string | null;
   departureTime?: string | null;
 }
 

@@ -312,39 +312,32 @@ function BudgetRow({ eventId, item }: { eventId: string; item: BudgetItem }) {
   );
 }
 
-function VendorContractAmount({ eventId, booking }: { eventId: string; booking: EventVendor }) {
+function VendorMoneyField({ eventId, booking, field, label }: { eventId: string; booking: EventVendor; field: "feeCents" | "clientChargeCents"; label: string }) {
   const update = useUpdateEventVendor();
-  const [draft, setDraft] = useState(centsToInput(booking.feeCents));
+  const value = booking[field];
+  const [draft, setDraft] = useState(centsToInput(value));
 
-  useEffect(() => setDraft(centsToInput(booking.feeCents)), [booking.feeCents]);
+  useEffect(() => setDraft(centsToInput(value)), [value]);
 
   const commit = () => {
     const next = centsFromInput(draft);
-    if (next === booking.feeCents) return;
+    if (next === value) return;
     update.mutate(
-      { eventId, id: booking.id, patch: { feeCents: next } },
+      { eventId, id: booking.id, patch: field === "feeCents" ? { feeCents: next } : { clientChargeCents: next } },
       {
         onError: (error) => {
-          setDraft(centsToInput(booking.feeCents));
-          toast({ title: "Couldn't update contracted amount", description: error.message });
+          setDraft(centsToInput(value));
+          toast({ title: `Couldn't update ${label.toLowerCase()}`, description: error.message });
         },
       },
     );
   };
 
   return (
-    <div className="flex items-center gap-1 text-muted-foreground">
-      <span aria-hidden="true">$</span>
-      <Input
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
-        inputMode="decimal"
-        aria-label={`Contracted amount for ${booking.vendor?.name ?? "vendor"}`}
-        className="h-8 w-28 text-right font-semibold text-foreground"
-      />
-    </div>
+    <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+      <span className="block">{label}</span>
+      <span className="flex items-center gap-1"><span aria-hidden="true">$</span><Input value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} inputMode="decimal" aria-label={`${label} for ${booking.vendor?.name ?? "vendor"}`} className="h-8 w-28 text-right font-semibold text-foreground" /></span>
+    </label>
   );
 }
 
@@ -366,6 +359,8 @@ export function BudgetPanel({ event }: { event: Event }) {
   const plannedSpend = sumCents(expenses.map((item) => item.estimatedCents));
   const actualSpend = sumCents(expenses.map((item) => item.actualCents));
   const vendorCommitted = sumCents((eventVendors ?? []).map((booking) => booking.feeCents));
+  const vendorCharged = sumCents((eventVendors ?? []).map((booking) => booking.clientChargeCents));
+  const vendorMargin = vendorCharged - vendorCommitted;
   const headcount = event.capacity ?? Math.max(event.registrationCount, 100);
   const suggestedTotal = suggestedTotalBudgetCents(headcount);
   const suggestedLines = buildBudgetSuggestions(suggestedTotal);
@@ -431,7 +426,7 @@ export function BudgetPanel({ event }: { event: Event }) {
     <Panel>
       <PanelHeader
         title="Budget"
-        description={`${expenses.length} expense lines, ${revenue.length} revenue lines · ${formatMoney(vendorCommitted)} in synced vendor commitments`}
+        description={`${expenses.length} expense lines, ${revenue.length} revenue lines · ${formatMoney(vendorCommitted)} vendor cost · ${formatMoney(vendorCharged)} client charge`}
         actions={
           <>
             <EventSpreadsheetImportDialog event={event} />
@@ -466,14 +461,13 @@ export function BudgetPanel({ event }: { event: Event }) {
                 Vendor commitments
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Enter each contracted amount here. Vendor order and amounts sync automatically to Deposits and return calculations.
+                Track what you pay each vendor versus what the client is charged. Vendor cost syncs to Payments/Deposits; client charge feeds return calculations.
               </p>
             </div>
-            <div className="text-right">
-              <p data-numeric className="text-lg font-bold text-foreground">{formatMoney(vendorCommitted)}</p>
-              <Button asChild variant="link" size="sm" className="h-auto px-0 py-0 text-xs">
-                <a href={`/app/events/${event.id}/vendors`}>Edit vendor details</a>
-              </Button>
+            <div className="grid grid-cols-3 gap-4 text-right text-xs">
+              <div><p className="text-muted-foreground">Cost</p><p data-numeric className="font-bold text-foreground">{formatMoney(vendorCommitted)}</p></div>
+              <div><p className="text-muted-foreground">Charged</p><p data-numeric className="font-bold text-foreground">{formatMoney(vendorCharged)}</p></div>
+              <div><p className="text-muted-foreground">Margin</p><p data-numeric className={cn("font-bold", vendorMargin >= 0 ? "text-success-text" : "text-danger-text")}>{formatMoney(vendorMargin)}</p></div>
             </div>
           </div>
           <ol className="mt-3 divide-y divide-hairline rounded-lg border border-hairline bg-surface">
@@ -487,7 +481,11 @@ export function BudgetPanel({ event }: { event: Event }) {
                 <Pill tone={booking.status === "confirmed" ? "success" : booking.status === "cancelled" ? "danger" : "warning"}>
                   {booking.status}
                 </Pill>
-                <VendorContractAmount eventId={event.id} booking={booking} />
+                <div className="flex flex-wrap items-end gap-2">
+                  <VendorMoneyField eventId={event.id} booking={booking} field="feeCents" label="Vendor cost" />
+                  <VendorMoneyField eventId={event.id} booking={booking} field="clientChargeCents" label="Client charge" />
+                  <div className="w-24 text-right"><p className="text-[11px] font-medium text-muted-foreground">Margin</p><p data-numeric className={cn("mt-1.5 font-semibold", (booking.clientChargeCents ?? 0) - (booking.feeCents ?? 0) >= 0 ? "text-success-text" : "text-danger-text")}>{formatMoney((booking.clientChargeCents ?? 0) - (booking.feeCents ?? 0))}</p></div>
+                </div>
               </li>
             ))}
           </ol>
@@ -2000,13 +1998,18 @@ export function BudgetRoiSummary({ event }: { event: Event }) {
   const expenses = lines.filter((line) => line.type === "expense");
   const revenues = lines.filter((line) => line.type === "revenue");
 
-  const normalizedVendorNames = new Set((eventVendors ?? []).map((booking) => booking.vendor?.name.trim().toLowerCase()).filter(Boolean));
+  const normalized = (value: string) => value.trim().toLowerCase();
+  const manualExpenseNames = new Set(expenses.map((line) => normalized(line.name)));
+  const manualRevenueNames = new Set(revenues.map((line) => normalized(line.name)));
   const vendorSpend = sumCents((eventVendors ?? [])
-    .filter((booking) => booking.feeCents !== null && !expenses.some((line) => normalizedVendorNames.has(line.name.trim().toLowerCase()) && line.name.trim().toLowerCase() === booking.vendor?.name.trim().toLowerCase()))
+    .filter((booking) => booking.feeCents !== null && (!booking.vendor || !manualExpenseNames.has(normalized(booking.vendor.name))))
     .map((booking) => booking.feeCents));
+  const vendorRevenue = sumCents((eventVendors ?? [])
+    .filter((booking) => booking.clientChargeCents !== null && (!booking.vendor || !manualRevenueNames.has(normalized(booking.vendor.name))))
+    .map((booking) => booking.clientChargeCents));
   const estimatedSpend = sumCents(expenses.map((line) => line.estimatedCents)) + vendorSpend;
   const actualSpend = sumCents(expenses.map((line) => line.actualCents));
-  const estimatedRevenue = sumCents(revenues.map((line) => line.estimatedCents));
+  const estimatedRevenue = sumCents(revenues.map((line) => line.estimatedCents)) + vendorRevenue;
   const actualRevenue = sumCents(revenues.map((line) => line.actualCents));
 
   const utilisation = estimatedSpend > 0 ? Math.round((actualSpend / estimatedSpend) * 100) : null;
@@ -2028,7 +2031,7 @@ export function BudgetRoiSummary({ event }: { event: Event }) {
       <PanelHeader
         title="Budget & return on investment"
         description={
-          lines.length === 0
+          lines.length === 0 && vendorSpend === 0 && vendorRevenue === 0
             ? "Add budget lines to see utilisation and return"
             : actualSpend > 0
               ? "Actual figures, from what has been recorded against each line"
