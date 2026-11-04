@@ -1,6 +1,7 @@
 /** Vendor payment plans and the individual deposits paid against them. */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { Banknote, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,6 @@ import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPayment
 import {
   useAddDeposit,
   useAddVendorPaymentPlan,
-  useBudget,
   useDeposits,
   useEventVendors,
   useRemoveDeposit,
@@ -127,33 +127,42 @@ function DepositRow({ eventId, deposit, vendorName, timeZone }: { eventId: strin
   );
 }
 
-function PaymentPlanRow({ eventId, plan, progress, dueState, onSelect }: { eventId: string; plan: VendorPaymentPlan; progress: VendorPaymentProgress; dueState: BalanceDueState; onSelect: (name: string) => void }) {
+function PaymentPlanRow({ eventId, plan, contractedAmountCents, syncedFromBudget, progress, dueState, onSelect }: { eventId: string; plan: VendorPaymentPlan; contractedAmountCents: number; syncedFromBudget: boolean; progress: VendorPaymentProgress; dueState: BalanceDueState; onSelect: (name: string) => void }) {
   const { date: formatDate } = usePreferences();
   const update = useUpdateVendorPaymentPlan();
-  const [total, setTotal] = useState(centsToInput(plan.totalAmountCents));
+  const [total, setTotal] = useState(centsToInput(contractedAmountCents));
   const [balanceDueDate, setBalanceDueDate] = useState(plan.balanceDueDate.slice(0, 10));
+
+  useEffect(() => setTotal(centsToInput(contractedAmountCents)), [contractedAmountCents]);
 
   return (
     <TableRow>
       <TableCell><button type="button" className="text-left font-medium hover:underline" onClick={() => onSelect(plan.vendorName)}>{plan.vendorName}</button><p className="text-xs text-muted-foreground">Payment plan</p></TableCell>
       <TableCell className="min-w-36">
-        <Input
-          value={total}
-          onChange={(e) => setTotal(e.target.value)}
-          onBlur={() => {
-            const cents = centsFromInput(total);
-            if (cents == null || cents < progress.paidCents) {
-              setTotal(centsToInput(plan.totalAmountCents));
-              toast({ title: "Total cost must cover deposits already paid" });
-              return;
-            }
-            if (cents === plan.totalAmountCents) return;
-            update.mutate({ eventId, id: plan.id, patch: { totalAmountCents: cents } }, { onError: (error) => { setTotal(centsToInput(plan.totalAmountCents)); toast({ title: "Couldn't update vendor total", description: error.message }); } });
-          }}
-          inputMode="decimal"
-          aria-label={`Total vendor cost for ${plan.vendorName}`}
-          className="h-8 text-right"
-        />
+        {syncedFromBudget ? (
+          <div className="text-right">
+            <p data-numeric className="font-semibold text-foreground">{formatMoney(contractedAmountCents)}</p>
+            <Link href={`/app/events/${eventId}/budget`} className="text-[11px] text-primary-text hover:underline">Synced from Budget & Return</Link>
+          </div>
+        ) : (
+          <Input
+            value={total}
+            onChange={(e) => setTotal(e.target.value)}
+            onBlur={() => {
+              const cents = centsFromInput(total);
+              if (cents == null || cents < progress.paidCents) {
+                setTotal(centsToInput(plan.totalAmountCents));
+                toast({ title: "Total cost must cover deposits already paid" });
+                return;
+              }
+              if (cents === plan.totalAmountCents) return;
+              update.mutate({ eventId, id: plan.id, patch: { totalAmountCents: cents } }, { onError: (error) => { setTotal(centsToInput(plan.totalAmountCents)); toast({ title: "Couldn't update vendor total", description: error.message }); } });
+            }}
+            inputMode="decimal"
+            aria-label={`Total vendor cost for ${plan.vendorName}`}
+            className="h-8 text-right"
+          />
+        )}
       </TableCell>
       <TableCell className="min-w-52">
         <p data-numeric className="text-right font-semibold text-success-text">{formatMoney(progress.paidCents)} total</p>
@@ -208,7 +217,6 @@ export default function DepositsPanel({ event }: { event: Event }) {
   const depositsQuery = useDeposits(event.id);
   const plansQuery = useVendorPaymentPlans(event.id);
   const { data: bookings } = useEventVendors(event.id);
-  const { data: budget } = useBudget(event.id);
   const addDeposit = useAddDeposit();
   const addPlan = useAddVendorPaymentPlan();
   const updatePlan = useUpdateVendorPaymentPlan();
@@ -231,32 +239,41 @@ export default function DepositsPanel({ event }: { event: Event }) {
     for (const row of rows) values.set(paymentKey(row), [...(values.get(paymentKey(row)) ?? []), row]);
     return values;
   }, [rows]);
+  const bookingByVendorKey = useMemo(() => new Map((bookings ?? []).flatMap((booking, index) => {
+    const name = booking.vendor?.name?.trim();
+    return name ? [[vendorKey(name), { booking, index }] as const] : [];
+  })), [bookings]);
   const paymentsForPlan = (plan: VendorPaymentPlan) => vendorPaymentPlanDeposits(plan, rows);
   const trackedPlans = storedPlans.map((plan) => {
     const deposits = paymentsForPlan(plan);
-    const progress = vendorPaymentProgress(plan.totalAmountCents, deposits);
+    const bookedVendor = bookingByVendorKey.get(vendorKey(plan.vendorName));
+    const contractedAmountCents = bookedVendor?.booking.feeCents ?? plan.totalAmountCents;
+    const progress = vendorPaymentProgress(contractedAmountCents, deposits);
     return {
       plan,
+      contractedAmountCents,
+      syncedFromBudget: bookedVendor?.booking.feeCents != null,
+      vendorOrder: bookedVendor?.index ?? Number.MAX_SAFE_INTEGER,
       progress,
       dueState: balanceDueState(plan.balanceDueDate, progress.remainingCents, new Date(), timeZone),
     };
-  });
+  }).sort((a, b) => a.vendorOrder - b.vendorOrder || a.plan.vendorName.localeCompare(b.plan.vendorName));
 
   const suggestedPlans = useMemo(() => {
-    const values = new Map<string, { name: string; totalAmountCents: number; source: "Vendor" | "Budget" }>();
-    for (const booking of bookings ?? []) {
+    const values = new Map<string, { name: string; totalAmountCents: number; vendorOrder: number }>();
+    for (const [index, booking] of (bookings ?? []).entries()) {
       const name = booking.vendor?.name?.trim();
-      if (name) values.set(vendorKey(name), { name, totalAmountCents: booking.feeCents ?? 0, source: "Vendor" });
-    }
-    for (const line of budget ?? []) {
-      const name = line.name.trim();
-      if (line.type === "expense" && name && !values.has(vendorKey(name))) values.set(vendorKey(name), { name, totalAmountCents: line.actualCents ?? line.estimatedCents, source: "Budget" });
+      if (name) values.set(vendorKey(name), { name, totalAmountCents: booking.feeCents ?? 0, vendorOrder: index });
     }
     for (const plan of storedPlans) values.delete(vendorKey(plan.vendorName));
     return [...values.values()];
-  }, [bookings, budget, storedPlans]);
+  }, [bookings, storedPlans]);
 
-  const committed = sumCents(storedPlans.map((plan) => plan.totalAmountCents));
+  const trackerRows = [
+    ...trackedPlans.map((row) => ({ kind: "tracked" as const, vendorOrder: row.vendorOrder, row })),
+    ...suggestedPlans.map((row) => ({ kind: "suggested" as const, vendorOrder: row.vendorOrder, row })),
+  ].sort((a, b) => a.vendorOrder - b.vendorOrder || (a.kind === "tracked" ? a.row.plan.vendorName : a.row.name).localeCompare(b.kind === "tracked" ? b.row.plan.vendorName : b.row.name));
+  const committed = sumCents(trackerRows.map((entry) => entry.kind === "tracked" ? entry.row.contractedAmountCents : entry.row.totalAmountCents));
   const plannedOutstanding = sumCents(trackedPlans.map(({ progress }) => progress.remainingCents));
   const plannedIds = new Set(storedPlans.map((plan) => plan.id));
   const plannedVendorKeys = new Set(storedPlans.map((plan) => vendorKey(plan.vendorName)));
@@ -270,18 +287,22 @@ export default function DepositsPanel({ event }: { event: Event }) {
   const trackedOverdueCount = trackedPlans.filter(({ dueState }) => dueState === "overdue").length;
   const paidInFullCount = trackedPlans.filter(({ progress }) => Boolean(progress.completedAt && progress.completedBy)).length;
   const balanceDueCount = trackedPlans.filter(({ progress }) => progress.remainingCents > 0).length;
-  const visibleTrackedPlans = trackedPlans.filter(({ progress, dueState }) =>
-    planFilter === "all"
-    || (planFilter === "due" && progress.remainingCents > 0)
-    || (planFilter === "overdue" && dueState === "overdue")
-    || (planFilter === "paid" && Boolean(progress.completedAt && progress.completedBy)));
+  const visibleTrackerRows = trackerRows.filter((entry) => {
+    if (planFilter === "all") return true;
+    if (entry.kind === "suggested") return false;
+    const { progress, dueState } = entry.row;
+    return (planFilter === "due" && progress.remainingCents > 0)
+      || (planFilter === "overdue" && dueState === "overdue")
+      || (planFilter === "paid" && Boolean(progress.completedAt && progress.completedBy));
+  });
 
   const selectVendor = (name: string) => {
     setVendorName(name);
     const stored = storedPlans.find((plan) => vendorKey(plan.vendorName) === vendorKey(name));
     const suggested = suggestedPlans.find((plan) => vendorKey(plan.name) === vendorKey(name));
+    const booking = bookingByVendorKey.get(vendorKey(name))?.booking;
     if (stored) {
-      setTotalAmount(centsToInput(stored.totalAmountCents));
+      setTotalAmount(centsToInput(booking?.feeCents ?? stored.totalAmountCents));
       setBalanceDueDate(stored.balanceDueDate.slice(0, 10));
     } else if (suggested) setTotalAmount(centsToInput(suggested.totalAmountCents));
   };
@@ -289,6 +310,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
   const depositCents = centsFromInput(amount);
   const totalCents = centsFromInput(totalAmount);
   const existingPlan = storedPlans.find((plan) => vendorKey(plan.vendorName) === vendorKey(vendorName));
+  const selectedBooking = bookingByVendorKey.get(vendorKey(vendorName))?.booking;
   const alreadyPaidCents = existingPlan ? (trackedPlans.find(({ plan }) => plan.id === existingPlan.id)?.progress.paidCents ?? 0) : 0;
   const nextPaidCents = alreadyPaidCents + (status === "paid" ? (depositCents ?? 0) : 0);
   const hasDeposit = depositCents != null;
@@ -309,10 +331,10 @@ export default function DepositsPanel({ event }: { event: Event }) {
 
       {storedPlans.length > 0 || suggestedPlans.length > 0 ? (
         <Panel className="overflow-hidden">
-          <PanelHeader title="Vendor payment tracker" description="Follow each contract from deposit payments through the remaining balance and paid-in-full date" />
+          <PanelHeader title="Vendor payment tracker" description="Vendors stay in the same order as the Vendors tab, with contracted amounts synced from Budget & Return" />
           <div className="flex flex-wrap gap-2 border-b border-hairline px-5 py-3" aria-label="Filter vendor payment plans">
             {([
-              ["all", `All ${storedPlans.length + suggestedPlans.length}`],
+              ["all", `All ${trackerRows.length}`],
               ["due", `Balance due ${balanceDueCount}`],
               ["overdue", `Overdue ${trackedOverdueCount}`],
               ["paid", `Paid in full ${paidInFullCount}`],
@@ -324,18 +346,19 @@ export default function DepositsPanel({ event }: { event: Event }) {
             <Table>
               <TableHeader><TableRow><TableHead>Vendor or expense</TableHead><TableHead className="text-right">Contracted</TableHead><TableHead className="text-right">Deposit history</TableHead><TableHead className="text-right">Remaining balance</TableHead><TableHead>Balance due</TableHead><TableHead>Last paid by</TableHead><TableHead>Closed loop</TableHead></TableRow></TableHeader>
               <TableBody>
-                {visibleTrackedPlans.map(({ plan, progress, dueState }) => <PaymentPlanRow key={plan.id} eventId={event.id} plan={plan} progress={progress} dueState={dueState} onSelect={selectVendor} />)}
-                {planFilter === "all" ? suggestedPlans.map((plan) => (
-                  <TableRow key={vendorKey(plan.name)}>
-                    <TableCell><button type="button" className="text-left font-medium hover:underline" onClick={() => selectVendor(plan.name)}>{plan.name}</button><p className="text-xs text-muted-foreground">Suggested from {plan.source.toLowerCase()}</p></TableCell>
-                    <TableCell data-numeric className="text-right">{formatMoney(plan.totalAmountCents)}</TableCell>
-                    <TableCell data-numeric className="text-right">{formatMoney(sumCents((paymentGroups.get(`vendor:${vendorKey(plan.name)}`) ?? []).map(depositPaidCents)))}</TableCell>
+                {visibleTrackerRows.map((entry) => entry.kind === "tracked" ? (
+                  <PaymentPlanRow key={entry.row.plan.id} eventId={event.id} plan={entry.row.plan} contractedAmountCents={entry.row.contractedAmountCents} syncedFromBudget={entry.row.syncedFromBudget} progress={entry.row.progress} dueState={entry.row.dueState} onSelect={selectVendor} />
+                ) : (
+                  <TableRow key={vendorKey(entry.row.name)}>
+                    <TableCell><button type="button" className="text-left font-medium hover:underline" onClick={() => selectVendor(entry.row.name)}>{entry.row.name}</button><p className="text-xs text-muted-foreground">Synced from Budget & Return</p></TableCell>
+                    <TableCell data-numeric className="text-right">{formatMoney(entry.row.totalAmountCents)}</TableCell>
+                    <TableCell data-numeric className="text-right">{formatMoney(sumCents((paymentGroups.get(`vendor:${vendorKey(entry.row.name)}`) ?? []).map(depositPaidCents)))}</TableCell>
                     <TableCell data-numeric className="text-right">Set up below</TableCell>
                     <TableCell>Date needed</TableCell>
                     <TableCell className="text-muted-foreground">None yet</TableCell>
                     <TableCell><Pill tone="warning">Not tracked</Pill></TableCell>
                   </TableRow>
-                )) : null}
+                ))}
               </TableBody>
             </Table>
           </div>
@@ -373,7 +396,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
         >
           <label className="space-y-1.5 xl:col-span-2"><span className="text-xs font-medium text-muted-foreground">Vendor</span><Input value={vendorName} onChange={(e) => selectVendor(e.target.value)} placeholder="Vendor name" aria-label="Vendor name" list="deposit-vendor-options" /></label>
           <datalist id="deposit-vendor-options">{[...storedPlans.map((plan) => plan.vendorName), ...suggestedPlans.map((plan) => plan.name)].map((name) => <option key={vendorKey(name)} value={name} />)}</datalist>
-          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Total vendor cost</span><Input value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} placeholder="0.00" inputMode="decimal" aria-label="Total vendor cost" className="text-right" /></label>
+          <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Total vendor cost</span><Input value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} placeholder="0.00" inputMode="decimal" aria-label="Total vendor cost" className="text-right" disabled={Boolean(selectedBooking?.feeCents != null)} />{selectedBooking?.feeCents != null ? <Link href={`/app/events/${event.id}/budget`} className="block text-[11px] text-primary-text hover:underline">Edit in Budget & Return</Link> : null}</label>
           <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Deposit amount</span><Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" inputMode="decimal" aria-label="Deposit amount" className={cn("text-right", totalCents != null && totalCents < nextPaidCents && "border-danger")} /></label>
           <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Remaining balance due</span><Input type="date" value={balanceDueDate} onChange={(e) => setBalanceDueDate(e.target.value)} aria-label="Balance due date" /></label>
           <label className="space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Deposit status</span><Select value={status} onValueChange={(value) => setStatus(value as DepositStatus)}><SelectTrigger className="capitalize" aria-label="Payment status"><SelectValue /></SelectTrigger><SelectContent>{DEPOSIT_STATUSES.map((option) => <SelectItem key={option} value={option} className="capitalize">{option}</SelectItem>)}</SelectContent></Select></label>

@@ -4403,6 +4403,8 @@ export const eventVendors = {
       status: (optStr(body, "status") ?? "pending") as "pending",
       feeCents: optInt(body, "feeCents"),
       notes: optStr(body, "notes"),
+      arrivalTime: optLocalTime(body, "arrivalTime"),
+      departureTime: optLocalTime(body, "departureTime"),
       paperworkRevision: 0,
       contractRequired: false,
       contractStatus: "not-required",
@@ -4464,25 +4466,28 @@ export const eventVendors = {
     return all.find((row) => row.id === id)!;
   },
   async update(ctx: RequestContext, eventId: string, id: string, body: Body) {
-    const [current] = await db
-      .select()
+    const [currentRow] = await db
+      .select({ booking: s.eventVendors, vendor: s.vendors })
       .from(s.eventVendors)
+      .leftJoin(s.vendors, eq(s.eventVendors.vendorId, s.vendors.id))
       .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
       .limit(1);
-    if (!current) throw new HttpError(404, "That booking no longer exists.");
+    if (!currentRow) throw new HttpError(404, "That booking no longer exists.");
+    const current = currentRow.booking;
     const patch = patchFrom<Record<string, unknown>>(body, {
       status: (b) => optStr(b, "status") ?? "pending",
       feeCents: (b) => optInt(b, "feeCents"),
       notes: (b) => optStr(b, "notes"),
+      arrivalTime: (b) => optLocalTime(b, "arrivalTime"),
+      departureTime: (b) => optLocalTime(b, "departureTime"),
     });
     const updatedAt = new Date();
-    const [updated] = await db.batch([
-      db
+    const updateBooking = db
         .update(s.eventVendors)
         .set({ ...patch, updatedAt })
         .where(and(eq(s.eventVendors.id, id), eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
-        .returning({ id: s.eventVendors.id }),
-      db.insert(s.eventHistory).values(
+        .returning({ id: s.eventVendors.id });
+    const writeHistory = db.insert(s.eventHistory).values(
         historyValues(ctx, {
           eventId,
           resource: "vendor-booking",
@@ -4491,8 +4496,35 @@ export const eventVendors = {
           before: map.toEventVendor(current, null) as unknown as Record<string, unknown>,
           after: map.toEventVendor({ ...current, ...patch, updatedAt }, null) as unknown as Record<string, unknown>,
         }),
-      ),
-    ]);
+      );
+    let updated: Array<{ id: string }>;
+    if (Object.prototype.hasOwnProperty.call(patch, "feeCents") && currentRow.vendor) {
+      const [paymentPlan] = await db
+        .select({ id: s.vendorPaymentPlans.id })
+        .from(s.vendorPaymentPlans)
+        .where(and(
+          eq(s.vendorPaymentPlans.workspaceId, ctx.workspaceId),
+          eq(s.vendorPaymentPlans.eventId, eventId),
+          eq(s.vendorPaymentPlans.vendorKey, normalizedVendorKey(currentRow.vendor.name)),
+        ))
+        .limit(1);
+      if (paymentPlan) {
+        const nextTotal = typeof patch.feeCents === "number" ? patch.feeCents : 0;
+        const paidCents = await paidDepositsForPlan(ctx, eventId, paymentPlan.id);
+        if (nextTotal < paidCents) {
+          throw new HttpError(400, "The contracted amount cannot be less than deposits already paid.");
+        }
+        [updated] = await db.batch([
+          updateBooking,
+          db.update(s.vendorPaymentPlans).set({ totalAmountCents: nextTotal, updatedAt }).where(eq(s.vendorPaymentPlans.id, paymentPlan.id)),
+          writeHistory,
+        ]);
+      } else {
+        [updated] = await db.batch([updateBooking, writeHistory]);
+      }
+    } else {
+      [updated] = await db.batch([updateBooking, writeHistory]);
+    }
     if (updated.length === 0) throw new HttpError(404, "That booking no longer exists.");
     const all = await eventVendors.list(ctx, eventId);
     return all.find((row) => row.id === id)!;

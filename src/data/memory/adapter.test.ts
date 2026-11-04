@@ -873,6 +873,26 @@ describe("vendors", () => {
     await expect(memoryAdapter.eventVendors.reorder("evt-skickoff", reversedIds.slice(1))).rejects.toThrow(/list changed/i);
     expect((await memoryAdapter.eventVendors.list("evt-skickoff")).map((booking) => booking.id)).toEqual(reversedIds);
   });
+
+  it("stores vendor Run of Show timing and keeps payment plans synced to contracted amounts", async () => {
+    const booking = (await memoryAdapter.eventVendors.list("evt-gala")).find((row) => row.vendorId === "ven-goldengate")!;
+
+    const timed = await memoryAdapter.eventVendors.update("evt-gala", booking.id, {
+      arrivalTime: "11:30",
+      departureTime: "19:00",
+      feeCents: 2_000_000,
+    });
+    expect(timed).toMatchObject({ arrivalTime: "11:30", departureTime: "19:00", feeCents: 2_000_000 });
+    expect((await memoryAdapter.vendorPaymentPlans.list("evt-gala")).find((plan) => plan.vendorName === "Golden Gate Catering")?.totalAmountCents).toBe(2_000_000);
+
+    await memoryAdapter.deposits.create("evt-gala", {
+      vendorName: "Golden Gate Catering",
+      amountCents: 1_000_000,
+      status: "paid",
+    });
+    await expect(memoryAdapter.eventVendors.update("evt-gala", booking.id, { feeCents: 999_999 })).rejects.toThrow(/deposits already paid/i);
+    expect((await memoryAdapter.eventVendors.list("evt-gala")).find((row) => row.id === booking.id)?.feeCents).toBe(2_000_000);
+  });
 });
 
 describe("locations", () => {

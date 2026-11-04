@@ -548,6 +548,8 @@ export const eventVendors = pgTable(
     status: bookingStatus("status").notNull().default("pending"),
     feeCents: bigint("fee_cents", { mode: "number" }),
     notes: text("notes"),
+    arrivalTime: text("arrival_time"),
+    departureTime: text("departure_time"),
     sortOrder: integer("sort_order").notNull().default(0),
     paperworkRevision: bigint("paperwork_revision", { mode: "number" }).notNull().default(0),
     contractRequired: boolean("contract_required").notNull().default(false),

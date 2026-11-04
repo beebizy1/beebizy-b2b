@@ -502,6 +502,8 @@ export interface EventVendor {
   notes: string | null;
   status: BookingStatus;
   feeCents: Cents | null;
+  arrivalTime: string | null;
+  departureTime: string | null;
   vendor: Vendor | null;
   paperwork: VendorPaperwork;
   sortOrder: number;
@@ -513,6 +515,8 @@ export interface EventVendorDraft {
   notes?: string | null;
   status?: BookingStatus;
   feeCents?: Cents | null;
+  arrivalTime?: string | null;
+  departureTime?: string | null;
 }
 
 export type EventVendorPatch = Partial<Omit<EventVendorDraft, "vendorId">>;

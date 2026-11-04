@@ -273,6 +273,8 @@ export function toEventVendor(
     notes: row.notes,
     status: row.status,
     feeCents: row.feeCents,
+    arrivalTime: row.arrivalTime,
+    departureTime: row.departureTime,
     vendor: vendor ? toVendor(vendor) : null,
     sortOrder: row.sortOrder,
     paperwork: {

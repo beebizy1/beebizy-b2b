@@ -198,6 +198,8 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
         </Link>
       </Button>
 
+      <VendorPaperworkDialog eventId={eventId} booking={props.booking} />
+
       <Button asChild variant="outline" size="sm">
         <Link
           href={`${vendorEditHref(props.vendorId)}?returnTo=${encodeURIComponent(`/app/events/${eventId}/vendors`)}`}
@@ -207,8 +209,6 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
           Edit
         </Link>
       </Button>
-
-      <VendorPaperworkDialog eventId={eventId} booking={props.booking} />
 
       <Button
         variant="outline"
