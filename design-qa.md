@@ -52,12 +52,24 @@ The header and actions menu were compared at readable scale. Button hierarchy, b
 - Post-fix evidence: `/Users/tarang/beebizy-founder-feedback/.gstack/browse-reports/2026-11-03-event-workspace/screenshots/implementation-full-shell-final.png`
 - No actionable P0, P1, or P2 visual mismatches remain. The longer draggable tab rail and day selector remain intentional functional requirements from the same customer thread.
 
+### Pass 5
+
+- Source feedback: `/var/folders/vs/n9nh5qdx3ybf_r7xglw7v9zm0000gp/T/TemporaryItems/NSIRD_screencaptureui_O5yvDA/Screenshot 2026-11-03 at 8.01.25 PM.png` (1608 x 680 px).
+- Request: make the large Event Readiness, Vendors, and Registrations blocks clickable without changing the approved visual direction.
+- Fix: wrap each block in one accessible link, retain the existing card tokens, and add a muted chevron, hover elevation, and focus ring.
+- Desktop evidence: Codex in-app Browser tab 5 at the local demo overview, captured inline at the default desktop viewport.
+- Mobile evidence: Codex in-app Browser tab 5 at 390 x 844 CSS px. Cards stack cleanly with no clipping or overlap.
+- Interaction evidence: the Vendors card opens Vendors, Registrations opens Registrations, and Event Readiness opens Checklist.
+- Console evidence: no application errors. The expected Clerk development-key warning remains.
+- No actionable P0, P1, or P2 visual mismatches remain.
+
 ## Primary interactions tested
 
 - More Actions opens and contains Registration Site, Attendance Dashboard, Import Spreadsheet, Manage Event Access, Email Assignments, and Delete Event.
 - Spreadsheet import dialog opens from the dropdown.
 - Keyboard drag-and-drop reorders event tabs and survives an SPA remount.
 - Vendor Edit opens the correct record, saves a phone-number change, and returns to the event vendor list.
+- All three event summary cards open their matching details page as a whole-card target.
 - Console check: no application errors. The pre-existing Clerk development-key warning remains.
 
 ## Follow-up polish

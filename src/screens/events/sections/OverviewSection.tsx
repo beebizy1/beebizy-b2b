@@ -8,6 +8,21 @@ import { eventTabHref } from "@/app/shell/nav";
 import type { Event, EventHealth } from "@/data/entities";
 import { formatClockTime } from "@/lib/datetime";
 
+function SummaryCardLink({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <Panel className="relative flex min-h-36 h-full items-center gap-5 rounded-2xl p-6 pr-12 transition duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/50 group-hover:shadow-md">
+        {children}
+        <ChevronRight className="absolute right-5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground/55 transition group-hover:translate-x-0.5 group-hover:text-primary-text" aria-hidden="true" />
+      </Panel>
+    </Link>
+  );
+}
+
 export default function OverviewSection({ event, health }: { event: Event; health: EventHealth | null | undefined }) {
   const { data: checklist, isLoading: checklistLoading } = useChecklist(event.id);
   const { data: vendors } = useEventVendors(event.id);
@@ -21,7 +36,7 @@ export default function OverviewSection({ event, health }: { event: Event; healt
   return (
     <div className="space-y-5">
       <section aria-label="Event summary" className="grid gap-5 md:grid-cols-3">
-        <Panel className="flex min-h-36 items-center gap-5 rounded-2xl p-6">
+        <SummaryCardLink href={eventTabHref(event.id, "checklist")} label="Open event readiness details in Checklist">
           <ReadinessRing value={health?.readiness ?? 0} size={86} label={`${event.title} readiness`} />
           <div className="min-w-0">
             <p className="text-lg font-bold text-foreground">Event Readiness</p>
@@ -29,25 +44,25 @@ export default function OverviewSection({ event, health }: { event: Event; healt
               {health ? `${health.vendorsConfirmed} of ${health.vendorsTotal} vendors confirmed` : "Calculating event progress"}
             </p>
           </div>
-        </Panel>
+        </SummaryCardLink>
 
-        <Panel className="flex min-h-36 items-center gap-5 rounded-2xl p-6">
+        <SummaryCardLink href={eventTabHref(event.id, "vendors")} label="Open Vendors">
           <Store className="size-8 shrink-0 text-[#9a6a00]" />
           <div>
             <p className="text-lg font-bold text-foreground">Vendors</p>
             <p data-numeric className="mt-2 text-4xl font-extrabold leading-none text-foreground">{confirmedVendors} / {vendors?.length ?? 0}</p>
             <p className="mt-2 text-sm font-medium text-muted-foreground">Confirmed</p>
           </div>
-        </Panel>
+        </SummaryCardLink>
 
-        <Panel className="flex min-h-36 items-center gap-5 rounded-2xl p-6">
+        <SummaryCardLink href={eventTabHref(event.id, "registrations")} label="Open Registrations">
           <Users className="size-8 shrink-0 text-[#9a6a00]" />
           <div>
             <p className="text-lg font-bold text-foreground">Registrations</p>
             <p data-numeric className="mt-2 text-4xl font-extrabold leading-none text-foreground">{event.registrationCount}</p>
             <p className="mt-2 text-sm font-medium text-muted-foreground">Registered</p>
           </div>
-        </Panel>
+        </SummaryCardLink>
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
