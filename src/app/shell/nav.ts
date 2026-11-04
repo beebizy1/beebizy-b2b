@@ -206,7 +206,7 @@ export const EVENT_TABS: EventTab[] = [
   { id: "silent-auction", label: "Silent Auction", slug: "silent-auction", icon: Gavel, hint: "Silent lots and current bids" },
   { id: "live-auction", label: "Live Auction", slug: "live-auction", icon: Gavel, hint: "Live lots run from the stage" },
   { id: "rfp", label: "RFP", slug: "rfp", icon: FileText, hint: "Briefs out to vendors and the quotes back" },
-  { id: "deposits", label: "Deposits", slug: "deposits", icon: Banknote, hint: "Money committed to vendors before the day" },
+  { id: "deposits", label: "Payments/Deposits", slug: "deposits", icon: Banknote, hint: "Track deposits, remaining balances, and final vendor payments" },
 ];
 
 const SANTA_CLARA_EVENT_TAB_IDS: readonly EventTabId[] = [

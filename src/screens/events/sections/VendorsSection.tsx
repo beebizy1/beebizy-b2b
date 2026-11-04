@@ -67,6 +67,7 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   vendorId: string;
   status: BookingStatus;
   feeCents: number | null;
+  clientChargeCents: number | null;
   notes: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
@@ -76,6 +77,7 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   const update = useUpdateEventVendor();
   const remove = useRemoveEventVendor();
   const [fee, setFee] = useState(centsToInput(props.feeCents));
+  const [clientCharge, setClientCharge] = useState(centsToInput(props.clientChargeCents));
   const [notes, setNotes] = useState(props.notes ?? "");
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: bookingId,
@@ -88,6 +90,15 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
     update.mutate(
       { eventId, id: bookingId, patch: { feeCents: next } },
       { onError: (error) => toast({ title: "Couldn't update fee", description: error.message }) },
+    );
+  };
+
+  const commitClientCharge = () => {
+    const next = centsFromInput(clientCharge);
+    if (next === props.clientChargeCents) return;
+    update.mutate(
+      { eventId, id: bookingId, patch: { clientChargeCents: next } },
+      { onError: (error) => { setClientCharge(centsToInput(props.clientChargeCents)); toast({ title: "Couldn't update client charge", description: error.message }); } },
     );
   };
 
@@ -155,20 +166,14 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
         />
       </label>
 
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="sr-only">Agreed fee for {props.name}</span>
-        <span aria-hidden="true">$</span>
-        <Input
-          value={fee}
-          onChange={(inputEvent) => setFee(inputEvent.target.value)}
-          onBlur={commitFee}
-          onKeyDown={(keyEvent) => {
-            if (keyEvent.key === "Enter") keyEvent.currentTarget.blur();
-          }}
-          inputMode="decimal"
-          className="h-8 w-28 text-right"
-          aria-label={`Agreed fee for ${props.name}`}
-        />
+      <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+        <span className="block">Vendor cost</span>
+        <span className="flex items-center gap-1.5"><span aria-hidden="true">$</span><Input value={fee} onChange={(inputEvent) => setFee(inputEvent.target.value)} onBlur={commitFee} onKeyDown={(keyEvent) => { if (keyEvent.key === "Enter") keyEvent.currentTarget.blur(); }} inputMode="decimal" className="h-8 w-28 text-right" aria-label={`Vendor cost for ${props.name}`} /></span>
+      </label>
+
+      <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+        <span className="block">Client charge</span>
+        <span className="flex items-center gap-1.5"><span aria-hidden="true">$</span><Input value={clientCharge} onChange={(inputEvent) => setClientCharge(inputEvent.target.value)} onBlur={commitClientCharge} onKeyDown={(keyEvent) => { if (keyEvent.key === "Enter") keyEvent.currentTarget.blur(); }} inputMode="decimal" className="h-8 w-28 text-right" aria-label={`Client charge for ${props.name}`} /></span>
       </label>
 
       <Select
@@ -281,6 +286,7 @@ export function VendorsPanel({ event }: { event: Event }) {
   }, [bookings, directory]);
 
   const committed = sumCents((bookings ?? []).map((booking) => booking.feeCents));
+  const charged = sumCents((bookings ?? []).map((booking) => booking.clientChargeCents));
   const confirmed = (bookings ?? []).filter((booking) => booking.status === "confirmed").length;
   const pending = (bookings ?? []).filter((booking) => booking.status === "pending").length;
 
@@ -290,7 +296,7 @@ export function VendorsPanel({ event }: { event: Event }) {
         title="Vendors"
         description={
           bookings?.length
-            ? `${confirmed} confirmed, ${pending} pending · ${formatMoney(committed)} committed`
+            ? `${confirmed} confirmed, ${pending} pending · ${formatMoney(committed)} vendor cost · ${formatMoney(charged)} client charge`
             : "Nobody booked yet"
         }
         actions={<VendorEventPacketDialog event={event} bookings={bookings ?? []} />}
@@ -372,6 +378,7 @@ export function VendorsPanel({ event }: { event: Event }) {
                     category={booking.vendor?.category ?? "—"}
                     status={booking.status}
                     feeCents={booking.feeCents}
+                    clientChargeCents={booking.clientChargeCents}
                     notes={booking.notes}
                     contactEmail={booking.vendor?.contactEmail ?? null}
                     contactPhone={booking.vendor?.contactPhone ?? null}

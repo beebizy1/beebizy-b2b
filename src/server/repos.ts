@@ -210,6 +210,11 @@ const optInt = (body: Body, key: string): number | null => {
   if (!Number.isSafeInteger(parsed)) throw new HttpError(400, `${key} must be an integer.`);
   return parsed;
 };
+const optNonnegativeInt = (body: Body, key: string): number | null => {
+  const value = optInt(body, key);
+  if (value !== null && value < 0) throw new HttpError(400, `${key} cannot be negative.`);
+  return value;
+};
 const positiveInt = (body: Body, key: string, fallback = 1): number => {
   const value = optInt(body, key) ?? fallback;
   if (value < 1) throw new HttpError(400, `${key} must be at least 1.`);
@@ -4401,9 +4406,11 @@ export const eventVendors = {
       eventId,
       vendorId: str(body, "vendorId"),
       status: (optStr(body, "status") ?? "pending") as "pending",
-      feeCents: optInt(body, "feeCents"),
+      feeCents: optNonnegativeInt(body, "feeCents"),
+      clientChargeCents: optNonnegativeInt(body, "clientChargeCents"),
       notes: optStr(body, "notes"),
       arrivalTime: optLocalTime(body, "arrivalTime"),
+      serviceTime: optLocalTime(body, "serviceTime"),
       departureTime: optLocalTime(body, "departureTime"),
       paperworkRevision: 0,
       contractRequired: false,
@@ -4476,9 +4483,11 @@ export const eventVendors = {
     const current = currentRow.booking;
     const patch = patchFrom<Record<string, unknown>>(body, {
       status: (b) => optStr(b, "status") ?? "pending",
-      feeCents: (b) => optInt(b, "feeCents"),
+      feeCents: (b) => optNonnegativeInt(b, "feeCents"),
+      clientChargeCents: (b) => optNonnegativeInt(b, "clientChargeCents"),
       notes: (b) => optStr(b, "notes"),
       arrivalTime: (b) => optLocalTime(b, "arrivalTime"),
+      serviceTime: (b) => optLocalTime(b, "serviceTime"),
       departureTime: (b) => optLocalTime(b, "departureTime"),
     });
     const updatedAt = new Date();

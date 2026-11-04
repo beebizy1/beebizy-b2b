@@ -1092,7 +1092,7 @@ function VendorOperationRow({ eventId, booking, index }: { eventId: string; book
   const update = useUpdateEventVendor();
   const name = booking.vendor?.name ?? "Removed vendor";
   const contact = [booking.vendor?.contactEmail, booking.vendor?.contactPhone].filter(Boolean).join(" · ");
-  const saveTime = (field: "arrivalTime" | "departureTime", value: string) => {
+  const saveTime = (field: "arrivalTime" | "serviceTime", value: string) => {
     update.mutate(
       { eventId, id: booking.id, patch: { [field]: value || null } },
       { onError: (error) => toast({ title: "Couldn't update vendor timing", description: error.message }) },
@@ -1121,8 +1121,8 @@ function VendorOperationRow({ eventId, booking, index }: { eventId: string; book
               <Input type="time" value={booking.arrivalTime ?? ""} onChange={(event) => saveTime("arrivalTime", event.target.value)} aria-label={`Arrival time for ${name}`} className="h-8 w-32 bg-surface" />
             </label>
             <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
-              <span className="block">Departure</span>
-              <Input type="time" value={booking.departureTime ?? ""} onChange={(event) => saveTime("departureTime", event.target.value)} aria-label={`Departure time for ${name}`} className="h-8 w-32 bg-surface" />
+              <span className="block">Serving time</span>
+              <Input type="time" value={booking.serviceTime ?? ""} onChange={(event) => saveTime("serviceTime", event.target.value)} aria-label={`Serving time for ${name}`} className="h-8 w-32 bg-surface" />
             </label>
             {!booking.arrivalTime ? <Pill tone="warning">Arrival time needed</Pill> : null}
           </div>
