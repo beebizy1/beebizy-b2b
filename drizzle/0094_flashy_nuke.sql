@@ -1,0 +1,1 @@
+ALTER TABLE "vendor_payment_plans" ADD CONSTRAINT "vendor_payment_plans_final_status_check" CHECK ("vendor_payment_plans"."final_status" in ('unpaid', 'paid'));

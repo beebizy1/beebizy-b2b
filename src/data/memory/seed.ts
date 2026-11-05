@@ -1880,11 +1880,11 @@ export function buildSeed(): MemoryDb {
   ];
 
   const vendorPaymentPlans: VendorPaymentPlan[] = [
-    { id: "vpp-gala-venue", eventId: "evt-gala", vendorName: "Moscone Center West", totalAmountCents: usd(30000), balanceDueDate: at(35), notes: null, createdAt: at(-30) },
-    { id: "vpp-gala-catering", eventId: "evt-gala", vendorName: "Golden Gate Catering", totalAmountCents: usd(17000), balanceDueDate: at(28), notes: null, createdAt: at(-8) },
-    { id: "vpp-gala-av", eventId: "evt-gala", vendorName: "Apex AV & Sound", totalAmountCents: usd(6800), balanceDueDate: at(14), notes: null, createdAt: at(-6) },
-    { id: "vpp-kickoff-venue", eventId: "evt-skickoff", vendorName: "Moscone Center West", totalAmountCents: usd(24000), balanceDueDate: at(14), notes: null, createdAt: at(-20) },
-    { id: "vpp-cab-venue", eventId: "evt-cab", vendorName: "The Foundry Loft", totalAmountCents: usd(5500), balanceDueDate: at(-10), notes: null, createdAt: at(-45) },
+    { id: "vpp-gala-venue", eventId: "evt-gala", vendorName: "Moscone Center West", totalAmountCents: usd(30000), balanceDueDate: at(35), lastPaidBy: "Maria Santos", finalStatus: "unpaid", finalPaidAt: null, notes: null, createdAt: at(-30) },
+    { id: "vpp-gala-catering", eventId: "evt-gala", vendorName: "Golden Gate Catering", totalAmountCents: usd(17000), balanceDueDate: at(28), lastPaidBy: null, finalStatus: "unpaid", finalPaidAt: null, notes: null, createdAt: at(-8) },
+    { id: "vpp-gala-av", eventId: "evt-gala", vendorName: "Apex AV & Sound", totalAmountCents: usd(6800), balanceDueDate: at(14), lastPaidBy: null, finalStatus: "unpaid", finalPaidAt: null, notes: null, createdAt: at(-6) },
+    { id: "vpp-kickoff-venue", eventId: "evt-skickoff", vendorName: "Moscone Center West", totalAmountCents: usd(24000), balanceDueDate: at(14), lastPaidBy: null, finalStatus: "unpaid", finalPaidAt: null, notes: null, createdAt: at(-20) },
+    { id: "vpp-cab-venue", eventId: "evt-cab", vendorName: "The Foundry Loft", totalAmountCents: usd(5500), balanceDueDate: at(-10), lastPaidBy: null, finalStatus: "unpaid", finalPaidAt: null, notes: null, createdAt: at(-45) },
   ];
 
   /* ------------------------------------------------------------- team hours */

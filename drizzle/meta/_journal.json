@@ -652,6 +652,20 @@
       "when": 1793829600053,
       "tag": "0092_large_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1793854917199,
+      "tag": "0093_stiff_talos",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1793854973373,
+      "tag": "0094_flashy_nuke",
+      "breakpoints": true
     }
   ]
 }

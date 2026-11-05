@@ -12,7 +12,7 @@ import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill, StatTil
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
-import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPaymentPlanDeposits, vendorPaymentProgress, type BalanceDueState, type VendorPaymentProgress } from "@/data/depositTracker";
+import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPaymentPlanDeposits, vendorPaymentProgress } from "@/data/depositTracker";
 import {
   useAddDeposit,
   useAddVendorPaymentPlan,
@@ -30,6 +30,7 @@ import {
   type DepositStatus,
   type Event,
   type VendorPaymentPlan,
+  type VendorPaymentPlanPatch,
 } from "@/data/entities";
 import { civilDayInZone } from "@/lib/datetime";
 
@@ -127,87 +128,95 @@ function DepositRow({ eventId, deposit, vendorName, timeZone }: { eventId: strin
   );
 }
 
-function PaymentPlanRow({ eventId, plan, contractedAmountCents, syncedFromBudget, progress, dueState, onSelect }: { eventId: string; plan: VendorPaymentPlan; contractedAmountCents: number; syncedFromBudget: boolean; progress: VendorPaymentProgress; dueState: BalanceDueState; onSelect: (name: string) => void }) {
-  const { date: formatDate } = usePreferences();
-  const update = useUpdateVendorPaymentPlan();
-  const [total, setTotal] = useState(centsToInput(contractedAmountCents));
-  const [balanceDueDate, setBalanceDueDate] = useState(plan.balanceDueDate.slice(0, 10));
+function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, plan: serverPlan, deposits, sourceLabel }: { eventId: string; vendorName: string; contractedAmountCents: number; plan: VendorPaymentPlan | null; deposits: Deposit[]; sourceLabel: string }) {
+  const { timeZone } = usePreferences();
+  const addPlan = useAddVendorPaymentPlan();
+  const updatePlan = useUpdateVendorPaymentPlan();
+  const addDeposit = useAddDeposit();
+  const updateDeposit = useUpdateDeposit();
+  const [localPlan, setLocalPlan] = useState<VendorPaymentPlan | null>(null);
+  const [localDeposit, setLocalDeposit] = useState<Deposit | null>(null);
+  const plan = serverPlan ?? localPlan;
+  const firstServerDeposit = deposits[0] ?? null;
+  const primaryDeposit = firstServerDeposit ?? localDeposit;
+  const [depositAmount, setDepositAmount] = useState(centsToInput(primaryDeposit?.amountCents ?? null));
+  const [depositStatus, setDepositStatus] = useState<"unpaid" | "paid">(primaryDeposit?.status === "paid" ? "paid" : "unpaid");
+  const [balanceDueDate, setBalanceDueDate] = useState(plan?.balanceDueDate?.slice(0, 10) ?? "");
+  const [lastPaidBy, setLastPaidBy] = useState(plan?.lastPaidBy ?? primaryDeposit?.paidBy ?? "");
+  const [finalStatus, setFinalStatus] = useState<"unpaid" | "paid">(plan?.finalStatus ?? "unpaid");
 
-  useEffect(() => setTotal(centsToInput(contractedAmountCents)), [contractedAmountCents]);
+  useEffect(() => setDepositAmount(centsToInput(primaryDeposit?.amountCents ?? null)), [primaryDeposit?.amountCents]);
+  useEffect(() => setDepositStatus(primaryDeposit?.status === "paid" ? "paid" : "unpaid"), [primaryDeposit?.status]);
+  useEffect(() => setBalanceDueDate(plan?.balanceDueDate?.slice(0, 10) ?? ""), [plan?.balanceDueDate]);
+  useEffect(() => setLastPaidBy(plan?.lastPaidBy ?? primaryDeposit?.paidBy ?? ""), [plan?.lastPaidBy, primaryDeposit?.paidBy]);
+  useEffect(() => setFinalStatus(plan?.finalStatus ?? "unpaid"), [plan?.finalStatus]);
+
+  const ensurePlan = async () => {
+    if (plan) return plan;
+    const created = await addPlan.mutateAsync({ eventId, draft: { vendorName, totalAmountCents: contractedAmountCents, balanceDueDate: dateIso(balanceDueDate), lastPaidBy: lastPaidBy.trim() || null, finalStatus } });
+    setLocalPlan(created);
+    return created;
+  };
+
+  const saveDepositAmount = async () => {
+    const cents = centsFromInput(depositAmount);
+    if (cents == null) return;
+    try {
+      const savedPlan = await ensurePlan();
+      if (primaryDeposit) {
+        await updateDeposit.mutateAsync({ eventId, id: primaryDeposit.id, patch: { amountCents: cents } });
+      } else {
+        const created = await addDeposit.mutateAsync({ eventId, draft: { paymentPlanId: savedPlan.id, vendorName, amountCents: cents, status: depositStatus === "paid" ? "paid" : "pending", paidDate: depositStatus === "paid" ? todayIsoInZone(timeZone) : null, paidBy: lastPaidBy.trim() || null } });
+        setLocalDeposit(created);
+      }
+    } catch (error) {
+      setDepositAmount(centsToInput(primaryDeposit?.amountCents ?? null));
+      toast({ title: "Couldn't save deposit", description: error instanceof Error ? error.message : "Try again." });
+    }
+  };
+
+  const saveDepositStatus = async (next: "unpaid" | "paid") => {
+    const cents = centsFromInput(depositAmount);
+    if (cents == null) {
+      toast({ title: "Enter the deposit amount first" });
+      return;
+    }
+    setDepositStatus(next);
+    try {
+      const savedPlan = await ensurePlan();
+      const patch = { status: next === "paid" ? "paid" as const : "pending" as const, paidDate: next === "paid" ? todayIsoInZone(timeZone) : null, paidBy: next === "paid" ? (lastPaidBy.trim() || null) : null };
+      if (primaryDeposit) await updateDeposit.mutateAsync({ eventId, id: primaryDeposit.id, patch });
+      else setLocalDeposit(await addDeposit.mutateAsync({ eventId, draft: { paymentPlanId: savedPlan.id, vendorName, amountCents: cents, ...patch } }));
+    } catch (error) {
+      setDepositStatus(primaryDeposit?.status === "paid" ? "paid" : "unpaid");
+      toast({ title: "Couldn't update deposit status", description: error instanceof Error ? error.message : "Try again." });
+    }
+  };
+
+  const savePlanPatch = async (patch: VendorPaymentPlanPatch) => {
+    try {
+      if (plan) await updatePlan.mutateAsync({ eventId, id: plan.id, patch });
+      else setLocalPlan(await addPlan.mutateAsync({ eventId, draft: { vendorName, totalAmountCents: contractedAmountCents, balanceDueDate: dateIso(balanceDueDate), lastPaidBy: lastPaidBy.trim() || null, finalStatus, ...patch } }));
+    } catch (error) {
+      toast({ title: "Couldn't update payment tracker", description: error instanceof Error ? error.message : "Try again." });
+    }
+  };
+
+  const allEnteredDeposits = deposits.filter((deposit) => deposit.status !== "refunded");
+  const otherDepositCents = allEnteredDeposits.filter((deposit) => deposit.id !== primaryDeposit?.id).reduce((total, deposit) => total + deposit.amountCents, 0);
+  const currentDepositCents = centsFromInput(depositAmount) ?? primaryDeposit?.amountCents ?? 0;
+  const remainingCents = finalStatus === "paid" ? 0 : remainingBalanceCents(contractedAmountCents, otherDepositCents + currentDepositCents);
 
   return (
     <TableRow>
-      <TableCell><button type="button" className="text-left font-medium hover:underline" onClick={() => onSelect(plan.vendorName)}>{plan.vendorName}</button><p className="text-xs text-muted-foreground">Payment plan</p></TableCell>
-      <TableCell className="min-w-36">
-        {syncedFromBudget ? (
-          <div className="text-right">
-            <p data-numeric className="font-semibold text-foreground">{formatMoney(contractedAmountCents)}</p>
-            <Link href={`/app/events/${eventId}/budget`} className="text-[11px] text-primary-text hover:underline">Synced from Budget & Return</Link>
-          </div>
-        ) : (
-          <Input
-            value={total}
-            onChange={(e) => setTotal(e.target.value)}
-            onBlur={() => {
-              const cents = centsFromInput(total);
-              if (cents == null || cents < progress.paidCents) {
-                setTotal(centsToInput(plan.totalAmountCents));
-                toast({ title: "Total cost must cover deposits already paid" });
-                return;
-              }
-              if (cents === plan.totalAmountCents) return;
-              update.mutate({ eventId, id: plan.id, patch: { totalAmountCents: cents } }, { onError: (error) => { setTotal(centsToInput(plan.totalAmountCents)); toast({ title: "Couldn't update vendor total", description: error.message }); } });
-            }}
-            inputMode="decimal"
-            aria-label={`Total vendor cost for ${plan.vendorName}`}
-            className="h-8 text-right"
-          />
-        )}
-      </TableCell>
-      <TableCell className="min-w-52">
-        <p data-numeric className="text-right font-semibold text-success-text">{formatMoney(progress.paidCents)} total</p>
-        {progress.paidDeposits.length > 0 ? (
-          <div className="mt-1 space-y-0.5">
-            {progress.paidDeposits.map((deposit) => (
-              <div key={deposit.id} className="text-right text-[11px] text-muted-foreground">
-                <p data-numeric>{formatMoney(deposit.amountCents)} · {deposit.paidDate ? `paid ${formatDate(deposit.paidDate, "dayMonthYear")}` : "paid date needed"}</p>
-                <p>{deposit.paidBy ?? "Who paid needed"}{deposit.paymentMethod ? ` · ${deposit.paymentMethod}` : ""}</p>
-              </div>
-            ))}
-          </div>
-        ) : <p className="mt-1 text-right text-[11px] text-muted-foreground">No deposits paid</p>}
-      </TableCell>
-      <TableCell data-numeric className="text-right font-semibold">{formatMoney(progress.remainingCents)}</TableCell>
-      <TableCell className="min-w-40">
-        <Input
-          type="date"
-          value={balanceDueDate}
-          onChange={(e) => setBalanceDueDate(e.target.value)}
-          onBlur={() => {
-            const next = dateIso(balanceDueDate);
-            if (!next) return setBalanceDueDate(plan.balanceDueDate.slice(0, 10));
-            if (next === plan.balanceDueDate) return;
-            update.mutate({ eventId, id: plan.id, patch: { balanceDueDate: next } }, { onError: (error) => { setBalanceDueDate(plan.balanceDueDate.slice(0, 10)); toast({ title: "Couldn't update balance due date", description: error.message }); } });
-          }}
-          aria-label={`Remaining balance due date for ${plan.vendorName}`}
-          className={cn("h-8", dueState === "overdue" && "border-danger text-danger-text")}
-        />
-        <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(plan.balanceDueDate, "dayMonthYear")}</p>
-      </TableCell>
-      <TableCell data-numeric className="min-w-44">
-        {progress.lastPaidAt ? (
-          <><p className="font-medium text-foreground">{progress.lastPaidBy ?? "Name needed"}</p><p className="text-[11px] text-muted-foreground">{formatDate(progress.lastPaidAt, "dayMonthYear")}</p></>
-        ) : <span className="text-muted-foreground">None yet</span>}
-      </TableCell>
-      <TableCell data-numeric className="min-w-44">
-        {progress.completedAt ? (
-          <><Pill tone="success">Paid in full</Pill><p className="mt-1 text-[11px] text-success-text">{progress.completedBy ?? "Name needed"} · {formatDate(progress.completedAt, "dayMonthYear")}</p></>
-        ) : progress.remainingCents === 0 ? (
-          <><Pill tone="warning">Needs details</Pill><p className="mt-1 text-[11px] text-warning-text">Add who paid and the paid date</p></>
-        ) : (
-          <><Pill tone={dueState === "overdue" ? "danger" : "neutral"}>{dueState === "overdue" ? "Overdue" : "Balance due"}</Pill><p className="mt-1 text-[11px] text-muted-foreground">Payment loop still open</p></>
-        )}
-      </TableCell>
+      <TableCell className="min-w-48"><p className="font-medium text-foreground">{vendorName}</p><p className="text-xs text-muted-foreground">{sourceLabel}</p></TableCell>
+      <TableCell data-numeric className="min-w-32 text-right"><p className="font-semibold">{formatMoney(contractedAmountCents)}</p><Link href={`/app/events/${eventId}/budget`} className="text-[11px] text-primary-text hover:underline">Budget & Return</Link></TableCell>
+      <TableCell className="min-w-32"><Input value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} onBlur={() => void saveDepositAmount()} inputMode="decimal" aria-label={`Deposit amount for ${vendorName}`} className="h-8 text-right" /></TableCell>
+      <TableCell className="min-w-32"><Select value={depositStatus} onValueChange={(value) => void saveDepositStatus(value as "unpaid" | "paid")}><SelectTrigger className="h-8" aria-label={`Deposit status for ${vendorName}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select></TableCell>
+      <TableCell className="min-w-40"><Input type="date" value={balanceDueDate} onChange={(event) => setBalanceDueDate(event.target.value)} onBlur={() => void savePlanPatch({ balanceDueDate: dateIso(balanceDueDate) })} aria-label={`Balance due date for ${vendorName}`} className="h-8" /></TableCell>
+      <TableCell className="min-w-40"><Input value={lastPaidBy} onChange={(event) => setLastPaidBy(event.target.value)} onBlur={() => void savePlanPatch({ lastPaidBy: lastPaidBy.trim() || null })} placeholder="Person or account" aria-label={`Last paid by for ${vendorName}`} className="h-8" /></TableCell>
+      <TableCell className="min-w-36"><Select value={finalStatus} onValueChange={(value) => { const next = value as "unpaid" | "paid"; if (next === "paid" && !lastPaidBy.trim()) { toast({ title: "Add who made the final payment first" }); return; } setFinalStatus(next); void savePlanPatch({ finalStatus: next, lastPaidBy: lastPaidBy.trim() || null }); }}><SelectTrigger className="h-8" aria-label={`Final payment status for ${vendorName}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select></TableCell>
+      <TableCell data-numeric className="min-w-36 text-right font-semibold">{formatMoney(remainingCents)}</TableCell>
     </TableRow>
   );
 }
@@ -248,7 +257,10 @@ export default function DepositsPanel({ event }: { event: Event }) {
     const deposits = paymentsForPlan(plan);
     const bookedVendor = bookingByVendorKey.get(vendorKey(plan.vendorName));
     const contractedAmountCents = bookedVendor?.booking.feeCents ?? plan.totalAmountCents;
-    const progress = vendorPaymentProgress(contractedAmountCents, deposits);
+    const calculatedProgress = vendorPaymentProgress(contractedAmountCents, deposits);
+    const progress = plan.finalStatus === "paid"
+      ? { ...calculatedProgress, remainingCents: 0, completedAt: plan.finalPaidAt, completedBy: plan.lastPaidBy, lastPaidAt: plan.finalPaidAt ?? calculatedProgress.lastPaidAt, lastPaidBy: plan.lastPaidBy ?? calculatedProgress.lastPaidBy }
+      : calculatedProgress;
     return {
       plan,
       contractedAmountCents,
@@ -285,7 +297,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
   }
   const overdueCount = overdueVendors.size;
   const trackedOverdueCount = trackedPlans.filter(({ dueState }) => dueState === "overdue").length;
-  const paidInFullCount = trackedPlans.filter(({ progress }) => Boolean(progress.completedAt && progress.completedBy)).length;
+  const paidInFullCount = trackedPlans.filter(({ plan }) => plan.finalStatus === "paid").length;
   const balanceDueCount = trackedPlans.filter(({ progress }) => progress.remainingCents > 0).length;
   const visibleTrackerRows = trackerRows.filter((entry) => {
     if (planFilter === "all") return true;
@@ -293,7 +305,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
     const { progress, dueState } = entry.row;
     return (planFilter === "due" && progress.remainingCents > 0)
       || (planFilter === "overdue" && dueState === "overdue")
-      || (planFilter === "paid" && Boolean(progress.completedAt && progress.completedBy));
+      || (planFilter === "paid" && entry.row.plan.finalStatus === "paid");
   });
 
   const selectVendor = (name: string) => {
@@ -303,7 +315,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
     const booking = bookingByVendorKey.get(vendorKey(name))?.booking;
     if (stored) {
       setTotalAmount(centsToInput(booking?.feeCents ?? stored.totalAmountCents));
-      setBalanceDueDate(stored.balanceDueDate.slice(0, 10));
+      setBalanceDueDate(stored.balanceDueDate?.slice(0, 10) ?? "");
     } else if (suggested) setTotalAmount(centsToInput(suggested.totalAmountCents));
   };
 
@@ -314,7 +326,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
   const alreadyPaidCents = existingPlan ? (trackedPlans.find(({ plan }) => plan.id === existingPlan.id)?.progress.paidCents ?? 0) : 0;
   const nextPaidCents = alreadyPaidCents + (status === "paid" ? (depositCents ?? 0) : 0);
   const hasDeposit = depositCents != null;
-  const validTracker = Boolean(vendorName.trim() && totalCents != null && totalCents >= nextPaidCents && balanceDueDate && (!hasDeposit || status !== "paid" || newPaymentPaidBy.trim()));
+  const validTracker = Boolean(vendorName.trim() && totalCents != null && totalCents >= nextPaidCents && (!hasDeposit || status !== "paid" || newPaymentPaidBy.trim()));
   const loading = depositsQuery.isLoading || plansQuery.isLoading;
   const error = depositsQuery.error ?? plansQuery.error;
 
@@ -344,20 +356,12 @@ export default function DepositsPanel({ event }: { event: Event }) {
           </div>
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader><TableRow><TableHead>Vendor or expense</TableHead><TableHead className="text-right">Contracted</TableHead><TableHead className="text-right">Deposit history</TableHead><TableHead className="text-right">Remaining balance</TableHead><TableHead>Balance due</TableHead><TableHead>Last paid by</TableHead><TableHead>Closed loop</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Vendor or expense</TableHead><TableHead className="text-right">Contracted</TableHead><TableHead>Deposit amount</TableHead><TableHead>Deposit status</TableHead><TableHead>Balance due</TableHead><TableHead>Last paid by</TableHead><TableHead>Final payment</TableHead><TableHead className="text-right">Remaining balance</TableHead></TableRow></TableHeader>
               <TableBody>
                 {visibleTrackerRows.map((entry) => entry.kind === "tracked" ? (
-                  <PaymentPlanRow key={entry.row.plan.id} eventId={event.id} plan={entry.row.plan} contractedAmountCents={entry.row.contractedAmountCents} syncedFromBudget={entry.row.syncedFromBudget} progress={entry.row.progress} dueState={entry.row.dueState} onSelect={selectVendor} />
+                  <InlinePaymentTrackerRow key={entry.row.plan.id} eventId={event.id} vendorName={entry.row.plan.vendorName} contractedAmountCents={entry.row.contractedAmountCents} plan={entry.row.plan} deposits={paymentsForPlan(entry.row.plan)} sourceLabel={entry.row.syncedFromBudget ? "Synced from Budget & Return" : "Payment plan"} />
                 ) : (
-                  <TableRow key={vendorKey(entry.row.name)}>
-                    <TableCell><button type="button" className="text-left font-medium hover:underline" onClick={() => selectVendor(entry.row.name)}>{entry.row.name}</button><p className="text-xs text-muted-foreground">Synced from Budget & Return</p></TableCell>
-                    <TableCell data-numeric className="text-right">{formatMoney(entry.row.totalAmountCents)}</TableCell>
-                    <TableCell data-numeric className="text-right">{formatMoney(sumCents((paymentGroups.get(`vendor:${vendorKey(entry.row.name)}`) ?? []).map(depositPaidCents)))}</TableCell>
-                    <TableCell data-numeric className="text-right">Set up below</TableCell>
-                    <TableCell>Date needed</TableCell>
-                    <TableCell className="text-muted-foreground">None yet</TableCell>
-                    <TableCell><Pill tone="warning">Not tracked</Pill></TableCell>
-                  </TableRow>
+                  <InlinePaymentTrackerRow key={vendorKey(entry.row.name)} eventId={event.id} vendorName={entry.row.name} contractedAmountCents={entry.row.totalAmountCents} plan={null} deposits={paymentGroups.get(`vendor:${vendorKey(entry.row.name)}`) ?? []} sourceLabel="Synced from Budget & Return" />
                 ))}
               </TableBody>
             </Table>
@@ -375,7 +379,7 @@ export default function DepositsPanel({ event }: { event: Event }) {
             if (!validTracker || totalCents == null) return;
             let planSaved = false;
             try {
-              const finalDue = dateIso(balanceDueDate)!;
+              const finalDue = dateIso(balanceDueDate);
               const savedPlan = existingPlan
                 ? await updatePlan.mutateAsync({ eventId: event.id, id: existingPlan.id, patch: { totalAmountCents: totalCents, balanceDueDate: finalDue } })
                 : await addPlan.mutateAsync({ eventId: event.id, draft: { vendorName: trimmed, totalAmountCents: totalCents, balanceDueDate: finalDue } });
