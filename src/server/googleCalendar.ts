@@ -36,11 +36,6 @@ const tokenResponseSchema = z.object({
   token_type: z.string().optional(),
 });
 const userInfoSchema = z.object({ email: z.string().email() });
-const calendarSchema = z.object({
-  id: z.string().min(1),
-  summary: z.string().optional(),
-  timeZone: z.string().optional(),
-});
 const googleEventSchema = z.object({
   id: z.string().min(1),
   etag: z.string().optional(),
@@ -610,11 +605,6 @@ export async function handleGoogleCalendarCallback(request: Request): Promise<Re
     if (!membership) throw new HttpError(403, "This Beebizy account no longer has access to that workspace.");
     const tokens = await exchangeAuthorizationCode(code);
     const userInfo = await googleRequest(tokens.access_token, "/oauth2/v2/userinfo", userInfoSchema);
-    const calendar = await googleRequest(
-      tokens.access_token,
-      "/calendar/v3/calendars/primary",
-      calendarSchema,
-    );
     const [existing] = await db.select().from(s.googleCalendarConnections).where(and(
       eq(s.googleCalendarConnections.workspaceId, state.workspaceId),
       eq(s.googleCalendarConnections.userId, state.userId),
@@ -628,8 +618,8 @@ export async function handleGoogleCalendarCallback(request: Request): Promise<Re
       workspaceId: state.workspaceId,
       userId: state.userId,
       googleEmail: userInfo.email.toLowerCase(),
-      calendarId: calendar.id,
-      calendarSummary: calendar.summary ?? "Primary calendar",
+      calendarId: "primary",
+      calendarSummary: "Primary calendar",
       refreshTokenCiphertext: refreshToken,
       enabled: true,
       lastError: null,
