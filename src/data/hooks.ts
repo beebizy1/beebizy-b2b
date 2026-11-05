@@ -186,6 +186,8 @@ export const qk = {
 
   settings: ["settings"] as const,
   googleCalendar: ["integrations", "google-calendar"] as const,
+  googleCalendarEvents: (startsBefore: string, endsAfter: string) =>
+    ["integrations", "google-calendar", "events", startsBefore, endsAfter] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
   publicFloorplan: (token: string) => ["floorplan", "public", token] as const,
   history: (eventId: string) => ["history", eventId] as const,
@@ -1790,12 +1792,23 @@ export function useGoogleCalendarStatus() {
   return useAdapterQuery(qk.googleCalendar, (a) => a.googleCalendar.status(), { staleTime: 15_000 });
 }
 
+export function useGoogleCalendarEvents(startsBefore: string, endsAfter: string) {
+  return useAdapterQuery(
+    qk.googleCalendarEvents(startsBefore, endsAfter),
+    (a) => a.googleCalendar.listEvents(startsBefore, endsAfter),
+    { enabled: Boolean(startsBefore && endsAfter), staleTime: 15_000 },
+  );
+}
+
 export function useConnectGoogleCalendar() {
   return useAdapterMutation((a) => a.googleCalendar.beginConnect(), () => [qk.googleCalendar]);
 }
 
 export function useSyncGoogleCalendar() {
-  return useAdapterMutation((a) => a.googleCalendar.syncNow(), () => [qk.googleCalendar]);
+  return useAdapterMutation(
+    (a) => a.googleCalendar.syncNow(),
+    () => [qk.googleCalendar, ["integrations", "google-calendar", "events"]],
+  );
 }
 
 export function useDisconnectGoogleCalendar() {

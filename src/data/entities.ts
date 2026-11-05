@@ -2198,6 +2198,7 @@ export interface GoogleCalendarConnectionStatus {
   lastSyncedAt: IsoDateTime | null;
   lastError: string | null;
   eventsSynced: number;
+  personalEventsVisible: number;
 }
 
 export interface GoogleCalendarConnectResult {
@@ -2207,6 +2208,18 @@ export interface GoogleCalendarConnectResult {
 export interface GoogleCalendarSyncResult {
   eventsSynced: number;
   lastSyncedAt: IsoDateTime;
+}
+
+/** A personal Google event shown only to the user who connected that Google account. */
+export interface GoogleCalendarExternalEvent {
+  id: string;
+  title: string;
+  startsAt: IsoDateTime;
+  endsAt: IsoDateTime;
+  timeZone: string | null;
+  location: string | null;
+  isAllDay: boolean;
+  htmlLink: string | null;
 }
 
 /* ----------------------------------------------------------- product feedback */

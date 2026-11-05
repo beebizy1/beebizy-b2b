@@ -134,6 +134,7 @@ vi.mock("./googleCalendar", () => ({
   googleCalendarStatus: vi.fn(),
   handleGoogleCalendarCallback: vi.fn(),
   handleGoogleCalendarWebhook: vi.fn(),
+  listGoogleCalendarEvents: vi.fn(),
   removeWorkspaceEventFromCalendars: vi.fn(),
   renewGoogleCalendarChannels: vi.fn(),
   syncGoogleCalendarNow: vi.fn(),
@@ -203,6 +204,7 @@ const {
   googleCalendarStatus,
   handleGoogleCalendarCallback,
   handleGoogleCalendarWebhook,
+  listGoogleCalendarEvents,
   renewGoogleCalendarChannels,
   syncGoogleCalendarNow,
 } = await import("./googleCalendar");
@@ -228,10 +230,12 @@ describe("Google Calendar integration", () => {
 
   it("exposes status, connect, sync, and disconnect only after authorization", async () => {
     vi.mocked(authorize).mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1", role: "member", email: "user@example.com" });
-    vi.mocked(googleCalendarStatus).mockResolvedValue({ state: "disconnected", isConfigured: true, googleEmail: null, calendarSummary: null, lastSyncedAt: null, lastError: null, eventsSynced: 0 });
+    vi.mocked(googleCalendarStatus).mockResolvedValue({ state: "disconnected", isConfigured: true, googleEmail: null, calendarSummary: null, lastSyncedAt: null, lastError: null, eventsSynced: 0, personalEventsVisible: 0 });
+    vi.mocked(listGoogleCalendarEvents).mockResolvedValue([]);
     vi.mocked(beginGoogleCalendarConnect).mockReturnValue({ authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" });
     vi.mocked(syncGoogleCalendarNow).mockResolvedValue({ eventsSynced: 1, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
     expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/events?startsBefore=2026-12-01T00%3A00%3A00.000Z&endsAfter=2026-11-01T00%3A00%3A00.000Z"))).status).toBe(200);
     expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/connect", { method: "POST" }))).status).toBe(200);
     expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/sync", { method: "POST" }))).status).toBe(200);
     expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar", { method: "DELETE" }))).status).toBe(200);

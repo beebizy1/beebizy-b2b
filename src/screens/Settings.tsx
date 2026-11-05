@@ -396,6 +396,9 @@ function GoogleCalendarPanel() {
             <KeyValue label="Google account">{connection?.googleEmail ?? "Connected"}</KeyValue>
             <KeyValue label="Calendar">{connection?.calendarSummary ?? "Primary calendar"}</KeyValue>
             <KeyValue label="Beebizy events linked">{connection?.eventsSynced ?? 0}</KeyValue>
+            <KeyValue label="Personal Google events visible in Beebizy">
+              {connection?.personalEventsVisible ?? 0}
+            </KeyValue>
             <KeyValue label="Last synced">
               {connection?.lastSyncedAt
                 ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(connection.lastSyncedAt))

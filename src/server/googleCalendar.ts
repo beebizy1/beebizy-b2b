@@ -7,12 +7,13 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
-import { and, count, eq, gte, isNull, lt, or } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import type {
   Event,
   EventPatch,
   GoogleCalendarConnectionStatus,
+  GoogleCalendarExternalEvent,
   GoogleCalendarSyncResult,
 } from "../data/entities.ts";
 import type { RequestContext } from "./auth.ts";
@@ -44,6 +45,7 @@ const googleEventSchema = z.object({
   description: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   updated: z.string().datetime({ offset: true }).optional(),
+  htmlLink: z.string().url().optional(),
   start: z.object({ dateTime: z.string().datetime({ offset: true }).optional(), date: z.string().optional(), timeZone: z.string().optional() }).optional(),
   end: z.object({ dateTime: z.string().datetime({ offset: true }).optional(), date: z.string().optional(), timeZone: z.string().optional() }).optional(),
   extendedProperties: z.object({
@@ -383,22 +385,99 @@ async function saveSyncToken(connectionId: string, token: string | null): Promis
     .where(eq(s.googleCalendarConnections.id, connectionId));
 }
 
+export function googleEventOverlay(event: GoogleEvent): GoogleCalendarExternalEvent | null {
+  if (event.extendedProperties?.private?.beebizy === "true" || event.status === "cancelled") return null;
+  const isAllDay = Boolean(event.start?.date && !event.start.dateTime);
+  const startValue = event.start?.dateTime ?? (event.start?.date ? `${event.start.date}T00:00:00.000Z` : null);
+  const endValue = event.end?.dateTime ?? (event.end?.date ? `${event.end.date}T00:00:00.000Z` : null);
+  if (!startValue || !endValue) return null;
+  const startsAt = new Date(startValue);
+  const rawEnd = new Date(endValue);
+  return {
+    id: event.id,
+    title: event.summary?.trim() || "Busy",
+    startsAt: startsAt.toISOString(),
+    // Google's all-day end date is exclusive. Store the final occupied instant.
+    endsAt: (isAllDay ? new Date(Math.max(startsAt.getTime(), rawEnd.getTime() - 1)) : rawEnd).toISOString(),
+    timeZone: event.start?.timeZone ?? null,
+    location: event.location ?? null,
+    isAllDay,
+    htmlLink: event.htmlLink ?? null,
+  };
+}
+
+function externalEventValues(connection: Connection, event: GoogleEvent) {
+  const overlay = googleEventOverlay(event);
+  if (!overlay) return null;
+  return {
+    workspaceId: connection.workspaceId,
+    userId: connection.userId,
+    connectionId: connection.id,
+    googleEventId: overlay.id,
+    title: overlay.title,
+    startsAt: new Date(overlay.startsAt),
+    endsAt: new Date(overlay.endsAt),
+    timeZone: overlay.timeZone,
+    location: overlay.location,
+    isAllDay: overlay.isAllDay,
+    htmlLink: overlay.htmlLink,
+    googleEtag: event.etag ?? null,
+    googleUpdatedAt: event.updated ? new Date(event.updated) : null,
+    updatedAt: new Date(),
+  };
+}
+
+async function storeExternalEvent(connection: Connection, event: GoogleEvent): Promise<boolean> {
+  const values = externalEventValues(connection, event);
+  if (!values) {
+    await db.delete(s.googleCalendarExternalEvents).where(and(
+      eq(s.googleCalendarExternalEvents.connectionId, connection.id),
+      eq(s.googleCalendarExternalEvents.googleEventId, event.id),
+    ));
+    return false;
+  }
+  await db.insert(s.googleCalendarExternalEvents).values({ id: newId("gcex"), ...values })
+    .onConflictDoUpdate({
+      target: [s.googleCalendarExternalEvents.connectionId, s.googleCalendarExternalEvents.googleEventId],
+      set: values,
+    });
+  return true;
+}
+
+async function processGoogleEvent(connection: Connection, event: GoogleEvent): Promise<boolean> {
+  const [link] = await db.select().from(s.googleCalendarEventLinks).where(and(
+    eq(s.googleCalendarEventLinks.connectionId, connection.id),
+    eq(s.googleCalendarEventLinks.googleEventId, event.id),
+  )).limit(1);
+  return link ? applyGoogleChange(connection, link, event) : storeExternalEvent(connection, event);
+}
+
 async function fullSyncToken(connection: Connection, token: string): Promise<string> {
   let pageToken: string | undefined;
   let nextSyncToken: string | undefined;
   do {
-    const params = new URLSearchParams({ maxResults: "2500", singleEvents: "true", showDeleted: "true" });
+    const params = new URLSearchParams({
+      maxResults: "2500",
+      singleEvents: "true",
+      showDeleted: "true",
+      timeMin: new Date(Date.now() - 365 * 24 * 60 * 60 * 1_000).toISOString(),
+    });
     if (pageToken) params.set("pageToken", pageToken);
     const result = await googleRequest(
       token,
       `/calendar/v3/calendars/${encodeURIComponent(connection.calendarId)}/events?${params}`,
       eventsListSchema,
     );
+    for (const event of result.items ?? []) await processGoogleEvent(connection, event);
     pageToken = result.nextPageToken;
     nextSyncToken = result.nextSyncToken ?? nextSyncToken;
   } while (pageToken);
   if (!nextSyncToken) throw new Error("Google Calendar did not provide a sync token.");
-  await saveSyncToken(connection.id, nextSyncToken);
+  await db.update(s.googleCalendarConnections).set({
+    syncToken: nextSyncToken,
+    externalBackfillAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(s.googleCalendarConnections.id, connection.id));
   return nextSyncToken;
 }
 
@@ -458,18 +537,17 @@ async function pullIncremental(connection: Connection): Promise<number> {
         eventsListSchema,
       );
       for (const googleEvent of result.items ?? []) {
-        const [link] = await db.select().from(s.googleCalendarEventLinks).where(and(
-          eq(s.googleCalendarEventLinks.connectionId, connection.id),
-          eq(s.googleCalendarEventLinks.googleEventId, googleEvent.id),
-        )).limit(1);
-        if (link && await applyGoogleChange(connection, link, googleEvent)) synced += 1;
+        if (await processGoogleEvent(connection, googleEvent)) synced += 1;
       }
       pageToken = result.nextPageToken;
       nextSyncToken = result.nextSyncToken ?? nextSyncToken;
     } while (pageToken);
   } catch (error) {
     if (error instanceof Error && error.message.includes("410")) {
-      await fullSyncToken(connection, token);
+      await db.delete(s.googleCalendarExternalEvents)
+        .where(eq(s.googleCalendarExternalEvents.connectionId, connection.id));
+      await saveSyncToken(connection.id, null);
+      await fullSyncToken({ ...connection, syncToken: null }, token);
       return synced;
     }
     throw error;
@@ -539,6 +617,7 @@ export async function googleCalendarStatus(ctx: RequestContext): Promise<GoogleC
       lastSyncedAt: null,
       lastError: "Google Calendar is not configured yet.",
       eventsSynced: 0,
+      personalEventsVisible: 0,
     };
   }
   const connection = await connectionFor(ctx);
@@ -551,13 +630,17 @@ export async function googleCalendarStatus(ctx: RequestContext): Promise<GoogleC
       lastSyncedAt: null,
       lastError: null,
       eventsSynced: 0,
+      personalEventsVisible: 0,
     };
   }
-  const [linked] = await db.select({ count: count() }).from(s.googleCalendarEventLinks)
-    .where(and(
+  const [[linked], [external]] = await Promise.all([
+    db.select({ count: count() }).from(s.googleCalendarEventLinks).where(and(
       eq(s.googleCalendarEventLinks.connectionId, connection.id),
       isNull(s.googleCalendarEventLinks.googleDeletedAt),
-    ));
+    )),
+    db.select({ count: count() }).from(s.googleCalendarExternalEvents)
+      .where(eq(s.googleCalendarExternalEvents.connectionId, connection.id)),
+  ]);
   return {
     state: connection.lastError ? "error" : "connected",
     isConfigured: true,
@@ -566,7 +649,32 @@ export async function googleCalendarStatus(ctx: RequestContext): Promise<GoogleC
     lastSyncedAt: connection.lastSyncedAt?.toISOString() ?? null,
     lastError: connection.lastError,
     eventsSynced: linked?.count ?? 0,
+    personalEventsVisible: external?.count ?? 0,
   };
+}
+
+export async function listGoogleCalendarEvents(
+  ctx: RequestContext,
+  startsBefore: Date,
+  endsAfter: Date,
+): Promise<GoogleCalendarExternalEvent[]> {
+  if (startsBefore <= endsAfter) throw new HttpError(400, "Choose a valid calendar date range.");
+  const rows = await db.select().from(s.googleCalendarExternalEvents).where(and(
+    eq(s.googleCalendarExternalEvents.workspaceId, ctx.workspaceId),
+    eq(s.googleCalendarExternalEvents.userId, ctx.userId),
+    lt(s.googleCalendarExternalEvents.startsAt, startsBefore),
+    gte(s.googleCalendarExternalEvents.endsAt, endsAfter),
+  )).orderBy(asc(s.googleCalendarExternalEvents.startsAt));
+  return rows.map((row) => ({
+    id: row.googleEventId,
+    title: row.title,
+    startsAt: row.startsAt.toISOString(),
+    endsAt: row.endsAt.toISOString(),
+    timeZone: row.timeZone,
+    location: row.location,
+    isAllDay: row.isAllDay,
+    htmlLink: row.htmlLink,
+  }));
 }
 
 export function beginGoogleCalendarConnect(ctx: RequestContext): { authorizationUrl: string } {
@@ -653,8 +761,17 @@ export async function syncGoogleCalendarNow(ctx: RequestContext): Promise<Google
   if (!connection || !connection.enabled) throw new HttpError(409, "Connect Google Calendar first.");
   try {
     const pushed = await pushAll(connection);
-    const refreshed = (await connectionFor(ctx))!;
-    const pulled = await pullIncremental(refreshed);
+    let refreshed = (await connectionFor(ctx))!;
+    let pulled = 0;
+    if (!refreshed.externalBackfillAt) {
+      await db.delete(s.googleCalendarExternalEvents)
+        .where(eq(s.googleCalendarExternalEvents.connectionId, refreshed.id));
+      await saveSyncToken(refreshed.id, null);
+      refreshed = { ...refreshed, syncToken: null };
+      await fullSyncToken(refreshed, await accessToken(refreshed));
+    } else {
+      pulled = await pullIncremental(refreshed);
+    }
     const latest = (await connectionFor(ctx))!;
     if (!latest.channelExpiresAt || latest.channelExpiresAt.getTime() < Date.now() + CHANNEL_RENEWAL_WINDOW_MS) {
       await startWatch(latest);

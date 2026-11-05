@@ -289,6 +289,7 @@ export const googleCalendarConnections = pgTable(
     channelResourceId: text("channel_resource_id"),
     channelTokenHash: text("channel_token_hash"),
     channelExpiresAt: timestamp("channel_expires_at", { withTimezone: true }),
+    externalBackfillAt: timestamp("external_backfill_at", { withTimezone: true }),
     enabled: boolean("enabled").notNull().default(true),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     lastError: text("last_error"),
@@ -329,6 +330,40 @@ export const googleCalendarEventLinks = pgTable(
     uniqueIndex("google_calendar_event_links_connection_event_idx").on(table.connectionId, table.eventId),
     uniqueIndex("google_calendar_event_links_connection_google_idx").on(table.connectionId, table.googleEventId),
     index("google_calendar_event_links_workspace_event_idx").on(table.workspaceId, table.eventId),
+  ],
+);
+
+/**
+ * Personal Google events are a private overlay for the connected user. They are not
+ * workspace events and are never visible to another Beebizy member.
+ */
+export const googleCalendarExternalEvents = pgTable(
+  "google_calendar_external_events",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => googleCalendarConnections.id, { onDelete: "cascade" }),
+    googleEventId: text("google_event_id").notNull(),
+    title: text("title").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    timeZone: text("time_zone"),
+    location: text("location"),
+    isAllDay: boolean("is_all_day").notNull().default(false),
+    htmlLink: text("html_link"),
+    googleEtag: text("google_etag"),
+    googleUpdatedAt: timestamp("google_updated_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("google_calendar_external_events_connection_google_idx").on(table.connectionId, table.googleEventId),
+    index("google_calendar_external_events_user_range_idx").on(table.workspaceId, table.userId, table.startsAt),
   ],
 );
 

@@ -93,6 +93,7 @@ import type {
   TicketTypeWithEvent,
   GoogleCalendarConnectionStatus,
   GoogleCalendarConnectResult,
+  GoogleCalendarExternalEvent,
   GoogleCalendarSyncResult,
   UserSettings,
   Vendor,
@@ -714,6 +715,9 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     googleCalendar: {
       status: () => client.get<GoogleCalendarConnectionStatus>("/integrations/google-calendar"),
+      listEvents: (startsBefore, endsAfter) => client.get<GoogleCalendarExternalEvent[]>(
+        `/integrations/google-calendar/events?startsBefore=${encodeURIComponent(startsBefore)}&endsAfter=${encodeURIComponent(endsAfter)}`,
+      ),
       beginConnect: () => client.post<GoogleCalendarConnectResult>("/integrations/google-calendar/connect"),
       syncNow: () => client.post<GoogleCalendarSyncResult>("/integrations/google-calendar/sync"),
       disconnect: async () => {

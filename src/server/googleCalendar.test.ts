@@ -6,6 +6,7 @@ vi.mock("./repos", () => ({ events: { update: vi.fn() } }));
 
 const {
   buildGoogleEventPayload,
+  googleEventOverlay,
   googleEventPatch,
   openToken,
   parseGoogleEvent,
@@ -111,5 +112,33 @@ describe("Google event mapping", () => {
       start: { dateTime: "2027-05-11T18:00:00-07:00", timeZone: "America/Los_Angeles" },
       end: { dateTime: "2027-05-11T21:00:00-07:00", timeZone: "America/Los_Angeles" },
     }).id).toBe("google-1");
+  });
+
+  it("builds a private overlay from a personal all-day Google event", () => {
+    expect(googleEventOverlay(parseGoogleEvent({
+      id: "personal-1",
+      summary: "Dentist",
+      htmlLink: "https://calendar.google.com/calendar/event?eid=test",
+      start: { date: "2026-11-10" },
+      end: { date: "2026-11-11" },
+    }))).toEqual({
+      id: "personal-1",
+      title: "Dentist",
+      startsAt: "2026-11-10T00:00:00.000Z",
+      endsAt: "2026-11-10T23:59:59.999Z",
+      timeZone: null,
+      location: null,
+      isAllDay: true,
+      htmlLink: "https://calendar.google.com/calendar/event?eid=test",
+    });
+  });
+
+  it("does not duplicate Beebizy-created events in the personal overlay", () => {
+    expect(googleEventOverlay(parseGoogleEvent({
+      id: "beebizy-1",
+      start: { dateTime: "2026-11-10T10:00:00-08:00" },
+      end: { dateTime: "2026-11-10T11:00:00-08:00" },
+      extendedProperties: { private: { beebizy: "true" } },
+    }))).toBeNull();
   });
 });

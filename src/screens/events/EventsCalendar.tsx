@@ -7,7 +7,7 @@
  * offsite that occupies three days should occupy three days here.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { Panel } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
 import { dayNumberInZone, dayNumberOf, formatInZone } from "@/lib/datetime";
-import type { Event, EventStatus } from "@/data/entities";
+import type { Event, EventStatus, GoogleCalendarExternalEvent } from "@/data/entities";
 import { eventLocationLabel } from "./calendar";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -33,6 +33,8 @@ const STATUS_SWATCH: Record<EventStatus, string> = {
   completed: "bg-info",
   cancelled: "bg-danger",
 };
+
+const GOOGLE_CHIP = "bg-primary-muted text-foreground hover:bg-primary-muted/70";
 
 /**
  * The grid is made of *civil* days — "the cell for 12 March" — so these `Date`s are
@@ -76,24 +78,127 @@ function occupiesDay(event: Event, day: number, timeZone: string): boolean {
   return day >= start && day <= end;
 }
 
-export default function EventsCalendar({ events }: { events: Event[] }) {
+function utcDayNumber(value: string): number {
+  const date = new Date(value);
+  return dayNumberOf(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+function googleEventOccupiesDay(event: GoogleCalendarExternalEvent, day: number, timeZone: string): boolean {
+  if (event.isAllDay) return day >= utcDayNumber(event.startsAt) && day <= utcDayNumber(event.endsAt);
+  const eventTimeZone = event.timeZone ?? timeZone;
+  const start = dayNumberInZone(new Date(event.startsAt), eventTimeZone);
+  const end = dayNumberInZone(new Date(event.endsAt), eventTimeZone);
+  return day >= start && day <= end;
+}
+
+type CalendarItem =
+  | { source: "beebizy"; event: Event }
+  | { source: "google"; event: GoogleCalendarExternalEvent };
+
+function CalendarItemChip({ item, day, workspaceTimeZone }: { item: CalendarItem; day: number; workspaceTimeZone: string }) {
+  if (item.source === "google") {
+    const event = item.event;
+    const eventTimeZone = event.timeZone ?? workspaceTimeZone;
+    const startDay = event.isAllDay ? utcDayNumber(event.startsAt) : dayNumberInZone(new Date(event.startsAt), eventTimeZone);
+    const isStart = startDay === day;
+    const label = event.isAllDay ? "All day" : formatInZone(event.startsAt, eventTimeZone, "time");
+    const contents = (
+      <>
+        {isStart ? (
+          <span data-numeric className="mr-1 font-semibold">{label}</span>
+        ) : (
+          <span className="mr-1" aria-hidden="true">↳</span>
+        )}
+        {event.title}
+        {isStart && event.location ? <span className="ml-1 font-normal opacity-70">· {event.location}</span> : null}
+      </>
+    );
+    return event.htmlLink ? (
+      <a
+        href={event.htmlLink}
+        target="_blank"
+        rel="noreferrer"
+        title={`${event.title} · Google Calendar${event.location ? ` · ${event.location}` : ""}`}
+        className={cn("block truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors", GOOGLE_CHIP)}
+      >
+        {contents}
+      </a>
+    ) : (
+      <span
+        title={`${event.title} · Google Calendar${event.location ? ` · ${event.location}` : ""}`}
+        className={cn("block truncate rounded px-1.5 py-0.5 text-[11px] font-medium", GOOGLE_CHIP)}
+      >
+        {contents}
+      </span>
+    );
+  }
+
+  const event = item.event;
+  const eventTimeZone = event.timeZone ?? workspaceTimeZone;
+  const isStart = dayNumberInZone(new Date(event.date), eventTimeZone) === day;
+  return (
+    <Link
+      href={`/app/events/${event.id}`}
+      title={`${event.title} · ${eventLocationLabel(event)} · ${formatInZone(event.date, eventTimeZone, "time")}`}
+      className={cn(
+        "block truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
+        STATUS_CHIP[event.status],
+      )}
+    >
+      {isStart ? (
+        <span data-numeric className="mr-1 font-semibold">
+          {formatInZone(event.date, eventTimeZone, "time")}
+        </span>
+      ) : (
+        <span className="mr-1" aria-hidden="true">↳</span>
+      )}
+      {event.title}
+      {isStart ? <span className="ml-1 font-normal opacity-70">· {eventLocationLabel(event)}</span> : null}
+    </Link>
+  );
+}
+
+export default function EventsCalendar({
+  events,
+  googleEvents = [],
+  onVisibleRangeChange,
+}: {
+  events: Event[];
+  googleEvents?: GoogleCalendarExternalEvent[];
+  onVisibleRangeChange?: (startsBefore: string, endsAfter: string) => void;
+}) {
   const { timeZone, date: formatDate } = usePreferences();
   const today = startOfDay(new Date());
   const [anchor, setAnchor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
 
   const grid = useMemo(() => buildGrid(anchor), [anchor]);
 
+  useEffect(() => {
+    const first = grid[0];
+    const last = grid.at(-1);
+    if (!first || !last) return;
+    onVisibleRangeChange?.(addDays(last, 1).toISOString(), first.toISOString());
+  }, [grid, onVisibleRangeChange]);
+
   const byDay = useMemo(() => {
-    const map = new Map<number, Event[]>();
+    const map = new Map<number, CalendarItem[]>();
     for (const day of grid) {
       const dayNumber = cellDay(day);
-      const onDay = events
+      const beebizyOnDay: CalendarItem[] = events
         .filter((event) => occupiesDay(event, dayNumber, timeZone))
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .map((event) => ({ source: "beebizy", event }));
+      const googleOnDay: CalendarItem[] = googleEvents
+        .filter((event) => googleEventOccupiesDay(event, dayNumber, timeZone))
+        .map((event) => ({ source: "google", event }));
+      const onDay = [...beebizyOnDay, ...googleOnDay].sort((left, right) => {
+        const leftDate = left.source === "beebizy" ? left.event.date : left.event.startsAt;
+        const rightDate = right.source === "beebizy" ? right.event.date : right.event.startsAt;
+        return leftDate.localeCompare(rightDate);
+      });
       if (onDay.length > 0) map.set(dayNumber, onDay);
     }
     return map;
-  }, [grid, events, timeZone]);
+  }, [grid, events, googleEvents, timeZone]);
 
   const monthLabel = formatDate(anchor, "monthYearLong");
   const inMonth = (day: Date) => day.getMonth() === anchor.getMonth();
@@ -176,36 +281,11 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
                   </div>
 
                   <ul className="space-y-1">
-                    {dayEvents.slice(0, 3).map((event) => {
-                      const eventTimeZone = event.timeZone ?? timeZone;
-                      const isStart = dayNumberInZone(new Date(event.date), eventTimeZone) === cellDay(day);
-                      return (
-                        <li key={event.id}>
-                          <Link
-                            href={`/app/events/${event.id}`}
-                            title={`${event.title} · ${eventLocationLabel(event)} · ${formatInZone(event.date, eventTimeZone, "time")}`}
-                            className={cn(
-                              "block truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
-                              STATUS_CHIP[event.status],
-                            )}
-                          >
-                            {isStart ? (
-                              <span data-numeric className="mr-1 font-semibold">
-                                {formatInZone(event.date, eventTimeZone, "time")}
-                              </span>
-                            ) : (
-                              <span className="mr-1" aria-hidden="true">
-                                ↳
-                              </span>
-                            )}
-                            {event.title}
-                            {isStart ? (
-                              <span className="ml-1 font-normal opacity-70">· {eventLocationLabel(event)}</span>
-                            ) : null}
-                          </Link>
-                        </li>
-                      );
-                    })}
+                    {dayEvents.slice(0, 3).map((item) => (
+                      <li key={`${item.source}:${item.event.id}`}>
+                        <CalendarItemChip item={item} day={cellDay(day)} workspaceTimeZone={timeZone} />
+                      </li>
+                    ))}
                     {dayEvents.length > 3 ? (
                       <li className="px-1.5 text-[10px] text-muted-foreground">+{dayEvents.length - 3} more</li>
                     ) : null}
@@ -226,6 +306,10 @@ export default function EventsCalendar({ events }: { events: Event[] }) {
             {status}
           </span>
         ))}
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="size-2.5 rounded-sm bg-primary" aria-hidden="true" />
+          personal Google Calendar
+        </span>
       </div>
     </Panel>
   );

@@ -152,6 +152,7 @@ import type {
   TicketTypeWithEvent,
   GoogleCalendarConnectResult,
   GoogleCalendarConnectionStatus,
+  GoogleCalendarExternalEvent,
   GoogleCalendarSyncResult,
   UserSettings,
   Vendor,
@@ -389,6 +390,7 @@ export interface SettingsRepository {
 
 export interface GoogleCalendarRepository {
   status(): Promise<GoogleCalendarConnectionStatus>;
+  listEvents(startsBefore: string, endsAfter: string): Promise<GoogleCalendarExternalEvent[]>;
   beginConnect(): Promise<GoogleCalendarConnectResult>;
   syncNow(): Promise<GoogleCalendarSyncResult>;
   disconnect(): Promise<void>;

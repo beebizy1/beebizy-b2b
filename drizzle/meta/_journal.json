@@ -673,6 +673,13 @@
       "when": 1793916944679,
       "tag": "0095_omniscient_joystick",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793923016288,
+      "tag": "0096_unknown_mandroid",
+      "breakpoints": true
     }
   ]
 }

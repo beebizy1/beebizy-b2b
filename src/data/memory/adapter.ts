@@ -2497,7 +2497,12 @@ const googleCalendar: GoogleCalendarRepository = {
       lastSyncedAt: null,
       lastError: "Sign in to connect a real Google Calendar.",
       eventsSynced: 0,
+      personalEventsVisible: 0,
     };
+  },
+  async listEvents() {
+    await wait(0);
+    return [];
   },
   async beginConnect() {
     throw new DataError("unavailable", "Sign in to connect a real Google Calendar.");

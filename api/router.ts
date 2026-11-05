@@ -70,6 +70,7 @@ import {
   googleCalendarStatus,
   handleGoogleCalendarCallback,
   handleGoogleCalendarWebhook,
+  listGoogleCalendarEvents,
   removeWorkspaceEventFromCalendars,
   renewGoogleCalendarChannels,
   syncGoogleCalendarNow,
@@ -1396,6 +1397,13 @@ async function handleAuthed(
     case "integrations": {
       if (a !== "google-calendar") return notFound();
       if (!b && method === "GET") return json(await googleCalendarStatus(ctx));
+      if (b === "events" && method === "GET") {
+        const range = z.object({
+          startsBefore: z.string().datetime({ offset: true }).transform((value) => new Date(value)),
+          endsAfter: z.string().datetime({ offset: true }).transform((value) => new Date(value)),
+        }).parse(Object.fromEntries(url.searchParams));
+        return json(await listGoogleCalendarEvents(ctx, range.startsBefore, range.endsAfter));
+      }
       if (b === "connect" && method === "POST") return json(beginGoogleCalendarConnect(ctx));
       if (b === "sync" && method === "POST") return json(await syncGoogleCalendarNow(ctx));
       if (!b && method === "DELETE") {
