@@ -43,9 +43,9 @@ const googleEventSchema = z.object({
   summary: z.string().optional(),
   description: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
-  updated: z.string().datetime().optional(),
-  start: z.object({ dateTime: z.string().datetime().optional(), date: z.string().optional(), timeZone: z.string().optional() }).optional(),
-  end: z.object({ dateTime: z.string().datetime().optional(), date: z.string().optional(), timeZone: z.string().optional() }).optional(),
+  updated: z.string().datetime({ offset: true }).optional(),
+  start: z.object({ dateTime: z.string().datetime({ offset: true }).optional(), date: z.string().optional(), timeZone: z.string().optional() }).optional(),
+  end: z.object({ dateTime: z.string().datetime({ offset: true }).optional(), date: z.string().optional(), timeZone: z.string().optional() }).optional(),
   extendedProperties: z.object({
     private: z.record(z.string()).optional(),
   }).optional(),
@@ -272,6 +272,10 @@ export function googleEventPatch(event: GoogleEvent): EventPatch | null {
   if (event.end?.dateTime) patch.endDate = new Date(event.end.dateTime).toISOString();
   if (start.timeZone) patch.timeZone = start.timeZone;
   return patch;
+}
+
+export function parseGoogleEvent(value: unknown): GoogleEvent {
+  return googleEventSchema.parse(value);
 }
 
 async function recordConnectionError(connectionId: string, error: unknown): Promise<void> {

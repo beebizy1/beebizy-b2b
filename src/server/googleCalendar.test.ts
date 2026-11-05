@@ -8,6 +8,7 @@ const {
   buildGoogleEventPayload,
   googleEventPatch,
   openToken,
+  parseGoogleEvent,
   readOAuthState,
   sealToken,
   signOAuthState,
@@ -101,5 +102,14 @@ describe("Google event mapping", () => {
       endDate: "2027-05-12T05:00:00.000Z",
       timeZone: "America/Los_Angeles",
     });
+  });
+
+  it("accepts Google's offset timestamps at the API boundary", () => {
+    expect(parseGoogleEvent({
+      id: "google-1",
+      updated: "2026-11-05T15:35:45.000-08:00",
+      start: { dateTime: "2027-05-11T18:00:00-07:00", timeZone: "America/Los_Angeles" },
+      end: { dateTime: "2027-05-11T21:00:00-07:00", timeZone: "America/Los_Angeles" },
+    }).id).toBe("google-1");
   });
 });
