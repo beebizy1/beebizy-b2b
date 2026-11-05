@@ -3538,6 +3538,11 @@ const paymentPlanTotal = (body: Body): number => {
 };
 
 const normalizedVendorKey = (value: string) => value.trim().toLocaleLowerCase();
+const vendorFinalStatus = (body: Body): VendorPaymentPlan["finalStatus"] => {
+  const value = str(body, "finalStatus", "unpaid");
+  if (value !== "unpaid" && value !== "paid") throw new HttpError(400, "finalStatus must be unpaid or paid.");
+  return value;
+};
 
 async function paidDepositsForPlan(
   ctx: RequestContext,
@@ -3569,19 +3574,32 @@ export const vendorPaymentPlans = eventScoped({
     vendorName: str(body, "vendorName"),
     vendorKey: normalizedVendorKey(str(body, "vendorName")),
     totalAmountCents: paymentPlanTotal(body),
-    balanceDueDate: parseDate(body.balanceDueDate, "balanceDueDate"),
+    balanceDueDate: parseOptionalDate(body.balanceDueDate, "balanceDueDate"),
+    lastPaidBy: optStr(body, "lastPaidBy"),
+    finalStatus: vendorFinalStatus(body),
+    finalPaidAt: parseOptionalDate(body.finalPaidAt, "finalPaidAt"),
     notes: optStr(body, "notes"),
     sortOrder,
   }),
   patch: {
     totalAmountCents: (b) => paymentPlanTotal(b),
-    balanceDueDate: (b) => parseDate(b.balanceDueDate, "balanceDueDate"),
+    balanceDueDate: (b) => parseOptionalDate(b.balanceDueDate, "balanceDueDate"),
+    lastPaidBy: (b) => optStr(b, "lastPaidBy"),
+    finalStatus: (b) => vendorFinalStatus(b),
+    finalPaidAt: (b) => parseOptionalDate(b.finalPaidAt, "finalPaidAt"),
     notes: (b) => optStr(b, "notes"),
   },
   beforeWrite: async (ctx, eventId, body, current) => {
+    if (body.finalStatus === "paid" && !body.finalPaidAt) body.finalPaidAt = new Date().toISOString();
+    if (body.finalStatus === "unpaid") body.finalPaidAt = null;
     const previous = current as VendorPaymentPlan | null;
     const vendorName = previous?.vendorName ?? ("vendorName" in body ? str(body, "vendorName") : undefined);
     const totalAmountCents = "totalAmountCents" in body ? paymentPlanTotal(body) : previous?.totalAmountCents;
+    const finalStatus = "finalStatus" in body ? vendorFinalStatus(body) : previous?.finalStatus ?? "unpaid";
+    const lastPaidBy = "lastPaidBy" in body ? optStr(body, "lastPaidBy") : previous?.lastPaidBy;
+    if (finalStatus === "paid" && !lastPaidBy?.trim()) {
+      throw new HttpError(400, "Add who made the final payment before marking it paid.");
+    }
     if (!vendorName || totalAmountCents == null) return;
 
     const [duplicate] = await db

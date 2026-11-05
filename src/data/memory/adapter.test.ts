@@ -1369,6 +1369,22 @@ describe("deposits", () => {
     ).rejects.toBeInstanceOf(DataError);
   });
 
+  it("tracks optional due dates and manual final-payment status", async () => {
+    const plan = await memoryAdapter.vendorPaymentPlans.create("evt-gala", {
+      vendorName: "Inline Tracker Vendor",
+      totalAmountCents: 250_000,
+    });
+    expect(plan).toMatchObject({ balanceDueDate: null, finalStatus: "unpaid", finalPaidAt: null, lastPaidBy: null });
+
+    await expect(memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, { finalStatus: "paid" })).rejects.toThrow(/who made the final payment/i);
+    const paid = await memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, { lastPaidBy: "Laila", finalStatus: "paid" });
+    expect(paid.finalStatus).toBe("paid");
+    expect(paid.finalPaidAt).toBeTruthy();
+
+    const reopened = await memoryAdapter.vendorPaymentPlans.update("evt-gala", plan.id, { finalStatus: "unpaid" });
+    expect(reopened).toMatchObject({ finalStatus: "unpaid", finalPaidAt: null });
+  });
+
   it("rejects a payment plan from another event", async () => {
     await expect(memoryAdapter.deposits.create("evt-gala", {
       paymentPlanId: "vpp-kickoff-venue",

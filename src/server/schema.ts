@@ -874,12 +874,16 @@ export const vendorPaymentPlans = pgTable(
     vendorName: text("vendor_name").notNull(),
     vendorKey: text("vendor_key").notNull(),
     totalAmountCents: bigint("total_amount_cents", { mode: "number" }).notNull(),
-    balanceDueDate: timestamp("balance_due_date", { withTimezone: true }).notNull(),
+    balanceDueDate: timestamp("balance_due_date", { withTimezone: true }),
+    lastPaidBy: text("last_paid_by"),
+    finalStatus: text("final_status").notNull().default("unpaid"),
+    finalPaidAt: timestamp("final_paid_at", { withTimezone: true }),
     notes: text("notes"),
   },
   (table) => [
     uniqueIndex("vendor_payment_plans_event_vendor_idx").on(table.eventId, table.vendorKey),
     check("vendor_payment_plans_total_nonnegative_check", sql`${table.totalAmountCents} >= 0`),
+    check("vendor_payment_plans_final_status_check", sql`${table.finalStatus} in ('unpaid', 'paid')`),
   ],
 );
 

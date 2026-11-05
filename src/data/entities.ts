@@ -2018,12 +2018,18 @@ export interface DepositDraft {
 export type DepositPatch = Partial<DepositDraft>;
 
 /** One authoritative vendor contract; individual deposits remain separate payment rows. */
+export const VENDOR_FINAL_PAYMENT_STATUSES = ["unpaid", "paid"] as const;
+export type VendorFinalPaymentStatus = (typeof VENDOR_FINAL_PAYMENT_STATUSES)[number];
+
 export interface VendorPaymentPlan {
   id: string;
   eventId: string;
   vendorName: string;
   totalAmountCents: Cents;
-  balanceDueDate: IsoDateTime;
+  balanceDueDate: IsoDateTime | null;
+  lastPaidBy: string | null;
+  finalStatus: VendorFinalPaymentStatus;
+  finalPaidAt: IsoDateTime | null;
   notes: string | null;
   createdAt: IsoDateTime;
   updatedAt?: IsoDateTime;
@@ -2032,7 +2038,10 @@ export interface VendorPaymentPlan {
 export interface VendorPaymentPlanDraft {
   vendorName: string;
   totalAmountCents: Cents;
-  balanceDueDate: IsoDateTime;
+  balanceDueDate?: IsoDateTime | null;
+  lastPaidBy?: string | null;
+  finalStatus?: VendorFinalPaymentStatus;
+  finalPaidAt?: IsoDateTime | null;
   notes?: string | null;
 }
 

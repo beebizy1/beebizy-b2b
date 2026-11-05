@@ -2305,7 +2305,10 @@ const vendorPaymentPlansBase = eventScoped<VendorPaymentPlan, VendorPaymentPlanD
     eventId,
     vendorName: draft.vendorName,
     totalAmountCents: draft.totalAmountCents,
-    balanceDueDate: draft.balanceDueDate,
+    balanceDueDate: draft.balanceDueDate ?? null,
+    lastPaidBy: draft.lastPaidBy ?? null,
+    finalStatus: draft.finalStatus ?? "unpaid",
+    finalPaidAt: draft.finalPaidAt ?? null,
     notes: draft.notes ?? null,
     createdAt: nowIso(),
   }),
@@ -2328,21 +2331,30 @@ function validatePaymentPlan(eventId: string, draft: VendorPaymentPlanDraft, cur
   if (draft.totalAmountCents < paidCents) {
     throw new DataError("invalid", "The total vendor cost cannot be less than deposits already paid.");
   }
+  if (draft.finalStatus === "paid" && !draft.lastPaidBy?.trim()) {
+    throw new DataError("invalid", "Add who made the final payment before marking it paid.");
+  }
 }
 
 const vendorPaymentPlans: EventScopedRepository<VendorPaymentPlan, VendorPaymentPlanDraft, VendorPaymentPlanPatch> = {
   ...vendorPaymentPlansBase,
   async create(eventId, draft) {
-    validatePaymentPlan(eventId, draft);
-    return vendorPaymentPlansBase.create(eventId, draft);
+    const resolved = { ...draft, finalStatus: draft.finalStatus ?? "unpaid", finalPaidAt: draft.finalStatus === "paid" ? (draft.finalPaidAt ?? nowIso()) : null };
+    validatePaymentPlan(eventId, resolved);
+    return vendorPaymentPlansBase.create(eventId, resolved);
   },
   async update(eventId, id, patch) {
     const current = required(
       store().vendorPaymentPlans.find((row) => row.id === id && row.eventId === eventId),
       `Record ${id} no longer exists.`,
     );
-    validatePaymentPlan(eventId, { ...current, ...patch }, id);
-    return vendorPaymentPlansBase.update(eventId, id, patch);
+    const resolvedPatch = patch.finalStatus === "paid"
+      ? { ...patch, finalPaidAt: patch.finalPaidAt ?? nowIso() }
+      : patch.finalStatus === "unpaid"
+        ? { ...patch, finalPaidAt: null }
+        : patch;
+    validatePaymentPlan(eventId, { ...current, ...resolvedPatch }, id);
+    return vendorPaymentPlansBase.update(eventId, id, resolvedPatch);
   },
 };
 
