@@ -128,6 +128,17 @@ vi.mock("./memberRoleNotifications", () => ({
 vi.mock("./auctionOutbidNotifications", () => ({
   processDueAuctionOutbidNotifications: vi.fn(),
 }));
+vi.mock("./googleCalendar", () => ({
+  beginGoogleCalendarConnect: vi.fn(),
+  disconnectGoogleCalendar: vi.fn(),
+  googleCalendarStatus: vi.fn(),
+  handleGoogleCalendarCallback: vi.fn(),
+  handleGoogleCalendarWebhook: vi.fn(),
+  removeWorkspaceEventFromCalendars: vi.fn(),
+  renewGoogleCalendarChannels: vi.fn(),
+  syncGoogleCalendarNow: vi.fn(),
+  syncWorkspaceEvent: vi.fn(),
+}));
 vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
   generatePostEventCopy: vi.fn(),
@@ -186,6 +197,47 @@ const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
+const {
+  beginGoogleCalendarConnect,
+  disconnectGoogleCalendar,
+  googleCalendarStatus,
+  handleGoogleCalendarCallback,
+  handleGoogleCalendarWebhook,
+  renewGoogleCalendarChannels,
+  syncGoogleCalendarNow,
+} = await import("./googleCalendar");
+
+describe("Google Calendar integration", () => {
+  it("protects channel renewal with the cron secret", async () => {
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/maintenance"))).status).toBe(401);
+    vi.mocked(renewGoogleCalendarChannels).mockResolvedValue({ renewed: 2, failed: 0 });
+    const response = await handleRequest(new Request("http://localhost/api/integrations/google-calendar/maintenance", {
+      headers: { authorization: "Bearer maintenance-secret" },
+    }));
+    expect(await response.json()).toEqual({ ok: true, renewed: 2, failed: 0 });
+    vi.unstubAllEnvs();
+  });
+
+  it("accepts Google callbacks and webhooks without a Beebizy bearer token", async () => {
+    vi.mocked(handleGoogleCalendarCallback).mockResolvedValue(Response.redirect("http://localhost/app/settings?calendar=connected"));
+    vi.mocked(handleGoogleCalendarWebhook).mockResolvedValue(new Response(null, { status: 204 }));
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/callback?code=test&state=test"))).status).toBe(302);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/webhook", { method: "POST" }))).status).toBe(204);
+  });
+
+  it("exposes status, connect, sync, and disconnect only after authorization", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1", role: "member", email: "user@example.com" });
+    vi.mocked(googleCalendarStatus).mockResolvedValue({ state: "disconnected", isConfigured: true, googleEmail: null, calendarSummary: null, lastSyncedAt: null, lastError: null, eventsSynced: 0 });
+    vi.mocked(beginGoogleCalendarConnect).mockReturnValue({ authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" });
+    vi.mocked(syncGoogleCalendarNow).mockResolvedValue({ eventsSynced: 1, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/connect", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/sync", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar", { method: "DELETE" }))).status).toBe(200);
+    expect(disconnectGoogleCalendar).toHaveBeenCalledOnce();
+  });
+});
 
 describe("fundraising maintenance", () => {
   it("requires the cron secret and runs both due-job families", async () => {

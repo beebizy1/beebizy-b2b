@@ -64,6 +64,17 @@ import { analyzePublicVendorCoi, analyzeVendorCoi } from "../src/server/vendorCo
 import { processDueVendorPaperworkReminders } from "../src/server/vendorPaperworkReminders.ts";
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
+import {
+  beginGoogleCalendarConnect,
+  disconnectGoogleCalendar,
+  googleCalendarStatus,
+  handleGoogleCalendarCallback,
+  handleGoogleCalendarWebhook,
+  removeWorkspaceEventFromCalendars,
+  renewGoogleCalendarChannels,
+  syncGoogleCalendarNow,
+  syncWorkspaceEvent,
+} from "../src/server/googleCalendar.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
@@ -282,6 +293,20 @@ async function handleLead(request: Request): Promise<Response> {
  * than something guessable.
  */
 async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
+  if (segments[0] === "integrations" && segments[1] === "google-calendar") {
+    if (segments[2] === "callback" && method === "GET") return handleGoogleCalendarCallback(request);
+    if (segments[2] === "webhook" && method === "POST") return handleGoogleCalendarWebhook(request);
+    if (segments[2] === "maintenance" && method === "GET") {
+      const secret = process.env.CRON_SECRET?.trim();
+      if (!secret) return json({ error: "Google Calendar maintenance is not configured." }, 503);
+      if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+      return json({ ok: true, ...(await renewGoogleCalendarChannels()) });
+    }
+    // Status, connect, sync and disconnect continue through the authenticated router.
+    if (segments.length <= 3) return null;
+    return json({ error: "Method not allowed" }, 405);
+  }
+
   if (segments[0] === "lead") {
     if (method !== "POST") return json({ error: "Method not allowed" }, 405);
     return handleLead(request);
@@ -900,11 +925,20 @@ async function handleAuthed(
         };
         return json(await repos.events.list(ctx, filter));
       }
-      if (!a && method === "POST") return json(await repos.events.create(ctx, body), 201);
+      if (!a && method === "POST") {
+        const event = await repos.events.create(ctx, body);
+        await syncWorkspaceEvent(event);
+        return json(event, 201);
+      }
       if (a && !b && method === "GET") return json(await repos.events.get(ctx, a));
-      if (a && !b && method === "PATCH") return json(await repos.events.update(ctx, a, body));
+      if (a && !b && method === "PATCH") {
+        const event = await repos.events.update(ctx, a, body);
+        await syncWorkspaceEvent(event);
+        return json(event);
+      }
       if (a && b === "registration-page" && method === "PATCH") return json(await repos.events.updateRegistrationPage(ctx, a, body));
       if (a && !b && method === "DELETE") {
+        await removeWorkspaceEventFromCalendars(ctx.workspaceId, a);
         await repos.events.remove(ctx, a);
         return json({ ok: true });
       }
@@ -1355,6 +1389,19 @@ async function handleAuthed(
     case "settings": {
       if (method === "GET") return json(await repos.settings.get(ctx));
       if (method === "PATCH") return json(await repos.settings.update(ctx, body));
+      return notFound();
+    }
+
+    /* ----------------------------------------------------------- integrations */
+    case "integrations": {
+      if (a !== "google-calendar") return notFound();
+      if (!b && method === "GET") return json(await googleCalendarStatus(ctx));
+      if (b === "connect" && method === "POST") return json(beginGoogleCalendarConnect(ctx));
+      if (b === "sync" && method === "POST") return json(await syncGoogleCalendarNow(ctx));
+      if (!b && method === "DELETE") {
+        await disconnectGoogleCalendar(ctx);
+        return json({ ok: true });
+      }
       return notFound();
     }
 

@@ -91,6 +91,9 @@ import type {
   PublicTicketOrderStatus,
   StripeConnectStatus,
   TicketTypeWithEvent,
+  GoogleCalendarConnectionStatus,
+  GoogleCalendarConnectResult,
+  GoogleCalendarSyncResult,
   UserSettings,
   Vendor,
   VendorMessage,
@@ -707,6 +710,15 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     settings: {
       get: () => client.get<UserSettings>("/settings"),
       update: (patch) => client.patch<UserSettings>("/settings", patch),
+    },
+
+    googleCalendar: {
+      status: () => client.get<GoogleCalendarConnectionStatus>("/integrations/google-calendar"),
+      beginConnect: () => client.post<GoogleCalendarConnectResult>("/integrations/google-calendar/connect"),
+      syncNow: () => client.post<GoogleCalendarSyncResult>("/integrations/google-calendar/sync"),
+      disconnect: async () => {
+        await client.del("/integrations/google-calendar");
+      },
     },
 
     analytics: {

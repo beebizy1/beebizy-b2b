@@ -31,6 +31,7 @@ import type {
   RunOfShowRepository,
   RoiRepository,
   SettingsRepository,
+  GoogleCalendarRepository,
   TemplatesRepository,
   TicketsRepository,
   VendorMessagesRepository,
@@ -2485,6 +2486,30 @@ const settings: SettingsRepository = {
   },
 };
 
+const googleCalendar: GoogleCalendarRepository = {
+  async status() {
+    await wait(0);
+    return {
+      state: "not-configured",
+      isConfigured: false,
+      googleEmail: null,
+      calendarSummary: null,
+      lastSyncedAt: null,
+      lastError: "Sign in to connect a real Google Calendar.",
+      eventsSynced: 0,
+    };
+  },
+  async beginConnect() {
+    throw new DataError("unavailable", "Sign in to connect a real Google Calendar.");
+  },
+  async syncNow() {
+    throw new DataError("unavailable", "Sign in to sync Google Calendar.");
+  },
+  async disconnect() {
+    throw new DataError("unavailable", "There is no Google Calendar connection in demo mode.");
+  },
+};
+
 /* ----------------------------------------------------------------------- roi */
 
 /* ------------------------------------------------------------------ boards */
@@ -3135,6 +3160,7 @@ export const memoryAdapter: DataAdapter = {
   templates,
   canvases,
   settings,
+  googleCalendar,
   floorplan,
   members,
   feedback,

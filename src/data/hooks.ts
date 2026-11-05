@@ -185,6 +185,7 @@ export const qk = {
   canvas: (id: string) => ["canvases", "detail", id] as const,
 
   settings: ["settings"] as const,
+  googleCalendar: ["integrations", "google-calendar"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
   publicFloorplan: (token: string) => ["floorplan", "public", token] as const,
   history: (eventId: string) => ["history", eventId] as const,
@@ -1783,6 +1784,22 @@ export function useSettings() {
 
 export function useUpdateSettings() {
   return useAdapterMutation((a, patch: Partial<UserSettings>) => a.settings.update(patch), () => [qk.settings]);
+}
+
+export function useGoogleCalendarStatus() {
+  return useAdapterQuery(qk.googleCalendar, (a) => a.googleCalendar.status(), { staleTime: 15_000 });
+}
+
+export function useConnectGoogleCalendar() {
+  return useAdapterMutation((a) => a.googleCalendar.beginConnect(), () => [qk.googleCalendar]);
+}
+
+export function useSyncGoogleCalendar() {
+  return useAdapterMutation((a) => a.googleCalendar.syncNow(), () => [qk.googleCalendar]);
+}
+
+export function useDisconnectGoogleCalendar() {
+  return useAdapterMutation((a) => a.googleCalendar.disconnect(), () => [qk.googleCalendar]);
 }
 
 export function useMembers() {

@@ -268,6 +268,70 @@ export const userSettings = pgTable("user_settings", {
   updatedAt: updatedAt(),
 });
 
+/**
+ * One Google account connection per Beebizy user and workspace. Refresh tokens are
+ * encrypted before storage; access tokens are short-lived and never persisted.
+ */
+export const googleCalendarConnections = pgTable(
+  "google_calendar_connections",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    googleEmail: text("google_email").notNull(),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    calendarSummary: text("calendar_summary"),
+    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    syncToken: text("sync_token"),
+    channelId: text("channel_id").unique(),
+    channelResourceId: text("channel_resource_id"),
+    channelTokenHash: text("channel_token_hash"),
+    channelExpiresAt: timestamp("channel_expires_at", { withTimezone: true }),
+    enabled: boolean("enabled").notNull().default(true),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("google_calendar_connections_workspace_user_idx").on(table.workspaceId, table.userId),
+    index("google_calendar_connections_channel_idx").on(table.channelId),
+    index("google_calendar_connections_renewal_idx").on(table.enabled, table.channelExpiresAt),
+  ],
+);
+
+/** Only Beebizy-created links are synced back. Unrelated personal events stay private. */
+export const googleCalendarEventLinks = pgTable(
+  "google_calendar_event_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => googleCalendarConnections.id, { onDelete: "cascade" }),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    googleEventId: text("google_event_id").notNull(),
+    googleEtag: text("google_etag"),
+    googleUpdatedAt: timestamp("google_updated_at", { withTimezone: true }),
+    googleDeletedAt: timestamp("google_deleted_at", { withTimezone: true }),
+    lastBeebizyUpdatedAt: timestamp("last_beebizy_updated_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("google_calendar_event_links_connection_event_idx").on(table.connectionId, table.eventId),
+    uniqueIndex("google_calendar_event_links_connection_google_idx").on(table.connectionId, table.googleEventId),
+    index("google_calendar_event_links_workspace_event_idx").on(table.workspaceId, table.eventId),
+  ],
+);
+
 export const productFeedback = pgTable(
   "product_feedback",
   {

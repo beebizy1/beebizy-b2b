@@ -7,9 +7,9 @@
  * in a code comment.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { CreditCard, Database, Plus } from "lucide-react";
+import { CalendarDays, CreditCard, Database, Plus, RefreshCw, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,12 +26,16 @@ import { toast } from "@/hooks/use-toast";
 import { ErrorNotice, KeyValue, LoadingRows, Panel, PanelHeader, PageHeader, Pill } from "@/components/primitives";
 import {
   useInviteMember,
+  useConnectGoogleCalendar,
+  useDisconnectGoogleCalendar,
+  useGoogleCalendarStatus,
   useMe,
   useMembers,
   useRevokeInvite,
   useRemoveMember,
   useSetMemberRole,
   useSettings,
+  useSyncGoogleCalendar,
   useUpdateSettings,
 } from "@/data/hooks";
 import { useData, useDataMode } from "@/data/provider";
@@ -333,6 +337,110 @@ function BillingPanel() {
   );
 }
 
+function GoogleCalendarPanel() {
+  const status = useGoogleCalendarStatus();
+  const connect = useConnectGoogleCalendar();
+  const sync = useSyncGoogleCalendar();
+  const disconnect = useDisconnectGoogleCalendar();
+  const connection = status.data;
+  const isConnected = connection?.state === "connected" || connection?.state === "error";
+
+  const connectCalendar = () => {
+    connect.mutate(undefined, {
+      onSuccess: ({ authorizationUrl }) => window.location.assign(authorizationUrl),
+      onError: (error) => toast({ title: "Couldn't connect Google Calendar", description: error.message }),
+    });
+  };
+
+  const syncCalendar = () => {
+    sync.mutate(undefined, {
+      onSuccess: ({ eventsSynced }) => toast({
+        title: "Google Calendar is up to date",
+        description: eventsSynced === 0 ? "No event changes were waiting." : `${eventsSynced} event changes synced.`,
+      }),
+      onError: (error) => toast({ title: "Couldn't sync Google Calendar", description: error.message }),
+    });
+  };
+
+  const disconnectCalendar = () => {
+    if (!window.confirm("Disconnect your Google Calendar? Beebizy events already in Google will stay there.")) return;
+    disconnect.mutate(undefined, {
+      onSuccess: () => toast({ title: "Google Calendar disconnected" }),
+      onError: (error) => toast({ title: "Couldn't disconnect Google Calendar", description: error.message }),
+    });
+  };
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Google Calendar"
+        description="Connect your own Google account. Beebizy events stay in sync without importing unrelated personal events."
+        actions={
+          connection?.state === "connected" ? (
+            <Pill tone="success">Connected</Pill>
+          ) : connection?.state === "error" ? (
+            <Pill tone="warning">Needs attention</Pill>
+          ) : (
+            <CalendarDays className="size-4 text-muted-foreground" aria-hidden="true" />
+          )
+        }
+      />
+
+      {status.isLoading ? (
+        <LoadingRows rows={2} className="p-5" />
+      ) : status.isError ? (
+        <ErrorNotice error={status.error} onRetry={() => void status.refetch()} className="m-5" />
+      ) : isConnected ? (
+        <div className="space-y-4 p-5">
+          <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-surface-sunken px-4 py-1">
+            <KeyValue label="Google account">{connection?.googleEmail ?? "Connected"}</KeyValue>
+            <KeyValue label="Calendar">{connection?.calendarSummary ?? "Primary calendar"}</KeyValue>
+            <KeyValue label="Beebizy events linked">{connection?.eventsSynced ?? 0}</KeyValue>
+            <KeyValue label="Last synced">
+              {connection?.lastSyncedAt
+                ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(connection.lastSyncedAt))
+                : "Waiting for first sync"}
+            </KeyValue>
+          </dl>
+
+          {connection?.lastError ? (
+            <div className="rounded-lg border border-warning-border bg-warning-tint p-3 text-sm text-warning-text">
+              {connection.lastError}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={syncCalendar} disabled={sync.isPending}>
+              <RefreshCw className={`mr-1.5 size-3.5 ${sync.isPending ? "animate-spin" : ""}`} />
+              {sync.isPending ? "Syncing…" : "Sync now"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={disconnectCalendar} disabled={disconnect.isPending}>
+              <Unplug className="mr-1.5 size-3.5" />
+              Disconnect
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">Keep every Beebizy event on your calendar automatically.</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              You approve access for your account only. Other team members connect their own calendars separately.
+            </p>
+          </div>
+          <Button size="sm" onClick={connectCalendar} disabled={!connection?.isConfigured || connect.isPending}>
+            <CalendarDays className="mr-1.5 size-3.5" />
+            {connect.isPending ? "Opening Google…" : "Connect Google Calendar"}
+          </Button>
+          {!connection?.isConfigured && connection?.lastError ? (
+            <p className="text-xs text-warning-text">{connection.lastError}</p>
+          ) : null}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 export default function Settings() {
   const { user, isDemo } = useSession();
   const { data: me } = useMe();
@@ -340,6 +448,17 @@ export default function Settings() {
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
   const prefs = usePreferences();
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get("calendar");
+    if (!result) return;
+    toast(result === "connected"
+      ? { title: "Google Calendar connected", description: "Your Beebizy events will now stay in sync." }
+      : { title: "Google Calendar wasn't connected", description: "Try again, or contact Beebizy if it keeps happening." });
+    url.searchParams.delete("calendar");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   const save = (patch: Partial<UserSettings>, message: string) => {
     updateSettings.mutate(patch, {
@@ -440,6 +559,8 @@ export default function Settings() {
       </Panel>
 
       <BillingPanel />
+
+      <GoogleCalendarPanel />
 
       <TeamPanel />
 

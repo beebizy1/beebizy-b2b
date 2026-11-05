@@ -150,6 +150,9 @@ import type {
   TicketTypeDraft,
   TicketTypePatch,
   TicketTypeWithEvent,
+  GoogleCalendarConnectResult,
+  GoogleCalendarConnectionStatus,
+  GoogleCalendarSyncResult,
   UserSettings,
   Vendor,
   VendorDraft,
@@ -384,6 +387,13 @@ export interface SettingsRepository {
   update(patch: Partial<UserSettings>): Promise<UserSettings>;
 }
 
+export interface GoogleCalendarRepository {
+  status(): Promise<GoogleCalendarConnectionStatus>;
+  beginConnect(): Promise<GoogleCalendarConnectResult>;
+  syncNow(): Promise<GoogleCalendarSyncResult>;
+  disconnect(): Promise<void>;
+}
+
 export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft, CanvasPatch> {
   /** Replaces a board's cards wholesale — a board is edited as one document. */
   replaceCards(id: string, cards: CanvasCard[]): Promise<Canvas>;
@@ -590,6 +600,7 @@ export interface DataAdapter {
   templates: TemplatesRepository;
   canvases: CanvasesRepository;
   settings: SettingsRepository;
+  googleCalendar: GoogleCalendarRepository;
   floorplan: FloorplanRepository;
   members: MembersRepository;
   feedback: FeedbackRepository;

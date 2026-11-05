@@ -2178,6 +2178,37 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   timeZone: "America/Los_Angeles",
 };
 
+/* --------------------------------------------------- Google Calendar connection */
+
+export type GoogleCalendarConnectionState =
+  | "not-configured"
+  | "disconnected"
+  | "connected"
+  | "error";
+
+/**
+ * Account-level status only. OAuth credentials and refresh tokens never cross the API
+ * boundary, so the browser can render connection health without receiving a secret.
+ */
+export interface GoogleCalendarConnectionStatus {
+  state: GoogleCalendarConnectionState;
+  isConfigured: boolean;
+  googleEmail: string | null;
+  calendarSummary: string | null;
+  lastSyncedAt: IsoDateTime | null;
+  lastError: string | null;
+  eventsSynced: number;
+}
+
+export interface GoogleCalendarConnectResult {
+  authorizationUrl: string;
+}
+
+export interface GoogleCalendarSyncResult {
+  eventsSynced: number;
+  lastSyncedAt: IsoDateTime;
+}
+
 /* ----------------------------------------------------------- product feedback */
 
 export const FEEDBACK_CATEGORIES = ["general", "bug", "idea", "praise"] as const;
