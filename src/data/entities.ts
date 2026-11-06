@@ -2293,6 +2293,40 @@ export type FeedbackNotificationOutcome =
   | { status: "skipped"; reason: string }
   | { status: "failed"; reason: string };
 
+/* ------------------------------------------------------ operator user activity */
+
+export interface AdminUserWorkspaceAccess {
+  workspaceId: string;
+  workspaceName: string;
+  role: WorkspaceRole;
+}
+
+export interface AdminUserActivityRow {
+  id: string;
+  name: string;
+  email: string;
+  status: "active-member" | "signed-in-no-access" | "invited";
+  workspaces: AdminUserWorkspaceAccess[];
+  createdAt: IsoDateTime | null;
+  lastSignInAt: IsoDateTime | null;
+  lastActiveAt: IsoDateTime | null;
+  isActiveNow: boolean;
+  isTestAccount: boolean;
+}
+
+export interface AdminUserActivityResponse {
+  generatedAt: IsoDateTime;
+  activeWindowMinutes: number;
+  users: AdminUserActivityRow[];
+  totals: {
+    authenticatedPeople: number;
+    activeMembers: number;
+    activeNow: number;
+    pendingInvites: number;
+    testAccounts: number;
+  };
+}
+
 /* ----------------------------------------------------------------- derived */
 
 /**

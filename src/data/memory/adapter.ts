@@ -22,6 +22,7 @@ import type {
   EventHistoryRepository,
   TeamUpdatesRepository,
   FeedbackRepository,
+  AdminRepository,
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
@@ -2796,6 +2797,18 @@ const feedback: FeedbackRepository = {
   },
 };
 
+const admin: AdminRepository = {
+  async userActivity() {
+    await wait(0);
+    return {
+      generatedAt: nowIso(),
+      activeWindowMinutes: 5,
+      users: [],
+      totals: { authenticatedPeople: 0, activeMembers: 0, activeNow: 0, pendingInvites: 0, testAccounts: 0 },
+    };
+  },
+};
+
 const history: EventHistoryRepository = {
   async list(eventId) {
     await wait();
@@ -3199,6 +3212,7 @@ export const memoryAdapter: DataAdapter = {
   floorplan,
   members,
   feedback,
+  admin,
   history,
   teamUpdates,
   roi,

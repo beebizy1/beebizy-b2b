@@ -150,6 +150,9 @@ vi.mock("./hubspot", () => ({
   syncHubSpotRegistrationById: vi.fn(),
   syncHubSpotRegistrationIfEnabled: vi.fn(),
 }));
+vi.mock("./userActivity", () => ({
+  listAdminUserActivity: vi.fn(),
+}));
 vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
   generatePostEventCopy: vi.fn(),
@@ -226,6 +229,23 @@ const {
   setHubSpotEventSync,
   syncHubSpotEvent,
 } = await import("./hubspot");
+const { listAdminUserActivity } = await import("./userActivity");
+
+describe("operator user activity", () => {
+  it("allows an approved operator to read the live activity snapshot", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1", role: "owner", email: "tarang@beebizy.com" });
+    vi.mocked(requireBeebizyOperator).mockReturnValue(undefined);
+    vi.mocked(listAdminUserActivity).mockResolvedValue({
+      generatedAt: "2026-11-06T02:00:00.000Z",
+      activeWindowMinutes: 5,
+      users: [],
+      totals: { authenticatedPeople: 24, activeMembers: 15, activeNow: 1, pendingInvites: 4, testAccounts: 3 },
+    });
+    const response = await handleRequest(new Request("http://localhost/api/admin/user-activity"));
+    expect(response.status).toBe(200);
+    expect(requireBeebizyOperator).toHaveBeenCalledWith("tarang@beebizy.com");
+  });
+});
 
 describe("HubSpot integration", () => {
   it("accepts the OAuth callback without a Beebizy bearer token", async () => {

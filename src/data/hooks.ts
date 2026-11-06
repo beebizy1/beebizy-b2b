@@ -126,6 +126,7 @@ export const qk = {
   members: ["members"] as const,
   feedback: (userId: string) => ["feedback", userId] as const,
   feedbackInbox: (userId: string) => ["feedback", "inbox", userId] as const,
+  adminUserActivity: ["admin", "user-activity"] as const,
 
   vendors: ["vendors"] as const,
   vendor: (id: string) => ["vendors", "detail", id] as const,
@@ -1886,6 +1887,14 @@ export function useFeedbackInbox(userId: string, enabled: boolean) {
 
 export function useNotifyFeedback() {
   return useAdapterMutation((a, id: string) => a.feedback.notify(id), () => []);
+}
+
+export function useAdminUserActivity(enabled: boolean) {
+  return useAdapterQuery(qk.adminUserActivity, (a) => a.admin.userActivity(), {
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
 }
 
 export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {

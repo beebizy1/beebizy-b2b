@@ -33,6 +33,7 @@ import {
   Trophy,
   UtensilsCrossed,
   Users,
+  UserRoundCheck,
   HeartHandshake,
   type LucideIcon,
 } from "lucide-react";
@@ -136,6 +137,15 @@ const FEEDBACK_REVIEW_NAV_ITEM: NavItem = {
   hint: "Private feedback inbox for the Beebizy product team",
 };
 
+export const USER_ACTIVITY_PATH = "/app/admin/users";
+
+const USER_ACTIVITY_NAV_ITEM: NavItem = {
+  label: "User activity",
+  href: USER_ACTIVITY_PATH,
+  icon: UserRoundCheck,
+  hint: "Live sign-ins, active users, roles and pending invitations",
+};
+
 const SANTA_CLARA_NAV_ITEMS: NavItem[] = [
   ...NAV_ITEMS.filter((item) => item.href === "/app" || item.href === "/app/events"),
   {
@@ -153,7 +163,7 @@ export function visibleNavItems(
 ): NavItem[] {
   if (experience === "santa-clara") return SANTA_CLARA_NAV_ITEMS;
   const planItems = NAV_ITEMS.filter((item) => !item.capability || planHasCapability(plan, item.capability));
-  return canReviewFeedback ? [...planItems, FEEDBACK_REVIEW_NAV_ITEM] : planItems;
+  return canReviewFeedback ? [...planItems, USER_ACTIVITY_NAV_ITEM, FEEDBACK_REVIEW_NAV_ITEM] : planItems;
 }
 
 export interface EventTab {

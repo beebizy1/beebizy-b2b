@@ -40,6 +40,7 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  AdminUserActivityResponse,
   FundraisingDashboard,
   FundraisingOrganizationProfile,
   ItemSubmission,
@@ -701,6 +702,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       listInbox: () => client.get<FeedbackInboxItem[]>("/feedback/inbox"),
       create: (draft) => client.post<ProductFeedback>("/feedback", draft),
       notify: (id) => client.post<FeedbackNotificationOutcome>(`/feedback/${id}/notify`, {}),
+    },
+
+    admin: {
+      userActivity: () => client.get<AdminUserActivityResponse>("/admin/user-activity"),
     },
 
     history: {

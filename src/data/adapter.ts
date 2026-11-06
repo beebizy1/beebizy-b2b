@@ -59,6 +59,7 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  AdminUserActivityResponse,
   FundraisingDashboard,
   FundraisingBroadcastAudience,
   FundraisingOrganizationProfile,
@@ -508,6 +509,10 @@ export interface FeedbackRepository {
   notify(id: string): Promise<FeedbackNotificationOutcome>;
 }
 
+export interface AdminRepository {
+  userActivity(): Promise<AdminUserActivityResponse>;
+}
+
 export interface BillingRepository {
   checkout(interval: BillingInterval): Promise<{ url: string }>;
   portal(): Promise<{ url: string }>;
@@ -619,6 +624,7 @@ export interface DataAdapter {
   floorplan: FloorplanRepository;
   members: MembersRepository;
   feedback: FeedbackRepository;
+  admin: AdminRepository;
   billing: BillingRepository;
   fundraising: FundraisingRepository;
   history: EventHistoryRepository;

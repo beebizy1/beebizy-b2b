@@ -64,6 +64,7 @@ import { analyzePublicVendorCoi, analyzeVendorCoi } from "../src/server/vendorCo
 import { processDueVendorPaperworkReminders } from "../src/server/vendorPaperworkReminders.ts";
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
+import { listAdminUserActivity } from "../src/server/userActivity.ts";
 import {
   beginGoogleCalendarConnect,
   disconnectGoogleCalendar,
@@ -1485,6 +1486,13 @@ async function handleAuthed(
         }
         return json(await repos.feedback.create(ctx, parsed.data), 201);
       }
+      return notFound();
+    }
+
+    /* ------------------------------------------------------------ admin live */
+    case "admin": {
+      requireBeebizyOperator(ctx.email);
+      if (a === "user-activity" && method === "GET") return json(await listAdminUserActivity());
       return notFound();
     }
 

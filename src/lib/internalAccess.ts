@@ -37,7 +37,7 @@ export function isBeebizyOperator(email: string | null | undefined): boolean {
 
 /** Internal reviewers retain inbox access independently of customer subscription state. */
 export function canAccessOperatorFeedbackInbox(route: string, email: string | null | undefined): boolean {
-  return route === "feedback/inbox" && isBeebizyOperator(email);
+  return (route === "feedback/inbox" || route === "admin/user-activity") && isBeebizyOperator(email);
 }
 
 export function configuredBetaAccessEmails(value: string | null | undefined): Set<string> {
