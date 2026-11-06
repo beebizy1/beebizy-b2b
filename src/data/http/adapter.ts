@@ -95,6 +95,10 @@ import type {
   GoogleCalendarConnectResult,
   GoogleCalendarExternalEvent,
   GoogleCalendarSyncResult,
+  HubSpotConnectionStatus,
+  HubSpotConnectResult,
+  HubSpotEventSyncResult,
+  HubSpotSyncResult,
   UserSettings,
   Vendor,
   VendorMessage,
@@ -722,6 +726,19 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       syncNow: () => client.post<GoogleCalendarSyncResult>("/integrations/google-calendar/sync"),
       disconnect: async () => {
         await client.del("/integrations/google-calendar");
+      },
+    },
+
+    hubspot: {
+      status: () => client.get<HubSpotConnectionStatus>("/integrations/hubspot"),
+      beginConnect: () => client.post<HubSpotConnectResult>("/integrations/hubspot/connect"),
+      setEventSync: (eventId, enabled) => client.patch<HubSpotEventSyncResult>(
+        `/integrations/hubspot/events/${eventId}`,
+        { enabled },
+      ),
+      syncEvent: (eventId) => client.post<HubSpotSyncResult>(`/integrations/hubspot/events/${eventId}/sync`),
+      disconnect: async () => {
+        await client.del("/integrations/hubspot");
       },
     },
 

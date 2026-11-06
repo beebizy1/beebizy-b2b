@@ -1,0 +1,66 @@
+import { describe, expect, it, vi } from "vitest";
+import type { RegistrationWithGuest } from "../data/entities";
+
+vi.mock("./db", () => ({ db: {} }));
+vi.mock("./repos", () => ({ events: {}, registrations: {} }));
+vi.mock("./googleCalendar", () => ({
+  openToken: vi.fn(),
+  readOAuthState: vi.fn(),
+  sealToken: vi.fn(),
+  signOAuthState: vi.fn(),
+}));
+
+const { hubspotContactProperties, hubspotRegistrationNote, splitContactName } = await import("./hubspot");
+
+function registration(overrides: Partial<RegistrationWithGuest> = {}): RegistrationWithGuest {
+  return {
+    id: "registration-1",
+    ownerId: "workspace-1",
+    eventId: "event-1",
+    eventTitle: "Annual Gala",
+    guestId: "guest-1",
+    status: "confirmed",
+    segment: "Sponsor",
+    organization: "Santa Clara University",
+    quantity: 2,
+    registeredAt: "2026-11-05T20:00:00.000Z",
+    checkedInAt: "2026-11-05T22:00:00.000Z",
+    checkInStation: "Main entrance",
+    checkInNotes: null,
+    createdAt: "2026-11-05T20:00:00.000Z",
+    guest: {
+      id: "guest-1",
+      ownerId: "workspace-1",
+      name: "Cristina Cismas Florea",
+      contact: "Cristina@Example.com",
+      notes: null,
+      createdAt: "2026-11-05T20:00:00.000Z",
+    },
+    ...overrides,
+  };
+}
+
+describe("HubSpot contact mapping", () => {
+  it("keeps the first word as first name and the remaining words together", () => {
+    expect(splitContactName("Cristina Cismas Florea")).toEqual({ firstname: "Cristina", lastname: "Cismas Florea" });
+  });
+
+  it("normalizes email and maps only standard free-CRM properties", () => {
+    expect(hubspotContactProperties(registration())).toEqual({
+      email: "cristina@example.com",
+      firstname: "Cristina",
+      lastname: "Cismas Florea",
+      company: "Santa Clara University",
+    });
+  });
+
+  it("skips name-only guests instead of creating duplicate-prone contacts", () => {
+    expect(hubspotContactProperties(registration({ guest: { ...registration().guest!, contact: null } }))).toBeNull();
+  });
+
+  it("creates one readable attendance note without exposing internal fields", () => {
+    expect(hubspotRegistrationNote(registration())).toBe(
+      "<strong>Beebizy registration</strong><br>Event: Annual Gala<br>Status: confirmed<br>Guest type: Sponsor<br>Organization: Santa Clara University<br>Party size: 2<br>Checked in: Yes",
+    );
+  });
+});

@@ -154,6 +154,10 @@ import type {
   GoogleCalendarConnectionStatus,
   GoogleCalendarExternalEvent,
   GoogleCalendarSyncResult,
+  HubSpotConnectionStatus,
+  HubSpotConnectResult,
+  HubSpotEventSyncResult,
+  HubSpotSyncResult,
   UserSettings,
   Vendor,
   VendorDraft,
@@ -396,6 +400,14 @@ export interface GoogleCalendarRepository {
   disconnect(): Promise<void>;
 }
 
+export interface HubSpotRepository {
+  status(): Promise<HubSpotConnectionStatus>;
+  beginConnect(): Promise<HubSpotConnectResult>;
+  setEventSync(eventId: string, enabled: boolean): Promise<HubSpotEventSyncResult>;
+  syncEvent(eventId: string): Promise<HubSpotSyncResult>;
+  disconnect(): Promise<void>;
+}
+
 export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft, CanvasPatch> {
   /** Replaces a board's cards wholesale — a board is edited as one document. */
   replaceCards(id: string, cards: CanvasCard[]): Promise<Canvas>;
@@ -603,6 +615,7 @@ export interface DataAdapter {
   canvases: CanvasesRepository;
   settings: SettingsRepository;
   googleCalendar: GoogleCalendarRepository;
+  hubspot: HubSpotRepository;
   floorplan: FloorplanRepository;
   members: MembersRepository;
   feedback: FeedbackRepository;

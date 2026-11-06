@@ -1,0 +1,34 @@
+{
+  "uid": "beebizy_hubspot_integration_app",
+  "type": "app",
+  "config": {
+    "description": "Sync Beebizy event registrations and attendance with each customer's HubSpot CRM.",
+    "name": "Beebizy",
+    "distribution": "marketplace",
+    "auth": {
+      "type": "oauth",
+      "redirectUrls": [
+        "https://beebizy-studio-preview.vercel.app/api/integrations/hubspot/callback"
+      ],
+      "requiredScopes": [
+        "oauth",
+        "crm.objects.contacts.read",
+        "crm.objects.contacts.write"
+      ],
+      "optionalScopes": [],
+      "conditionallyRequiredScopes": []
+    },
+    "permittedUrls": {
+      "fetch": [
+        "https://api.hubapi.com"
+      ],
+      "iframe": [],
+      "img": []
+    },
+    "support": {
+      "supportEmail": "hello@beebizy.com",
+      "documentationUrl": "https://www.beebizy.com",
+      "supportUrl": "https://www.beebizy.com"
+    }
+  }
+}

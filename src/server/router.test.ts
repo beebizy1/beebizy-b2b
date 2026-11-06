@@ -140,6 +140,16 @@ vi.mock("./googleCalendar", () => ({
   syncGoogleCalendarNow: vi.fn(),
   syncWorkspaceEvent: vi.fn(),
 }));
+vi.mock("./hubspot", () => ({
+  beginHubSpotConnect: vi.fn(),
+  disconnectHubSpot: vi.fn(),
+  handleHubSpotCallback: vi.fn(),
+  hubspotStatus: vi.fn(),
+  setHubSpotEventSync: vi.fn(),
+  syncHubSpotEvent: vi.fn(),
+  syncHubSpotRegistrationById: vi.fn(),
+  syncHubSpotRegistrationIfEnabled: vi.fn(),
+}));
 vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
   generatePostEventCopy: vi.fn(),
@@ -208,6 +218,35 @@ const {
   renewGoogleCalendarChannels,
   syncGoogleCalendarNow,
 } = await import("./googleCalendar");
+const {
+  beginHubSpotConnect,
+  disconnectHubSpot,
+  handleHubSpotCallback,
+  hubspotStatus,
+  setHubSpotEventSync,
+  syncHubSpotEvent,
+} = await import("./hubspot");
+
+describe("HubSpot integration", () => {
+  it("accepts the OAuth callback without a Beebizy bearer token", async () => {
+    vi.mocked(handleHubSpotCallback).mockResolvedValue(Response.redirect("http://localhost/app/settings?hubspot=connected"));
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/callback?code=test&state=test"))).status).toBe(302);
+  });
+
+  it("routes status, connect, event sync, and disconnect after authorization", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1", role: "owner", email: "owner@example.com" });
+    vi.mocked(hubspotStatus).mockResolvedValue({ state: "disconnected", isConfigured: true, portalId: null, lastSyncedAt: null, lastError: null, contactsSynced: 0 });
+    vi.mocked(beginHubSpotConnect).mockReturnValue({ authorizationUrl: "https://app.hubspot.com/oauth/authorize" });
+    vi.mocked(setHubSpotEventSync).mockResolvedValue({ event: { id: "event-1", hubspotSyncEnabled: true } as never, synced: 2, skipped: 0, failed: 0, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
+    vi.mocked(syncHubSpotEvent).mockResolvedValue({ synced: 2, skipped: 0, failed: 0, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/connect", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true }) }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/sync", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot", { method: "DELETE" }))).status).toBe(200);
+    expect(disconnectHubSpot).toHaveBeenCalledOnce();
+  });
+});
 
 describe("Google Calendar integration", () => {
   it("protects channel renewal with the cron secret", async () => {

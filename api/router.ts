@@ -76,6 +76,16 @@ import {
   syncGoogleCalendarNow,
   syncWorkspaceEvent,
 } from "../src/server/googleCalendar.ts";
+import {
+  beginHubSpotConnect,
+  disconnectHubSpot,
+  handleHubSpotCallback,
+  hubspotStatus,
+  setHubSpotEventSync,
+  syncHubSpotEvent,
+  syncHubSpotRegistrationById,
+  syncHubSpotRegistrationIfEnabled,
+} from "../src/server/hubspot.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
@@ -294,6 +304,11 @@ async function handleLead(request: Request): Promise<Response> {
  * than something guessable.
  */
 async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
+  if (segments[0] === "integrations" && segments[1] === "hubspot") {
+    if (segments[2] === "callback" && method === "GET") return handleHubSpotCallback(request);
+    return null;
+  }
+
   if (segments[0] === "integrations" && segments[1] === "google-calendar") {
     if (segments[2] === "callback" && method === "GET") return handleGoogleCalendarCallback(request);
     if (segments[2] === "webhook" && method === "POST") return handleGoogleCalendarWebhook(request);
@@ -342,7 +357,11 @@ async function handlePublic(segments: string[], method: string, request: Request
 
   // Public event read and share-link registration actions.
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "POST") {
-    if (segments[3] === "registrations") return json(await repos.publicRegistration(segments[2], await readBody(request)), 201);
+    if (segments[3] === "registrations") {
+      const registration = await repos.publicRegistration(segments[2], await readBody(request));
+      await syncHubSpotRegistrationIfEnabled(registration.ownerId, registration.id);
+      return json(registration, 201);
+    }
     if (segments[3] === "volunteers") return json(await repos.publicVolunteerSignup(segments[2], await readBody(request)), 201);
     if (segments[3] === "tickets" && segments[4] === "checkout") {
       const input = z.object({
@@ -545,6 +564,7 @@ async function handlePublic(segments: string[], method: string, request: Request
       const body = await readBody(request);
       if (typeof body.name !== "string") return json({ error: "name is required." }, 400);
       const guest = await repos.createPublicWalkIn(segments[2], body.name);
+      if (guest) await syncHubSpotRegistrationById(guest.registrationId);
       return guest ? json(guest, 201) : json({ error: "This check-in link or counter is no longer active." }, 404);
     }
     if (method === "DELETE" && segments[3] === "check-in" && segments[4] === "walk-ins" && segments[5] && segments.length === 6) {
@@ -555,6 +575,7 @@ async function handlePublic(segments: string[], method: string, request: Request
       const body = await readBody(request);
       if (typeof body.checkedIn !== "boolean") return json({ error: "checkedIn must be true or false." }, 400);
       const guest = await repos.setPublicCheckIn(segments[2], segments[4], body.checkedIn);
+      if (guest) await syncHubSpotRegistrationById(guest.registrationId);
       return guest ? json(guest) : json({ error: "This guest is not available at this check-in station." }, 404);
     }
     return json({ error: "Method not allowed" }, 405);
@@ -1206,7 +1227,11 @@ async function handleAuthed(
         }
 
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
-        if (b === "walk-ins" && !c && method === "POST") return json(await repos.registrations.createWalkIn(ctx, a, body), 201);
+        if (b === "walk-ins" && !c && method === "POST") {
+          const registration = await repos.registrations.createWalkIn(ctx, a, body);
+          await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+          return json(registration, 201);
+        }
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
         if (b === "updates" && !c && method === "GET") return json(await repos.teamUpdates.list(ctx, a));
         if (b === "updates" && !c && method === "POST") return json(await repos.teamUpdates.create(ctx, a, body), 201);
@@ -1311,9 +1336,23 @@ async function handleAuthed(
     /* ----------------------------------------------------------- registrations */
     case "registrations": {
       if (!a && method === "GET") return json(await repos.registrations.list(ctx));
-      if (!a && method === "POST") return json(await repos.registrations.create(ctx, body), 201);
-      if (a === "import" && !b && method === "POST") return json(await repos.registrations.importGuests(ctx, body), 201);
-      if (a && method === "PATCH") return json(await repos.registrations.update(ctx, a, body));
+      if (!a && method === "POST") {
+        const registration = await repos.registrations.create(ctx, body);
+        await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+        return json(registration, 201);
+      }
+      if (a === "import" && !b && method === "POST") {
+        const registrations = await repos.registrations.importGuests(ctx, body);
+        for (const registration of registrations) {
+          await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+        }
+        return json(registrations, 201);
+      }
+      if (a && method === "PATCH") {
+        const registration = await repos.registrations.update(ctx, a, body);
+        await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+        return json(registration);
+      }
       if (a && method === "DELETE") {
         await repos.registrations.remove(ctx, a);
         return json({ ok: true });
@@ -1395,6 +1434,21 @@ async function handleAuthed(
 
     /* ----------------------------------------------------------- integrations */
     case "integrations": {
+      if (a === "hubspot") {
+        if (!b && method === "GET") return json(await hubspotStatus(ctx));
+        if (b === "connect" && method === "POST") return json(beginHubSpotConnect(ctx));
+        if (b === "events" && c && !segments[4] && method === "PATCH") {
+          return json(await setHubSpotEventSync(ctx, c, body.enabled === true));
+        }
+        if (b === "events" && c && segments[4] === "sync" && method === "POST") {
+          return json(await syncHubSpotEvent(ctx, c));
+        }
+        if (!b && method === "DELETE") {
+          await disconnectHubSpot(ctx);
+          return json({ ok: true });
+        }
+        return notFound();
+      }
       if (a !== "google-calendar") return notFound();
       if (!b && method === "GET") return json(await googleCalendarStatus(ctx));
       if (b === "events" && method === "GET") {

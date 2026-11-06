@@ -90,6 +90,8 @@ export interface Event extends OwnedRecord {
   /** Present after the organizer creates the public auction catalog link. */
   auctionPublicToken?: string | null;
   auctionPage?: AuctionPageSettings;
+  /** When enabled, registrations for this event are mirrored to the workspace HubSpot portal. */
+  hubspotSyncEnabled?: boolean;
 }
 
 export interface EventDraft {
@@ -108,6 +110,7 @@ export interface EventDraft {
   registrationPage?: RegistrationPageSettings;
   navigation?: EventNavigationSettings;
   auctionPage?: AuctionPageSettings;
+  hubspotSyncEnabled?: boolean;
 }
 
 export type EventPatch = Partial<EventDraft>;
@@ -2220,6 +2223,32 @@ export interface GoogleCalendarExternalEvent {
   location: string | null;
   isAllDay: boolean;
   htmlLink: string | null;
+}
+
+/* ----------------------------------------------------------- HubSpot connection */
+
+export interface HubSpotConnectionStatus {
+  state: "not-configured" | "disconnected" | "connected" | "error";
+  isConfigured: boolean;
+  portalId: string | null;
+  lastSyncedAt: IsoDateTime | null;
+  lastError: string | null;
+  contactsSynced: number;
+}
+
+export interface HubSpotConnectResult {
+  authorizationUrl: string;
+}
+
+export interface HubSpotSyncResult {
+  synced: number;
+  skipped: number;
+  failed: number;
+  lastSyncedAt: IsoDateTime;
+}
+
+export interface HubSpotEventSyncResult extends HubSpotSyncResult {
+  event: Event;
 }
 
 /* ----------------------------------------------------------- product feedback */

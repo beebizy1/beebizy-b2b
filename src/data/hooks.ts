@@ -188,6 +188,7 @@ export const qk = {
   googleCalendar: ["integrations", "google-calendar"] as const,
   googleCalendarEvents: (startsBefore: string, endsAfter: string) =>
     ["integrations", "google-calendar", "events", startsBefore, endsAfter] as const,
+  hubspot: ["integrations", "hubspot"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
   publicFloorplan: (token: string) => ["floorplan", "public", token] as const,
   history: (eventId: string) => ["history", eventId] as const,
@@ -1813,6 +1814,32 @@ export function useSyncGoogleCalendar() {
 
 export function useDisconnectGoogleCalendar() {
   return useAdapterMutation((a) => a.googleCalendar.disconnect(), () => [qk.googleCalendar]);
+}
+
+export function useHubSpotStatus() {
+  return useAdapterQuery(qk.hubspot, (a) => a.hubspot.status(), { staleTime: 15_000 });
+}
+
+export function useConnectHubSpot() {
+  return useAdapterMutation((a) => a.hubspot.beginConnect(), () => [qk.hubspot]);
+}
+
+export function useSetHubSpotEventSync() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; enabled: boolean }) => a.hubspot.setEventSync(vars.eventId, vars.enabled),
+    (vars) => [qk.hubspot, qk.event(vars.eventId), qk.events],
+  );
+}
+
+export function useSyncHubSpotEvent() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.hubspot.syncEvent(eventId),
+    (eventId) => [qk.hubspot, qk.eventRegistrations(eventId)],
+  );
+}
+
+export function useDisconnectHubSpot() {
+  return useAdapterMutation((a) => a.hubspot.disconnect(), () => [qk.hubspot]);
 }
 
 export function useMembers() {

@@ -367,6 +367,67 @@ export const googleCalendarExternalEvents = pgTable(
   ],
 );
 
+export const hubspotConnections = pgTable(
+  "hubspot_connections",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    portalId: text("portal_id").notNull(),
+    connectedByUserId: text("connected_by_user_id").notNull(),
+    accessTokenCiphertext: text("access_token_ciphertext").notNull(),
+    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("hubspot_connections_workspace_idx").on(table.workspaceId),
+    index("hubspot_connections_portal_idx").on(table.portalId),
+  ],
+);
+
+export const hubspotContactLinks = pgTable(
+  "hubspot_contact_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    guestId: text("guest_id").notNull().references(() => guests.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    email: text("email").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("hubspot_contact_links_workspace_guest_idx").on(table.workspaceId, table.guestId),
+    uniqueIndex("hubspot_contact_links_connection_contact_idx").on(table.connectionId, table.hubspotContactId),
+  ],
+);
+
+export const hubspotRegistrationLinks = pgTable(
+  "hubspot_registration_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    registrationId: text("registration_id").notNull().references(() => registrations.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    hubspotNoteId: text("hubspot_note_id"),
+    fingerprint: text("fingerprint").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("hubspot_registration_links_registration_idx").on(table.registrationId),
+    index("hubspot_registration_links_connection_idx").on(table.connectionId),
+  ],
+);
+
 export const productFeedback = pgTable(
   "product_feedback",
   {
@@ -440,6 +501,7 @@ export const events = pgTable(
     navigation: jsonb("navigation").$type<EventNavigationSettings>().notNull().default({ hiddenTabIds: [], tabOrder: [] }),
     auctionPublicToken: text("auction_public_token").unique(),
     auctionPage: jsonb("auction_page").$type<AuctionPageSettings>(),
+    hubspotSyncEnabled: boolean("hubspot_sync_enabled").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

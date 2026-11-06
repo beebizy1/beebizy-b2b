@@ -105,6 +105,7 @@ export function toEvent(
     navigation: normalizeEventNavigation(row.navigation),
     auctionPublicToken: row.auctionPublicToken,
     auctionPage: normalizeAuctionPageSettings(row.auctionPage),
+    hubspotSyncEnabled: row.hubspotSyncEnabled,
     createdAt: isoRequired(row.createdAt),
     updatedAt: iso(row.updatedAt) ?? undefined,
   };

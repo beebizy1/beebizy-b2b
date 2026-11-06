@@ -389,6 +389,7 @@ export const events = {
       imageUrl: optStr(body, "imageUrl"),
       registrationPage: normalizeRegistrationPage(body.registrationPage ?? DEFAULT_REGISTRATION_PAGE),
       navigation: normalizeEventNavigation(body.navigation ?? DEFAULT_EVENT_NAVIGATION),
+      hubspotSyncEnabled: body.hubspotSyncEnabled === true,
       createdAt,
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
@@ -440,6 +441,7 @@ export const events = {
       shareToken: null,
       registrationPage: values.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
       navigation: values.navigation,
+      hubspotSyncEnabled: values.hubspotSyncEnabled,
       createdAt: createdAt.toISOString(),
     };
     const eventInsert = db.insert(s.events).values(values);
@@ -507,6 +509,7 @@ export const events = {
       imageUrl: (b) => optStr(b, "imageUrl"),
       registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
       navigation: (b) => normalizeEventNavigation(b.navigation),
+      hubspotSyncEnabled: (b) => b.hubspotSyncEnabled === true,
       locationId: (b) => optStr(b, "locationId"),
       timeZone: (b) => optStr(b, "timeZone"),
     });
@@ -530,6 +533,7 @@ export const events = {
     if ("imageUrl" in body) after.imageUrl = patch.imageUrl as string | null;
     if ("registrationPage" in body) after.registrationPage = normalizeRegistrationPage(patch.registrationPage);
     if ("navigation" in body) after.navigation = normalizeEventNavigation(patch.navigation);
+    if ("hubspotSyncEnabled" in body) after.hubspotSyncEnabled = patch.hubspotSyncEnabled as boolean;
     if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
     if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
     if ("timeZone" in body) after.timeZone = patch.timeZone as string | null;
