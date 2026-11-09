@@ -1,4 +1,4 @@
-import { linkedTextHtml } from "../lib/textLinks";
+import { linkedTextHtml } from "../lib/textLinks.ts";
 
 export const REGISTRATION_PAGE_TEMPLATE_IDS = ["warm", "garden", "coastal"] as const;
 export type RegistrationPageTemplateId = (typeof REGISTRATION_PAGE_TEMPLATE_IDS)[number];
