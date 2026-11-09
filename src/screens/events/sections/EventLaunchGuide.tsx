@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "wouter";
 import { Check, ChevronDown, CreditCard, ListChecks, Mail, Palette, PartyPopper, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
@@ -71,7 +72,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       complete: completion.event,
       icon: PartyPopper,
       detail: <p>Your event already exists. Review the basics whenever the date, location, or capacity changes.</p>,
-      action: <Button asChild variant="outline" size="sm"><a href={eventLaunchDetailsHref(event.id)}>Review event details</a></Button>,
+      action: <Button asChild variant="outline" size="sm"><Link href={eventLaunchDetailsHref(event.id)}>Review event details</Link></Button>,
     },
     {
       number: 2,
@@ -81,7 +82,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       complete: completion["invite-list"],
       icon: Users,
       detail: <p>You have {contactableInvitees.length} {contactableInvitees.length === 1 ? "person" : "people"} with an email address on this event's list. Step {sendStepNumber} will load them automatically.</p>,
-      action: <Button asChild size="sm"><a href={eventLaunchRegistrationsHref(event.id)}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</a></Button>,
+      action: <Button asChild size="sm"><Link href={eventLaunchRegistrationsHref(event.id)}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</Link></Button>,
     },
     {
       number: 3,

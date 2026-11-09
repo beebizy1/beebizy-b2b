@@ -121,6 +121,7 @@ vi.mock("./vendorPaperwork", () => ({
   sendVendorPaperworkRequest: vi.fn(),
 }));
 vi.mock("./vendorCoiAnalysis", () => ({ analyzePublicVendorCoi: vi.fn(), analyzeVendorCoi: vi.fn() }));
+vi.mock("./registrationDesignDrafts", () => ({ getRegistrationDesignDraft: vi.fn(), saveRegistrationDesignDraft: vi.fn() }));
 vi.mock("./vendorPaperworkReminders", () => ({ processDueVendorPaperworkReminders: vi.fn() }));
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),

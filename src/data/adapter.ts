@@ -183,6 +183,7 @@ import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "./even
 import type { RegistrationPageSettings } from "./registrationPage";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowRecovery";
+import type { RegistrationDesignDraftRepository } from "./registrationDesignDraft";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -588,6 +589,7 @@ export interface DataAdapter {
   readonly kind: "memory" | "postgres";
   /** Stable identity used to isolate authenticated query caches. */
   readonly cacheScope: string;
+  registrationDesignDrafts: RegistrationDesignDraftRepository;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
   events: EventsRepository;

@@ -123,7 +123,7 @@ import { deliverMemberRoleNotification } from "./memberRoleNotifications.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../data/registrationPage.ts";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, registrationAnswerFields } from "../data/registrationPage.ts";
 import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
@@ -549,6 +549,9 @@ export const events = {
 
     const updatedAt = new Date();
     after.updatedAt = updatedAt.toISOString();
+    if ("registrationPage" in patch) {
+      patch.registrationPage = sql`coalesce(${s.events.registrationPage}, '{}'::jsonb) || ${JSON.stringify(patch.registrationPage)}::jsonb`;
+    }
     const eventUpdate = db
       .update(s.events)
       .set({ ...patch, updatedAt })
@@ -1048,6 +1051,9 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   };
   const page = normalizeRegistrationPage(event.registrationPage);
   if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
+  let answers: ImportedSpreadsheetField[];
+  try { answers = registrationAnswerFields(page.questions, body.answers); }
+  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your registration answers."); }
   if (!page.collectOrganization) draft.organization = null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
   const [{ total } = { total: 0 }] = await db
@@ -1082,6 +1088,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
       status: "confirmed",
       segment: draft.segment,
       organization: draft.organization,
+      importedFields: answers,
     });
   } catch (error) {
     if (isConstraintViolation(error, "registrations_event_guest_idx")) {

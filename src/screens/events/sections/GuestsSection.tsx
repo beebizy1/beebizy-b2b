@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { spreadsheetHeaders, spreadsheetFieldKind, spreadsheetValue, type SpreadsheetFieldKind } from "@/data/registrationSpreadsheet";
 import { Columns3, ContactRound, Copy, List, ListFilter, Mail, Pencil, RefreshCw, UserPlus, Users } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -77,71 +78,6 @@ function segmentOptions(rows: RegistrationWithGuest[]): string[] {
 function organizationOptions(rows: RegistrationWithGuest[]): string[] {
   const used = rows.map((row) => row.organization).filter((name): name is string => Boolean(name));
   return [...new Set(used)].sort((a, b) => a.localeCompare(b));
-}
-
-const DEFAULT_SPREADSHEET_HEADERS = [
-  "Full Name",
-  "Email Address",
-  "RSVP Response",
-  "Company Name",
-  "Guest Type",
-  "Notes",
-  "Attendees",
-  "Phone",
-  "Source",
-] as const;
-
-type SpreadsheetFieldKind =
-  | "name"
-  | "email"
-  | "status"
-  | "organization"
-  | "segment"
-  | "notes"
-  | "quantity"
-  | "custom";
-
-function spreadsheetFieldKind(header: string): SpreadsheetFieldKind {
-  const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return "name";
-  if (["email", "e mail", "email address", "e mail address", "contact email"].includes(key)) return "email";
-  if (["rsvp", "rsvp response", "attendance", "response", "yes/no"].includes(key)) return "status";
-  if (["company", "company name", "organization", "organisation", "school"].includes(key)) return "organization";
-  if (["guest type", "segment", "category", "registration type", "lifecycle stage"].includes(key)) return "segment";
-  if (["notes", "note", "comment", "comments"].includes(key)) return "notes";
-  if (["attendees", "attendee count", "guest count", "number of guests", "party size", "seats", "quantity"].includes(key)) {
-    return "quantity";
-  }
-  return "custom";
-}
-
-function spreadsheetHeaders(rows: RegistrationWithGuest[]): string[] {
-  const headers: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    for (const field of row.importedFields ?? []) {
-      if (seen.has(field.label)) continue;
-      seen.add(field.label);
-      headers.push(field.label);
-    }
-  }
-  return headers.length > 0 ? headers : [...DEFAULT_SPREADSHEET_HEADERS];
-}
-
-function spreadsheetValue(row: RegistrationWithGuest, header: string): string {
-  const imported = row.importedFields?.find((field) => field.label === header);
-  if (imported) return imported.value;
-  const kind = spreadsheetFieldKind(header);
-  if (kind === "name") return row.guest?.name ?? "";
-  if (kind === "email") return row.guest?.contact ?? "";
-  if (kind === "status") {
-    return row.status === "confirmed" ? "Yes" : row.status === "cancelled" ? "No" : "Pending";
-  }
-  if (kind === "organization") return row.organization ?? "";
-  if (kind === "segment") return row.segment ?? "";
-  if (kind === "notes") return row.guest?.notes ?? "";
-  if (kind === "quantity") return String(row.quantity);
-  return "";
 }
 
 function registrationStatusFromSpreadsheet(value: string): RegistrationStatus {

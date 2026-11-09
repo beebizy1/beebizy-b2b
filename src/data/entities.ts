@@ -277,6 +277,7 @@ export interface PublicRegistrationDraft {
   segment: string;
   organization?: string | null;
   invitationToken?: string | null;
+  answers?: Record<string, string>;
 }
 
 /** Registration plus the result of the guest confirmation email attempt. */

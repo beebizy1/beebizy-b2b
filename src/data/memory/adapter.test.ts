@@ -125,6 +125,15 @@ describe("events", () => {
     expect((await memoryAdapter.events.getByShareToken(shareToken))?.timeZone).toBe("America/Chicago");
   });
 
+  it("keeps custom RSVP questions in the public payload and submitted guest record", async () => {
+    const questions = [{ id: "shirt", label: "T-shirt size", type: "select" as const, required: true, options: ["S", "M", "L"] }];
+    await memoryAdapter.events.updateRegistrationPage("evt-skickoff", { questions });
+    expect((await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))?.event.registrationPage?.questions).toEqual(questions);
+    await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", { name: "Question QA", email: "question-required@example.com", segment: "General" })).rejects.toThrow("T-shirt size");
+    const result = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", { name: "Question QA", email: "question-saved@example.com", segment: "General", answers: { shirt: "M" } });
+    expect(result.importedFields).toEqual([{ label: "T-shirt size", value: "M" }]);
+  });
+
   it("publishes saved registration-site branding with the guest payload", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-cab");
     await memoryAdapter.events.update("evt-cab", {
@@ -138,6 +147,9 @@ describe("events", () => {
         welcomeMessage: "Reserve your place with the team.",
         heroImageUrl: "https://images.example.com/garden.jpg",
         heroImageDisplay: "banner",
+        footerImageSource: "invitation",
+        footerImageUrl: null,
+        questions: [],
         aboutImageUrl: null,
         agendaImageUrl: null,
         showAgenda: false,

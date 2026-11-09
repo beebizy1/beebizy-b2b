@@ -9,6 +9,8 @@
  * State lives for the lifetime of the tab. Reloading resets to the seed.
  */
 
+import type { ImportedSpreadsheetField } from "../entities";
+import { registrationDesignDraftSchema, type RegistrationDesignDraft } from "../registrationDesignDraft";
 import type {
   AnalyticsRepository,
   AuctionRepository,
@@ -153,7 +155,7 @@ import { googleSheetCsvUrl } from "../import";
 import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../registrationPage";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, registrationAnswerFields } from "../registrationPage";
 import { normalizeEventNavigation } from "../eventNavigation";
 import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
 import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
@@ -806,6 +808,9 @@ const registrations: RegistrationsRepository = {
     if (!/^\S+@\S+\.\S+$/.test(email)) throw new DataError("invalid", "Enter a valid email address.");
     if (!segment) throw new DataError("invalid", "Guest type is required.");
     if (!page.registrationTypes.includes(segment)) throw new DataError("invalid", "That guest type is not available for this event.");
+    let answers: ImportedSpreadsheetField[];
+    try { answers = registrationAnswerFields(page.questions, draft.answers); }
+    catch (error) { throw new DataError("invalid", error instanceof Error ? error.message : "Check your registration answers."); }
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
     }
@@ -828,7 +833,7 @@ const registrations: RegistrationsRepository = {
       guestId: guest.id, status: "confirmed", segment,
       organization: page.collectOrganization ? draft.organization?.trim() || null : null, registeredAt: now,
       quantity: 1,
-      checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now,
+      checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now, importedFields: answers,
     };
     state.registrations.push(registration);
     syncRegistrationCount(event.id);
@@ -3014,9 +3019,22 @@ function planningMemoryFor(event: Event): PastEventPlanningRecord[] {
     }));
 }
 
+const registrationDesignDrafts = new Map<string, RegistrationDesignDraft>();
+
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
   cacheScope: "demo",
+  registrationDesignDrafts: {
+    async get(eventId) { requireEvent(eventId); return copy(registrationDesignDrafts.get(eventId) ?? null); },
+    async save(eventId, value) {
+      requireEvent(eventId);
+      const draft = registrationDesignDraftSchema.parse(value);
+      const current = registrationDesignDrafts.get(eventId);
+      if (current && current.revision >= draft.revision) return copy(current);
+      registrationDesignDrafts.set(eventId, copy(draft));
+      return copy(draft);
+    },
+  },
 
   // The demo has a single implicit workspace and no roles to speak of.
   me: async () => {

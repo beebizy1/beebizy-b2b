@@ -1,7 +1,7 @@
 /** The organizer-facing builder for the event's public registration site. */
 
 import { useEffect, useState, type CSSProperties } from "react";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Check, Copy, ExternalLink, Eye, Gavel, Globe, Image, ImagePlus, Mail, Palette, Plus, Save, Sparkles, Ticket, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,10 @@ import TicketInvitationBuilder from "./TicketInvitationBuilder";
 import GuidedTicketPricing from "./GuidedTicketPricing";
 import EventQrCard from "./EventQrCard";
 import { formatInZone, localTimeZone } from "@/lib/datetime";
+import { LinkedText } from "@/components/LinkedText";
+import { RegistrationExtrasEditor } from "./RegistrationExtrasEditor";
+import { useRegistrationDesignDraft } from "@/hooks/useRegistrationDesignDraft";
+import { footerBannerImage } from "@/data/registrationPage";
 
 const REGISTRATION_TYPE_PRESETS = [
   { label: "School gala", types: ["Parent/Guardian", "Alumni", "Faculty/Staff", "Friend of school"] },
@@ -41,7 +45,7 @@ const REGISTRATION_TYPE_PRESETS = [
 const DESIGN_FIELDS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
-  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages",
+  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "footerImageSource", "footerImageUrl", "questions",
 ];
 
 function registrationDesignPatch(settings: RegistrationPageSettings): Partial<RegistrationPageSettings> {
@@ -134,6 +138,7 @@ function RegistrationPreview({ event, settings, sponsors, hasTickets, timeZone }
   const style = { backgroundColor: template.background } as CSSProperties;
   const dateLabel = formatInZone(event.date, timeZone, "dayMonthYearTime");
   const ctaLabel = hasTickets || Boolean(settings.paymentUrl) ? "View registration" : "RSVP";
+  const bottomImage = footerBannerImage(settings);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-hairline shadow-sm" style={style}>
@@ -145,7 +150,7 @@ function RegistrationPreview({ event, settings, sponsors, hasTickets, timeZone }
           {!settings.heroImageUrl ? <span className="mb-5 grid size-12 place-items-center rounded-xl bg-white/10"><Image className="size-5" aria-hidden="true" /></span> : null}
           <p className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: settings.accentColor }}>{event.category}</p>
           <h3 className="mt-2 text-3xl font-extrabold tracking-tight">{settings.headline || event.title}</h3>
-          <p className="whitespace-pre-line mt-3 text-sm leading-6 text-white/80">{settings.welcomeMessage || event.description || "Join us. Reserve your place below."}</p>
+          <p className="whitespace-pre-line mt-3 text-sm leading-6 text-white/80"><LinkedText text={settings.welcomeMessage || event.description || "Join us. Reserve your place below."} /></p>
           <dl className="mt-5 grid gap-2 text-xs text-white/85">
             <div><dt className="inline font-bold text-white">When: </dt><dd className="inline">{dateLabel}</dd></div>
             {event.location ? <div><dt className="inline font-bold text-white">Where: </dt><dd className="inline">{event.location}</dd></div> : null}
@@ -156,13 +161,15 @@ function RegistrationPreview({ event, settings, sponsors, hasTickets, timeZone }
       <div className="space-y-5 p-6" style={{ backgroundColor: template.surface }}>
         <section>
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{settings.aboutHeading || "About the event"}</p>
-          <p className={`mt-2 whitespace-pre-line text-sm leading-6 ${settings.aboutBody ? "text-slate-600" : "italic text-slate-400"}`}>{settings.aboutBody || "Add an About section so guests know what makes this event special."}</p>
+          <p className={`mt-2 whitespace-pre-line text-sm leading-6 ${settings.aboutBody ? "text-slate-600" : "italic text-slate-400"}`}><LinkedText text={settings.aboutBody || "Add an About section so guests know what makes this event special."} /></p>
           {settings.aboutImageUrl ? <img src={settings.aboutImageUrl} alt="" className="mt-3 h-28 w-full rounded-xl object-cover" /> : null}
         </section>
         {settings.showAgenda ? <section className="border-t border-hairline pt-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Agenda</p><p className={`mt-2 whitespace-pre-line text-sm leading-6 ${settings.agendaIntroduction ? "text-slate-600" : "italic text-slate-400"}`}>{settings.agendaIntroduction || "Add an agenda introduction or timed Run of Show items."}</p>{settings.agendaImageUrl ? <img src={settings.agendaImageUrl} alt="" className="mt-3 h-28 w-full rounded-xl object-cover" /> : null}</section> : null}
         <section className="rounded-xl border border-hairline bg-background p-4"><p className="text-xs font-bold text-slate-900">Confirm your attendance</p><p className="mt-1 text-xs leading-5 text-slate-500">Guests choose their guest type, enter their name, and submit their RSVP.</p><span className="mt-3 inline-flex rounded-md px-3 py-2 text-xs font-bold text-white" style={{ backgroundColor: settings.accentColor }}>{ctaLabel}</span></section>
         {settings.showSpeakers ? <section className="border-t border-hairline pt-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Featured speakers</p>{settings.speakers.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-3">{settings.speakers.slice(0, 4).map((speaker) => <div key={speaker.id} className="rounded-xl bg-surface-sunken p-3">{speaker.photoUrl ? <img src={speaker.photoUrl} alt={speaker.name} className="aspect-square w-full rounded-lg object-cover" /> : <span className="grid aspect-square w-full place-items-center rounded-lg bg-surface-sunken text-lg font-bold text-slate-500">{speaker.name.slice(0, 1)}</span>}<p className="mt-2 text-xs font-bold text-slate-800">{speaker.name}</p><p className="text-[10px] text-slate-500">{speaker.title || speaker.organization}</p></div>)}</div> : <p className="mt-2 text-xs italic text-slate-400">Add speakers if this event has people appearing on stage.</p>}</section> : null}
         {settings.showSponsors ? <section className="border-t border-hairline pt-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Sponsors</p>{sponsors.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-4">{sponsors.slice(0, 4).map((sponsor) => sponsor.logoUrl ? <img key={sponsor.id} src={sponsor.logoUrl} alt={sponsor.companyName} className="h-8 w-24 object-contain" /> : <span key={sponsor.id} className="text-xs font-semibold text-slate-500">{sponsor.companyName}</span>)}</div> : <p className="mt-2 text-xs italic text-slate-400">Confirmed sponsor logos will appear here.</p>}</section> : null}
+        <section aria-label="Bottom banner preview" className="relative overflow-hidden rounded-xl bg-slate-900 bg-cover bg-center p-5 text-white" style={bottomImage ? { backgroundImage: `linear-gradient(#0008,#0008),url(${bottomImage})` } : undefined}><p className="text-[10px] font-bold uppercase">Be part of it</p><h4 className="mt-2 font-bold">{settings.headline || event.title}</h4><span className="mt-3 inline-flex rounded-md px-3 py-2 text-xs font-bold" style={{ backgroundColor: settings.accentColor }}>{ctaLabel}</span></section>
+        {settings.questions.length ? <p className="text-xs text-muted-foreground">RSVP also asks: {settings.questions.map(question => question.label).join(", ")}.</p> : null}
       </div>
     </div>
   );
@@ -180,8 +187,7 @@ export default function ShareSection({ event }: { event: Event }) {
   const { data: workspaceSettings } = useSettings();
   const [activeWorkspace, setActiveWorkspace] = useState<"design" | "pricing" | "sender" | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [draft, setDraft] = useState<RegistrationPageSettings>(() => ({ ...normalizeRegistrationPage(event.registrationPage), paymentUrl: null }));
-  const [guestTypesInput, setGuestTypesInput] = useState(() => normalizeRegistrationPage(event.registrationPage).registrationTypes.join(", "));
+  const { draft, setDraft, guestTypesInput, setGuestTypesInput, state: designState, recovery } = useRegistrationDesignDraft(event);
   const progress = useEventLaunchProgress(event);
   const requestedStep = EVENT_LAUNCH_STEP_IDS.find((step) => step === new URLSearchParams(search).get("step")) ?? null;
   const requestedStepUnlocked = requestedStep ? progress.unlocked[requestedStep] : false;
@@ -200,11 +206,13 @@ export default function ShareSection({ event }: { event: Event }) {
 
   const publish = async () => {
     try {
+      validateQuestions();
       const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
       setDraft(registrationPage);
       setGuestTypesInput(registrationPage.registrationTypes.join(", "));
       await update.mutateAsync({ id: event.id, patch: registrationDesignPatch(registrationPage) });
       await share.mutateAsync({ id: event.id });
+      recovery.markPublished(registrationPage);
       toast({ title: "Registration site published", description: "Copy the link and send it to your guests." });
     } catch (error) {
       toast({ title: "Couldn't publish the site", description: error instanceof Error ? error.message : "Please try again." });
@@ -218,7 +226,18 @@ export default function ShareSection({ event }: { event: Event }) {
     window.requestAnimationFrame(() => document.getElementById("event-launch-guide")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
+  const validateQuestions = () => {
+    const seen = new Set<string>();
+    for (const question of draft.questions) {
+      const label = question.label.trim();
+      if (!label) throw new Error("Add a label for every RSVP question, or remove the empty question.");
+      if (seen.has(label.toLowerCase())) throw new Error(`Use a unique label for each question: ${label}.`);
+      seen.add(label.toLowerCase());
+      if (question.type === "select" && !question.options.some(option => option.trim())) throw new Error(`Add at least one choice for ${label}.`);
+    }
+  };
   const save = (returnAfterSave = false) => {
+    try { validateQuestions(); } catch (error) { toast({ title: "Check your RSVP questions", description: error instanceof Error ? error.message : "Complete your questions first." }); return; }
     const registrationPage = normalizeRegistrationPage({ ...draft, paymentUrl: null, registrationTypes: guestTypesInput.split(",") });
     setDraft(registrationPage);
     setGuestTypesInput(registrationPage.registrationTypes.join(", "));
@@ -226,6 +245,7 @@ export default function ShareSection({ event }: { event: Event }) {
       { id: event.id, patch: registrationDesignPatch(registrationPage) },
       {
         onSuccess: () => {
+          recovery.markPublished(registrationPage);
           toast({ title: "Registration site saved", description: "The public page now uses this design." });
           if (returnAfterSave) returnToLaunchGuide();
         },
@@ -393,6 +413,8 @@ export default function ShareSection({ event }: { event: Event }) {
               </div>
             </section>
 
+            <div role="status" className="rounded-lg border border-hairline bg-surface p-3 text-xs text-muted-foreground">{designState.message}{designState.remote ? <Button type="button" variant="outline" size="sm" className="ml-3" onClick={() => recovery.useServerDraft()}>Recover server draft</Button> : null}</div>
+            <RegistrationExtrasEditor draft={draft} onChange={patch => setDraft(current => ({ ...current, ...patch }))} />
             <details className="rounded-xl border border-hairline bg-background">
               <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-foreground">More page options</summary>
               <div className="grid gap-4 border-t border-hairline p-4 sm:grid-cols-2">
@@ -507,6 +529,7 @@ export default function ShareSection({ event }: { event: Event }) {
             <div className="flex flex-wrap gap-2 border-t border-hairline pt-4">
               <Button onClick={() => save(true)} disabled={update.isPending}><Save className="mr-1.5 size-4" /> {update.isPending ? "Saving..." : "Save invitation and continue"}</Button>
               {eventUrl ? <Button asChild variant="outline"><a href={eventUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Open live page</a></Button> : null}
+              {event.shareToken ? <Button asChild variant="outline"><Link href={`/e/${event.shareToken}`}>Preview guest page</Link></Button> : null}
             </div>
           </div>
         </Panel> : null}

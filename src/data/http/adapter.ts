@@ -113,6 +113,7 @@ import type { AssistantTurn } from "../assistantChat";
 import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "../eventCopy";
 import type { VendorEventPacketResult } from "../vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRecovery";
+import type { RegistrationDesignDraft } from "../registrationDesignDraft";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -252,6 +253,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
   return {
     kind: "postgres",
     cacheScope: options.cacheScope,
+    registrationDesignDrafts: {
+      get: eventId => client.get<RegistrationDesignDraft | null>(`/events/${eventId}/registration-design-draft`),
+      save: (eventId, draft) => client.put<RegistrationDesignDraft>(`/events/${eventId}/registration-design-draft`, draft),
+    },
 
     me: () => client.get<Identity>("/me"),
 
