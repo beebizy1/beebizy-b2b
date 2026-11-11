@@ -418,7 +418,7 @@ function AddGuest({ event }: { event: Event }) {
         <Input
           value={segment}
           onChange={(inputEvent) => field("segment", inputEvent.target.value)}
-          placeholder="Category (optional)"
+          placeholder="Category"
           aria-label="Guest category"
           list="guest-segment-suggestions"
           className="w-[150px]"
@@ -432,7 +432,7 @@ function AddGuest({ event }: { event: Event }) {
         <Input
           value={organization}
           onChange={(inputEvent) => field("organization", inputEvent.target.value)}
-          placeholder="Organization (optional)"
+          placeholder="Organization"
           aria-label="Guest organization"
           list="guest-organization-suggestions"
           className="w-[170px]"
@@ -448,7 +448,7 @@ function AddGuest({ event }: { event: Event }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="pending">Invite - awaiting RSVP</SelectItem>
+            <SelectItem value="pending">Awaiting RSVP</SelectItem>
             <SelectItem value="confirmed">Add as confirmed</SelectItem>
           </SelectContent>
         </Select>
