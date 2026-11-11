@@ -24,6 +24,7 @@ import { SCHOOL_GRADES, type Event, type PublicRegistrationResult, type SchoolGr
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
 import { normalizeRegistrationPage, registrationPageTemplate, publicRegistrationHref, footerBannerImage, registrationAnswerFields } from "@/data/registrationPage";
+import { publicRegistrationIdentity, recoverPublicRsvpDraft } from "@/data/publicRegistrationIdentity";
 
 export function PublicFrame({ children, event, wide = false, token, invitationToken = null, activeInfoPageId = null }: { children: React.ReactNode; event?: Event; wide?: boolean; token?: string; invitationToken?: string | null; activeInfoPageId?: string | null }) {
   const settings = normalizeRegistrationPage(event?.registrationPage);
@@ -352,10 +353,9 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
   const recoveryKey = `beebizy:rsvp:${token}:${segment}:${invitationToken ?? "public"}`;
   const [draft, setDraft] = useState(() => {
     try {
-      const cached = JSON.parse(localStorage.getItem(recoveryKey) ?? "null");
-      if (cached && typeof cached.name === "string" && typeof cached.email === "string" && typeof cached.organization === "string" && cached.answers && typeof cached.answers === "object") return cached as { name: string; email: string; organization: string; answers: Record<string, string> };
+      return recoverPublicRsvpDraft(JSON.parse(localStorage.getItem(recoveryKey) ?? "null"));
     } catch { /* Manual entry remains available when device storage is blocked. */ }
-    return { name: "", email: "", organization: "", answers: {} as Record<string, string> };
+    return recoverPublicRsvpDraft(null);
   });
   const [storageFailed, setStorageFailed] = useState(false);
   const [result, setResult] = useState<PublicRegistrationResult | null>(null);
@@ -366,7 +366,7 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
       setStorageFailed(false);
     } catch { setStorageFailed(true); }
   }, [draft, recoveryKey, result]);
-  const { name, email, organization, answers } = draft;
+  const { firstName, lastName, email, organization, answers } = draft;
   const settings = normalizeRegistrationPage(shared?.event?.registrationPage);
   let decodedSegment = segment;
   try { decodedSegment = decodeURIComponent(segment); } catch { /* Match the supplied label if it contains a literal percent sign. */ }
@@ -378,18 +378,24 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
     <div><Link href={invitationAwarePath(`/e/${token}`, invitationToken)} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} RSVP</h1><p className="mt-1 text-sm text-muted-foreground">Confirm your attendance. Your response goes directly to the organizer's guest list.</p></div>
     <Panel><form className="space-y-4 p-5" onSubmit={e => {
       e.preventDefault();
-      try { registrationAnswerFields(settings.questions, answers); }
-      catch (error) { toast({ title: "Check your answers", description: error instanceof Error ? error.message : "Complete the required questions." }); return; }
-      register.mutate({ shareToken: token, draft: { name: name.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment, invitationToken, answers } }, { onSuccess: setResult, onError: caught => toast({ title: "Couldn't RSVP", description: caught.message }) });
+      try {
+        const identity = publicRegistrationIdentity({ firstName, lastName });
+        registrationAnswerFields(settings.questions, answers);
+        register.mutate({ shareToken: token, draft: { name: identity.name, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment, invitationToken, answers } }, { onSuccess: setResult, onError: caught => toast({ title: "Couldn't RSVP", description: caught.message }) });
+      } catch (error) { toast({ title: "Check your details", description: error instanceof Error ? error.message : "Complete the required fields." }); }
     }}>
-      <label className="block space-y-1 text-sm font-medium">Full name<Input value={name} onChange={e => setDraft(current => ({ ...current, name: e.target.value }))} required maxLength={120} /></label>
-      <label className="block space-y-1 text-sm font-medium">Email<Input type="email" value={email} onChange={e => setDraft(current => ({ ...current, email: e.target.value }))} required maxLength={320} /></label>
+      {draft.previousFullName ? <p className="rounded-lg bg-primary-muted p-3 text-sm">Your earlier full name is still in First name. Move your surname to Last name before confirming.</p> : null}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block space-y-1 text-sm font-medium">First name<Input autoComplete="given-name" value={firstName} onChange={e => setDraft(current => ({ ...current, firstName: e.target.value, previousFullName: undefined }))} required maxLength={120} /></label>
+        <label className="block space-y-1 text-sm font-medium">Last name<Input autoComplete="family-name" value={lastName} onChange={e => setDraft(current => ({ ...current, lastName: e.target.value }))} required maxLength={120} /></label>
+      </div>
+      <label className="block space-y-1 text-sm font-medium">Email<Input type="email" autoComplete="email" value={email} onChange={e => setDraft(current => ({ ...current, email: e.target.value }))} required maxLength={320} /></label>
       {settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Company, school, or organization <span className="font-normal text-muted-foreground">(optional)</span><Input value={organization} onChange={e => setDraft(current => ({ ...current, organization: e.target.value }))} maxLength={120} placeholder="Example: Cedar Grove School or Acme Inc." /></label> : null}
       {settings.questions.map(question => <label key={question.id} className="block space-y-1 text-sm font-medium">{question.label}<span className="ml-1 font-normal text-muted-foreground">{question.required ? "(required)" : "(optional)"}</span>{question.type === "select"
         ? <select className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" value={answers[question.id] ?? ""} required={question.required} onChange={e => setDraft(current => ({ ...current, answers: { ...current.answers, [question.id]: e.target.value } }))}><option value="">Choose an option</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
         : <Input value={answers[question.id] ?? ""} required={question.required} maxLength={1000} onChange={e => setDraft(current => ({ ...current, answers: { ...current.answers, [question.id]: e.target.value } }))} />}</label>)}
       <p className="text-xs text-muted-foreground">{storageFailed ? "Device recovery is unavailable. Keep this page open until you confirm your RSVP." : "Unsubmitted answers are kept on this device. Nothing is registered until you choose Confirm RSVP."}</p>
-      <Button type="submit" disabled={!name.trim() || !email.trim() || register.isPending}>{register.isPending ? "Saving RSVP…" : "Confirm RSVP"}</Button>
+      <Button type="submit" disabled={!firstName.trim() || !lastName.trim() || !email.trim() || register.isPending}>{register.isPending ? "Saving RSVP…" : "Confirm RSVP"}</Button>
     </form></Panel>
   </div></PublicFrame>;
 }

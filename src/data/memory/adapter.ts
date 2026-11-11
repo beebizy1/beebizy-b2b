@@ -156,6 +156,7 @@ import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, registrationAnswerFields } from "../registrationPage";
+import { publicRegistrationIdentity } from "../publicRegistrationIdentity";
 import { normalizeEventNavigation } from "../eventNavigation";
 import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
 import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
@@ -800,7 +801,10 @@ const registrations: RegistrationsRepository = {
       state.events.find((candidate) => candidate.shareToken === shareToken),
       "This registration link is no longer available.",
     );
-    const name = draft.name.trim();
+    let identity: ReturnType<typeof publicRegistrationIdentity>;
+    try { identity = publicRegistrationIdentity(draft); }
+    catch (error) { throw new DataError("invalid", error instanceof Error ? error.message : "Check your name."); }
+    const name = identity.name;
     const email = draft.email.trim().toLowerCase();
     const segment = draft.segment.trim();
     const page = normalizeRegistrationPage(event.registrationPage);
@@ -809,7 +813,7 @@ const registrations: RegistrationsRepository = {
     if (!segment) throw new DataError("invalid", "Guest type is required.");
     if (!page.registrationTypes.includes(segment)) throw new DataError("invalid", "That guest type is not available for this event.");
     let answers: ImportedSpreadsheetField[];
-    try { answers = registrationAnswerFields(page.questions, draft.answers); }
+    try { answers = [...identity.fields, ...registrationAnswerFields(page.questions, draft.answers)]; }
     catch (error) { throw new DataError("invalid", error instanceof Error ? error.message : "Check your registration answers."); }
     if (event.capacity !== null && event.registrationCount >= event.capacity) {
       throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);

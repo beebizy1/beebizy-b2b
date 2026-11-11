@@ -134,6 +134,27 @@ describe("events", () => {
     expect(result.importedFields).toEqual([{ label: "T-shirt size", value: "M" }]);
   });
 
+  it("saves separate RSVP names alongside answers and keeps the full name for guest lists and badges", async () => {
+    await memoryAdapter.events.updateRegistrationPage("evt-skickoff", { questions: [{ id: "shirt", label: "T-shirt size", type: "select", required: true, options: ["M", "L"] }] });
+    const result = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "Ignored legacy name", firstName: "María Elena", lastName: "de la Cruz-Taylor", email: "split-name@example.invalid", segment: "General", answers: { shirt: "M" },
+    });
+    const saved = (await memoryAdapter.registrations.listForEvent("evt-skickoff")).find(row => row.id === result.id)!;
+    expect(saved.guest?.name).toBe("María Elena de la Cruz-Taylor");
+    expect(saved.importedFields).toEqual([{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }, { label: "T-shirt size", value: "M" }]);
+    await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "María Elena de la Cruz-Taylor", firstName: "María Elena", lastName: "de la Cruz-Taylor", email: "split-name@example.invalid", segment: "General", answers: { shirt: "M" },
+    })).rejects.toThrow("already registered");
+  });
+
+  it("does not register an incomplete separate name", async () => {
+    const before = await memoryAdapter.registrations.listForEvent("evt-skickoff");
+    await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "Legacy fallback", firstName: "Carlin", lastName: " ", email: "missing-name@example.invalid", segment: "General",
+    })).rejects.toThrow("last name");
+    expect(await memoryAdapter.registrations.listForEvent("evt-skickoff")).toEqual(before);
+  });
+
   it("publishes saved registration-site branding with the guest payload", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-cab");
     await memoryAdapter.events.update("evt-cab", {

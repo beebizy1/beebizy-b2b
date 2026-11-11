@@ -58,6 +58,15 @@ describe("HubSpot contact mapping", () => {
     expect(hubspotContactProperties(registration({ guest: { ...registration().guest!, contact: null } }))).toBeNull();
   });
 
+  it("keeps explicit compound RSVP names when syncing and ignores stale name metadata after a rename", () => {
+    const row = registration({
+      guest: { ...registration().guest!, name: "María Elena de la Cruz-Taylor" },
+      importedFields: [{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }],
+    });
+    expect(hubspotContactProperties(row)).toMatchObject({ firstname: "María Elena", lastname: "de la Cruz-Taylor" });
+    expect(hubspotContactProperties({ ...row, guest: { ...row.guest!, name: "Carlin Putman" } })).toMatchObject({ firstname: "Carlin", lastname: "Putman" });
+  });
+
   it("creates one readable attendance note without exposing internal fields", () => {
     expect(hubspotRegistrationNote(registration())).toBe(
       "<strong>Beebizy registration</strong><br>Event: Annual Gala<br>Status: confirmed<br>Guest type: Sponsor<br>Organization: Santa Clara University<br>Party size: 2<br>Checked in: Yes",

@@ -273,6 +273,8 @@ export interface GuestRegistrationImportDraft extends GuestDraft {
 /** Details a guest submits from one of the event's segment-specific registration links. */
 export interface PublicRegistrationDraft {
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   segment: string;
   organization?: string | null;

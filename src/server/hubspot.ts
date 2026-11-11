@@ -150,10 +150,15 @@ export function hubspotContactProperties(row: RegistrationWithGuest): Record<str
   const email = row.guest?.contact?.trim().toLowerCase();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
   const name = splitContactName(row.guest?.name ?? "Guest");
+  const firstName = row.importedFields?.find(field => field.label === "First Name")?.value.trim();
+  const lastName = row.importedFields?.find(field => field.label === "Last Name")?.value.trim();
+  // Use the guest's explicit boundaries only while they match the current name.
+  // Older imports and later manual renames retain the existing fallback.
+  const submittedNameMatches = firstName && lastName && `${firstName} ${lastName}` === row.guest?.name.trim();
   return {
     email,
-    firstname: name.firstname,
-    lastname: name.lastname,
+    firstname: submittedNameMatches ? firstName : name.firstname,
+    lastname: submittedNameMatches ? lastName : name.lastname,
     ...(row.organization ? { company: row.organization } : {}),
   };
 }

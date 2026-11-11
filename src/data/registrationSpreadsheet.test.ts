@@ -23,4 +23,11 @@ describe("custom registration answer columns", () => {
     expect(spreadsheetHeaders([registration])).toEqual(["Guest", "Email", "Dietary requests"]);
     expect(spreadsheetValue(registration, "Guest")).toBe("Imported name");
   });
+  it("shows separate RSVP name entries alongside the combined name, email, status and answers", () => {
+    const registration = row([{ label: "First Name", value: "RSVP Test" }, { label: "Last Name", value: "Guest" }, { label: "T-shirt size", value: "M" }]);
+    expect(spreadsheetHeaders([registration])).toEqual(expect.arrayContaining(["Full Name", "Email Address", "RSVP Response", "First Name", "Last Name", "T-shirt size"]));
+    expect(spreadsheetValue(registration, "Full Name")).toBe("RSVP Test Guest");
+    expect(spreadsheetValue(registration, "First Name")).toBe("RSVP Test");
+    expect(spreadsheetValue(registration, "Last Name")).toBe("Guest");
+  });
 });

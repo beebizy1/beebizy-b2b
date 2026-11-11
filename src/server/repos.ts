@@ -124,6 +124,7 @@ import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, registrationAnswerFields } from "../data/registrationPage.ts";
+import { publicRegistrationIdentity } from "../data/publicRegistrationIdentity.ts";
 import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
@@ -1042,8 +1043,11 @@ async function sharedEventForWrite(token: string) {
 /** Registers a guest from one segment-specific public link. */
 export async function publicRegistration(token: string, body: Body): Promise<PublicRegistrationResult> {
   const event = await sharedEventForWrite(token);
+  let identity: ReturnType<typeof publicRegistrationIdentity>;
+  try { identity = publicRegistrationIdentity(body); }
+  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your name."); }
   const draft: PublicRegistrationDraft = {
-    name: str(body, "name").trim(),
+    name: identity.name,
     email: str(body, "email").trim().toLowerCase(),
     segment: labelFrom(body, "segment") ?? "General",
     organization: labelFrom(body, "organization", 120),
@@ -1052,7 +1056,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
   const page = normalizeRegistrationPage(event.registrationPage);
   if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
   let answers: ImportedSpreadsheetField[];
-  try { answers = registrationAnswerFields(page.questions, body.answers); }
+  try { answers = [...identity.fields, ...registrationAnswerFields(page.questions, body.answers)]; }
   catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your registration answers."); }
   if (!page.collectOrganization) draft.organization = null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
