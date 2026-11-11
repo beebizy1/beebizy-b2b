@@ -66,6 +66,7 @@ import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotif
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
 import { listAdminUserActivity } from "../src/server/userActivity.ts";
 import { getRegistrationDesignDraft, saveRegistrationDesignDraft } from "../src/server/registrationDesignDrafts.ts";
+import { getRegistrationGuestDraft, saveRegistrationGuestDraft } from "../src/server/registrationGuestDrafts.ts";
 import {
   beginGoogleCalendarConnect,
   disconnectGoogleCalendar,
@@ -962,6 +963,8 @@ async function handleAuthed(
       }
       if (a && b === "registration-design-draft" && !c && method === "GET") return json(await getRegistrationDesignDraft(ctx, a));
       if (a && b === "registration-design-draft" && !c && method === "PUT") return json(await saveRegistrationDesignDraft(ctx, a, body));
+      if (a && b === "registration-guest-drafts" && c && !segments[4] && method === "GET") return json(await getRegistrationGuestDraft(ctx, a, c));
+      if (a && b === "registration-guest-drafts" && c && !segments[4] && method === "PUT") return json(await saveRegistrationGuestDraft(ctx, a, c, body));
       if (a && b === "registration-page" && method === "PATCH") return json(await repos.events.updateRegistrationPage(ctx, a, body));
       if (a && !b && method === "DELETE") {
         await removeWorkspaceEventFromCalendars(ctx.workspaceId, a);

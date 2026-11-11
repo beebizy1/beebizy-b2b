@@ -11,6 +11,7 @@
 
 import type { ImportedSpreadsheetField } from "../entities";
 import { registrationDesignDraftSchema, type RegistrationDesignDraft } from "../registrationDesignDraft";
+import { registrationGuestDraftKeySchema, registrationGuestDraftSchema, type RegistrationGuestDraft } from "../registrationGuestDraft";
 import type {
   AnalyticsRepository,
   AuctionRepository,
@@ -185,6 +186,7 @@ function store(): MemoryDb {
 /** Test seam: drop all state so the next read re-seeds. */
 export function resetMemoryStore(): void {
   db = null;
+  registrationGuestDrafts.clear();
 }
 
 let idSeq = 0;
@@ -3024,6 +3026,7 @@ function planningMemoryFor(event: Event): PastEventPlanningRecord[] {
 }
 
 const registrationDesignDrafts = new Map<string, RegistrationDesignDraft>();
+const registrationGuestDrafts = new Map<string, RegistrationGuestDraft>();
 
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
@@ -3036,6 +3039,21 @@ export const memoryAdapter: DataAdapter = {
       const current = registrationDesignDrafts.get(eventId);
       if (current && current.revision >= draft.revision) return copy(current);
       registrationDesignDrafts.set(eventId, copy(draft));
+      return copy(draft);
+    },
+  },
+  registrationGuestDrafts: {
+    async get(eventId, key) {
+      requireEvent(eventId); registrationGuestDraftKeySchema.parse(key);
+      return copy(registrationGuestDrafts.get(`${eventId}:${key}`) ?? null);
+    },
+    async save(eventId, key, value) {
+      requireEvent(eventId); registrationGuestDraftKeySchema.parse(key);
+      const draft = registrationGuestDraftSchema.parse(value);
+      const scope = `${eventId}:${key}`;
+      const current = registrationGuestDrafts.get(scope);
+      if (current && current.revision >= draft.revision) return copy(current);
+      registrationGuestDrafts.set(scope, copy(draft));
       return copy(draft);
     },
   },

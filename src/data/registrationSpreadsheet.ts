@@ -1,7 +1,10 @@
 import type { RegistrationWithGuest } from "./entities";
+import { registrationNameFieldKind, registrationNameParts } from "./registrationNames";
 
 const DEFAULT_SPREADSHEET_HEADERS = [
   "Full Name",
+  "First Name",
+  "Last Name",
   "Email Address",
   "RSVP Response",
   "Company Name",
@@ -14,6 +17,8 @@ const DEFAULT_SPREADSHEET_HEADERS = [
 
 export type SpreadsheetFieldKind =
   | "name"
+  | "firstName"
+  | "lastName"
   | "email"
   | "status"
   | "organization"
@@ -24,7 +29,8 @@ export type SpreadsheetFieldKind =
 
 export function spreadsheetFieldKind(header: string): SpreadsheetFieldKind {
   const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return "name";
+  const nameKind = registrationNameFieldKind(header);
+  if (nameKind) return nameKind;
   if (["email", "e mail", "email address", "e mail address", "contact email"].includes(key)) return "email";
   if (["rsvp", "rsvp response", "attendance", "response", "yes/no"].includes(key)) return "status";
   if (["company", "company name", "organization", "organisation", "school"].includes(key)) return "organization";
@@ -49,17 +55,19 @@ export function spreadsheetHeaders(rows: RegistrationWithGuest[]): string[] {
   if (headers.length === 0) return [...DEFAULT_SPREADSHEET_HEADERS];
   // RSVP answers are additional fields, not an imported spreadsheet layout. Keep
   // the normal identity/status columns when all supplied headers are custom fields.
-  if (headers.every(header => spreadsheetFieldKind(header) === "custom")) {
+  if (headers.every(header => ["custom", "firstName", "lastName"].includes(spreadsheetFieldKind(header)))) {
     const defaults = new Set<string>(DEFAULT_SPREADSHEET_HEADERS);
     return [...DEFAULT_SPREADSHEET_HEADERS, ...headers.filter(header => !defaults.has(header))];
   }
-  return headers;
+  // Preserve imported columns and their order, then expose separate names as well.
+  return [...headers, ...["First Name", "Last Name"].filter(header => !headers.some(existing => spreadsheetFieldKind(existing) === spreadsheetFieldKind(header)))];
 }
 
 export function spreadsheetValue(row: RegistrationWithGuest, header: string): string {
+  const kind = spreadsheetFieldKind(header);
+  if (kind === "firstName" || kind === "lastName") return registrationNameParts(row)[kind];
   const imported = row.importedFields?.find((field) => field.label === header);
   if (imported) return imported.value;
-  const kind = spreadsheetFieldKind(header);
   if (kind === "name") return row.guest?.name ?? "";
   if (kind === "email") return row.guest?.contact ?? "";
   if (kind === "status") {

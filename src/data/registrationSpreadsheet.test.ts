@@ -20,7 +20,7 @@ describe("custom registration answer columns", () => {
   });
   it("preserves an imported spreadsheet's original names and order", () => {
     const registration = row([{ label: "Guest", value: "Imported name" }, { label: "Email", value: "imported@example.com" }, { label: "Dietary requests", value: "Vegetarian" }]);
-    expect(spreadsheetHeaders([registration])).toEqual(["Guest", "Email", "Dietary requests"]);
+    expect(spreadsheetHeaders([registration])).toEqual(["Guest", "Email", "Dietary requests", "First Name", "Last Name"]);
     expect(spreadsheetValue(registration, "Guest")).toBe("Imported name");
   });
   it("shows separate RSVP name entries alongside the combined name, email, status and answers", () => {

@@ -114,6 +114,7 @@ import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "../eve
 import type { VendorEventPacketResult } from "../vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRecovery";
 import type { RegistrationDesignDraft } from "../registrationDesignDraft";
+import type { RegistrationGuestDraft } from "../registrationGuestDraft";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -256,6 +257,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     registrationDesignDrafts: {
       get: eventId => client.get<RegistrationDesignDraft | null>(`/events/${eventId}/registration-design-draft`),
       save: (eventId, draft) => client.put<RegistrationDesignDraft>(`/events/${eventId}/registration-design-draft`, draft),
+    },
+    registrationGuestDrafts: {
+      get: (eventId, key) => client.get<RegistrationGuestDraft | null>(`/events/${eventId}/registration-guest-drafts/${encodeURIComponent(key)}`),
+      save: (eventId, key, draft) => client.put<RegistrationGuestDraft>(`/events/${eventId}/registration-guest-drafts/${encodeURIComponent(key)}`, draft),
     },
 
     me: () => client.get<Identity>("/me"),

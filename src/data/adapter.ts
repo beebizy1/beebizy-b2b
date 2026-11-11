@@ -184,6 +184,7 @@ import type { RegistrationPageSettings } from "./registrationPage";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowRecovery";
 import type { RegistrationDesignDraftRepository } from "./registrationDesignDraft";
+import type { RegistrationGuestDraftRepository } from "./registrationGuestDraft";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -590,6 +591,7 @@ export interface DataAdapter {
   /** Stable identity used to isolate authenticated query caches. */
   readonly cacheScope: string;
   registrationDesignDrafts: RegistrationDesignDraftRepository;
+  registrationGuestDrafts: RegistrationGuestDraftRepository;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
   events: EventsRepository;

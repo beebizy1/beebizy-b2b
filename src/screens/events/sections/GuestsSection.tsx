@@ -40,7 +40,7 @@ import {
 import {
   useGuests,
   useHubSpotStatus,
-  useCreateGuest,
+  useImportGuestRegistrations,
   useCreateRegistration,
   useDeleteRegistration,
   useEventRegistrations,
@@ -57,10 +57,14 @@ import {
   REGISTRATION_STATUSES,
   type Event,
   type RegistrationStatus,
+  type RegistrationDraft,
   type RegistrationWithGuest,
 } from "@/data/entities";
 import { registrationSegmentSummary } from "@/data/santaClara";
 import { normalizeRegistrationPage } from "@/data/registrationPage";
+import { registrationNameParts, registrationNameUpdate, staffRegistrationIdentity } from "@/data/registrationNames";
+import { useRegistrationGuestDraft } from "@/hooks/useRegistrationGuestDraft";
+import type { GuestDraftState, RegistrationGuestDraftRecovery } from "@/data/registrationGuestDraft";
 
 /** No category is a real choice in a Select, and "" is not a usable option value. */
 const UNCATEGORISED = "__none__";
@@ -89,6 +93,14 @@ function registrationStatusFromSpreadsheet(value: string): RegistrationStatus {
   return "pending";
 }
 
+function GuestDraftStatus({ state, recovery }: { state: GuestDraftState; recovery: RegistrationGuestDraftRecovery }) {
+  return <div className="space-y-2 text-xs text-muted-foreground" role="status">
+    {state.message ? <p>{state.message}</p> : null}
+    {state.remote ? <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => recovery.resolve(true)}>Use saved draft</Button><Button type="button" size="sm" variant="outline" onClick={() => recovery.resolve(false)}>Keep this device's changes</Button></div> : null}
+    {state.message.includes("failed") && !state.remote ? <Button type="button" size="sm" variant="outline" onClick={() => void recovery.flush()}>Retry saving draft</Button> : null}
+  </div>;
+}
+
 function EditRegistrationDialog({
   row,
   headers,
@@ -101,9 +113,11 @@ function EditRegistrationDialog({
   onClose: () => void;
 }) {
   const update = useUpdateRegistrationDetails();
-  const [draft, setDraft] = useState<Record<string, string>>(() =>
-    Object.fromEntries(headers.map((header) => [header, spreadsheetValue(row, header)])),
-  );
+  const parts = registrationNameParts(row);
+  const { draft, setDraft, state, recovery } = useRegistrationGuestDraft(eventId, `edit-${row.id}`, {
+    ...Object.fromEntries(headers.map((header) => [header, spreadsheetValue(row, header)])),
+    "First Name": parts.firstName, "Last Name": parts.lastName,
+  });
 
   const valueForKind = (kind: SpreadsheetFieldKind, fallback: string) => {
     const header = headers.find((candidate) => spreadsheetFieldKind(candidate) === kind);
@@ -111,24 +125,21 @@ function EditRegistrationDialog({
   };
 
   const save = async () => {
-    const name = valueForKind("name", row.guest?.name ?? "").trim();
+    const submitted = { ...draft };
     const rawQuantity = valueForKind("quantity", String(row.quantity)).trim();
     const quantity = Number(rawQuantity);
-    if (!name) {
-      toast({ title: "Name is required" });
-      return;
-    }
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10_000) {
       toast({ title: "Attendee count must be between 1 and 10,000" });
       return;
     }
 
     try {
+      const identity = registrationNameUpdate(row, draft["First Name"] ?? "", draft["Last Name"] ?? "", headers.map(label => ({ label, value: draft[label] ?? "" })));
       await update.mutateAsync({
         id: row.id,
         eventId,
         patch: {
-          name,
+          name: identity.name,
           contact: valueForKind("email", row.guest?.contact ?? "").trim().toLowerCase() || null,
           notes: valueForKind("notes", row.guest?.notes ?? "").trim() || null,
           status: registrationStatusFromSpreadsheet(
@@ -140,9 +151,10 @@ function EditRegistrationDialog({
           segment: valueForKind("segment", row.segment ?? "").trim() || null,
           organization: valueForKind("organization", row.organization ?? "").trim() || null,
           quantity,
-          importedFields: headers.map((label) => ({ label, value: draft[label] ?? "" })),
+          importedFields: identity.importedFields,
         },
       });
+      recovery.complete(submitted);
       toast({ title: "Registration updated" });
       onClose();
     } catch (error) {
@@ -152,15 +164,18 @@ function EditRegistrationDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit registration</DialogTitle>
           <DialogDescription>
             Update the RSVP and every value from the imported spreadsheet. All changes save together.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {headers.map((header) => {
+        <fieldset disabled={update.isPending} className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5"><Label htmlFor="edit-guest-first-name">First name</Label><Input id="edit-guest-first-name" autoComplete="given-name" maxLength={120} value={draft["First Name"] ?? ""} onChange={e => setDraft(current => ({ ...current, "First Name": e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label htmlFor="edit-guest-last-name">Last name</Label><Input id="edit-guest-last-name" autoComplete="family-name" maxLength={120} value={draft["Last Name"] ?? ""} onChange={e => setDraft(current => ({ ...current, "Last Name": e.target.value }))} /></div>
+          {parts.inferred ? <p className="text-xs text-muted-foreground sm:col-span-2">This older registration stored one full name. Please check the first and last name split before saving.</p> : null}
+          {headers.filter(header => !["name", "firstName", "lastName"].includes(spreadsheetFieldKind(header))).map((header) => {
             const kind = spreadsheetFieldKind(header);
             const fieldId = `registration-${row.id}-${header.replace(/[^a-z0-9]/gi, "-")}`;
             return (
@@ -202,10 +217,11 @@ function EditRegistrationDialog({
               </div>
             );
           })}
-        </div>
+        </fieldset>
+        <GuestDraftStatus state={state} recovery={recovery} />
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button>
-          <Button type="button" onClick={() => void save()} disabled={update.isPending}>
+          <Button type="button" variant="outline" onClick={() => { recovery.complete(draft); onClose(); }} disabled={update.isPending}>Discard changes</Button>
+          <Button type="button" onClick={() => void save()} disabled={update.isPending || Boolean(state.remote)}>
             {update.isPending ? "Saving..." : "Save changes"}
           </Button>
         </DialogFooter>
@@ -290,14 +306,14 @@ function AddGuest({ event }: { event: Event }) {
   const { data: guests } = useGuests();
   const { data: registrations } = useEventRegistrations(event.id);
   const createRegistration = useCreateRegistration();
-  const createGuest = useCreateGuest();
-  const [mode, setMode] = useState<"new" | "existing">("new");
-  const [guestId, setGuestId] = useState("");
-  const [name, setName] = useState("");
-  const [contact, setContact] = useState("");
-  const [status, setStatus] = useState<"pending" | "confirmed">("pending");
-  const [segment, setSegment] = useState("");
-  const [organization, setOrganization] = useState("");
+  const importGuests = useImportGuestRegistrations();
+  const { draft, setDraft, state, recovery } = useRegistrationGuestDraft(event.id, "add-guest", {
+    mode: "new", guestId: "", firstName: "", lastName: "", contact: "", status: "pending", segment: "", organization: "",
+  });
+  const mode = draft.mode === "existing" ? "existing" : "new";
+  const status = draft.status === "confirmed" ? "confirmed" : "pending";
+  const { guestId = "", firstName = "", lastName = "", contact = "", segment = "", organization = "" } = draft;
+  const field = (key: string, value: string) => setDraft(current => ({ ...current, [key]: value }));
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
   const available = useMemo(() => {
@@ -306,26 +322,23 @@ function AddGuest({ event }: { event: Event }) {
   }, [guests, registrations]);
 
   const atCapacity = event.capacity !== null && event.registrationCount >= event.capacity;
-  const pending = createRegistration.isPending || createGuest.isPending;
-  const canSubmit = mode === "new" ? name.trim().length > 0 : guestId !== "";
+  const pending = createRegistration.isPending || importGuests.isPending;
+  const canSubmit = (mode === "new" ? firstName.trim().length > 0 : guestId !== "") && !state.remote;
 
   const submit = async () => {
+    const submitted = { ...draft };
     try {
-      const id =
-        mode === "existing"
-          ? guestId
-          : (await createGuest.mutateAsync({ name: name.trim(), contact: contact.trim() })).id;
-
-      await createRegistration.mutateAsync({
-        eventId: event.id,
-        guestId: id,
-        status,
-        segment: segment.trim() || null,
-        organization: organization.trim() || null,
-      });
-      setGuestId("");
-      setName("");
-      setContact("");
+      const registration: Pick<RegistrationDraft, "eventId" | "status" | "segment" | "organization"> = { eventId: event.id, status, segment: segment.trim() || null, organization: organization.trim() || null };
+      if (mode === "existing") {
+        if (!available.some(guest => guest.id === guestId)) throw new Error("Choose an available guest from the address book.");
+        await createRegistration.mutateAsync({ ...registration, guestId });
+      } else {
+        const identity = staffRegistrationIdentity(firstName, lastName);
+        // The existing import endpoint saves the person and registration atomically.
+        await importGuests.mutateAsync([{ ...registration, name: identity.name, contact: contact.trim() || null, importedFields: identity.fields }]);
+      }
+      recovery.complete(submitted, { ...submitted, guestId: "", firstName: "", lastName: "", contact: "" });
+      toast({ title: status === "pending" ? "Invitation added to the list" : "Guest registered" });
       // The category deliberately survives: guest lists are entered in runs of the same
       // kind, so clearing it would mean retyping "Sponsor" twelve times.
 
@@ -345,12 +358,13 @@ function AddGuest({ event }: { event: Event }) {
         if (canSubmit) void submit();
       }}
     >
+      <fieldset disabled={pending} className="space-y-2">
       <div className="flex gap-1">
         {(["new", "existing"] as const).map((option) => (
           <button
             key={option}
             type="button"
-            onClick={() => setMode(option)}
+            onClick={() => field("mode", option)}
             aria-pressed={mode === option}
             className={cn(
               "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
@@ -366,23 +380,26 @@ function AddGuest({ event }: { event: Event }) {
         {mode === "new" ? (
           <>
             <Input
-              value={name}
-              onChange={(inputEvent) => setName(inputEvent.target.value)}
-              placeholder="Full name"
-              aria-label="Guest name"
+              value={firstName}
+              onChange={(inputEvent) => field("firstName", inputEvent.target.value)}
+              placeholder="First name"
+              aria-label="Guest first name"
+              autoComplete="given-name"
+              maxLength={120}
               className="min-w-[10rem] flex-1"
             />
+            <Input value={lastName} onChange={e => field("lastName", e.target.value)} placeholder="Last name" aria-label="Guest last name" autoComplete="family-name" maxLength={120} className="min-w-[10rem] flex-1" />
             <Input
               type="email"
               value={contact}
-              onChange={(inputEvent) => setContact(inputEvent.target.value)}
+              onChange={(inputEvent) => field("contact", inputEvent.target.value)}
               placeholder="Email (optional)"
               aria-label="Guest email"
               className="min-w-[10rem] flex-1"
             />
           </>
         ) : (
-          <Select value={guestId} onValueChange={setGuestId} disabled={available.length === 0}>
+          <Select value={guestId} onValueChange={value => field("guestId", value)} disabled={available.length === 0}>
             <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to invite">
               <SelectValue
                 placeholder={available.length === 0 ? "Nobody left in the address book" : "Choose a guest…"}
@@ -400,7 +417,7 @@ function AddGuest({ event }: { event: Event }) {
 
         <Input
           value={segment}
-          onChange={(inputEvent) => setSegment(inputEvent.target.value)}
+          onChange={(inputEvent) => field("segment", inputEvent.target.value)}
           placeholder="Category (optional)"
           aria-label="Guest category"
           list="guest-segment-suggestions"
@@ -414,7 +431,7 @@ function AddGuest({ event }: { event: Event }) {
 
         <Input
           value={organization}
-          onChange={(inputEvent) => setOrganization(inputEvent.target.value)}
+          onChange={(inputEvent) => field("organization", inputEvent.target.value)}
           placeholder="Organization (optional)"
           aria-label="Guest organization"
           list="guest-organization-suggestions"
@@ -426,7 +443,7 @@ function AddGuest({ event }: { event: Event }) {
           ))}
         </datalist>
 
-        <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
+        <Select value={status} onValueChange={(value) => field("status", value)}>
           <SelectTrigger className="w-[178px]" aria-label="Invitation status">
             <SelectValue />
           </SelectTrigger>
@@ -441,6 +458,9 @@ function AddGuest({ event }: { event: Event }) {
           {status === "pending" ? "Add invitation" : "Register"}
         </Button>
       </div>
+      </fieldset>
+      <GuestDraftStatus state={state} recovery={recovery} />
+      {!state.discarded && !pending ? <Button type="button" size="sm" variant="ghost" onClick={() => recovery.complete(draft)}>Discard guest draft</Button> : null}
 
       {atCapacity ? (
         <p className="text-xs text-warning-text">
