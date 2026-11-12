@@ -280,11 +280,13 @@ export interface PublicRegistrationDraft {
   organization?: string | null;
   invitationToken?: string | null;
   answers?: Record<string, string>;
+  additionalGuests?: Array<{ firstName: string; lastName: string; email?: string; answers?: Record<string, string> }>;
 }
 
 /** Registration plus the result of the guest confirmation email attempt. */
 export interface PublicRegistrationResult extends Registration {
   confirmationEmailStatus: "sent" | "skipped" | "failed";
+  additionalGuests?: Array<{ id: string; name: string }>;
 }
 
 export interface RegistrationCheckInPatch {

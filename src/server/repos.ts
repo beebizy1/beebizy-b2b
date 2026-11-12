@@ -123,8 +123,9 @@ import { deliverMemberRoleNotification } from "./memberRoleNotifications.ts";
 import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, registrationAnswerFields } from "../data/registrationPage.ts";
-import { publicRegistrationIdentity } from "../data/publicRegistrationIdentity.ts";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../data/registrationPage.ts";
+import { preparePublicRsvpParty } from "../data/publicRsvpParty.ts";
+import { publicRsvpPartyQueries } from "./publicRsvpStore.ts";
 import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
@@ -1043,67 +1044,29 @@ async function sharedEventForWrite(token: string) {
 /** Registers a guest from one segment-specific public link. */
 export async function publicRegistration(token: string, body: Body): Promise<PublicRegistrationResult> {
   const event = await sharedEventForWrite(token);
-  let identity: ReturnType<typeof publicRegistrationIdentity>;
-  try { identity = publicRegistrationIdentity(body); }
-  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your name."); }
+  const page = normalizeRegistrationPage(event.registrationPage);
+  let people: ReturnType<typeof preparePublicRsvpParty>;
+  try { people = preparePublicRsvpParty(page, body); }
+  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your registration details."); }
   const draft: PublicRegistrationDraft = {
-    name: identity.name,
-    email: str(body, "email").trim().toLowerCase(),
+    name: people[0]!.name, email: people[0]!.email!,
     segment: labelFrom(body, "segment") ?? "General",
-    organization: labelFrom(body, "organization", 120),
+    organization: page.collectOrganization ? labelFrom(body, "organization", 120) : null,
     invitationToken: labelFrom(body, "invitationToken", 160),
   };
-  const page = normalizeRegistrationPage(event.registrationPage);
   if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
-  let answers: ImportedSpreadsheetField[];
-  try { answers = [...identity.fields, ...registrationAnswerFields(page.questions, body.answers)]; }
-  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your registration answers."); }
-  if (!page.collectOrganization) draft.organization = null;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
-  const [{ total } = { total: 0 }] = await db
-    .select({ total: sql<number>`coalesce(sum(${s.registrations.quantity}), 0)` })
-    .from(s.registrations)
-    .where(and(eq(s.registrations.eventId, event.id), sql`${s.registrations.status} <> 'cancelled'`));
-  if (event.capacity !== null && Number(total) >= event.capacity) {
-    throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
-  }
-
-  const guestId = newId("att");
-  await db.insert(s.guests).values({
-    id: guestId,
-    workspaceId: event.workspaceId,
-    name: draft.name,
-    contact: draft.email,
-    notes: "Registered through the public event page.",
-  }).onConflictDoNothing({ target: [s.guests.workspaceId, s.guests.contact] });
-  const [guest] = await db.select({ id: s.guests.id }).from(s.guests).where(and(
-    eq(s.guests.workspaceId, event.workspaceId),
-    eq(s.guests.contact, draft.email),
-  )).limit(1);
-  if (!guest) throw new HttpError(500, "The guest record could not be created.");
-
-  const id = newId("reg");
+  const party = people.map(person => ({ ...person, guestId: newId("att"), registrationId: newId("reg") }));
+  const queries = publicRsvpPartyQueries({ eventId: event.id, workspaceId: event.workspaceId, segment: draft.segment, organization: draft.organization ?? null, partyId: crypto.randomUUID(), people: party });
   try {
-    await db.insert(s.registrations).values({
-      id,
-      workspaceId: event.workspaceId,
-      eventId: event.id,
-      guestId: guest.id,
-      status: "confirmed",
-      segment: draft.segment,
-      organization: draft.organization,
-      importedFields: answers,
-    });
+    await db.batch([db.execute(queries[0]!), ...queries.slice(1).map(query => db.execute(query))]);
   } catch (error) {
-    if (isConstraintViolation(error, "registrations_event_guest_idx")) {
-      throw new HttpError(409, "This email is already registered for the event.");
-    }
-    if (isConstraintViolation(error, "registrations_event_capacity_check")) {
-      throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
-    }
+    if (isConstraintViolation(error, "registrations_event_guest_idx")) throw new HttpError(409, "One of these email addresses is already registered for the event. No additional registrations were saved.");
+    if (isConstraintViolation(error, "registrations_event_capacity_check")) throw new HttpError(409, `There aren't enough places left for all ${people.length} people. No registrations were saved. Remove a guest or contact the organizer.`);
+    const cause = error as { code?: string; cause?: { code?: string } };
+    if (cause.code === "21000" || cause.cause?.code === "21000") throw new HttpError(409, "An email matches more than one existing person. Please contact the organizer. No registrations were saved.");
     throw error;
   }
-  const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
+  const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, party[0]!.registrationId)).limit(1);
   const registration = map.toRegistration(row!, event.title);
   if (draft.invitationToken) {
     await db.update(s.ticketInvitations).set({
@@ -1129,7 +1092,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
       email: draft.email,
       phone: null,
       householdId: null,
-      attendeeId: guest.id,
+      attendeeId: registration.guestId,
       paymentMethodId: null,
       stripeCustomerId: null,
       autoChargeOptIn: false,
@@ -1155,6 +1118,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     registrationId: registration.id,
     to: draft.email,
     guestName: draft.name,
+    additionalGuestNames: people.slice(1).map(person => person.name),
     eventTitle: event.title,
     segment: draft.segment,
     startsAt: event.startsAt.toISOString(),
@@ -1165,7 +1129,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     auctionAccessUrl: bidderAccessUrl,
     paddleNumber: bidderPaddle,
   });
-  return { ...registration, confirmationEmailStatus: email.status };
+  return { ...registration, confirmationEmailStatus: email.status, ...(party.length > 1 ? { additionalGuests: party.slice(1).map(person => ({ id: person.registrationId, name: person.name })) } : {}) };
 }
 
 /** Claims an available volunteer opening without exposing the workspace or its roster. */

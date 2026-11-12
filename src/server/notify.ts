@@ -679,6 +679,7 @@ export async function notifyRegistrationConfirmation(input: {
   registrationId: string;
   to: string;
   guestName: string;
+  additionalGuestNames?: string[];
   eventTitle: string;
   segment: string;
   startsAt: string;
@@ -701,6 +702,7 @@ export async function notifyRegistrationConfirmation(input: {
       `Hi ${input.guestName},`,
       "",
       `Your registration for ${input.eventTitle} is confirmed.`,
+      ...(input.additionalGuestNames?.length ? [`Your additional guests: ${input.additionalGuestNames.join(", ")}`, `Total people registered: ${input.additionalGuestNames.length + 1}`] : []),
       `Guest type: ${input.segment}`,
       `When: ${start}${end ? ` to ${end}` : ""} ${zone}`,
       input.location ? `Where: ${input.location}` : null,
