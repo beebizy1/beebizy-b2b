@@ -3,7 +3,7 @@ import type { RegistrationPageSettings } from "./registrationPage";
 
 const short = z.string().max(2000);
 const url = z.string().max(2000).nullable();
-const page: z.ZodType<RegistrationPageSettings> = z.object({
+const page: z.ZodType<RegistrationPageSettings, z.ZodTypeDef, unknown> = z.object({
   template: z.enum(["warm", "garden", "coastal"]), accentColor: z.string().max(40),
   headline: short, aboutHeading: short, aboutBody: z.string().max(4000), agendaIntroduction: short, welcomeMessage: z.string().max(3000),
   heroImageUrl: url, heroImageDisplay: z.enum(["banner", "logo"]), aboutImageUrl: url, agendaImageUrl: url, paymentUrl: url.optional(),
@@ -11,6 +11,7 @@ const page: z.ZodType<RegistrationPageSettings> = z.object({
   showAgenda: z.boolean(), showSpeakers: z.boolean(), showSponsors: z.boolean(), showVolunteerSignup: z.boolean(), collectOrganization: z.boolean(),
   speakers: z.array(z.object({ id: short, name: short, title: short, organization: short, bio: short, photoUrl: url })).max(8),
   registrationTypes: z.array(short).max(8),
+  maxAdditionalGuests: z.number().int().min(0).max(10).default(0),
   infoPages: z.array(z.object({ id: short, navLabel: short, title: short, body: z.string().max(5000) })).max(6),
   questions: z.array(z.object({ id: z.string().max(80), label: short, type: z.enum(["text", "select"]), required: z.boolean(), options: z.array(z.string().max(1000)).max(20) })).max(12),
   postEventSubject: short, postEventThankYou: z.string().max(4000), postEventWrapUp: z.string().max(5000),

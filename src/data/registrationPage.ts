@@ -41,6 +41,8 @@ export interface RegistrationPageSettings {
   footerImageSource: "invitation" | "custom" | "none";
   footerImageUrl: string | null;
   questions: RegistrationQuestion[];
+  /** Zero keeps additional-guest RSVPs disabled until the organizer opts in. */
+  maxAdditionalGuests: number;
   aboutImageUrl: string | null;
   agendaImageUrl: string | null;
   /** Optional organizer-owned checkout. Beebizy does not process this payment. */
@@ -108,6 +110,7 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   footerImageSource: "invitation",
   footerImageUrl: null,
   questions: [],
+  maxAdditionalGuests: 0,
   aboutImageUrl: null,
   agendaImageUrl: null,
   paymentUrl: null,
@@ -265,6 +268,7 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     footerImageSource: input.footerImageSource === "custom" || input.footerImageSource === "none" ? input.footerImageSource : "invitation",
     footerImageUrl: safeImageUrl(input.footerImageUrl),
     questions: questions(input.questions),
+    maxAdditionalGuests: typeof input.maxAdditionalGuests === "number" && Number.isFinite(input.maxAdditionalGuests) ? Math.max(0, Math.min(10, Math.floor(input.maxAdditionalGuests))) : 0,
     aboutImageUrl: safeImageUrl(input.aboutImageUrl),
     agendaImageUrl: safeImageUrl(input.agendaImageUrl),
     ...(Object.hasOwn(input, "paymentUrl") ? { paymentUrl: safeImageUrl(input.paymentUrl) } : {}),
@@ -286,7 +290,7 @@ const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
   "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "postEventSubject",
-  "postEventThankYou", "postEventWrapUp", "footerImageSource", "footerImageUrl", "questions",
+  "postEventThankYou", "postEventWrapUp", "footerImageSource", "footerImageUrl", "questions", "maxAdditionalGuests",
 ];
 
 /** Validates only supplied fields so independent editors cannot overwrite one another. */

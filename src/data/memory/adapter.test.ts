@@ -159,7 +159,7 @@ describe("events", () => {
     const { shareToken } = await memoryAdapter.events.share("evt-cab");
     await memoryAdapter.events.update("evt-cab", {
       registrationPage: {
-        template: "garden",
+        template: "garden", maxAdditionalGuests: 0,
         accentColor: "#245F45",
         headline: "An evening in the garden",
         aboutHeading: "Why we gather",
