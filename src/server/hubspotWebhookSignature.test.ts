@@ -27,6 +27,8 @@ describe("HubSpot webhook verification", () => {
     const request = signed();
     const rewritten = new Request("https://beebizy-studio-preview.vercel.app/api/router?__path=integrations%2Fhubspot%2Fwebhook", { method: "POST", headers: request.headers, body });
     expect(validHubSpotSignature(rewritten, body, secret, time)).toBe(true);
+    const originalPathWithRewrite = new Request(url + "?__path=integrations%2Fhubspot%2Fwebhook", { method: "POST", headers: request.headers, body });
+    expect(validHubSpotSignature(originalPathWithRewrite, body, secret, time)).toBe(true);
     expect(hubspotRequestUri(url + "?email=test%40example.com&literal=%26")).toBe(url + "?email=test@example.com&literal=%26");
   });
   it("supports authentic classic CRM notifications without downgrading invalid v3 requests", () => {

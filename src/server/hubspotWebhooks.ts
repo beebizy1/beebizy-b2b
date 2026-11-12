@@ -18,7 +18,11 @@ export async function handleHubSpotWebhook(request: Request) {
   if (!secret) throw new HttpError(503, "HubSpot webhook verification is not configured.");
   const raw = await request.text();
   if (Buffer.byteLength(raw, "utf8") > 256_000) throw new HttpError(413, "Webhook payload is too large.");
-  if (!validHubSpotSignature(request, raw, secret)) throw new HttpError(401, "Invalid HubSpot webhook signature.");
+  if (!validHubSpotSignature(request, raw, secret)) {
+    const url = new URL(request.url); const timestamp = Number(request.headers.get("x-hubspot-request-timestamp"));
+    console.warn("[hubspot webhook verification]", { path: url.pathname, rewrite: url.searchParams.has("__path"), protocol: url.protocol, v3: Boolean(request.headers.get("x-hubspot-signature-v3")), legacyVersion: request.headers.get("x-hubspot-signature-version"), ageSeconds: Number.isFinite(timestamp) ? Math.round((Date.now() - timestamp) / 1000) : null, bytes: Buffer.byteLength(raw, "utf8") });
+    throw new HttpError(401, "Invalid HubSpot webhook signature.");
+  }
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new HttpError(400, "Invalid webhook JSON."); }
   if (!Array.isArray(parsed) || parsed.length > 100) throw new HttpError(400, "A webhook batch must contain at most 100 events.");

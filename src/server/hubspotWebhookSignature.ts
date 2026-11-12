@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export function hubspotRequestUri(requestUrl: string): string {
   const url = new URL(requestUrl);
-  if (url.pathname === "/api/router" && url.searchParams.get("__path") === "integrations/hubspot/webhook") {
+  if (["/api/router", "/api/integrations/hubspot/webhook"].includes(url.pathname) && url.searchParams.get("__path") === "integrations/hubspot/webhook") {
     url.pathname = "/api/integrations/hubspot/webhook"; url.searchParams.delete("__path");
   }
   return url.toString().replace(/%(3A|2F|3F|40|21|24|27|28|29|2A|2C|3B)/gi, value => decodeURIComponent(value));
