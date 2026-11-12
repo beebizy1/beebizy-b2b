@@ -5,7 +5,7 @@ Updated November 11, 2026.
 ## Confirmed setup
 
 - HubSpot developer account: Beebizy Studio, portal `247905640`.
-- Project: `beebizy-hubspot-integration`, platform `2026.09`, deployed build `1`.
+- Project: `beebizy-hubspot-integration`, platform `2026.09`, deployed build `2` with ten active contact webhook subscriptions.
 - App: Beebizy, ID `60483375`, marketplace distribution.
 - The deployed OAuth scopes and Beebizy request match: `oauth`, `crm.objects.contacts.read`, `crm.objects.contacts.write`.
 - The callback is `https://beebizy-studio-preview.vercel.app/api/integrations/hubspot/callback`.
