@@ -533,6 +533,17 @@ export default function GuestsSection({ event }: { event: Event }) {
   const share = useShareEvent();
   const hubspot = useHubSpotStatus();
   const identity = useMe();
+  const hubspotConnected = hubspot.data?.state === "connected" || hubspot.data?.state === "error";
+  const canManageHubSpot = identity.data?.role === "owner" || identity.data?.role === "admin";
+  const hubspotContactsReady = hubspotConnected && (hubspot.data?.inbound?.contacts ?? 0) > 0;
+  let hubspotHelp = canManageHubSpot
+    ? "Set up HubSpot once in Settings, then choose guests for any event."
+    : "Ask a workspace owner or admin to set up HubSpot contacts in Settings.";
+  if (hubspot.isLoading) hubspotHelp = "Checking your HubSpot connection…";
+  else if (hubspot.isError) hubspotHelp = "Couldn't check your HubSpot connection.";
+  else if (hubspotContactsReady) hubspotHelp = "Choose people from your team's HubSpot contacts for this event.";
+  else if (hubspot.data?.inbound?.error) hubspotHelp = "HubSpot contact updates need attention. Check HubSpot in Settings.";
+  else if (hubspotConnected && hubspot.data?.inbound?.enabled) hubspotHelp = "Contacts will be available here as soon as they arrive from HubSpot.";
   const setHubSpotSync = useSetHubSpotEventSync();
   const syncHubSpot = useSyncHubSpotEvent();
   const [search, setSearch] = useState("");
@@ -629,67 +640,77 @@ export default function GuestsSection({ event }: { event: Event }) {
         />
       </div>
 
-      {!identity.data?.eventScope ? <Panel>
-        <PanelHeader
-          title="Registration updates to HubSpot"
-          description="Optional: send this event's registration and attendance updates back to your CRM."
-          actions={<ContactRound className="size-4 text-muted-foreground" aria-hidden="true" />}
-        />
-        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          {hubspot.data?.state === "connected" || hubspot.data?.state === "error" ? (
-            <>
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {event.hubspotSyncEnabled ? "Updates to HubSpot are on" : "Updates to HubSpot are off"}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {event.hubspotSyncEnabled
-                    ? "New registrations, edits, and check-ins update HubSpot automatically."
-                    : "Nothing from this event is sent until you turn syncing on."}
-                </p>
+      {identity.data && !identity.data.eventScope ? (
+        <Panel>
+          <div className="flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-muted">
+                <ContactRound className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-foreground">Add guests from HubSpot</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{hubspotHelp}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
+            </div>
+            {hubspot.isError ? (
+              <Button variant="outline" onClick={() => void hubspot.refetch()}>Try again</Button>
+            ) : hubspotContactsReady ? (
+              <HubSpotContactImportDialog key={event.id} eventId={event.id} eventTitle={event.title} />
+            ) : hubspot.data && canManageHubSpot ? (
+              <Button asChild variant="outline"><Link href="/app/settings#hubspot">Open HubSpot settings</Link></Button>
+            ) : null}
+          </div>
+          {hubspotConnected && (canManageHubSpot || event.hubspotSyncEnabled) ? (
+            <details className="border-t border-hairline px-5 py-3 text-sm">
+              <summary className="w-fit cursor-pointer rounded-sm font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Send this event's updates to HubSpot
+                <span className="ml-2 text-xs">{event.hubspotSyncEnabled ? "On" : "Off"}</span>
+              </summary>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {event.hubspotSyncEnabled
+                  ? "New registrations, edits, and check-ins for this event update HubSpot automatically."
+                  : "Turn this on if you want this event's registrations and check-ins to appear in HubSpot."}
+              </p>
+              {canManageHubSpot ? <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={setHubSpotSync.isPending}
+                  onClick={() => setHubSpotSync.mutate(
+                    { eventId: event.id, enabled: !event.hubspotSyncEnabled },
+                    {
+                      onSuccess: result => toast({
+                        title: result.event.hubspotSyncEnabled ? "Event updates to HubSpot are on" : "Event updates to HubSpot are paused",
+                        description: result.event.hubspotSyncEnabled ? `${result.synced} contacts updated in HubSpot.` : undefined,
+                      }),
+                      onError: syncError => toast({ title: "Couldn't change event updates", description: syncError.message }),
+                    },
+                  )}
+                >
+                  {setHubSpotSync.isPending ? "Saving…" : event.hubspotSyncEnabled ? "Pause event updates" : "Turn on event updates"}
+                </Button>
                 {event.hubspotSyncEnabled ? (
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={syncHubSpot.isPending || !["owner", "admin"].includes(identity.data?.role ?? "")}
+                    disabled={syncHubSpot.isPending}
                     onClick={() => syncHubSpot.mutate(event.id, {
-                      onSuccess: (result) => toast({ title: "HubSpot is up to date", description: `${result.synced} synced · ${result.skipped} skipped · ${result.failed} failed` }),
-                      onError: (syncError) => toast({ title: "Couldn't sync HubSpot", description: syncError.message }),
+                      onSuccess: result => toast({
+                        title: "HubSpot update finished",
+                        description: `${result.synced} updated · ${result.skipped} skipped · ${result.failed} failed`,
+                      }),
+                      onError: syncError => toast({ title: "Couldn't update HubSpot", description: syncError.message }),
                     })}
                   >
-                    <RefreshCw className={`mr-1.5 size-3.5 ${syncHubSpot.isPending ? "animate-spin" : ""}`} />
-                    Sync now
+                    <RefreshCw className={`size-3.5 ${syncHubSpot.isPending ? "animate-spin" : ""}`} />
+                    Update HubSpot now
                   </Button>
                 ) : null}
-                <Button
-                  size="sm"
-                  variant={event.hubspotSyncEnabled ? "outline" : "default"}
-                  disabled={setHubSpotSync.isPending || !["owner", "admin"].includes(identity.data?.role ?? "")}
-                  onClick={() => setHubSpotSync.mutate(
-                    { eventId: event.id, enabled: !event.hubspotSyncEnabled },
-                    {
-                      onSuccess: (result) => toast({
-                        title: result.event.hubspotSyncEnabled ? "HubSpot sync enabled" : "HubSpot sync paused",
-                        description: result.event.hubspotSyncEnabled ? `${result.synced} contacts synced now.` : "Existing HubSpot contacts stay in HubSpot.",
-                      }),
-                      onError: (syncError) => toast({ title: "Couldn't change HubSpot sync", description: syncError.message }),
-                    },
-                  )}
-                >
-                  {setHubSpotSync.isPending ? "Saving…" : event.hubspotSyncEnabled ? "Pause sync" : "Enable HubSpot sync"}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">Connect the workspace's HubSpot portal before enabling event sync.</p>
-              <Button asChild variant="outline" size="sm"><Link href="/app/settings">Open Settings</Link></Button>
-            </>
-          )}
-        </div>
-      </Panel> : null}
+              </div> : null}
+            </details>
+          ) : null}
+        </Panel>
+      ) : null}
 
       {event.capacity ? (
         <Panel className="p-5">
@@ -850,7 +871,6 @@ export default function GuestsSection({ event }: { event: Event }) {
                 aria-label="Search guests"
                 className="h-8 w-44"
               />
-              {!identity.data?.eventScope ? <HubSpotContactImportDialog eventId={event.id} /> : null}
               <GuestCsvImportDialog event={event} triggerLabel="Import CSV / Sheets" />
             </>
           }
