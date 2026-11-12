@@ -380,6 +380,20 @@ export const hubspotConnections = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     lastError: text("last_error"),
+    inboundEnabled: boolean("inbound_enabled").notNull().default(false),
+    inboundState: text("inbound_state").notNull().default("idle"),
+    inboundCursor: text("inbound_cursor"),
+    inboundRunId: text("inbound_run_id"),
+    inboundStartedAt: timestamp("inbound_started_at", { withTimezone: true }),
+    inboundProcessed: integer("inbound_processed").notNull().default(0),
+    inboundLastSyncedAt: timestamp("inbound_last_synced_at", { withTimezone: true }),
+    inboundLastError: text("inbound_last_error"),
+    inboundLeaseToken: text("inbound_lease_token"),
+    inboundLeaseUntil: timestamp("inbound_lease_until", { withTimezone: true }),
+    inboundLastWebhookAt: timestamp("inbound_last_webhook_at", { withTimezone: true }),
+    webhookLeaseToken: text("webhook_lease_token"),
+    webhookLeaseUntil: timestamp("webhook_lease_until", { withTimezone: true }),
+    webhookLastError: text("webhook_last_error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -406,6 +420,43 @@ export const hubspotContactLinks = pgTable(
     uniqueIndex("hubspot_contact_links_workspace_guest_idx").on(table.workspaceId, table.guestId),
     uniqueIndex("hubspot_contact_links_connection_contact_idx").on(table.connectionId, table.hubspotContactId),
   ],
+);
+
+export const hubspotInboundContacts = pgTable(
+  "hubspot_inbound_contacts",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    guestId: text("guest_id").references(() => guests.id, { onDelete: "set null" }),
+    firstName: text("first_name").notNull().default(""),
+    lastName: text("last_name").notNull().default(""),
+    email: text("email"),
+    company: text("company"),
+    phone: text("phone"),
+    emailOptOut: boolean("email_opt_out").notNull().default(false),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    lastSeenRunId: text("last_seen_run_id"),
+    importError: text("import_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  table => [uniqueIndex("hubspot_inbound_connection_contact_idx").on(table.connectionId, table.hubspotContactId), index("hubspot_inbound_workspace_idx").on(table.workspaceId, table.archivedAt), index("hubspot_inbound_guest_idx").on(table.workspaceId, table.guestId)],
+);
+
+export const hubspotContactInbox = pgTable(
+  "hubspot_contact_inbox",
+  {
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    eventKind: text("event_kind").notNull(),
+    updatedAt: updatedAt(),
+  },
+  table => [primaryKey({ columns: [table.connectionId, table.hubspotContactId] }), index("hubspot_inbox_workspace_idx").on(table.workspaceId, table.occurredAt)],
 );
 
 export const hubspotRegistrationLinks = pgTable(

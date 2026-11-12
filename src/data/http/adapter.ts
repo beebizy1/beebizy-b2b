@@ -115,6 +115,7 @@ import type { VendorEventPacketResult } from "../vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRecovery";
 import type { RegistrationDesignDraft } from "../registrationDesignDraft";
 import type { RegistrationGuestDraft } from "../registrationGuestDraft";
+import type { HubSpotContactPage, HubSpotEventImportResult } from "../hubspotContacts";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -755,6 +756,13 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       disconnect: async () => {
         await client.del("/integrations/hubspot");
       },
+      setContactSync: enabled => client.patch<HubSpotConnectionStatus>("/integrations/hubspot/contacts/settings", { enabled }),
+      syncContacts: () => client.post<HubSpotConnectionStatus>("/integrations/hubspot/contacts/sync"),
+      contacts: filter => {
+        const query = new URLSearchParams(); for (const [key, value] of Object.entries(filter)) if (value !== undefined) query.set(key, String(value));
+        return client.get<HubSpotContactPage>(`/integrations/hubspot/contacts?${query}`);
+      },
+      addContacts: (eventId, contactIds) => client.post<HubSpotEventImportResult>(`/integrations/hubspot/events/${eventId}/contacts`, { contactIds }),
     },
 
     analytics: {

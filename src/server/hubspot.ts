@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
+import { EMPTY_HUBSPOT_INBOUND } from "../data/hubspotContacts.ts";
 import { z } from "zod";
 import type {
   HubSpotConnectionStatus,
@@ -16,7 +17,6 @@ import * as s from "./schema.ts";
 const HUBSPOT_AUTH_URL = "https://app.hubspot.com/oauth/authorize";
 const HUBSPOT_API = "https://api.hubapi.com";
 const HUBSPOT_TOKEN_URL = `${HUBSPOT_API}/oauth/2026-03/token`;
-const HUBSPOT_REVOKE_URL = `${HUBSPOT_API}/oauth/2026-03/token/revoke`;
 const HUBSPOT_SCOPES = ["oauth", "crm.objects.contacts.read", "crm.objects.contacts.write"];
 
 const tokenSchema = z.object({
@@ -30,7 +30,7 @@ const contactBatchSchema = z.object({
 }).passthrough();
 const noteSchema = z.object({ id: z.string().min(1) }).passthrough();
 
-type HubSpotConnection = typeof s.hubspotConnections.$inferSelect;
+export type HubSpotConnection = typeof s.hubspotConnections.$inferSelect;
 
 interface HubSpotConfig {
   clientId: string;
@@ -58,7 +58,7 @@ function config(): HubSpotConfig {
   };
 }
 
-function requireHubSpotAdmin(ctx: RequestContext): void {
+export function requireHubSpotAdmin(ctx: RequestContext): void {
   requireWorkspaceAccess(ctx);
   if (ctx.role !== "owner" && ctx.role !== "admin") {
     throw new HttpError(403, "Only an owner or admin can manage the HubSpot connection.");
@@ -69,13 +69,19 @@ function newId(prefix: string): string {
   return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
 }
 
-function connectionForWorkspace(workspaceId: string): Promise<HubSpotConnection | undefined> {
+export function connectionForWorkspace(workspaceId: string): Promise<HubSpotConnection | undefined> {
   return db.select().from(s.hubspotConnections)
     .where(eq(s.hubspotConnections.workspaceId, workspaceId)).limit(1)
     .then((rows) => rows[0]);
 }
 
-async function parseResponse<T>(response: Response, schema: z.ZodType<T>, label: string): Promise<T> {
+export class HubSpotApiError extends Error { constructor(public status: number, message: string) { super(message); } }
+export function hubspotSyncFailureMessage(error: unknown) {
+  if (error instanceof HubSpotApiError && [401, 403].includes(error.status)) return "HubSpot access needs attention. Reconnect your account in Settings, then resume the import.";
+  if (error instanceof HubSpotApiError && error.status === 429) return "HubSpot's request limit was reached. Progress is saved. Try resuming in a minute.";
+  return "HubSpot updates were interrupted. Your existing data and import progress are saved. Resume the import or contact Beebizy support.";
+}
+async function parseResponse<T>(response: Response, schema: z.ZodType<T, z.ZodTypeDef, unknown>, label: string): Promise<T> {
   const text = await response.text();
   if (!response.ok) {
     let reason = `${response.status}`;
@@ -85,7 +91,7 @@ async function parseResponse<T>(response: Response, schema: z.ZodType<T>, label:
     } catch {
       // Status code is enough when HubSpot does not return JSON.
     }
-    throw new Error(`${label} failed (${response.status}): ${reason}`);
+    throw new HubSpotApiError(response.status, `${label} failed (${response.status}): ${reason}`);
   }
   return schema.parse(text ? JSON.parse(text) : {});
 }
@@ -95,6 +101,7 @@ async function tokenRequest(params: Record<string, string>) {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(15_000),
   });
   return parseResponse(response, tokenSchema, "HubSpot authorization");
 }
@@ -126,7 +133,7 @@ async function accessToken(connection: HubSpotConnection): Promise<string> {
 async function hubspotRequest<T>(
   token: string,
   path: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   init: RequestInit,
 ): Promise<T> {
   const response = await fetch(`${HUBSPOT_API}${path}`, {
@@ -136,8 +143,14 @@ async function hubspotRequest<T>(
       "content-type": "application/json",
       ...init.headers,
     },
+    signal: init.signal ?? AbortSignal.timeout(15_000),
   });
   return parseResponse(response, schema, "HubSpot request");
+}
+
+/** Server-only JSON access; OAuth tokens never leave this module. */
+export async function hubspotAuthorizedRequest<T>(connection: HubSpotConnection, path: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, init: RequestInit = {}): Promise<T> {
+  return hubspotRequest(await accessToken(connection), path, schema, init);
 }
 
 export function splitContactName(name: string): { firstname: string; lastname: string } {
@@ -339,11 +352,14 @@ export async function syncHubSpotRegistrationById(registrationId: string): Promi
 }
 
 export async function hubspotStatus(ctx: RequestContext): Promise<HubSpotConnectionStatus> {
-  if (!configured()) return { state: "not-configured", isConfigured: false, portalId: null, lastSyncedAt: null, lastError: "HubSpot is not configured yet.", contactsSynced: 0 };
+  if (!configured()) return { state: "not-configured", isConfigured: false, portalId: null, lastSyncedAt: null, lastError: "HubSpot is not configured yet.", contactsSynced: 0, inbound: { ...EMPTY_HUBSPOT_INBOUND } };
   const connection = await connectionForWorkspace(ctx.workspaceId);
-  if (!connection) return { state: "disconnected", isConfigured: true, portalId: null, lastSyncedAt: null, lastError: null, contactsSynced: 0 };
+  if (!connection || (!connection.enabled && !connection.lastError)) return { state: "disconnected", isConfigured: true, portalId: null, lastSyncedAt: null, lastError: null, contactsSynced: 0, inbound: { ...EMPTY_HUBSPOT_INBOUND } };
   const [linked] = await db.select({ count: count() }).from(s.hubspotContactLinks)
     .where(eq(s.hubspotContactLinks.connectionId, connection.id));
+  const [incoming] = await db.select({ contacts: sql<number>`count(*) filter(where ${s.hubspotInboundContacts.archivedAt} is null)`, issues: sql<number>`count(*) filter(where ${s.hubspotInboundContacts.importError} is not null and ${s.hubspotInboundContacts.archivedAt} is null)` }).from(s.hubspotInboundContacts).where(and(eq(s.hubspotInboundContacts.connectionId, connection.id), eq(s.hubspotInboundContacts.workspaceId, ctx.workspaceId)));
+  const [pending] = await db.select({ total: count() }).from(s.hubspotContactInbox).where(and(eq(s.hubspotContactInbox.connectionId, connection.id), eq(s.hubspotContactInbox.workspaceId, ctx.workspaceId)));
+  const abandoned = (connection.inboundState === "running" && (!connection.inboundLeaseUntil || connection.inboundLeaseUntil.getTime() < Date.now())) || (connection.inboundState === "queued" && !connection.inboundLeaseToken && (connection.inboundStartedAt?.getTime() ?? 0) < Date.now() - 30_000);
   return {
     state: connection.lastError ? "error" : "connected",
     isConfigured: true,
@@ -351,6 +367,7 @@ export async function hubspotStatus(ctx: RequestContext): Promise<HubSpotConnect
     lastSyncedAt: connection.lastSyncedAt?.toISOString() ?? null,
     lastError: connection.lastError,
     contactsSynced: linked?.count ?? 0,
+    inbound: { enabled: connection.inboundEnabled, state: abandoned ? "paused" : z.enum(["idle", "queued", "running", "paused", "error", "ready"]).catch("error").parse(connection.inboundState), processed: connection.inboundProcessed, contacts: Number(incoming?.contacts ?? 0), issues: Number(incoming?.issues ?? 0), pending: Number(pending?.total ?? 0), lastSyncedAt: connection.inboundLastSyncedAt?.toISOString() ?? null, lastWebhookAt: connection.inboundLastWebhookAt?.toISOString() ?? null, error: connection.inboundLastError ?? connection.webhookLastError },
   };
 }
 
@@ -378,10 +395,10 @@ export async function handleHubSpotCallback(request: Request): Promise<Response>
     const state = readOAuthState(url.searchParams.get("state") ?? "", settings.encryptionKey);
     const code = url.searchParams.get("code");
     if (!code) throw new HttpError(400, "HubSpot did not return an authorization code.");
-    const [member] = await db.select({ role: s.workspaceMembers.role }).from(s.workspaceMembers).where(and(
+    const [member] = await db.select({ role: s.workspaceMembers.role, eventScopeId: s.workspaceMembers.eventScopeId }).from(s.workspaceMembers).where(and(
       eq(s.workspaceMembers.workspaceId, state.workspaceId), eq(s.workspaceMembers.userId, state.userId),
     )).limit(1);
-    if (!member || (member.role !== "owner" && member.role !== "admin")) throw new HttpError(403, "This account cannot connect HubSpot for the workspace.");
+    if (!member || member.eventScopeId || (member.role !== "owner" && member.role !== "admin")) throw new HttpError(403, "This account cannot connect HubSpot for the workspace.");
     const tokens = await tokenRequest({
       grant_type: "authorization_code",
       client_id: settings.clientId,
@@ -391,6 +408,8 @@ export async function handleHubSpotCallback(request: Request): Promise<Response>
     });
     if (!tokens.refresh_token || tokens.hub_id === undefined) throw new Error("HubSpot did not return an install identity.");
     const now = new Date();
+    const previous = await connectionForWorkspace(state.workspaceId);
+    if (previous && previous.portalId !== String(tokens.hub_id)) await db.delete(s.hubspotConnections).where(and(eq(s.hubspotConnections.id, previous.id), eq(s.hubspotConnections.workspaceId, state.workspaceId)));
     const values = {
       portalId: String(tokens.hub_id),
       connectedByUserId: state.userId,
@@ -450,18 +469,15 @@ export async function disconnectHubSpot(ctx: RequestContext): Promise<void> {
   const connection = await connectionForWorkspace(ctx.workspaceId);
   if (!connection) return;
   try {
-    const settings = config();
-    await fetch(HUBSPOT_REVOKE_URL, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        token: openToken(connection.refreshTokenCiphertext, settings.encryptionKey),
-        client_id: settings.clientId,
-        client_secret: settings.clientSecret,
-      }),
-    });
+    await hubspotAuthorizedRequest(connection, "/appinstalls/v3/external-install", z.unknown(), { method: "DELETE" });
   } catch (error) {
-    console.error("[hubspot] token revoke", error);
+    if (!(error instanceof HubSpotApiError && error.status === 404)) {
+      await db.update(s.hubspotConnections).set({ enabled: false, inboundEnabled: false, lastError: "Sync is paused, but HubSpot could not remove the app. Retry disconnecting or remove Beebizy from HubSpot's Connected Apps." }).where(eq(s.hubspotConnections.id, connection.id));
+      console.error("[hubspot] uninstall", error instanceof Error ? error.message : "Removal failed");
+      throw new HttpError(502, "Sync is paused. HubSpot removal failed; retry or remove Beebizy in HubSpot's Connected Apps.");
+    }
   }
-  await db.delete(s.hubspotConnections).where(eq(s.hubspotConnections.id, connection.id));
+  // Retain the source history and unsubscribe restrictions after uninstalling.
+  // HubSpot has revoked the OAuth grant; disabled connections cannot issue API requests.
+  await db.update(s.hubspotConnections).set({ enabled: false, inboundEnabled: false, inboundState: "paused", inboundLeaseToken: null, inboundLeaseUntil: null, webhookLeaseToken: null, webhookLeaseUntil: null, lastError: null }).where(eq(s.hubspotConnections.id, connection.id));
 }

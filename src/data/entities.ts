@@ -2237,6 +2237,8 @@ export interface HubSpotConnectionStatus {
   lastSyncedAt: IsoDateTime | null;
   lastError: string | null;
   contactsSynced: number;
+  inbound?: import("./hubspotContacts").HubSpotInboundStatus;
+  isDemo?: boolean;
 }
 
 export interface HubSpotConnectResult {

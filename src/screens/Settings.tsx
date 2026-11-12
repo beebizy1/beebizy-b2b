@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { CalendarDays, ContactRound, CreditCard, Database, Plus, RefreshCw, Unplug } from "lucide-react";
+import { CalendarDays, CreditCard, Database, Plus, RefreshCw, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,9 +29,6 @@ import {
   useConnectGoogleCalendar,
   useDisconnectGoogleCalendar,
   useGoogleCalendarStatus,
-  useConnectHubSpot,
-  useDisconnectHubSpot,
-  useHubSpotStatus,
   useMe,
   useMembers,
   useRevokeInvite,
@@ -46,6 +43,7 @@ import { useSession } from "@/app/session";
 import { usePreferences } from "@/app/preferences";
 import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
 import { effectivePlan, PLAN_NAMES } from "@/data/plans";
+import HubSpotConnectionPanel from "./integrations/HubSpotConnectionPanel";
 import { COMMON_TIME_ZONES } from "@/lib/datetime";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
@@ -447,68 +445,6 @@ function GoogleCalendarPanel() {
   );
 }
 
-function HubSpotPanel() {
-  const status = useHubSpotStatus();
-  const connect = useConnectHubSpot();
-  const disconnect = useDisconnectHubSpot();
-  const connection = status.data;
-  const connected = connection?.state === "connected" || connection?.state === "error";
-
-  const connectHubSpot = () => {
-    connect.mutate(undefined, {
-      onSuccess: ({ authorizationUrl }) => window.location.assign(authorizationUrl),
-      onError: (error) => toast({ title: "Couldn't connect HubSpot", description: error.message }),
-    });
-  };
-
-  const disconnectHubSpot = () => {
-    if (!window.confirm("Disconnect HubSpot from this workspace? Existing HubSpot contacts will stay in HubSpot.")) return;
-    disconnect.mutate(undefined, {
-      onSuccess: () => toast({ title: "HubSpot disconnected" }),
-      onError: (error) => toast({ title: "Couldn't disconnect HubSpot", description: error.message }),
-    });
-  };
-
-  return (
-    <Panel>
-      <PanelHeader
-        title="HubSpot CRM"
-        description="Connect one HubSpot portal to this workspace. Each event decides separately whether registrations sync."
-        actions={connected ? <Pill tone={connection?.state === "error" ? "warning" : "success"}>{connection?.state === "error" ? "Needs attention" : "Connected"}</Pill> : <ContactRound className="size-4 text-muted-foreground" />}
-      />
-      {status.isLoading ? <LoadingRows rows={2} className="p-5" /> : status.isError ? (
-        <ErrorNotice error={status.error} onRetry={() => void status.refetch()} className="m-5" />
-      ) : connected ? (
-        <div className="space-y-4 p-5">
-          <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-surface-sunken px-4 py-1">
-            <KeyValue label="HubSpot portal">{connection?.portalId ?? "Connected"}</KeyValue>
-            <KeyValue label="Contacts linked">{connection?.contactsSynced ?? 0}</KeyValue>
-            <KeyValue label="Last synced">
-              {connection?.lastSyncedAt
-                ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(connection.lastSyncedAt))
-                : "Waiting for an event to sync"}
-            </KeyValue>
-          </dl>
-          {connection?.lastError ? <div className="rounded-lg border border-warning-border bg-warning-tint p-3 text-sm text-warning-text">{connection.lastError}</div> : null}
-          <Button variant="outline" size="sm" onClick={disconnectHubSpot} disabled={disconnect.isPending}>
-            <Unplug className="mr-1.5 size-3.5" />Disconnect
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">Keep selected event contacts current in HubSpot.</p>
-            <p className="text-xs leading-relaxed text-muted-foreground">Contacts are matched by email, so re-syncing updates instead of duplicating them.</p>
-          </div>
-          <Button size="sm" onClick={connectHubSpot} disabled={!connection?.isConfigured || connect.isPending}>
-            <ContactRound className="mr-1.5 size-3.5" />{connect.isPending ? "Opening HubSpot…" : "Connect HubSpot"}
-          </Button>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
 export default function Settings() {
   const { user, isDemo } = useSession();
   const { data: me } = useMe();
@@ -525,7 +461,7 @@ export default function Settings() {
       ? { title: "Google Calendar connected", description: "Your Beebizy events will now stay in sync." }
       : { title: "Google Calendar wasn't connected", description: "Try again, or contact Beebizy if it keeps happening." });
     if (hubspotResult) toast(hubspotResult === "connected"
-      ? { title: "HubSpot connected", description: "Choose an event's guest list to turn contact syncing on." }
+      ? { title: "HubSpot connected", description: "Turn on contact updates below, then choose guests inside an event." }
       : { title: "HubSpot wasn't connected", description: "Try again, or ask the HubSpot Super Admin to approve the app." });
     if (!result && !hubspotResult) return;
     url.searchParams.delete("calendar");
@@ -635,7 +571,7 @@ export default function Settings() {
 
       <GoogleCalendarPanel />
 
-      <HubSpotPanel />
+      <HubSpotConnectionPanel />
 
       <TeamPanel />
 

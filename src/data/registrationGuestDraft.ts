@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const registrationGuestDraftKeySchema = z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/);
 export const registrationGuestDraftSchema = z.object({
-  values: z.record(z.string().max(200), z.string().max(10_000)).refine(value => Object.keys(value).length <= 125 && JSON.stringify(value).length <= 100_000, "Guest draft is too large."),
+  values: z.record(z.string().max(200), z.string().max(200_000)).refine(value => Object.keys(value).length <= 125 && JSON.stringify(value).length <= 250_000, "Guest draft is too large."),
   revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   discarded: z.boolean(),
 });

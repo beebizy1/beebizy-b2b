@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
 import RegistrationDownloads from "./RegistrationDownloads";
+import HubSpotContactImportDialog from "../../integrations/HubSpotContactImportDialog";
 import {
   EmptyState,
   ErrorNotice,
@@ -40,6 +41,7 @@ import {
 } from "@/components/primitives";
 import {
   useGuests,
+  useMe,
   useHubSpotStatus,
   useImportGuestRegistrations,
   useCreateRegistration,
@@ -65,7 +67,7 @@ import { registrationSegmentSummary } from "@/data/santaClara";
 import { normalizeRegistrationPage } from "@/data/registrationPage";
 import { registrationNameParts, registrationNameUpdate, staffRegistrationIdentity } from "@/data/registrationNames";
 import { useRegistrationGuestDraft } from "@/hooks/useRegistrationGuestDraft";
-import type { GuestDraftState, RegistrationGuestDraftRecovery } from "@/data/registrationGuestDraft";
+import { GuestDraftStatus } from "@/components/GuestDraftStatus";
 
 /** No category is a real choice in a Select, and "" is not a usable option value. */
 const UNCATEGORISED = "__none__";
@@ -92,14 +94,6 @@ function registrationStatusFromSpreadsheet(value: string): RegistrationStatus {
     return "cancelled";
   }
   return "pending";
-}
-
-function GuestDraftStatus({ state, recovery }: { state: GuestDraftState; recovery: RegistrationGuestDraftRecovery }) {
-  return <div className="space-y-2 text-xs text-muted-foreground" role="status">
-    {state.message ? <p>{state.message}</p> : null}
-    {state.remote ? <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => recovery.resolve(true)}>Use saved draft</Button><Button type="button" size="sm" variant="outline" onClick={() => recovery.resolve(false)}>Keep this device's changes</Button></div> : null}
-    {state.message.includes("failed") && !state.remote ? <Button type="button" size="sm" variant="outline" onClick={() => void recovery.flush()}>Retry saving draft</Button> : null}
-  </div>;
 }
 
 function EditRegistrationDialog({
@@ -538,6 +532,7 @@ export default function GuestsSection({ event }: { event: Event }) {
   const removeRegistration = useDeleteRegistration();
   const share = useShareEvent();
   const hubspot = useHubSpotStatus();
+  const identity = useMe();
   const setHubSpotSync = useSetHubSpotEventSync();
   const syncHubSpot = useSyncHubSpotEvent();
   const [search, setSearch] = useState("");
@@ -634,10 +629,10 @@ export default function GuestsSection({ event }: { event: Event }) {
         />
       </div>
 
-      <Panel>
+      {!identity.data?.eventScope ? <Panel>
         <PanelHeader
-          title="HubSpot contact sync"
-          description="Match guests by email and keep one registration activity updated for this event."
+          title="Registration updates to HubSpot"
+          description="Optional: send this event's registration and attendance updates back to your CRM."
           actions={<ContactRound className="size-4 text-muted-foreground" aria-hidden="true" />}
         />
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -645,7 +640,7 @@ export default function GuestsSection({ event }: { event: Event }) {
             <>
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  {event.hubspotSyncEnabled ? "Automatic sync is on" : "Automatic sync is off"}
+                  {event.hubspotSyncEnabled ? "Updates to HubSpot are on" : "Updates to HubSpot are off"}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {event.hubspotSyncEnabled
@@ -658,7 +653,7 @@ export default function GuestsSection({ event }: { event: Event }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={syncHubSpot.isPending}
+                    disabled={syncHubSpot.isPending || !["owner", "admin"].includes(identity.data?.role ?? "")}
                     onClick={() => syncHubSpot.mutate(event.id, {
                       onSuccess: (result) => toast({ title: "HubSpot is up to date", description: `${result.synced} synced · ${result.skipped} skipped · ${result.failed} failed` }),
                       onError: (syncError) => toast({ title: "Couldn't sync HubSpot", description: syncError.message }),
@@ -671,7 +666,7 @@ export default function GuestsSection({ event }: { event: Event }) {
                 <Button
                   size="sm"
                   variant={event.hubspotSyncEnabled ? "outline" : "default"}
-                  disabled={setHubSpotSync.isPending}
+                  disabled={setHubSpotSync.isPending || !["owner", "admin"].includes(identity.data?.role ?? "")}
                   onClick={() => setHubSpotSync.mutate(
                     { eventId: event.id, enabled: !event.hubspotSyncEnabled },
                     {
@@ -694,7 +689,7 @@ export default function GuestsSection({ event }: { event: Event }) {
             </>
           )}
         </div>
-      </Panel>
+      </Panel> : null}
 
       {event.capacity ? (
         <Panel className="p-5">
@@ -855,7 +850,8 @@ export default function GuestsSection({ event }: { event: Event }) {
                 aria-label="Search guests"
                 className="h-8 w-44"
               />
-              <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets" />
+              {!identity.data?.eventScope ? <HubSpotContactImportDialog eventId={event.id} /> : null}
+              <GuestCsvImportDialog event={event} triggerLabel="Import CSV / Sheets" />
             </>
           }
         />

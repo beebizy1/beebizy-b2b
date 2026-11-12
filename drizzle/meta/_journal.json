@@ -687,6 +687,20 @@
       "when": 1793928937067,
       "tag": "0097_salty_hellion",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1794447411881,
+      "tag": "0098_hubspot_contact_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1794449042183,
+      "tag": "0099_hubspot_webhook_inbox",
+      "breakpoints": true
     }
   ]
 }

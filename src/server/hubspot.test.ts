@@ -10,7 +10,7 @@ vi.mock("./googleCalendar", () => ({
   signOAuthState: vi.fn(),
 }));
 
-const { hubspotContactProperties, hubspotRegistrationNote, splitContactName } = await import("./hubspot");
+const { hubspotContactProperties, hubspotRegistrationNote, splitContactName, requireHubSpotAdmin } = await import("./hubspot");
 
 function registration(overrides: Partial<RegistrationWithGuest> = {}): RegistrationWithGuest {
   return {
@@ -41,6 +41,13 @@ function registration(overrides: Partial<RegistrationWithGuest> = {}): Registrat
 }
 
 describe("HubSpot contact mapping", () => {
+  it("limits connection and sync settings to full-workspace owners and admins", () => {
+    const context = { workspaceId: "workspace-1", userId: "user-1", email: "owner@example.invalid", role: "owner" as const };
+    expect(() => requireHubSpotAdmin(context)).not.toThrow();
+    expect(() => requireHubSpotAdmin({ ...context, role: "admin" })).not.toThrow();
+    expect(() => requireHubSpotAdmin({ ...context, role: "member" })).toThrow("owner or admin");
+    expect(() => requireHubSpotAdmin({ ...context, eventScopeId: "event-1" })).toThrow("assigned event");
+  });
   it("keeps the first word as first name and the remaining words together", () => {
     expect(splitContactName("Cristina Cismas Florea")).toEqual({ firstname: "Cristina", lastname: "Cismas Florea" });
   });

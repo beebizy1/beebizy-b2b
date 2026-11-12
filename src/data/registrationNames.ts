@@ -1,10 +1,16 @@
 import type { ImportedSpreadsheetField, RegistrationWithGuest } from "./entities";
 
+export const NAME_COLUMN_ALIASES: Record<"name" | "firstName" | "lastName", readonly string[]> = {
+  name: ["full name", "name", "guest", "guest name", "attendee"],
+  firstName: ["first name", "firstname", "given name"],
+  lastName: ["last name", "lastname", "surname", "family name"],
+};
+
 export function registrationNameFieldKind(label: string): "name" | "firstName" | "lastName" | null {
   const key = label.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return "name";
-  if (["first name", "firstname", "given name"].includes(key)) return "firstName";
-  if (["last name", "lastname", "surname", "family name"].includes(key)) return "lastName";
+  if (NAME_COLUMN_ALIASES.name.includes(key)) return "name";
+  if (NAME_COLUMN_ALIASES.firstName.includes(key)) return "firstName";
+  if (NAME_COLUMN_ALIASES.lastName.includes(key)) return "lastName";
   return null;
 }
 

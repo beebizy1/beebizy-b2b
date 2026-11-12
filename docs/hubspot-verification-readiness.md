@@ -10,8 +10,8 @@ Updated November 11, 2026.
 - The deployed OAuth scopes and Beebizy request match: `oauth`, `crm.objects.contacts.read`, `crm.objects.contacts.write`.
 - The callback is `https://beebizy-studio-preview.vercel.app/api/integrations/hubspot/callback`.
 - The original customer installation error was the unsigned Acceptable Use Policy. The developer Distribution screen now marks that step **Done** and offers an install URL.
-- Marketplace listing status is **Not created**, HubSpot review is **Not started**, and the observed active install count is **0**.
-- OAuth now reaches the company account's permission screen, including HubSpot's unverified-app confirmation. Final contact-access authorization has not been completed. Tarang asked to get verification first; keep the company disconnected until he gives clear approval for pilot testing. Do not treat the earlier AUP approval as contact-access authorization.
+- Marketplace listing status is **Not created**, HubSpot review is **Not started**, and the company connection is now installed for testing. The company install does not qualify as an independent customer pilot.
+- Tarang subsequently explicitly approved pilot testing and the unverified-app confirmation. OAuth completed successfully for the company account, portal `247905640`. Do not repeat the obsolete verification-first hold. SCU must connect its own HubSpot account in its own customer workspace, using its authorized administrator.
 
 ## HubSpot's review dependency
 
@@ -27,7 +27,7 @@ Tarang clarified that event emails should be sent from Beebizy using HubSpot con
 
 The desired integration imports all contacts into the workspace address book and keeps their contact details updated from HubSpot. Planners then select contacts for an event's registration/invitation list, which is also used for Check-in. "Checklist" in this request means this registration/check-in contact selection, not importing HubSpot tasks.
 
-Current implemented sync is outbound: Beebizy registrations and attendance update HubSpot contacts and event notes when an event explicitly enables sync. Inbound live contact sync is **not implemented yet**. Importing contacts must not automatically send emails, mark guests arrived, or create confirmed RSVPs. Preserve existing guest notes, custom RSVP answers, event history, tenant boundaries, and name metadata. Match stable HubSpot IDs and normalized email addresses without duplicating people; surface conflicting identities for review.
+Current implemented sync is outbound: Beebizy registrations and attendance update HubSpot contacts and event notes when an event explicitly enables sync. Inbound contact sync and explicit event selection are implemented on `codex/hubspot-inbound-email-sync`. See `docs/hubspot-contact-sync.md` for the workflow and release evidence. Importing contacts must not automatically send emails, mark guests arrived, or create confirmed RSVPs. Preserve existing guest notes, custom RSVP answers, event history, tenant boundaries, and name metadata. Match stable HubSpot IDs and normalized email addresses without duplicating people; surface conflicting identities for review.
 
 ## Sources
 

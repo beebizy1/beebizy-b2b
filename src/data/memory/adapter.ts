@@ -12,6 +12,7 @@
 import type { ImportedSpreadsheetField } from "../entities";
 import { registrationDesignDraftSchema, type RegistrationDesignDraft } from "../registrationDesignDraft";
 import { registrationGuestDraftKeySchema, registrationGuestDraftSchema, type RegistrationGuestDraft } from "../registrationGuestDraft";
+import { demoHubSpot } from "./hubspot";
 import type {
   AnalyticsRepository,
   AuctionRepository,
@@ -36,7 +37,6 @@ import type {
   RoiRepository,
   SettingsRepository,
   GoogleCalendarRepository,
-  HubSpotRepository,
   TemplatesRepository,
   TicketsRepository,
   VendorMessagesRepository,
@@ -187,6 +187,7 @@ function store(): MemoryDb {
 export function resetMemoryStore(): void {
   db = null;
   registrationGuestDrafts.clear();
+  hubspotDemo.reset();
 }
 
 let idSeq = 0;
@@ -2528,33 +2529,8 @@ const googleCalendar: GoogleCalendarRepository = {
   },
 };
 
-const hubspot: HubSpotRepository = {
-  async status() {
-    await wait(0);
-    return {
-      state: "not-configured",
-      isConfigured: false,
-      portalId: null,
-      lastSyncedAt: null,
-      lastError: "Sign in to connect a real HubSpot portal.",
-      contactsSynced: 0,
-    };
-  },
-  async beginConnect() {
-    throw new DataError("unavailable", "Sign in to connect HubSpot.");
-  },
-  async setEventSync(eventId, enabled) {
-    const event = required(store().events.find((candidate) => candidate.id === eventId), "That event no longer exists.");
-    event.hubspotSyncEnabled = enabled;
-    return { event: copy(event), synced: 0, skipped: 0, failed: 0, lastSyncedAt: nowIso() };
-  },
-  async syncEvent() {
-    throw new DataError("unavailable", "Sign in to sync registrations with HubSpot.");
-  },
-  async disconnect() {
-    throw new DataError("unavailable", "There is no HubSpot connection in demo mode.");
-  },
-};
+const hubspotDemo = demoHubSpot(store, DEMO_OWNER_ID);
+const hubspot = hubspotDemo.adapter;
 
 /* ----------------------------------------------------------------------- roi */
 

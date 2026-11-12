@@ -123,6 +123,8 @@ vi.mock("./vendorPaperwork", () => ({
 vi.mock("./vendorCoiAnalysis", () => ({ analyzePublicVendorCoi: vi.fn(), analyzeVendorCoi: vi.fn() }));
 vi.mock("./registrationDesignDrafts", () => ({ getRegistrationDesignDraft: vi.fn(), saveRegistrationDesignDraft: vi.fn() }));
 vi.mock("./registrationGuestDrafts", () => ({ getRegistrationGuestDraft: vi.fn(), saveRegistrationGuestDraft: vi.fn() }));
+vi.mock("./hubspotInbound", () => ({ addHubSpotContactsToEvent: vi.fn(), hubspotContactMaintenance: vi.fn(), listHubSpotContacts: vi.fn(), setHubSpotContactSync: vi.fn(), syncHubSpotContacts: vi.fn(), assertHubSpotEmailRecipients: vi.fn() }));
+vi.mock("./hubspotWebhooks", () => ({ handleHubSpotWebhook: vi.fn(), hubspotWebhookMaintenance: vi.fn(), resumeHubSpotWebhookInbox: vi.fn() }));
 vi.mock("./vendorPaperworkReminders", () => ({ processDueVendorPaperworkReminders: vi.fn() }));
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
@@ -212,6 +214,8 @@ const { generateRegistrationCopy, generatePostEventCopy } = await import("./even
 const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await import("./runOfShowDrafts");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
+const { listHubSpotContacts, addHubSpotContactsToEvent } = await import("./hubspotInbound");
+const { handleHubSpotWebhook } = await import("./hubspotWebhooks");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
 const {
   beginGoogleCalendarConnect,
@@ -250,6 +254,27 @@ describe("operator user activity", () => {
 });
 
 describe("HubSpot integration", () => {
+  it("routes signed webhook requests before session authorization and protects maintenance", async () => {
+    vi.mocked(handleHubSpotWebhook).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+    const request = new Request("http://localhost/api/integrations/hubspot/webhook", { method: "POST", body: "[]" });
+    expect((await handleRequest(request)).status).toBe(200);
+    expect(handleHubSpotWebhook).toHaveBeenCalledWith(request);
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/maintenance"))).status).toBe(401);
+    vi.unstubAllEnvs();
+  });
+  it("routes contact filters and explicit event selection, excluding event-scoped collaborators", async () => {
+    const context = { userId: "user-1", workspaceId: "workspace-1", role: "member" as const, email: "member@example.invalid" };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(listHubSpotContacts).mockResolvedValue({ contacts: [], total: 0, nextCursor: null });
+    vi.mocked(addHubSpotContactsToEvent).mockResolvedValue({ added: 1, alreadyOnList: 0 });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/contacts?eventId=event-1&search=School&cursor=50&limit=50"))).status).toBe(200);
+    expect(listHubSpotContacts).toHaveBeenCalledWith(context, { eventId: "event-1", search: "School", cursor: "50", limit: 50 });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/contacts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contactIds: ["123"] }) }))).status).toBe(200);
+    expect(addHubSpotContactsToEvent).toHaveBeenCalledWith(context, "event-1", ["123"]);
+    vi.mocked(authorize).mockResolvedValue({ ...context, eventScopeId: "event-1" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/contacts?eventId=event-1"))).status).toBe(403);
+  });
   it("accepts the OAuth callback without a Beebizy bearer token", async () => {
     vi.mocked(handleHubSpotCallback).mockResolvedValue(Response.redirect("http://localhost/app/settings?hubspot=connected"));
     expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/callback?code=test&state=test"))).status).toBe(302);

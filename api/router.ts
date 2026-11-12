@@ -89,6 +89,8 @@ import {
   syncHubSpotRegistrationById,
   syncHubSpotRegistrationIfEnabled,
 } from "../src/server/hubspot.ts";
+import { addHubSpotContactsToEvent, hubspotContactMaintenance, listHubSpotContacts, setHubSpotContactSync, syncHubSpotContacts } from "../src/server/hubspotInbound.ts";
+import { handleHubSpotWebhook, hubspotWebhookMaintenance, resumeHubSpotWebhookInbox } from "../src/server/hubspotWebhooks.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
@@ -309,6 +311,15 @@ async function handleLead(request: Request): Promise<Response> {
 async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
   if (segments[0] === "integrations" && segments[1] === "hubspot") {
     if (segments[2] === "callback" && method === "GET") return handleHubSpotCallback(request);
+    if (segments[2] === "webhook" && method === "POST") return handleHubSpotWebhook(request);
+    if (segments[2] === "webhook" && (method === "GET" || method === "HEAD")) return json({ ok: true });
+    if (segments[2] === "maintenance" && method === "GET") {
+      const secret = process.env.CRON_SECRET?.trim();
+      if (!secret) return json({ error: "HubSpot maintenance is not configured." }, 503);
+      if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+      const [contacts, updates] = await Promise.all([hubspotContactMaintenance(), hubspotWebhookMaintenance()]);
+      return json({ ok: true, contacts, updates });
+    }
     return null;
   }
 
@@ -1442,8 +1453,16 @@ async function handleAuthed(
     /* ----------------------------------------------------------- integrations */
     case "integrations": {
       if (a === "hubspot") {
-        if (!b && method === "GET") return json(await hubspotStatus(ctx));
+        if (!b && method === "GET") {
+          const status = await hubspotStatus(ctx);
+          if (status.inbound?.enabled && status.inbound.pending) await resumeHubSpotWebhookInbox(ctx.workspaceId);
+          return json(status);
+        }
         if (b === "connect" && method === "POST") return json(beginHubSpotConnect(ctx));
+        if (b === "contacts" && !c && method === "GET") return json(await listHubSpotContacts(ctx, { eventId: url.searchParams.get("eventId") ?? undefined, search: url.searchParams.get("search") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined, limit: Number(url.searchParams.get("limit") ?? 50) }));
+        if (b === "contacts" && c === "settings" && method === "PATCH") return json(await setHubSpotContactSync(ctx, z.object({ enabled: z.boolean() }).parse(body).enabled));
+        if (b === "contacts" && c === "sync" && method === "POST") return json(await syncHubSpotContacts(ctx));
+        if (b === "events" && c && segments[4] === "contacts" && method === "POST") return json(await addHubSpotContactsToEvent(ctx, c, body.contactIds));
         if (b === "events" && c && !segments[4] && method === "PATCH") {
           return json(await setHubSpotEventSync(ctx, c, body.enabled === true));
         }
