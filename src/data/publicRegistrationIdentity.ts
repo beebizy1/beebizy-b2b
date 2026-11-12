@@ -23,7 +23,9 @@ export interface PublicRsvpFormDraft {
   organization: string;
   answers: Record<string, string>;
   previousFullName?: string;
+  additionalGuests?: PublicRsvpGuestDraft[];
 }
+export interface PublicRsvpGuestDraft { id: string; firstName: string; lastName: string; email: string; answers: Record<string, string> }
 
 /** Recover old drafts without making assumptions about compound names. */
 export function recoverPublicRsvpDraft(value: unknown): PublicRsvpFormDraft {
@@ -38,6 +40,12 @@ export function recoverPublicRsvpDraft(value: unknown): PublicRsvpFormDraft {
     email: typeof cached.email === "string" ? cached.email : "",
     organization: typeof cached.organization === "string" ? cached.organization : "",
     answers,
+    ...(Array.isArray(cached.additionalGuests) ? { additionalGuests: cached.additionalGuests.slice(0, 10).flatMap((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const guest = item as Record<string, unknown>;
+      const fields = recoverPublicRsvpDraft({ firstName: guest.firstName, lastName: guest.lastName, email: guest.email, answers: guest.answers });
+      return [{ id: typeof guest.id === "string" ? guest.id.slice(0, 100) : `guest-${index}`, firstName: fields.firstName, lastName: fields.lastName, email: fields.email, answers: fields.answers }];
+    }) } : {}),
     ...(typeof cached.previousFullName === "string" ? { previousFullName: cached.previousFullName } : legacyName ? { previousFullName: legacyName } : {}),
   };
 }

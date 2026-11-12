@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { publicRegistrationIdentity, recoverPublicRsvpDraft } from "./publicRegistrationIdentity";
 
 describe("separate public RSVP names", () => {
+  it("recovers every additional guest and their independent answers without losing unfinished names", () => {
+    const draft = { firstName: "Host", lastName: "Name", email: "host@example.invalid", organization: "", answers: {}, additionalGuests: [{ id: "guest-one", firstName: "María Elena ", lastName: "", email: "", answers: { food: "No nuts", shirt: "M" } }] };
+    expect(recoverPublicRsvpDraft(JSON.parse(JSON.stringify(draft)))).toEqual(draft);
+    expect(recoverPublicRsvpDraft({ additionalGuests: [null, "bad", { firstName: "Alex", answers: { valid: "Yes", bad: {} } }] }).additionalGuests).toEqual([{ id: "guest-2", firstName: "Alex", lastName: "", email: "", answers: { valid: "Yes" } }]);
+  });
   it("preserves compound names, capitalization and punctuation and provides the combined badge name", () => {
     expect(publicRegistrationIdentity({ firstName: "  María Elena ", lastName: " de la Cruz-Taylor ", name: "Ignored" })).toEqual({
       name: "María Elena de la Cruz-Taylor",

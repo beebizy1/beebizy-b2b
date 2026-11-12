@@ -45,7 +45,7 @@ const REGISTRATION_TYPE_PRESETS = [
 const DESIGN_FIELDS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
-  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "footerImageSource", "footerImageUrl", "questions",
+  "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "footerImageSource", "footerImageUrl", "questions", "maxAdditionalGuests",
 ];
 
 function registrationDesignPatch(settings: RegistrationPageSettings): Partial<RegistrationPageSettings> {
@@ -415,6 +415,11 @@ export default function ShareSection({ event }: { event: Event }) {
 
             <div role="status" className="rounded-lg border border-hairline bg-surface p-3 text-xs text-muted-foreground">{designState.message}{designState.remote ? <Button type="button" variant="outline" size="sm" className="ml-3" onClick={() => recovery.useServerDraft()}>Recover server draft</Button> : null}</div>
             <RegistrationExtrasEditor draft={draft} onChange={patch => setDraft(current => ({ ...current, ...patch }))} />
+            <section className="space-y-3 rounded-xl border border-hairline p-4" aria-label="Additional guest settings">
+              <label className="flex items-center justify-between gap-3 text-sm font-semibold"><span>Allow attendees to bring guests</span><Switch aria-label="Allow additional guests" checked={draft.maxAdditionalGuests > 0} onCheckedChange={enabled => setDraft(current => ({ ...current, maxAdditionalGuests: enabled ? 1 : 0 }))} /></label>
+              <p className="text-xs text-muted-foreground">Adds an optional “Add a guest” button to the RSVP form. Each guest has their own name, answers and check-in record. Everyone counts toward event capacity. Paid tickets use the ticket quantity option.</p>
+              {draft.maxAdditionalGuests > 0 ? <div className="flex flex-wrap items-center gap-3"><Label htmlFor="rsvp-guest-limit">Maximum extra guests per registration</Label><Input id="rsvp-guest-limit" type="number" min={1} max={10} value={draft.maxAdditionalGuests} className="w-24" onChange={event => setDraft(current => ({ ...current, maxAdditionalGuests: Math.min(10, Math.max(1, Number.parseInt(event.target.value, 10) || 1)) }))} /></div> : null}
+            </section>
             <details className="rounded-xl border border-hairline bg-background">
               <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-foreground">More page options</summary>
               <div className="grid gap-4 border-t border-hairline p-4 sm:grid-cols-2">

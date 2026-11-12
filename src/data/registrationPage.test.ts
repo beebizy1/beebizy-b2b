@@ -57,6 +57,7 @@ describe("registration page settings", () => {
       footerImageSource: "invitation",
       footerImageUrl: null,
       questions: [],
+      maxAdditionalGuests: 0,
       aboutImageUrl: "https://images.example.com/venue.jpg",
       agendaImageUrl: "/demo-registration/gala-networking.png",
       showAgenda: false,

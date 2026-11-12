@@ -23,8 +23,10 @@ import { formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
 import { SCHOOL_GRADES, type Event, type PublicRegistrationResult, type SchoolGrade } from "@/data/entities";
 import { normalizeAuctionPageSettings } from "@/data/auctionSettings";
 import { eventDayOptions, formatEventDayLabel } from "@/data/eventDays";
-import { normalizeRegistrationPage, registrationPageTemplate, publicRegistrationHref, footerBannerImage, registrationAnswerFields } from "@/data/registrationPage";
-import { publicRegistrationIdentity, recoverPublicRsvpDraft } from "@/data/publicRegistrationIdentity";
+import { normalizeRegistrationPage, registrationPageTemplate, publicRegistrationHref, footerBannerImage } from "@/data/registrationPage";
+import { recoverPublicRsvpDraft } from "@/data/publicRegistrationIdentity";
+import { preparePublicRsvpParty } from "@/data/publicRsvpParty";
+import AdditionalRsvpGuests, { RsvpQuestions } from "./AdditionalRsvpGuests";
 
 export function PublicFrame({ children, event, wide = false, token, invitationToken = null, activeInfoPageId = null }: { children: React.ReactNode; event?: Event; wide?: boolean; token?: string; invitationToken?: string | null; activeInfoPageId?: string | null }) {
   const settings = normalizeRegistrationPage(event?.registrationPage);
@@ -367,25 +369,24 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
       setStorageFailed(false);
     } catch { setStorageFailed(true); }
   }, [draft, recoveryKey, result]);
-  const { firstName, lastName, email, organization, answers } = draft;
+  const { firstName, lastName, email, organization, answers, additionalGuests = [] } = draft;
   const settings = normalizeRegistrationPage(shared?.event?.registrationPage);
   let decodedSegment = segment;
   try { decodedSegment = decodeURIComponent(segment); } catch { /* Match the supplied label if it contains a literal percent sign. */ }
   const selectedSegment = settings.registrationTypes.find(item => item.toLowerCase() === decodedSegment.toLowerCase());
   if (isLoading) return <PublicFrame><LoadingRows rows={4} /></PublicFrame>;
   if (!shared?.event || !selectedSegment) return <EventNotFound />;
-  if (result) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p><p className="mt-3 text-sm text-muted-foreground">{result.confirmationEmailStatus === "sent" ? `A confirmation email was sent to ${email.trim()}.` : `Your place is confirmed, but we could not send the confirmation email to ${email.trim()}. Please save this event link.`}</p><div className="mt-4 flex flex-wrap justify-center gap-2">{settings.paymentUrl ? <Button asChild size="sm"><a href={settings.paymentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Continue to payment</a></Button> : null}<Button asChild variant="outline" size="sm"><Link href={`/e/${token}`}>Back to the event</Link></Button></div></Panel></PublicFrame>;
+  if (result) return <PublicFrame event={shared.event}><Panel className="p-8 text-center"><span className="mx-auto grid size-11 place-items-center rounded-xl bg-success-tint text-success-text"><Check className="size-5" /></span><h1 className="mt-3 text-lg font-semibold text-foreground">You're registered</h1><p className="mt-1 text-sm text-muted-foreground">You are confirmed as {selectedSegment} for {shared.event.title}.</p>{result.additionalGuests?.length ? <p role="status" className="mt-3 text-sm font-medium">{result.additionalGuests.length + 1} people confirmed: {[`${firstName.trim()} ${lastName.trim()}`, ...result.additionalGuests.map(guest => guest.name)].join(", ")}.</p> : null}<p className="mt-3 text-sm text-muted-foreground">{result.confirmationEmailStatus === "sent" ? `A confirmation email was sent to ${email.trim()}.` : `Your place is confirmed, but we could not send the confirmation email to ${email.trim()}. Please save this event link.`}</p><div className="mt-4 flex flex-wrap justify-center gap-2">{settings.paymentUrl ? <Button asChild size="sm"><a href={settings.paymentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-1.5 size-4" />Continue to payment</a></Button> : null}<Button asChild variant="outline" size="sm"><Link href={`/e/${token}`}>Back to the event</Link></Button></div></Panel></PublicFrame>;
   return <PublicFrame event={shared.event}><div className="space-y-6">
     <div><Link href={invitationAwarePath(`/e/${token}`, invitationToken)} className="text-xs font-medium text-muted-foreground hover:text-foreground">← {shared.event.title}</Link><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">{selectedSegment} RSVP</h1><p className="mt-1 text-sm text-muted-foreground">Confirm your attendance. Your response goes directly to the organizer's guest list.</p></div>
     <Panel><form className="space-y-4 p-5" onSubmit={e => {
       e.preventDefault();
       setRsvpError(null);
       try {
-        const identity = publicRegistrationIdentity({ firstName, lastName });
-        registrationAnswerFields(settings.questions, answers);
-        register.mutate({ shareToken: token, draft: { name: identity.name, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment, invitationToken, answers } }, { onSuccess: setResult, onError: caught => setRsvpError(caught.message) });
+        const [identity] = preparePublicRsvpParty(settings, { firstName, lastName, email, answers, additionalGuests });
+        register.mutate({ shareToken: token, draft: { name: identity!.name, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment, invitationToken, answers, additionalGuests } }, { onSuccess: setResult, onError: caught => setRsvpError(caught.message) });
       } catch (error) { setRsvpError(error instanceof Error ? error.message : "Complete the required fields."); }
-    }}>
+    }}><fieldset disabled={register.isPending} className="space-y-4">
       {draft.previousFullName ? <p className="rounded-lg bg-primary-muted p-3 text-sm">Your earlier full name is still in First name. Move your surname to Last name before confirming.</p> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block space-y-1 text-sm font-medium">First name<Input autoComplete="given-name" value={firstName} onChange={e => setDraft(current => ({ ...current, firstName: e.target.value, previousFullName: undefined }))} required maxLength={120} /></label>
@@ -393,13 +394,12 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
       </div>
       <label className="block space-y-1 text-sm font-medium">Email<Input type="email" autoComplete="email" value={email} onChange={e => setDraft(current => ({ ...current, email: e.target.value }))} required maxLength={320} /></label>
       {settings.collectOrganization ? <label className="block space-y-1 text-sm font-medium">Company, school, or organization <span className="font-normal text-muted-foreground">(optional)</span><Input value={organization} onChange={e => setDraft(current => ({ ...current, organization: e.target.value }))} maxLength={120} placeholder="Example: Cedar Grove School or Acme Inc." /></label> : null}
-      {settings.questions.map(question => <label key={question.id} className="block space-y-1 text-sm font-medium">{question.label}<span className="ml-1 font-normal text-muted-foreground">{question.required ? "(required)" : "(optional)"}</span>{question.type === "select"
-        ? <select className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" value={answers[question.id] ?? ""} required={question.required} onChange={e => setDraft(current => ({ ...current, answers: { ...current.answers, [question.id]: e.target.value } }))}><option value="">Choose an option</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
-        : <Input value={answers[question.id] ?? ""} required={question.required} maxLength={1000} onChange={e => setDraft(current => ({ ...current, answers: { ...current.answers, [question.id]: e.target.value } }))} />}</label>)}
+      <RsvpQuestions questions={settings.questions} answers={answers} onChange={value => setDraft(current => ({ ...current, answers: value }))} />
+      {settings.maxAdditionalGuests > 0 || additionalGuests.length ? <AdditionalRsvpGuests maximum={settings.maxAdditionalGuests} guests={additionalGuests} questions={settings.questions} onChange={value => setDraft(current => ({ ...current, additionalGuests: value }))} /> : null}
       <p className="text-xs text-muted-foreground">{storageFailed ? "Device recovery is unavailable. Keep this page open until you confirm your RSVP." : "Unsubmitted answers are kept on this device. Nothing is registered until you choose Confirm RSVP."}</p>
       {rsvpError ? <p role="alert" className="rounded-lg border border-danger-border bg-danger-tint p-3 text-sm text-danger-text">{rsvpError}</p> : null}
       <Button type="submit" disabled={!firstName.trim() || !lastName.trim() || !email.trim() || register.isPending}>{register.isPending ? "Saving RSVP…" : "Confirm RSVP"}</Button>
-    </form></Panel>
+    </fieldset></form></Panel>
   </div></PublicFrame>;
 }
 export function PublicVolunteerSignupPage({ token }: { token: string }) {

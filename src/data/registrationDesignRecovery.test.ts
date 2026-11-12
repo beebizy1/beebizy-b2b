@@ -20,6 +20,13 @@ function editor(repo: RegistrationDesignDraftRepository, storage = device(), eve
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; });
 
 describe("invitation draft persistence", () => {
+  it("keeps guest limits in a private server draft and safely reads older cached designs", async () => {
+    const repo = repository(); const first = editor(repo); await first.start(() => {});
+    first.setPage(current => ({ ...current, maxAdditionalGuests: 3 })); await first.flush();
+    const refreshed = editor(repo); await refreshed.start(() => {}); expect(refreshed.state.page.maxAdditionalGuests).toBe(3);
+    const oldPage = Object.fromEntries(Object.entries(DEFAULT_REGISTRATION_PAGE).filter(([key]) => key !== "maxAdditionalGuests"));
+    expect(registrationDesignDraftSchema.parse({ page: oldPage, guestTypesInput: "General", revision: 1, discarded: false }).page.maxAdditionalGuests).toBe(0);
+  });
   it("recovers every field, separate artwork and unfinished custom questions before publishing", async () => {
     const repo = repository(); const storage = device(); const first = editor(repo, storage);
     await first.start(() => {});
