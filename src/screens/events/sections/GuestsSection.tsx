@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
+import RegistrationDownloads from "./RegistrationDownloads";
 import {
   EmptyState,
   ErrorNotice,
@@ -859,6 +860,7 @@ export default function GuestsSection({ event }: { event: Event }) {
           }
         />
 
+        <RegistrationDownloads rows={registrations ?? []} visible={visible} eventTitle={event.title} loading={isLoading || isError} />
         <AddGuest event={event} />
 
         {isError ? (
