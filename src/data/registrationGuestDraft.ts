@@ -45,6 +45,7 @@ export class RegistrationGuestDraftRecovery {
     try {
       const remote = await this.repo.get(this.eventId, this.draftKey);
       if (generation !== this.generation) return;
+      if (!remote && this.state.discarded) this.state.message = this.deviceFailed ? "Device recovery unavailable. Keep this form open." : "";
       if (remote && remote.revision > this.state.revision) {
         if (!this.state.discarded) { this.state.remote = remote; this.state.message = "Another device has a newer draft. Choose which copy to keep."; }
         else { Object.assign(this.state, remote.discarded ? { revision: remote.revision } : remote); this.state.message = remote.discarded ? "" : "Recovered unfinished guest details saved to Beebizy."; this.backup(); }

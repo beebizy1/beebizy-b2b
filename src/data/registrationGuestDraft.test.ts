@@ -17,6 +17,12 @@ function editor(repo: RegistrationGuestDraftRepository, storage = device(), even
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; vi.restoreAllMocks(); });
 
 describe("private organizer guest drafts", () => {
+  it("clears an earlier recovery warning when a restarted editor successfully reads an empty server draft", async () => {
+    const repo = repository(); const get = vi.spyOn(repo, "get").mockRejectedValueOnce(new Error("Session not ready"));
+    const item = editor(repo); await item.start(() => {}); expect(item.state.message).toContain("Server recovery unavailable");
+    item.stop(); get.mockResolvedValueOnce(null); await item.start(() => {});
+    expect(item.state.message).toBe(""); expect(item.state.discarded).toBe(true);
+  });
   it("recovers both names and all custom fields after refresh without submitting a registration", async () => {
     const repo = repository(); const storage = device(); const first = editor(repo, storage); await first.start(() => {});
     const values = { firstName: "María Elena ", lastName: "de la Cruz-Taylor", contact: "qa@example.invalid", segment: "General", organization: "School", status: "pending", "T-shirt size": "M", Notes: "Unfinished\nnotes " };
