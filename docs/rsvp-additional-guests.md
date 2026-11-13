@@ -1,5 +1,17 @@
 # Additional guests on event RSVPs
 
+## November 13 update: questions for the right person
+
+Each RSVP question now has **Who should answer?** in Event > Invitation > RSVP questions: Main attendee only, Additional guests only, or Main attendee and additional guests. New questions default to the main attendee. Existing unconfigured questions retain their previous behavior until a planner chooses an audience. Frontend rendering and server validation use the same audience filter, and irrelevant submitted answers are ignored.
+
+Carlin's four existing questions are configured for the main attendee only. Her additional guest form renders just first name, last name and optional email. Question labels, required flags and choices were preserved. The audience-only settings update was version-guarded and recorded as `hist_3bfcd1e7-c9b2-4e5a-846c-526e508e3ee8`. A transaction compared registration-record fingerprints before and after: all four existing rows are unchanged.
+
+Audience settings survive private device/server draft recovery, offline fallback and publishing. Publishing an older draft that omits the new field preserves the saved audience for matching question IDs; explicit audience changes still apply.
+
+All **727 tests**, type checking, lint and build pass. Tests cover primary-only and guest-only requirements, irrelevant-answer rejection, rendered companion identity fields, individual CSV answers, legacy defaults, old-editor compatibility and draft recovery. Temporary PostgreSQL tests exercise individual answer storage, duplicate rollback, capacity rollback and history preservation. A read-only fetch of Carlin's deployed settings plus rendering the real companion component confirmed four primary questions, zero companion questions and three companion inputs; an identity-only companion validates while missing primary answers still fail. No live test registration was submitted or email sent. Automatic approval review rejected a proposed synthetic live submission because it could create a registration or email; verification used temporary data and read-only checks instead. Browser access remains unavailable, so this update does not claim a live browser audit.
+
+Published deployment: `dpl_4b7zVgLH3ygVDvSHYQAjCGDrJ1EB`, code `07032a6`, branch `codex/rsvp-guest-question-audiences`. It includes all preceding HubSpot changes and migration history through 0100. Previous deployment: `dpl_HrdN3r9yWhHzfZJEktdXw2JvS5pz`. No migration was needed for question audiences. The earlier release details below describe the original additional-guest release.
+
 ## Live behavior
 
 The invitation designer now includes **Allow attendees to bring guests** and **Maximum extra guests per registration**. Limits range from one to ten; existing events default to off. These organizer settings use the existing private device/server draft recovery, with explicit Save invitation to publish.
