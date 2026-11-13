@@ -16,6 +16,15 @@ export const hubspotMembershipsSchema = z.object({
 export const hubspotEventSourceDraftSchema = z.object({ listId: hubspotListId, enabled: z.boolean() });
 export const hubspotEventSourceMessageSchema = z.object({ eventId: z.string().min(1).max(100), generation: z.string().uuid(), tick: z.number().int().nonnegative() });
 export type HubSpotEventSourceMessage = z.infer<typeof hubspotEventSourceMessageSchema>;
+const scheduledSourceMessage = z.object({
+  scheduleId: z.string().min(1), executionId: z.string().min(1), name: z.string().min(1), namespace: z.string().min(1),
+  scheduledAt: z.string().datetime({ offset: true }), source: z.enum(["static", "dynamic"]), payload: hubspotEventSourceMessageSchema,
+});
+/** App publishes use a bare job; native Vercel Schedules put that job under payload. */
+export function parseHubSpotEventSourceMessage(raw: unknown): HubSpotEventSourceMessage {
+  const direct = hubspotEventSourceMessageSchema.safeParse(raw);
+  return direct.success ? direct.data : scheduledSourceMessage.parse(raw).payload;
+}
 export interface HubSpotRegistrationList { id: string; name: string; size: number | null }
 export interface HubSpotRegistrationLists { lists: HubSpotRegistrationList[]; nextOffset: number | null }
 export interface HubSpotEventSourceStatus {

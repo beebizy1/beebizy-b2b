@@ -8,7 +8,7 @@ import { HttpError, requireWorkspaceAccess, type RequestContext } from "./auth.t
 import { connectionForWorkspace, hubspotAuthorizedRequest, HubSpotApiError, hubspotSyncFailureMessage, requireHubSpotAdmin } from "./hubspot.ts";
 import { storeHubSpotContacts } from "./hubspotInbound.ts";
 import { HUBSPOT_CONTACT_PROPERTIES, hubspotRemoteContactSchema, normalizeHubSpotContact } from "../data/hubspotContacts.ts";
-import { hubspotEventSourceDraftSchema, hubspotEventSourceMessageSchema, hubspotListSchema, hubspotListsSchema, hubspotMembershipsSchema, type HubSpotEventSourceMessage, type HubSpotEventSourceStatus, type HubSpotRegistrationLists } from "../data/hubspotEventSource.ts";
+import { hubspotEventSourceDraftSchema, parseHubSpotEventSourceMessage, hubspotListSchema, hubspotListsSchema, hubspotMembershipsSchema, type HubSpotEventSourceMessage, type HubSpotEventSourceStatus, type HubSpotRegistrationLists } from "../data/hubspotEventSource.ts";
 import { addHubSpotListRegistrationsQuery } from "./hubspotEventSourceStore.ts";
 
 export const hubspotEventQueue = new QueueClient();
@@ -96,7 +96,7 @@ export async function setHubSpotEventSource(ctx: RequestContext, eventId: string
 
 /** A queued tick checks one page, checkpoints, then schedules the next tick without a browser. */
 export async function runHubSpotEventSource(raw: unknown) {
-  const message = hubspotEventSourceMessageSchema.parse(raw);
+  const message = parseHubSpotEventSourceMessage(raw);
   const [current] = await db.select().from(sourceTable).where(and(eq(sourceTable.eventId, message.eventId), eq(sourceTable.generation, message.generation), eq(sourceTable.enabled, true))).limit(1);
   if (!current) return;
   const connection = await connectionForWorkspace(current.workspaceId);
