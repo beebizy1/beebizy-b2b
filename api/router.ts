@@ -91,6 +91,7 @@ import {
 } from "../src/server/hubspot.ts";
 import { addHubSpotContactsToEvent, hubspotContactMaintenance, listHubSpotContacts, setHubSpotContactSync, syncHubSpotContacts } from "../src/server/hubspotInbound.ts";
 import { handleHubSpotWebhook, hubspotWebhookMaintenance, resumeHubSpotWebhookInbox } from "../src/server/hubspotWebhooks.ts";
+import { hubspotEventSourceStatus, listHubSpotRegistrationLists, recoverHubSpotEventSources, setHubSpotEventSource } from "../src/server/hubspotEventSources.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
@@ -318,6 +319,7 @@ async function handlePublic(segments: string[], method: string, request: Request
       if (!secret) return json({ error: "HubSpot maintenance is not configured." }, 503);
       if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
       const [contacts, updates] = await Promise.all([hubspotContactMaintenance(), hubspotWebhookMaintenance()]);
+      await recoverHubSpotEventSources();
       return json({ ok: true, contacts, updates });
     }
     return null;
@@ -1456,9 +1458,13 @@ async function handleAuthed(
         if (!b && method === "GET") {
           const status = await hubspotStatus(ctx);
           if (status.inbound?.enabled && status.inbound.pending) await resumeHubSpotWebhookInbox(ctx.workspaceId);
+          if (status.inbound?.enabled) await recoverHubSpotEventSources(ctx.workspaceId).catch(error => console.error("[hubspot event recovery]", error instanceof Error ? error.message : "Queue unavailable"));
           return json(status);
         }
         if (b === "connect" && method === "POST") return json(beginHubSpotConnect(ctx));
+        if (b === "lists" && method === "GET") return json(await listHubSpotRegistrationLists(ctx, url.searchParams.get("search") ?? "", Number(url.searchParams.get("offset") ?? 0)));
+        if (b === "events" && c && segments[4] === "source" && method === "GET") return json(await hubspotEventSourceStatus(ctx, c));
+        if (b === "events" && c && segments[4] === "source" && method === "PATCH") return json(await setHubSpotEventSource(ctx, c, body));
         if (b === "contacts" && !c && method === "GET") return json(await listHubSpotContacts(ctx, { eventId: url.searchParams.get("eventId") ?? undefined, search: url.searchParams.get("search") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined, limit: Number(url.searchParams.get("limit") ?? 50) }));
         if (b === "contacts" && c === "settings" && method === "PATCH") return json(await setHubSpotContactSync(ctx, z.object({ enabled: z.boolean() }).parse(body).enabled));
         if (b === "contacts" && c === "sync" && method === "POST") return json(await syncHubSpotContacts(ctx));

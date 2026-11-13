@@ -1856,6 +1856,23 @@ export function useAddHubSpotContacts() {
   return useAdapterMutation((a, vars: { eventId: string; contactIds: string[] }) => a.hubspot.addContacts(vars.eventId, vars.contactIds), vars => [qk.hubspot, qk.eventRegistrations(vars.eventId), qk.registrations, ...eventDerivedKeys(vars.eventId), ["hubspot-contacts"]]);
 }
 
+export function useHubSpotRegistrationLists(search: string, offset: number, enabled: boolean) {
+  return useAdapterQuery(["hubspot-registration-lists", search, offset], a => a.hubspot.registrationLists(search, offset), { enabled });
+}
+export function useHubSpotEventSource(eventId: string, enabled: boolean) {
+  const client = useQueryClient();
+  const result = useAdapterQuery(["hubspot-event-source", eventId], a => a.hubspot.eventSource(eventId), { enabled, refetchInterval: 5_000 });
+  const stamp = result.data ? `${result.data.registrations}:${result.data.lastSyncedAt}` : "";
+  useEffect(() => {
+    if (!enabled || !stamp) return;
+    for (const key of [qk.eventRegistrations(eventId), qk.event(eventId), qk.events, ...eventDerivedKeys(eventId)]) void client.invalidateQueries({ queryKey: key });
+  }, [client, enabled, eventId, stamp]);
+  return result;
+}
+export function useSetHubSpotEventSource() {
+  return useAdapterMutation((a, vars: { eventId: string; listId: string; enabled: boolean }) => a.hubspot.setEventSource(vars.eventId, { listId: vars.listId, enabled: vars.enabled }), vars => [["hubspot-event-source", vars.eventId], qk.eventRegistrations(vars.eventId), qk.events, qk.event(vars.eventId)]);
+}
+
 export function useConnectHubSpot() {
   return useAdapterMutation((a) => a.hubspot.beginConnect(), () => [qk.hubspot]);
 }

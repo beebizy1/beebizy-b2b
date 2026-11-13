@@ -3,6 +3,22 @@ import { buildSeed, DEMO_OWNER_ID } from "./seed";
 import { demoHubSpot } from "./hubspot";
 
 describe("HubSpot guest selection workflow", () => {
+  it("connects a registration list to one event, preserves cancelled guests on replay and supports pause/resume", async () => {
+    const store = buildSeed(); const repo = demoHubSpot(() => store, DEMO_OWNER_ID).adapter;
+    await repo.setContactSync(true);
+    const other = structuredClone(store.registrations.filter(item => item.eventId !== "evt-gala"));
+    await repo.setEventSource("evt-gala", { listId: "1", enabled: true });
+    const synced = store.registrations.filter(item => item.eventId === "evt-gala" && item.guestId?.startsWith("demo-hubspot-"));
+    expect(synced).toHaveLength(4);
+    expect(synced.every(item => item.status === "confirmed" && !item.checkedInAt)).toBe(true);
+    synced[0]!.status = "cancelled";
+    await repo.setEventSource("evt-gala", { listId: "1", enabled: false });
+    expect((await repo.eventSource("evt-gala"))?.enabled).toBe(false);
+    await repo.setEventSource("evt-gala", { listId: "1", enabled: true });
+    expect(synced[0]!.status).toBe("cancelled");
+    expect(store.registrations.filter(item => item.eventId !== "evt-gala")).toEqual(other);
+    expect((await repo.eventSource("evt-gala"))?.registrations).toBe(4);
+  });
   it("imports the address book once without registering, confirming or checking anyone in", async () => {
     const store = buildSeed(); const repo = demoHubSpot(() => store, DEMO_OWNER_ID).adapter;
     const before = structuredClone(store.registrations); const guests = store.guests.length;

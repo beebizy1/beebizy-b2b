@@ -1,10 +1,12 @@
 import { DataError, type HubSpotRepository } from "../adapter";
 import { EMPTY_HUBSPOT_INBOUND, type HubSpotContactRow } from "../hubspotContacts";
 import type { MemoryDb } from "./seed";
+import type { HubSpotEventSourceStatus } from "../hubspotEventSource";
 
 /** Explicitly labelled demo data; this adapter never calls HubSpot or sends email. */
 export function demoHubSpot(store: () => MemoryDb, ownerId: string) {
   let enabled = false; let syncedAt: string | null = null;
+  const eventSources = new Map<string, HubSpotEventSourceStatus>();
   const source = [
     { id: "1001", firstName: "María Elena", lastName: "de la Cruz-Taylor", email: "maria@example.invalid", company: "Example School", emailOptOut: false },
     { id: "1002", firstName: "Jordan", lastName: "Lee", email: "jordan@example.invalid", company: "Example School", emailOptOut: false },
@@ -43,9 +45,22 @@ export function demoHubSpot(store: () => MemoryDb, ownerId: string) {
       event.registrationCount += fresh.length;
       return { added: fresh.length, alreadyOnList: ids.length - fresh.length };
     },
+    async registrationLists() { return { lists: [{ id: "1", name: "Sample registered guests", size: source.length }], nextOffset: null }; },
+    async eventSource(eventId) { return structuredClone(eventSources.get(eventId) ?? null); },
+    async setEventSource(eventId, draft) {
+      if (draft.listId !== "1") throw new DataError("not-found", "That sample list does not exist.");
+      if (draft.enabled && !enabled) throw new DataError("invalid", "Turn on sample contact sync first.");
+      if (draft.enabled) {
+        const existing = new Set(store().registrations.filter(item => item.eventId === eventId).map(item => item.id));
+        await adapter.addContacts(eventId, source.map(contact => contact.id));
+        for (const registration of store().registrations.filter(item => item.eventId === eventId && !existing.has(item.id))) registration.status = "confirmed";
+      }
+      eventSources.set(eventId, { listId: "1", listName: "Sample registered guests", enabled: draft.enabled, state: draft.enabled ? "ready" : "paused", registrations: store().registrations.filter(item => item.eventId === eventId && item.importedFields?.some(field => field.label === "Source" && field.value === "HubSpot demo")).length, lastSyncedAt: new Date().toISOString(), error: null });
+      return adapter.eventSource(eventId);
+    },
     async setEventSync(eventId, value) { const event = store().events.find(item => item.id === eventId); if (!event) throw new DataError("not-found", "That event no longer exists."); event.hubspotSyncEnabled = value; return { event: structuredClone(event), synced: 0, skipped: 0, failed: 0, lastSyncedAt: new Date().toISOString() }; },
     async syncEvent() { return { synced: 0, skipped: 0, failed: 0, lastSyncedAt: new Date().toISOString() }; },
     async disconnect() { enabled = false; syncedAt = null; },
   };
-  return { adapter, reset() { enabled = false; syncedAt = null; } };
+  return { adapter, reset() { enabled = false; syncedAt = null; eventSources.clear(); } };
 }

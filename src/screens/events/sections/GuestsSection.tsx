@@ -29,6 +29,7 @@ import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
 import RegistrationDownloads from "./RegistrationDownloads";
 import HubSpotContactImportDialog from "../../integrations/HubSpotContactImportDialog";
+import HubSpotEventSourcePanel from "../../integrations/HubSpotEventSourcePanel";
 import {
   EmptyState,
   ErrorNotice,
@@ -640,7 +641,11 @@ export default function GuestsSection({ event }: { event: Event }) {
         />
       </div>
 
+      <HubSpotEventSourcePanel key={event.id} eventId={event.id} eventTitle={event.title} />
+
       {identity.data && !identity.data.eventScope ? (
+        <details className="rounded-xl border border-hairline">
+        <summary className="cursor-pointer p-4 text-sm font-medium">Choose individual contacts or send event updates to HubSpot</summary>
         <Panel>
           <div className="flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
@@ -710,6 +715,7 @@ export default function GuestsSection({ event }: { event: Event }) {
             </details>
           ) : null}
         </Panel>
+        </details>
       ) : null}
 
       {event.capacity ? (

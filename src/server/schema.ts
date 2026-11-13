@@ -1853,6 +1853,26 @@ export const canvases = pgTable(
   (table) => [index("canvases_workspace_idx").on(table.workspaceId)],
 );
 
+/** One explicitly selected HubSpot registration audience per event. */
+export const hubspotEventSources = pgTable("hubspot_event_sources", {
+  eventId: text("event_id").primaryKey().references(() => events.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+  listId: text("list_id").notNull(),
+  listName: text("list_name").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  generation: text("generation").notNull(),
+  tick: integer("tick").notNull().default(0),
+  cursor: text("cursor"),
+  state: text("state").notNull().default("queued"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  lastQueuedAt: timestamp("last_queued_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  leaseToken: text("lease_token"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  updatedAt: updatedAt(),
+}, table => [index("hubspot_event_sources_connection_idx").on(table.connectionId, table.enabled)]);
+
 /* ------------------------------------------------------------------- relations */
 
 export const workspaceRelations = relations(workspaces, ({ many }) => ({

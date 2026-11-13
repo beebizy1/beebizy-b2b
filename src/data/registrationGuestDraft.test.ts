@@ -17,6 +17,18 @@ function editor(repo: RegistrationGuestDraftRepository, storage = device(), even
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; vi.restoreAllMocks(); });
 
 describe("private organizer guest drafts", () => {
+  it("recovers an event's HubSpot list selection and search on another device without enabling sync", async () => {
+    const repo = repository();
+    const first = editor(repo, device(), "event-1", "hubspot-registration-list");
+    await first.start(() => {});
+    const values = { listId: "123", listName: "Demo Day registrations", search: "Demo", offset: "100" };
+    first.setValues(values); await first.flush(); first.stop();
+    const otherDevice = editor(repo, device(), "event-1", "hubspot-registration-list");
+    await otherDevice.start(() => {});
+    expect(otherDevice.state.values).toEqual(values);
+    expect(otherDevice.state.discarded).toBe(false);
+    expect((await repo.get("event-1", "hubspot-registration-list"))?.values).not.toHaveProperty("enabled");
+  });
   it("clears an earlier recovery warning when a restarted editor successfully reads an empty server draft", async () => {
     const repo = repository(); const get = vi.spyOn(repo, "get").mockRejectedValueOnce(new Error("Session not ready"));
     const item = editor(repo); await item.start(() => {}); expect(item.state.message).toContain("Server recovery unavailable");

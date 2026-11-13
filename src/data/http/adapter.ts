@@ -116,6 +116,7 @@ import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRec
 import type { RegistrationDesignDraft } from "../registrationDesignDraft";
 import type { RegistrationGuestDraft } from "../registrationGuestDraft";
 import type { HubSpotContactPage, HubSpotEventImportResult } from "../hubspotContacts";
+import type { HubSpotEventSourceStatus, HubSpotRegistrationLists } from "../hubspotEventSource";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -763,6 +764,9 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
         return client.get<HubSpotContactPage>(`/integrations/hubspot/contacts?${query}`);
       },
       addContacts: (eventId, contactIds) => client.post<HubSpotEventImportResult>(`/integrations/hubspot/events/${eventId}/contacts`, { contactIds }),
+      registrationLists: (search, offset) => client.get<HubSpotRegistrationLists>(`/integrations/hubspot/lists?${new URLSearchParams({ search, offset: String(offset) })}`),
+      eventSource: eventId => client.get<HubSpotEventSourceStatus | null>(`/integrations/hubspot/events/${eventId}/source`),
+      setEventSource: (eventId, draft) => client.patch<HubSpotEventSourceStatus | null>(`/integrations/hubspot/events/${eventId}/source`, draft),
     },
 
     analytics: {

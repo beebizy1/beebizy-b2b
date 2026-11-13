@@ -65,6 +65,7 @@
     "@uppy/react": "^5.2.0",
     "@vercel/blob": "^2.8.1",
     "@vercel/functions": "^3.11.1",
+    "@vercel/queue": "^0.11.0",
     "ai": "^7.0.83",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

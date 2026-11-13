@@ -186,6 +186,7 @@ import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowReco
 import type { RegistrationDesignDraftRepository } from "./registrationDesignDraft";
 import type { RegistrationGuestDraftRepository } from "./registrationGuestDraft";
 import type { HubSpotContactFilter, HubSpotContactPage, HubSpotEventImportResult } from "./hubspotContacts";
+import type { HubSpotEventSourceStatus, HubSpotRegistrationLists } from "./hubspotEventSource";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -414,6 +415,9 @@ export interface HubSpotRepository {
   syncContacts(): Promise<HubSpotConnectionStatus>;
   contacts(filter: HubSpotContactFilter): Promise<HubSpotContactPage>;
   addContacts(eventId: string, contactIds: string[]): Promise<HubSpotEventImportResult>;
+  registrationLists(search: string, offset: number): Promise<HubSpotRegistrationLists>;
+  eventSource(eventId: string): Promise<HubSpotEventSourceStatus | null>;
+  setEventSource(eventId: string, draft: { listId: string; enabled: boolean }): Promise<HubSpotEventSourceStatus | null>;
 }
 
 export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft, CanvasPatch> {

@@ -125,6 +125,7 @@ vi.mock("./registrationDesignDrafts", () => ({ getRegistrationDesignDraft: vi.fn
 vi.mock("./registrationGuestDrafts", () => ({ getRegistrationGuestDraft: vi.fn(), saveRegistrationGuestDraft: vi.fn() }));
 vi.mock("./hubspotInbound", () => ({ addHubSpotContactsToEvent: vi.fn(), hubspotContactMaintenance: vi.fn(), listHubSpotContacts: vi.fn(), setHubSpotContactSync: vi.fn(), syncHubSpotContacts: vi.fn(), assertHubSpotEmailRecipients: vi.fn() }));
 vi.mock("./hubspotWebhooks", () => ({ handleHubSpotWebhook: vi.fn(), hubspotWebhookMaintenance: vi.fn(), resumeHubSpotWebhookInbox: vi.fn() }));
+vi.mock("./hubspotEventSources", () => ({ hubspotEventSourceStatus: vi.fn(), listHubSpotRegistrationLists: vi.fn(), recoverHubSpotEventSources: vi.fn().mockResolvedValue(undefined), setHubSpotEventSource: vi.fn() }));
 vi.mock("./vendorPaperworkReminders", () => ({ processDueVendorPaperworkReminders: vi.fn() }));
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
@@ -216,6 +217,7 @@ const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
 const { listHubSpotContacts, addHubSpotContactsToEvent } = await import("./hubspotInbound");
 const { handleHubSpotWebhook } = await import("./hubspotWebhooks");
+const { listHubSpotRegistrationLists, hubspotEventSourceStatus, setHubSpotEventSource } = await import("./hubspotEventSources");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
 const {
   beginGoogleCalendarConnect,
@@ -254,6 +256,21 @@ describe("operator user activity", () => {
 });
 
 describe("HubSpot integration", () => {
+  it("routes list discovery and the explicit per-event automatic source, and excludes scoped users", async () => {
+    const context = { userId: "user-1", workspaceId: "workspace-1", role: "owner" as const, email: "owner@example.invalid" };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(listHubSpotRegistrationLists).mockResolvedValue({ lists: [{ id: "123", name: "Demo Day registrations", size: 200 }], nextOffset: null });
+    vi.mocked(hubspotEventSourceStatus).mockResolvedValue(null);
+    vi.mocked(setHubSpotEventSource).mockResolvedValue(null);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/lists?search=Demo&offset=100"))).status).toBe(200);
+    expect(listHubSpotRegistrationLists).toHaveBeenCalledWith(context, "Demo", 100);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/source"))).status).toBe(200);
+    expect(hubspotEventSourceStatus).toHaveBeenCalledWith(context, "event-1");
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/source", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ listId: "123", enabled: true }) }))).status).toBe(200);
+    expect(setHubSpotEventSource).toHaveBeenCalledWith(context, "event-1", { listId: "123", enabled: true });
+    vi.mocked(authorize).mockResolvedValue({ ...context, eventScopeId: "event-1" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/source"))).status).toBe(403);
+  });
   it("routes signed webhook requests before session authorization and protects maintenance", async () => {
     vi.mocked(handleHubSpotWebhook).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
     const request = new Request("http://localhost/api/integrations/hubspot/webhook", { method: "POST", body: "[]" });

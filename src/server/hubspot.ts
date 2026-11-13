@@ -17,7 +17,7 @@ import * as s from "./schema.ts";
 const HUBSPOT_AUTH_URL = "https://app.hubspot.com/oauth/authorize";
 const HUBSPOT_API = "https://api.hubapi.com";
 const HUBSPOT_TOKEN_URL = `${HUBSPOT_API}/oauth/2026-03/token`;
-const HUBSPOT_SCOPES = ["oauth", "crm.objects.contacts.read", "crm.objects.contacts.write"];
+const HUBSPOT_SCOPES = ["oauth", "crm.objects.contacts.read", "crm.objects.contacts.write", "crm.lists.read"];
 
 const tokenSchema = z.object({
   access_token: z.string().min(1),
