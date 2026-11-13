@@ -7,6 +7,28 @@ const host = { firstName: "María Elena", lastName: "de la Cruz", name: "María 
 const guest = { firstName: "Alex", lastName: "Taylor", answers: { food: "No nuts" } };
 async function setup() { await a.events.updateRegistrationPage("evt-skickoff", { maxAdditionalGuests: 2, questions: [{ id: "food", label: "Dietary needs", type: "text", required: true, options: [] }] }); }
 describe("RSVP with additional guests", () => {
+  it("does not reset saved audiences when an older invitation draft publishes", async () => {
+    const question = { id: "food", label: "Dietary needs", type: "text" as const, required: true, options: [] };
+    await a.events.updateRegistrationPage("evt-skickoff", { questions: [{ ...question, audience: "primary" }] });
+    const saved = await a.events.updateRegistrationPage("evt-skickoff", { questions: [{ ...question, label: "Updated dietary question" }] });
+    expect(saved.registrationPage?.questions[0]?.audience).toBe("primary");
+  });
+  it("registers a primary attendee and identity-only guest, exporting primary answers only on the primary row", async () => {
+    await a.events.updateRegistrationPage("evt-skickoff", { maxAdditionalGuests: 1, questions: [{ id: "food", label: "Dietary needs", type: "text", required: true, options: [], audience: "primary" }] });
+    const result = await a.registrations.registerPublic("demo-evt-skickoff", { ...host, additionalGuests: [{ firstName: "Alex", lastName: "Taylor", email: "alex@example.invalid", answers: {} }] });
+    const rows = await a.registrations.listForEvent("evt-skickoff");
+    const primaryRow = rows.find(row => row.id === result.id)!;
+    const guestRow = rows.find(row => row.id === result.additionalGuests?.[0]?.id)!;
+    expect(primaryRow.importedFields).toContainEqual({ label: "Dietary needs", value: "Vegetarian" });
+    expect(guestRow.guest?.name).toBe("Alex Taylor");
+    expect(guestRow.guest?.contact).toBe("alex@example.invalid");
+    expect(guestRow.importedFields?.some(field => field.label === "Dietary needs")).toBe(false);
+    const exported = registrationExportTable([primaryRow, guestRow]);
+    const dietaryIndex = exported[0]!.indexOf("Dietary needs");
+    expect(dietaryIndex).toBeGreaterThanOrEqual(0);
+    expect(exported[1]![dietaryIndex]).toBe("Vegetarian");
+    expect(exported[2]![dietaryIndex]).toBe("");
+  });
   it("creates separate confirmed guest records, links the group and exports every person's answers", async () => {
     await setup(); const before = (await a.events.get("evt-skickoff"))!.registrationCount;
     const result = await a.registrations.registerPublic("demo-evt-skickoff", { ...host, additionalGuests: [guest] });

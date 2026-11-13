@@ -10,7 +10,7 @@ import type { RegistrationPageSettings, RegistrationQuestion } from "@/data/regi
 export function RegistrationExtrasEditor({ draft, onChange }: { draft: RegistrationPageSettings; onChange: (patch: Partial<RegistrationPageSettings>) => void }) {
   const upload = useUploadAuctionImage();
   const updateQuestion = (index: number, patch: Partial<RegistrationQuestion>) => onChange({ questions: draft.questions.map((question, i) => i === index ? { ...question, ...patch } : question) });
-  const addQuestion = (shirt = false) => onChange({ questions: [...draft.questions, { id: crypto.randomUUID(), label: shirt ? "T-shirt size" : "", type: shirt ? "select" : "text", required: false, options: shirt ? ["XS", "S", "M", "L", "XL", "XXL"] : [] }] });
+  const addQuestion = (shirt = false) => onChange({ questions: [...draft.questions, { id: crypto.randomUUID(), label: shirt ? "T-shirt size" : "", type: shirt ? "select" : "text", required: false, audience: "primary", options: shirt ? ["XS", "S", "M", "L", "XL", "XXL"] : [] }] });
   return <div className="space-y-6">
     <fieldset className="space-y-4 rounded-xl border border-hairline p-4">
       <legend className="px-1 text-sm font-semibold">Bottom RSVP banner</legend>
@@ -34,9 +34,11 @@ export function RegistrationExtrasEditor({ draft, onChange }: { draft: Registrat
     <fieldset className="space-y-4 rounded-xl border border-hairline p-4">
       <legend className="px-1 text-sm font-semibold">RSVP questions</legend>
       <p className="text-xs leading-5 text-muted-foreground">Ask for details such as T-shirt size or dietary needs after guests click RSVP. Answers appear with the guest in the Registrations spreadsheet.</p>
+      <p className="text-xs leading-5 text-muted-foreground">Choose who answers each question. Additional guests always have their own name and optional email fields.</p>
       {draft.questions.map((question, index) => <div key={question.id} className="space-y-3 rounded-lg border border-hairline bg-surface p-3">
         <div><Label htmlFor={`question-label-${question.id}`}>Question {index + 1}</Label><Input id={`question-label-${question.id}`} maxLength={160} value={question.label} placeholder="Example: Do you have any dietary needs?" onChange={e => updateQuestion(index, { label: e.target.value })} /></div>
         <div><Label htmlFor={`question-type-${question.id}`}>Answer format</Label><select id={`question-type-${question.id}`} value={question.type} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" onChange={e => updateQuestion(index, { type: e.target.value as RegistrationQuestion["type"] })}><option value="text">Short written answer</option><option value="select">Choose from a list</option></select></div>
+        <div><Label htmlFor={`question-audience-${question.id}`}>Who should answer?</Label><select id={`question-audience-${question.id}`} value={question.audience ?? "both"} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" onChange={e => updateQuestion(index, { audience: e.target.value as RegistrationQuestion["audience"] })}><option value="primary">Main attendee only</option><option value="guests">Additional guests only</option><option value="both">Main attendee and additional guests</option></select></div>
         {question.type === "select" ? <div><Label htmlFor={`question-options-${question.id}`}>Choices, one per line</Label><Textarea id={`question-options-${question.id}`} rows={4} value={question.options.join("\n")} onChange={e => updateQuestion(index, { options: e.target.value.split("\n").slice(0, 20) })} /></div> : null}
         <div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-[hsl(var(--primary))]" checked={question.required} onChange={e => updateQuestion(index, { required: e.target.checked })} />Require an answer</label><Button type="button" size="sm" variant="ghost" onClick={() => onChange({ questions: draft.questions.filter((_, i) => i !== index) })}><Trash2 className="size-3.5" />Remove question</Button></div>
       </div>)}

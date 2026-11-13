@@ -455,7 +455,7 @@ const events: EventsRepository = {
     const event = required(store().events.find((candidate) => candidate.id === id), `Event ${id} no longer exists.`);
     event.registrationPage = normalizeRegistrationPage({
       ...event.registrationPage,
-      ...normalizeRegistrationPagePatch(patch),
+      ...normalizeRegistrationPagePatch(patch, event.registrationPage),
     });
     event.updatedAt = nowIso();
     return copy(event);

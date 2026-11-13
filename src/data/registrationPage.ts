@@ -26,6 +26,8 @@ export interface RegistrationQuestion {
   type: "text" | "select";
   required: boolean;
   options: string[];
+  /** Older events keep their existing per-person questions until a planner chooses an audience. */
+  audience?: "primary" | "guests" | "both";
 }
 
 export interface RegistrationPageSettings {
@@ -214,7 +216,9 @@ function questions(value: unknown): RegistrationQuestion[] {
     if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id) || !label || seen.has(id)) return [];
     seen.add(id);
     const options = [...new Set(Array.isArray(input.options) ? input.options.map(option => text(option, 100)).filter(Boolean) : [])].slice(0, 20);
-    return [{ id, label, type: input.type === "select" ? "select" : "text", required: input.required === true, options }];
+    return [{ id, label, type: input.type === "select" ? "select" : "text", required: input.required === true, options,
+      ...(input.audience === "primary" || input.audience === "guests" || input.audience === "both" ? { audience: input.audience } : {}),
+    }];
   }).slice(0, 12);
 }
 
@@ -231,9 +235,14 @@ export function footerBannerImage(page: RegistrationPageSettings): string | null
 }
 
 /** Only organizer-defined questions may enter the saved guest record. */
-export function registrationAnswerFields(configured: RegistrationQuestion[], raw: unknown): Array<{ label: string; value: string }> {
+export function registrationQuestionsFor(configured: RegistrationQuestion[], person: "primary" | "guests"): RegistrationQuestion[] {
+  return configured.filter(question => !question.audience || question.audience === "both" || question.audience === person);
+}
+
+/** Hidden questions cannot require answers or enter another person's registration. */
+export function registrationAnswerFields(configured: RegistrationQuestion[], raw: unknown, person: "primary" | "guests" = "primary"): Array<{ label: string; value: string }> {
   const answers = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
-  return configured.flatMap(question => {
+  return registrationQuestionsFor(configured, person).flatMap(question => {
     const value = typeof answers[question.id] === "string" ? String(answers[question.id]).trim() : "";
     if (question.required && !value) throw new Error(`Please answer: ${question.label}.`);
     if (value.length > 1000 || (value && question.type === "select" && !question.options.includes(value))) throw new Error(`Choose a valid answer for ${question.label}.`);
@@ -294,10 +303,18 @@ const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
 ];
 
 /** Validates only supplied fields so independent editors cannot overwrite one another. */
-export function normalizeRegistrationPagePatch(value: unknown): Partial<RegistrationPageSettings> {
+export function normalizeRegistrationPagePatch(value: unknown, currentValue?: unknown): Partial<RegistrationPageSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const input = value as Record<string, unknown>;
   const normalized = normalizeRegistrationPage({ ...DEFAULT_REGISTRATION_PAGE, ...input });
+  if (Object.hasOwn(input, "questions") && currentValue) {
+    const currentQuestions = new Map(normalizeRegistrationPage(currentValue).questions.map(question => [question.id, question]));
+    // Older open editors cannot silently reset a newly configured audience.
+    normalized.questions = normalized.questions.map(question => {
+      const savedAudience = currentQuestions.get(question.id)?.audience;
+      return !question.audience && savedAudience ? { ...question, audience: savedAudience } : question;
+    });
+  }
   const patch: Record<string, unknown> = {};
   for (const key of REGISTRATION_PAGE_KEYS) {
     if (Object.hasOwn(input, key)) patch[key] = normalized[key];

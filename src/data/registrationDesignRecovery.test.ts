@@ -20,6 +20,14 @@ function editor(repo: RegistrationDesignDraftRepository, storage = device(), eve
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; });
 
 describe("invitation draft persistence", () => {
+  it("keeps question audiences in device recovery while the server is unavailable", async () => {
+    const repo = repository(); repo.save = async () => { throw new Error("Offline"); };
+    const storage = device(); const first = editor(repo, storage); await first.start(() => {});
+    first.setPage(current => ({ ...current, questions: [{ id: "guest", label: "Guest meal", type: "text", required: true, options: [], audience: "guests" }] }));
+    await first.flush(); first.stop();
+    expect(first.state.message).toContain("Device copy saved");
+    expect(editor(repository(), storage).state.page.questions[0]?.audience).toBe("guests");
+  });
   it("keeps guest limits in a private server draft and safely reads older cached designs", async () => {
     const repo = repository(); const first = editor(repo); await first.start(() => {});
     first.setPage(current => ({ ...current, maxAdditionalGuests: 3 })); await first.flush();
@@ -30,13 +38,14 @@ describe("invitation draft persistence", () => {
   it("recovers every field, separate artwork and unfinished custom questions before publishing", async () => {
     const repo = repository(); const storage = device(); const first = editor(repo, storage);
     await first.start(() => {});
-    first.setPage({ ...first.state.page, welcomeMessage: "First paragraph.\n\nSecond paragraph. ", footerImageSource: "custom", footerImageUrl: "https://example.com/bottom.png", questions: [{ id: "shirt", label: "", type: "select", required: true, options: ["S", "M", ""] }], infoPages: [{ id: "room", title: "", navLabel: "Room", body: "Pending hotel details" }] });
+    first.setPage({ ...first.state.page, welcomeMessage: "First paragraph.\n\nSecond paragraph. ", footerImageSource: "custom", footerImageUrl: "https://example.com/bottom.png", questions: [{ id: "shirt", label: "", type: "select", required: true, options: ["S", "M", ""], audience: "guests" }], infoPages: [{ id: "room", title: "", navLabel: "Room", body: "Pending hotel details" }] });
     first.setGuestTypes("Guest, Family"); first.stop();
     const restored = editor(repo, storage); await restored.start(() => {}); await restored.flush();
     const saved = await repo.get("event-1");
     expect(saved?.page).toEqual(first.state.page);
     expect(saved?.guestTypesInput).toBe("Guest, Family");
     expect(saved?.page.questions[0].options).toEqual(["S", "M", ""]);
+    expect(registrationDesignDraftSchema.parse(saved).page.questions[0]?.audience).toBe("guests");
     expect(registrationDesignDraftSchema.safeParse(saved).success).toBe(true);
     expect(saved?.discarded).toBe(false);
   });

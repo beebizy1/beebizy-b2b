@@ -623,7 +623,7 @@ export const events = {
   async updateRegistrationPage(ctx: RequestContext, id: string, body: Body): Promise<Event> {
     const before = await events.get(ctx, id);
     if (!before) throw new HttpError(404, "That event no longer exists.");
-    const patch = normalizeRegistrationPagePatch(body);
+    const patch = normalizeRegistrationPagePatch(body, before.registrationPage);
     if (Object.keys(patch).length === 0) return before;
     const updatedAt = new Date();
     await db.update(s.events).set({

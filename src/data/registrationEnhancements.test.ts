@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, publicRegistrationHref, registrationAnswerFields, footerBannerImage, registrationPageIsCustomized } from "./registrationPage";
+import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch, publicRegistrationHref, registrationAnswerFields, footerBannerImage, registrationPageIsCustomized, registrationQuestionsFor } from "./registrationPage";
 
 describe("Carlin registration fixes", () => {
+  it("retains a saved question audience when an older editor omits it, while honoring explicit changes", () => {
+    const oldQuestion = { id: "connection", label: "How do you know Carlin?", type: "text", required: true };
+    const current = normalizeRegistrationPage({ questions: [{ ...oldQuestion, audience: "primary" }] });
+    expect(normalizeRegistrationPagePatch({ questions: [oldQuestion] }, current).questions?.[0]?.audience).toBe("primary");
+    expect(normalizeRegistrationPagePatch({ questions: [{ ...oldQuestion, audience: "both" }] }, current).questions?.[0]?.audience).toBe("both");
+    expect(normalizeRegistrationPagePatch({ questions: [] }, current).questions).toEqual([]);
+  });
+  it("preserves question audiences through publishing and keeps legacy questions applying to both", () => {
+    const page = normalizeRegistrationPage({ questions: [
+      { id: "primary", label: "Your connection", audience: "primary" },
+      { id: "guest", label: "Guest meal", audience: "guests" },
+      { id: "both", label: "Dietary needs", audience: "both" },
+      { id: "old", label: "Legacy question" },
+    ] });
+    expect(registrationQuestionsFor(page.questions, "primary").map(q => q.id)).toEqual(["primary", "both", "old"]);
+    expect(registrationQuestionsFor(page.questions, "guests").map(q => q.id)).toEqual(["guest", "both", "old"]);
+    expect(normalizeRegistrationPagePatch({ questions: page.questions })).toEqual({ questions: page.questions });
+  });
   it("takes a single-type RSVP directly to the form and keeps invitations attached", () => {
     expect(publicRegistrationHref("event-token", DEFAULT_REGISTRATION_PAGE, "invite-token")).toBe("/e/event-token/register/General?invite=invite-token");
     expect(publicRegistrationHref("t", { ...DEFAULT_REGISTRATION_PAGE, registrationTypes: ["Parent / Guardian"] })).toBe("/e/t/register/Parent%20%2F%20Guardian");

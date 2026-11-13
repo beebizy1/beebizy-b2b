@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { neon } from "@neondatabase/serverless";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { publicRsvpPartyQueries, type RsvpPartyInsert } from "../src/server/publicRsvpStore.ts";
+import { normalizeRegistrationPage } from "../src/data/registrationPage.ts";
+import { preparePublicRsvpParty } from "../src/data/publicRsvpParty.ts";
 
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
 const client = neon(process.env.DATABASE_URL); const dialect = new PgDialect();
-const input: RsvpPartyInsert = { workspaceId: "qa", eventId: "qa-public-party", partyId: "party-one", segment: "General", organization: null, people: [
-  { guestId: "new-host", registrationId: "host-reg", name: "María Elena de la Cruz", email: "host@example.invalid", fields: [{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz" }, { label: "Dietary needs", value: "Vegetarian" }] },
-  { guestId: "new-companion", registrationId: "guest-reg", name: "Alex Taylor", email: null, fields: [{ label: "First Name", value: "Alex" }, { label: "Last Name", value: "Taylor" }, { label: "Dietary needs", value: "No nuts" }] },
-] };
+const page = normalizeRegistrationPage({ maxAdditionalGuests: 1, questions: [
+  { id: "host", label: "Dietary needs", audience: "primary", required: true },
+  { id: "guest", label: "Guest dietary needs", audience: "guests", required: true },
+] });
+const people = preparePublicRsvpParty(page, { firstName: "María Elena", lastName: "de la Cruz", email: "host@example.invalid", answers: { host: "Vegetarian" }, additionalGuests: [{ firstName: "Alex", lastName: "Taylor", answers: { guest: "No nuts" } }] });
+const input: RsvpPartyInsert = { workspaceId: "qa", eventId: "qa-public-party", partyId: "party-one", segment: "General", organization: null, people: people.map((person, index) => ({ ...person, guestId: index === 0 ? "new-host" : "new-companion", registrationId: index === 0 ? "host-reg" : "guest-reg" })) };
 const statements = [
   client.query("create temporary table events(id text primary key,capacity integer) on commit drop"),
   client.query("create temporary table guests(id text primary key,workspace_id text,name text,contact text,notes text,unique(workspace_id,contact)) on commit drop"),
@@ -33,6 +37,11 @@ const result = await client.transaction(statements); const data = (index: number
 assert.equal(data(saved).registrations.length, 2); assert.equal(data(saved).people.length, 3);
 assert.equal(data(saved).registrations.find((row: { id: string }) => row.id === "host-reg").guest_id, "existing-host");
 assert.equal(data(saved).people.find((row: { id: string }) => row.id === "existing-host").notes, "Keep private staff notes");
+const savedHost = data(saved).registrations.find((row: { id: string }) => row.id === "host-reg");
+const savedGuest = data(saved).registrations.find((row: { id: string }) => row.id === "guest-reg");
+assert.equal(savedHost.imported_fields.some((field: { label: string }) => field.label === "Guest dietary needs"), false);
+assert.equal(savedGuest.imported_fields.some((field: { label: string }) => field.label === "Dietary needs"), false);
+assert.equal(savedGuest.imported_fields.find((field: { label: string }) => field.label === "Guest dietary needs").value, "No nuts");
 for (const row of data(saved).registrations) { assert.equal(row.quantity, 1); assert.equal(row.status, "confirmed"); assert.equal(row.checked_in_at, null); assert.equal(row.imported_fields.find((field: { label: string }) => field.label === "RSVP group").value, "party-one"); }
 assert.deepEqual(data(duplicate), data(saved)); assert.deepEqual(data(full), data(saved));
 console.log("PASS: individual guest rows, mixed-case email matching, notes and tenant preservation, shared party metadata, duplicate rollback, and capacity failure on the second guest rolling back the entire party. Temporary tables removed at commit.");

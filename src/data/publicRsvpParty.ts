@@ -22,7 +22,7 @@ export function preparePublicRsvpParty(page: RegistrationPageSettings, input: Re
       if (contact && !validEmail(contact)) throw new Error("Enter a valid guest email, or leave it blank.");
       if (contact && emails.has(contact)) throw new Error("Use a different email for each person, or leave the guest email blank.");
       if (contact) emails.add(contact);
-      people.push({ name: identity.name, email: contact || null, fields: [...identity.fields, ...registrationAnswerFields(page.questions, guest.answers)] });
+      people.push({ name: identity.name, email: contact || null, fields: [...identity.fields, ...registrationAnswerFields(page.questions, guest.answers, "guests")] });
     } catch (error) { throw new Error(`Guest ${index + 1}: ${error instanceof Error ? error.message : "Check these details."}`); }
   }
   return people;

@@ -13,7 +13,7 @@ const page: z.ZodType<RegistrationPageSettings, z.ZodTypeDef, unknown> = z.objec
   registrationTypes: z.array(short).max(8),
   maxAdditionalGuests: z.number().int().min(0).max(10).default(0),
   infoPages: z.array(z.object({ id: short, navLabel: short, title: short, body: z.string().max(5000) })).max(6),
-  questions: z.array(z.object({ id: z.string().max(80), label: short, type: z.enum(["text", "select"]), required: z.boolean(), options: z.array(z.string().max(1000)).max(20) })).max(12),
+  questions: z.array(z.object({ id: z.string().max(80), label: short, type: z.enum(["text", "select"]), required: z.boolean(), options: z.array(z.string().max(1000)).max(20), audience: z.enum(["primary", "guests", "both"]).optional() })).max(12),
   postEventSubject: short, postEventThankYou: z.string().max(4000), postEventWrapUp: z.string().max(5000),
 });
 /** Unlike published settings, incomplete labels and choices must survive draft recovery. */
