@@ -20,6 +20,25 @@ function editor(repo: RegistrationDesignDraftRepository, storage = device(), eve
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; });
 
 describe("invitation draft persistence", () => {
+  it("recovers unpublished RSVP confirmation copy on this device and from the server", async () => {
+    const repo = repository();
+    const storage = device();
+    const first = editor(repo, storage);
+    await first.start(() => {});
+    const copy = { rsvpConfirmationTitle: "See you there!", rsvpConfirmationMessage: "Doors open at six.\n\nUse the west entrance. " };
+    first.setPage(current => ({ ...current, ...copy }));
+    expect(editor(repo, storage).state.page).toMatchObject(copy);
+    await first.flush();
+    first.stop();
+    const serverRecovery = editor(repo);
+    await serverRecovery.start(() => {});
+    expect(serverRecovery.state.page).toMatchObject(copy);
+    expect(serverRecovery.state.discarded).toBe(false);
+    const legacyPage = Object.fromEntries(Object.entries(DEFAULT_REGISTRATION_PAGE).filter(([key]) => !key.startsWith("rsvpConfirmation")));
+    expect(registrationDesignDraftSchema.parse({ page: legacyPage, guestTypesInput: "General", revision: 1, discarded: false }).page).toMatchObject({
+      rsvpConfirmationTitle: "", rsvpConfirmationMessage: "",
+    });
+  });
   it("keeps question audiences in device recovery while the server is unavailable", async () => {
     const repo = repository(); repo.save = async () => { throw new Error("Offline"); };
     const storage = device(); const first = editor(repo, storage); await first.start(() => {});

@@ -166,6 +166,8 @@ describe("events", () => {
         aboutBody: "Meet the founders building the next chapter.",
         agendaIntroduction: "Doors open before the first conversation.",
         welcomeMessage: "Reserve your place with the team.",
+        rsvpConfirmationTitle: "See you in the garden!",
+        rsvpConfirmationMessage: "Doors open at six.\n\nPlease use the west entrance.",
         heroImageUrl: "https://images.example.com/garden.jpg",
         heroImageDisplay: "banner",
         footerImageSource: "invitation",
@@ -190,6 +192,8 @@ describe("events", () => {
     expect((await memoryAdapter.events.getByShareToken(shareToken))?.event.registrationPage).toMatchObject({
       template: "garden",
       headline: "An evening in the garden",
+      rsvpConfirmationTitle: "See you in the garden!",
+      rsvpConfirmationMessage: "Doors open at six.\n\nPlease use the west entrance.",
       showAgenda: false,
       infoPages: [{ id: "room-block", navLabel: "Room block", title: "Hotel room block", body: "Book by November 30." }],
     });

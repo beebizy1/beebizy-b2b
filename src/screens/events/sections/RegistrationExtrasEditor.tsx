@@ -1,17 +1,42 @@
-import { ImagePlus, Plus, Trash2 } from "lucide-react";
+import { Check, ImagePlus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { useUploadAuctionImage } from "@/data/hooks";
-import type { RegistrationPageSettings, RegistrationQuestion } from "@/data/registrationPage";
+import { LinkedText } from "@/components/LinkedText";
+import { RSVP_CONFIRMATION_LIMITS, rsvpConfirmationCopy, type RegistrationPageSettings, type RegistrationQuestion } from "@/data/registrationPage";
 
-export function RegistrationExtrasEditor({ draft, onChange }: { draft: RegistrationPageSettings; onChange: (patch: Partial<RegistrationPageSettings>) => void }) {
+export function RegistrationExtrasEditor({ draft, eventTitle, guestType, onChange }: { draft: RegistrationPageSettings; eventTitle: string; guestType: string; onChange: (patch: Partial<RegistrationPageSettings>) => void }) {
   const upload = useUploadAuctionImage();
+  const confirmation = rsvpConfirmationCopy(draft, eventTitle, guestType);
+  const defaultConfirmation = rsvpConfirmationCopy({ ...draft, rsvpConfirmationTitle: "", rsvpConfirmationMessage: "" }, eventTitle, guestType);
   const updateQuestion = (index: number, patch: Partial<RegistrationQuestion>) => onChange({ questions: draft.questions.map((question, i) => i === index ? { ...question, ...patch } : question) });
   const addQuestion = (shirt = false) => onChange({ questions: [...draft.questions, { id: crypto.randomUUID(), label: shirt ? "T-shirt size" : "", type: shirt ? "select" : "text", required: false, audience: "primary", options: shirt ? ["XS", "S", "M", "L", "XL", "XXL"] : [] }] });
   return <div className="space-y-6">
+    <fieldset className="space-y-4 rounded-xl border border-hairline p-4">
+      <legend className="px-1 text-sm font-semibold">After guests RSVP</legend>
+      <p className="text-sm text-muted-foreground">Choose what guests see on screen after they register. Leave either field blank to use the default. This only changes the on-screen message.</p>
+      <div className="space-y-1.5">
+        <Label htmlFor="rsvp-confirmation-title">Confirmation title</Label>
+        <Input id="rsvp-confirmation-title" value={draft.rsvpConfirmationTitle} placeholder={defaultConfirmation.title} maxLength={RSVP_CONFIRMATION_LIMITS.title} onChange={e => onChange({ rsvpConfirmationTitle: e.target.value })} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="rsvp-confirmation-message">Confirmation message</Label>
+        <Textarea id="rsvp-confirmation-message" value={draft.rsvpConfirmationMessage} placeholder={defaultConfirmation.message} maxLength={RSVP_CONFIRMATION_LIMITS.message} rows={4} onChange={e => onChange({ rsvpConfirmationMessage: e.target.value })} />
+      </div>
+      <div className="rounded-lg border border-hairline bg-surface px-4 py-4">
+        <p className="text-xs font-semibold text-muted-foreground">Guest preview</p>
+        <div className="mt-3 flex items-start gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-success-tint text-success-text"><Check aria-hidden="true" className="size-4" /></span>
+          <div className="min-w-0">
+            <p className="break-words text-sm font-semibold">{confirmation.title}</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground"><LinkedText text={confirmation.message} /></p>
+          </div>
+        </div>
+      </div>
+    </fieldset>
     <fieldset className="space-y-4 rounded-xl border border-hairline p-4">
       <legend className="px-1 text-sm font-semibold">Bottom RSVP banner</legend>
       <p className="text-xs leading-5 text-muted-foreground">This is the image behind the RSVP button at the bottom of your public page. By default it uses the main invitation photo.</p>

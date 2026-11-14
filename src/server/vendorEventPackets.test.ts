@@ -11,7 +11,7 @@ const event: Event = {
     template: "warm", maxAdditionalGuests: 0, headline: "", aboutHeading: "", aboutBody: "", agendaIntroduction: "", welcomeMessage: "", accentColor: "#FFD700", heroImageUrl: null, heroImageDisplay: "banner", aboutImageUrl: null, agendaImageUrl: null,
     paymentUrl: null, showAgenda: true, showSpeakers: true, showSponsors: true, showVolunteerSignup: true, speakers: [], registrationTypes: ["General"], collectOrganization: true,
     infoPages: [], footerImageSource: "invitation", footerImageUrl: null, questions: [],
-    postEventSubject: "", postEventThankYou: "", postEventWrapUp: "",
+    postEventSubject: "", postEventThankYou: "", postEventWrapUp: "", rsvpConfirmationTitle: "", rsvpConfirmationMessage: "",
   }, createdAt: "2026-10-01T00:00:00.000Z",
 };
 

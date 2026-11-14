@@ -38,6 +38,8 @@ export interface RegistrationPageSettings {
   aboutBody: string;
   agendaIntroduction: string;
   welcomeMessage: string;
+  rsvpConfirmationTitle: string;
+  rsvpConfirmationMessage: string;
   heroImageUrl: string | null;
   heroImageDisplay: RegistrationHeroDisplay;
   footerImageSource: "invitation" | "custom" | "none";
@@ -99,6 +101,9 @@ export const REGISTRATION_PAGE_TEMPLATES: readonly RegistrationPageTemplate[] = 
   },
 ] as const;
 
+export const RSVP_CONFIRMATION_LIMITS = { title: 120, message: 1000 } as const;
+export const DEFAULT_RSVP_CONFIRMATION_TITLE = "You're registered";
+
 export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   template: "warm",
   accentColor: "#8C5A12",
@@ -107,6 +112,8 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   aboutBody: "",
   agendaIntroduction: "",
   welcomeMessage: "",
+  rsvpConfirmationTitle: "",
+  rsvpConfirmationMessage: "",
   heroImageUrl: null,
   heroImageDisplay: "banner",
   footerImageSource: "invitation",
@@ -272,6 +279,8 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     aboutBody: text(input.aboutBody, 3_000),
     agendaIntroduction: text(input.agendaIntroduction, 1_500),
     welcomeMessage: text(input.welcomeMessage, 2_000),
+    rsvpConfirmationTitle: text(input.rsvpConfirmationTitle, RSVP_CONFIRMATION_LIMITS.title),
+    rsvpConfirmationMessage: text(input.rsvpConfirmationMessage, RSVP_CONFIRMATION_LIMITS.message),
     heroImageUrl: safeImageUrl(input.heroImageUrl),
     heroImageDisplay: input.heroImageDisplay === "logo" ? "logo" : "banner",
     footerImageSource: input.footerImageSource === "custom" || input.footerImageSource === "none" ? input.footerImageSource : "invitation",
@@ -300,6 +309,7 @@ const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
   "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "postEventSubject",
   "postEventThankYou", "postEventWrapUp", "footerImageSource", "footerImageUrl", "questions", "maxAdditionalGuests",
+  "rsvpConfirmationTitle", "rsvpConfirmationMessage",
 ];
 
 /** Validates only supplied fields so independent editors cannot overwrite one another. */
@@ -320,6 +330,13 @@ export function normalizeRegistrationPagePatch(value: unknown, currentValue?: un
     if (Object.hasOwn(input, key)) patch[key] = normalized[key];
   }
   return patch as Partial<RegistrationPageSettings>;
+}
+
+export function rsvpConfirmationCopy(settings: RegistrationPageSettings, eventTitle: string, guestType: string) {
+  return {
+    title: settings.rsvpConfirmationTitle.trim() || DEFAULT_RSVP_CONFIRMATION_TITLE,
+    message: settings.rsvpConfirmationMessage.trim() || `You are confirmed as ${guestType} for ${eventTitle}.`,
+  };
 }
 
 export function registrationPageIsCustomized(value: unknown): boolean {

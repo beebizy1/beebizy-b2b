@@ -1,11 +1,13 @@
 import { z } from "zod";
-import type { RegistrationPageSettings } from "./registrationPage";
+import { RSVP_CONFIRMATION_LIMITS, type RegistrationPageSettings } from "./registrationPage";
 
 const short = z.string().max(2000);
 const url = z.string().max(2000).nullable();
 const page: z.ZodType<RegistrationPageSettings, z.ZodTypeDef, unknown> = z.object({
   template: z.enum(["warm", "garden", "coastal"]), accentColor: z.string().max(40),
   headline: short, aboutHeading: short, aboutBody: z.string().max(4000), agendaIntroduction: short, welcomeMessage: z.string().max(3000),
+  rsvpConfirmationTitle: z.string().max(RSVP_CONFIRMATION_LIMITS.title).default(""),
+  rsvpConfirmationMessage: z.string().max(RSVP_CONFIRMATION_LIMITS.message).default(""),
   heroImageUrl: url, heroImageDisplay: z.enum(["banner", "logo"]), aboutImageUrl: url, agendaImageUrl: url, paymentUrl: url.optional(),
   footerImageSource: z.enum(["invitation", "custom", "none"]), footerImageUrl: url,
   showAgenda: z.boolean(), showSpeakers: z.boolean(), showSponsors: z.boolean(), showVolunteerSignup: z.boolean(), collectOrganization: z.boolean(),
