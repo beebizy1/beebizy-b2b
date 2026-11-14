@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RSVP_CONFIRMATION_LIMITS, type RegistrationPageSettings } from "./registrationPage";
+import { RSVP_CONFIRMATION_LIMITS, type RegistrationPageSettings } from "./registrationPage.ts";
 
 const short = z.string().max(2000);
 const url = z.string().max(2000).nullable();
