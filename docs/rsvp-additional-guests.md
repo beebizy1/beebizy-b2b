@@ -1,5 +1,11 @@
 # Additional guests on event RSVPs
 
+## November 14 update: on-screen confirmation
+
+Open **Launch your event → Design invitation → After guests RSVP**. Edit the title and message, check the guest preview, and select **Save invitation and continue**. Blank fields keep the default text independently. Line breaks and links are preserved. Work in progress uses the existing private invitation draft recovery. The change applies after a successful RSVP; email copy and ticket checkout are separate.
+
+Verified in Chrome by editing the copy, refreshing to recover the draft, saving, and submitting an RSVP on a demo event. Repeated the save and submit flow on the deployed Studio build in isolated demo mode with API writes blocked. Carlin's actual RSVP page and existing settings were checked without submitting a registration or sending an email. All 732 tests, type checking, lint and build passed. Published Studio deployment: `dpl_CYVXki14BC9WuzXXiZXRdkbZCyqL` (code `edde32e`). The previous Studio deployment is `dpl_5VAT9RJNZhtxhUWWyQL4t94J45rn`.
+
 ## November 13 update: questions for the right person
 
 Each RSVP question now has **Who should answer?** in Event > Invitation > RSVP questions: Main attendee only, Additional guests only, or Main attendee and additional guests. New questions default to the main attendee. Existing unconfigured questions retain their previous behavior until a planner chooses an audience. Frontend rendering and server validation use the same audience filter, and irrelevant submitted answers are ignored.
