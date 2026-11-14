@@ -1,6 +1,6 @@
 # Automatic HubSpot event registration sync
 
-November 12, 2026.
+Updated November 13, 2026.
 
 An owner or admin opens an event's Registrations section, selects a contact registration list from the connected HubSpot account, and explicitly connects it. Existing list members are imported as confirmed registrations. New members are discovered in background checks about every minute, subject to HubSpot's own list processing and provider availability. Each person has quantity one and remains unchecked-in. This does not send email, charge a card, or collect ticket revenue.
 
@@ -20,9 +20,17 @@ Selected list, search and pagination drafts use existing device backup and revis
 
 The transaction-local PostgreSQL test `scripts/verify-hubspot-event-source.ts` passed 200 initial registrations, a duplicate replay, the 201st registrant, tenant/generation/lease/pause fences, preservation of cancelled/arrived/custom-answer records, and the existing production capacity trigger. Temporary tables are removed at commit or rollback. The additive Drizzle-generated migration 0100 was applied after confirming production history through 0099.
 
-The type checker, linter, all 717 tests and build pass. Deployment `dpl_HrdN3r9yWhHzfZJEktdXw2JvS5pz` is published at the existing Studio URL, `https://beebizy-studio-preview.vercel.app`. The previous deployment is `dpl_HYYu6akXDqSMjatkkkBw5msXanYe`. The public Carlin registration endpoint still returns the existing event time zone and one additional guest; the HubSpot health endpoint returns 200.
+The type checker, linter, all 730 tests and build pass. Deployment `dpl_5VAT9RJNZhtxhUWWyQL4t94J45rn`, code `554dcbd`, is published at the existing Studio URL, `https://beebizy-studio-preview.vercel.app`. The preceding deployment is `dpl_4b7zVgLH3ygVDvSHYQAjCGDrJ1EB`. The public Carlin registration endpoint preserves her event settings and primary-attendee question audiences; the HubSpot health endpoint returns 200. The marketing website is separate and unchanged.
 
-The live HubSpot list permission, end-to-end queue processing, browser workflow, and revised demonstration still require verification. Browser access was unavailable in this chat during implementation. A native Vercel one-time schedule was used to publish a harmless nonexistent-event queue message without exporting credentials; its execution telemetry reported unavailable, so this is not proof of processing. The schedule `qa-hubspot-event-sync` is disabled. The consumer is intentionally private and returns 404 over public HTTP, as documented by Vercel. Do not describe the live 200-person HubSpot demonstration as completed until it has actually been performed and captured.
+Live verification passed using approved synthetic data in company HubSpot portal `247905640` and workspace `ws_e9ee754f40224e8ca43d`. Active contact list `10`, `Beebizy Sync Demo ac1002af`, initially contained exactly 200 contacts matching the company marker `Beebizy Demo 2026-11-13 ac1002af`. The production queue worker imported all 200 into isolated draft event `evt_qa_hubauto_ac1002af`. No registration rows were manually inserted.
+
+In the signed-in Chrome UI, Settings showed the connected account and active contact updates. The event's actual list picker loaded the 200-member list and successfully connected it. Jordan Morgan (Demo), contact `594983191248`, was then created through HubSpot's UI with `beebizy-demo-ac1002af-201@example.com`. The approved company marker was saved through Actions → View all properties → Company name, putting Jordan on the active test list. This simulates a new registration through list membership; it does not test a public HubSpot form submission.
+
+Beebizy's open event updated automatically without refresh, another file upload, manual sync or selecting Jordan. Jordan's registration timestamp is `2026-11-14T04:16:46.975Z` (November 13 at 8:16 PM Pacific). Later repeated queue checks left 201 registrations for 201 distinct people, exactly one Jordan, no unrelated contacts and no last error. A continuous real screencast preserves the 200-to-201 change. The video shortens the wait and labels it explicitly.
+
+Actual CSV and Excel downloads from Registrations each contain 201 data rows; CSV has 201 unique email addresses and one Jordan. Check-in search found Jordan, check-in only saved one arrival, and Undo restored zero checked-in people. No badge was printed, email sent, invitation sent or payment taken. Original captures, selected source ranges, narration and verification evidence are retained in `Downloads/Beebizy Demo Video/HubSpot Automatic Sync 200`. SCU still needs to authorize its own portal in its own workspace; this company test does not establish access to SCU data.
+
+Native Vercel Schedules wrap queue payloads in a documented execution envelope. `parseHubSpotEventSourceMessage` now accepts either the app's direct job or that validated envelope, rejecting malformed wrappers. Initial test processing was recovered by the existing stale-source mechanism, which rotated the generation; normal worker ticks then continued automatically. The disposable schedule `qa-hubspot-event-sync` remains disabled. The consumer is intentionally private and returns 404 over public HTTP, as documented by Vercel.
 
 Automatic approval review rejected exporting the full production environment for a queue test because it would expose unrelated secrets. Do not repeat that export. Use the normal authorized UI or narrowly scoped native platform tools for further checks.
 
