@@ -17,6 +17,7 @@ import { buildUniqueAttendanceReport } from "../src/data/attendanceReport.ts";
 import type { BudgetItem, ChecklistItem, Sponsorship } from "../src/data/entities.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
+import { renderEventSharePage } from "../src/server/eventSharePage.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
 import { generatePostEventCopy, generateRegistrationCopy } from "../src/server/eventCopy.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
@@ -310,6 +311,11 @@ async function handleLead(request: Request): Promise<Response> {
  * than something guessable.
  */
 async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
+  if (segments[0] === "public" && segments[1] === "event-share" && segments[2] && segments.length === 3) {
+    if (method !== "GET" && method !== "HEAD") return json({ error: "Method not allowed" }, 405);
+    return renderEventSharePage(segments[2], method, eventByShareToken);
+  }
+
   if (segments[0] === "integrations" && segments[1] === "hubspot") {
     if (segments[2] === "callback" && method === "GET") return handleHubSpotCallback(request);
     if (segments[2] === "webhook" && method === "POST") return handleHubSpotWebhook(request);

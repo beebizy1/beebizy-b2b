@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/router.ts": { "maxDuration": 300 },
+    "api/router.ts": { "maxDuration": 300, "includeFiles": "dist/index.html" },
     "api/hubspot-event-sync.ts": {
       "maxDuration": 120,
       "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "hubspot-event-registrations" }]
@@ -18,6 +18,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/e/:token", "destination": "/api/router?__path=public/event-share/:token" },
+    { "source": "/e/:token/register/:segment", "destination": "/api/router?__path=public/event-share/:token" },
     {
       "source": "/api/((?!hubspot-event-sync$).*)",
       "destination": "/api/router?__path=$1"
