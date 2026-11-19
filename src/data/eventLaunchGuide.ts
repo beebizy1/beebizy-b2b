@@ -73,14 +73,9 @@ export function nextEventLaunchStep(completion: EventLaunchCompletion): EventLau
   return EVENT_LAUNCH_STEP_IDS.find((step) => !completion[step]) ?? null;
 }
 
-/** A future step unlocks only after every earlier step is complete. Completed steps stay reviewable. */
-export function eventLaunchUnlocks(completion: EventLaunchCompletion): EventLaunchCompletion {
-  let everyEarlierStepComplete = true;
-  return Object.fromEntries(EVENT_LAUNCH_STEP_IDS.map((step) => {
-    const unlocked = completion[step] || everyEarlierStepComplete;
-    everyEarlierStepComplete = everyEarlierStepComplete && completion[step];
-    return [step, unlocked];
-  })) as EventLaunchCompletion;
+/** Planners can prepare or revisit any launch step while completion still tracks their progress. */
+export function eventLaunchUnlocks(): EventLaunchCompletion {
+  return Object.fromEntries(EVENT_LAUNCH_STEP_IDS.map(step => [step, true])) as EventLaunchCompletion;
 }
 
 /** Keeps deliberate review of a completed step open, but advances once an unfinished step becomes complete. */

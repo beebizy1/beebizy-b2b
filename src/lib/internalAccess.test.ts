@@ -54,7 +54,9 @@ describe("internal access allowlist", () => {
 
   it("allows only operators to bypass customer billing for the feedback inbox", () => {
     expect(canAccessOperatorFeedbackInbox("feedback/inbox", "laila@beebizy.com")).toBe(true);
+    expect(canAccessOperatorFeedbackInbox("admin/user-activity", "laila@beebizy.com")).toBe(true);
     expect(canAccessOperatorFeedbackInbox("feedback/inbox", "partner@example.com")).toBe(false);
+    expect(canAccessOperatorFeedbackInbox("admin/user-activity", "partner@example.com")).toBe(false);
     expect(canAccessOperatorFeedbackInbox("events", "laila@beebizy.com")).toBe(false);
   });
 });

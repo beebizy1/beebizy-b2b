@@ -124,6 +124,8 @@ import { PRIVATE_BETA_ORIGIN } from "../lib/privateBetaHost.ts";
 import { invitationAcceptanceUrl } from "../lib/invitation.ts";
 import { volunteerCoverage } from "../data/santaClara.ts";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../data/registrationPage.ts";
+import { preparePublicRsvpParty } from "../data/publicRsvpParty.ts";
+import { publicRsvpPartyQueries } from "./publicRsvpStore.ts";
 import { DEFAULT_EVENT_NAVIGATION, normalizeEventNavigation } from "../data/eventNavigation.ts";
 import { assignmentDeliveryEmail, assignmentSummaryCounts } from "../data/assignmentSummary.ts";
 import { parseAccountExperience, type AccountExperience } from "../data/accountExperience.ts";
@@ -389,6 +391,7 @@ export const events = {
       imageUrl: optStr(body, "imageUrl"),
       registrationPage: normalizeRegistrationPage(body.registrationPage ?? DEFAULT_REGISTRATION_PAGE),
       navigation: normalizeEventNavigation(body.navigation ?? DEFAULT_EVENT_NAVIGATION),
+      hubspotSyncEnabled: body.hubspotSyncEnabled === true,
       createdAt,
     };
     const location = values.locationId ? await locations.get(ctx, values.locationId) : null;
@@ -440,6 +443,7 @@ export const events = {
       shareToken: null,
       registrationPage: values.registrationPage ?? { ...DEFAULT_REGISTRATION_PAGE },
       navigation: values.navigation,
+      hubspotSyncEnabled: values.hubspotSyncEnabled,
       createdAt: createdAt.toISOString(),
     };
     const eventInsert = db.insert(s.events).values(values);
@@ -507,6 +511,7 @@ export const events = {
       imageUrl: (b) => optStr(b, "imageUrl"),
       registrationPage: (b) => normalizeRegistrationPage(b.registrationPage),
       navigation: (b) => normalizeEventNavigation(b.navigation),
+      hubspotSyncEnabled: (b) => b.hubspotSyncEnabled === true,
       locationId: (b) => optStr(b, "locationId"),
       timeZone: (b) => optStr(b, "timeZone"),
     });
@@ -530,6 +535,7 @@ export const events = {
     if ("imageUrl" in body) after.imageUrl = patch.imageUrl as string | null;
     if ("registrationPage" in body) after.registrationPage = normalizeRegistrationPage(patch.registrationPage);
     if ("navigation" in body) after.navigation = normalizeEventNavigation(patch.navigation);
+    if ("hubspotSyncEnabled" in body) after.hubspotSyncEnabled = patch.hubspotSyncEnabled as boolean;
     if ("date" in body) after.date = (patch.startsAt as Date).toISOString();
     if ("endDate" in body) after.endDate = (patch.endsAt as Date | null)?.toISOString() ?? null;
     if ("timeZone" in body) after.timeZone = patch.timeZone as string | null;
@@ -545,6 +551,9 @@ export const events = {
 
     const updatedAt = new Date();
     after.updatedAt = updatedAt.toISOString();
+    if ("registrationPage" in patch) {
+      patch.registrationPage = sql`coalesce(${s.events.registrationPage}, '{}'::jsonb) || ${JSON.stringify(patch.registrationPage)}::jsonb`;
+    }
     const eventUpdate = db
       .update(s.events)
       .set({ ...patch, updatedAt })
@@ -614,7 +623,7 @@ export const events = {
   async updateRegistrationPage(ctx: RequestContext, id: string, body: Body): Promise<Event> {
     const before = await events.get(ctx, id);
     if (!before) throw new HttpError(404, "That event no longer exists.");
-    const patch = normalizeRegistrationPagePatch(body);
+    const patch = normalizeRegistrationPagePatch(body, before.registrationPage);
     if (Object.keys(patch).length === 0) return before;
     const updatedAt = new Date();
     await db.update(s.events).set({
@@ -1035,60 +1044,29 @@ async function sharedEventForWrite(token: string) {
 /** Registers a guest from one segment-specific public link. */
 export async function publicRegistration(token: string, body: Body): Promise<PublicRegistrationResult> {
   const event = await sharedEventForWrite(token);
+  const page = normalizeRegistrationPage(event.registrationPage);
+  let people: ReturnType<typeof preparePublicRsvpParty>;
+  try { people = preparePublicRsvpParty(page, body); }
+  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your registration details."); }
   const draft: PublicRegistrationDraft = {
-    name: str(body, "name").trim(),
-    email: str(body, "email").trim().toLowerCase(),
+    name: people[0]!.name, email: people[0]!.email!,
     segment: labelFrom(body, "segment") ?? "General",
-    organization: labelFrom(body, "organization", 120),
+    organization: page.collectOrganization ? labelFrom(body, "organization", 120) : null,
     invitationToken: labelFrom(body, "invitationToken", 160),
   };
-  const page = normalizeRegistrationPage(event.registrationPage);
   if (!page.registrationTypes.includes(draft.segment)) throw new HttpError(400, "That guest type is not available for this event.");
-  if (!page.collectOrganization) draft.organization = null;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new HttpError(400, "Enter a valid email address.");
-  const [{ total } = { total: 0 }] = await db
-    .select({ total: sql<number>`coalesce(sum(${s.registrations.quantity}), 0)` })
-    .from(s.registrations)
-    .where(and(eq(s.registrations.eventId, event.id), sql`${s.registrations.status} <> 'cancelled'`));
-  if (event.capacity !== null && Number(total) >= event.capacity) {
-    throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
-  }
-
-  const guestId = newId("att");
-  await db.insert(s.guests).values({
-    id: guestId,
-    workspaceId: event.workspaceId,
-    name: draft.name,
-    contact: draft.email,
-    notes: "Registered through the public event page.",
-  }).onConflictDoNothing({ target: [s.guests.workspaceId, s.guests.contact] });
-  const [guest] = await db.select({ id: s.guests.id }).from(s.guests).where(and(
-    eq(s.guests.workspaceId, event.workspaceId),
-    eq(s.guests.contact, draft.email),
-  )).limit(1);
-  if (!guest) throw new HttpError(500, "The guest record could not be created.");
-
-  const id = newId("reg");
+  const party = people.map(person => ({ ...person, guestId: newId("att"), registrationId: newId("reg") }));
+  const queries = publicRsvpPartyQueries({ eventId: event.id, workspaceId: event.workspaceId, segment: draft.segment, organization: draft.organization ?? null, partyId: crypto.randomUUID(), people: party });
   try {
-    await db.insert(s.registrations).values({
-      id,
-      workspaceId: event.workspaceId,
-      eventId: event.id,
-      guestId: guest.id,
-      status: "confirmed",
-      segment: draft.segment,
-      organization: draft.organization,
-    });
+    await db.batch([db.execute(queries[0]!), ...queries.slice(1).map(query => db.execute(query))]);
   } catch (error) {
-    if (isConstraintViolation(error, "registrations_event_guest_idx")) {
-      throw new HttpError(409, "This email is already registered for the event.");
-    }
-    if (isConstraintViolation(error, "registrations_event_capacity_check")) {
-      throw new HttpError(409, `${event.title} is at capacity (${event.capacity}).`);
-    }
+    if (isConstraintViolation(error, "registrations_event_guest_idx")) throw new HttpError(409, "One of these email addresses is already registered for the event. No additional registrations were saved.");
+    if (isConstraintViolation(error, "registrations_event_capacity_check")) throw new HttpError(409, `There aren't enough places left for all ${people.length} people. No registrations were saved. Remove a guest or contact the organizer.`);
+    const cause = error as { code?: string; cause?: { code?: string } };
+    if (cause.code === "21000" || cause.cause?.code === "21000") throw new HttpError(409, "An email matches more than one existing person. Please contact the organizer. No registrations were saved.");
     throw error;
   }
-  const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, id)).limit(1);
+  const [row] = await db.select().from(s.registrations).where(eq(s.registrations.id, party[0]!.registrationId)).limit(1);
   const registration = map.toRegistration(row!, event.title);
   if (draft.invitationToken) {
     await db.update(s.ticketInvitations).set({
@@ -1114,7 +1092,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
       email: draft.email,
       phone: null,
       householdId: null,
-      attendeeId: guest.id,
+      attendeeId: registration.guestId,
       paymentMethodId: null,
       stripeCustomerId: null,
       autoChargeOptIn: false,
@@ -1140,6 +1118,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     registrationId: registration.id,
     to: draft.email,
     guestName: draft.name,
+    additionalGuestNames: people.slice(1).map(person => person.name),
     eventTitle: event.title,
     segment: draft.segment,
     startsAt: event.startsAt.toISOString(),
@@ -1150,7 +1129,7 @@ export async function publicRegistration(token: string, body: Body): Promise<Pub
     auctionAccessUrl: bidderAccessUrl,
     paddleNumber: bidderPaddle,
   });
-  return { ...registration, confirmationEmailStatus: email.status };
+  return { ...registration, confirmationEmailStatus: email.status, ...(party.length > 1 ? { additionalGuests: party.slice(1).map(person => ({ id: person.registrationId, name: person.name })) } : {}) };
 }
 
 /** Claims an available volunteer opening without exposing the workspace or its roster. */
@@ -4394,6 +4373,7 @@ export const sponsorships = eventScoped({
     companyName: (b) => str(b, "companyName"),
     tier: (b) => str(b, "tier", "custom"),
     amountCents: (b) => optInt(b, "amountCents"),
+    logoUrl: (b) => optStr(b, "logoUrl"),
     contactEmail: (b) => optStr(b, "contactEmail"),
     contactName: (b) => optStr(b, "contactName"),
     notes: (b) => optStr(b, "notes"),

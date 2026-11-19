@@ -125,19 +125,54 @@ describe("events", () => {
     expect((await memoryAdapter.events.getByShareToken(shareToken))?.timeZone).toBe("America/Chicago");
   });
 
+  it("keeps custom RSVP questions in the public payload and submitted guest record", async () => {
+    const questions = [{ id: "shirt", label: "T-shirt size", type: "select" as const, required: true, options: ["S", "M", "L"] }];
+    await memoryAdapter.events.updateRegistrationPage("evt-skickoff", { questions });
+    expect((await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))?.event.registrationPage?.questions).toEqual(questions);
+    await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", { name: "Question QA", email: "question-required@example.com", segment: "General" })).rejects.toThrow("T-shirt size");
+    const result = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", { name: "Question QA", email: "question-saved@example.com", segment: "General", answers: { shirt: "M" } });
+    expect(result.importedFields).toEqual([{ label: "T-shirt size", value: "M" }]);
+  });
+
+  it("saves separate RSVP names alongside answers and keeps the full name for guest lists and badges", async () => {
+    await memoryAdapter.events.updateRegistrationPage("evt-skickoff", { questions: [{ id: "shirt", label: "T-shirt size", type: "select", required: true, options: ["M", "L"] }] });
+    const result = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "Ignored legacy name", firstName: "María Elena", lastName: "de la Cruz-Taylor", email: "split-name@example.invalid", segment: "General", answers: { shirt: "M" },
+    });
+    const saved = (await memoryAdapter.registrations.listForEvent("evt-skickoff")).find(row => row.id === result.id)!;
+    expect(saved.guest?.name).toBe("María Elena de la Cruz-Taylor");
+    expect(saved.importedFields).toEqual([{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }, { label: "T-shirt size", value: "M" }]);
+    await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "María Elena de la Cruz-Taylor", firstName: "María Elena", lastName: "de la Cruz-Taylor", email: "split-name@example.invalid", segment: "General", answers: { shirt: "M" },
+    })).rejects.toThrow("already registered");
+  });
+
+  it("does not register an incomplete separate name", async () => {
+    const before = await memoryAdapter.registrations.listForEvent("evt-skickoff");
+    await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
+      name: "Legacy fallback", firstName: "Carlin", lastName: " ", email: "missing-name@example.invalid", segment: "General",
+    })).rejects.toThrow("last name");
+    expect(await memoryAdapter.registrations.listForEvent("evt-skickoff")).toEqual(before);
+  });
+
   it("publishes saved registration-site branding with the guest payload", async () => {
     const { shareToken } = await memoryAdapter.events.share("evt-cab");
     await memoryAdapter.events.update("evt-cab", {
       registrationPage: {
-        template: "garden",
+        template: "garden", maxAdditionalGuests: 0,
         accentColor: "#245F45",
         headline: "An evening in the garden",
         aboutHeading: "Why we gather",
         aboutBody: "Meet the founders building the next chapter.",
         agendaIntroduction: "Doors open before the first conversation.",
         welcomeMessage: "Reserve your place with the team.",
+        rsvpConfirmationTitle: "See you in the garden!",
+        rsvpConfirmationMessage: "Doors open at six.\n\nPlease use the west entrance.",
         heroImageUrl: "https://images.example.com/garden.jpg",
         heroImageDisplay: "banner",
+        footerImageSource: "invitation",
+        footerImageUrl: null,
+        questions: [],
         aboutImageUrl: null,
         agendaImageUrl: null,
         showAgenda: false,
@@ -157,6 +192,8 @@ describe("events", () => {
     expect((await memoryAdapter.events.getByShareToken(shareToken))?.event.registrationPage).toMatchObject({
       template: "garden",
       headline: "An evening in the garden",
+      rsvpConfirmationTitle: "See you in the garden!",
+      rsvpConfirmationMessage: "Doors open at six.\n\nPlease use the west entrance.",
       showAgenda: false,
       infoPages: [{ id: "room-block", navLabel: "Room block", title: "Hotel room block", body: "Book by November 30." }],
     });

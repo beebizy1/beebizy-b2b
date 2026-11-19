@@ -90,6 +90,8 @@ export interface Event extends OwnedRecord {
   /** Present after the organizer creates the public auction catalog link. */
   auctionPublicToken?: string | null;
   auctionPage?: AuctionPageSettings;
+  /** When enabled, registrations for this event are mirrored to the workspace HubSpot portal. */
+  hubspotSyncEnabled?: boolean;
 }
 
 export interface EventDraft {
@@ -108,6 +110,7 @@ export interface EventDraft {
   registrationPage?: RegistrationPageSettings;
   navigation?: EventNavigationSettings;
   auctionPage?: AuctionPageSettings;
+  hubspotSyncEnabled?: boolean;
 }
 
 export type EventPatch = Partial<EventDraft>;
@@ -270,15 +273,20 @@ export interface GuestRegistrationImportDraft extends GuestDraft {
 /** Details a guest submits from one of the event's segment-specific registration links. */
 export interface PublicRegistrationDraft {
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   segment: string;
   organization?: string | null;
   invitationToken?: string | null;
+  answers?: Record<string, string>;
+  additionalGuests?: Array<{ firstName: string; lastName: string; email?: string; answers?: Record<string, string> }>;
 }
 
 /** Registration plus the result of the guest confirmation email attempt. */
 export interface PublicRegistrationResult extends Registration {
   confirmationEmailStatus: "sent" | "skipped" | "failed";
+  additionalGuests?: Array<{ id: string; name: string }>;
 }
 
 export interface RegistrationCheckInPatch {
@@ -2178,6 +2186,78 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   timeZone: "America/Los_Angeles",
 };
 
+/* --------------------------------------------------- Google Calendar connection */
+
+export type GoogleCalendarConnectionState =
+  | "not-configured"
+  | "disconnected"
+  | "connected"
+  | "error";
+
+/**
+ * Account-level status only. OAuth credentials and refresh tokens never cross the API
+ * boundary, so the browser can render connection health without receiving a secret.
+ */
+export interface GoogleCalendarConnectionStatus {
+  state: GoogleCalendarConnectionState;
+  isConfigured: boolean;
+  googleEmail: string | null;
+  calendarSummary: string | null;
+  lastSyncedAt: IsoDateTime | null;
+  lastError: string | null;
+  eventsSynced: number;
+  personalEventsVisible: number;
+}
+
+export interface GoogleCalendarConnectResult {
+  authorizationUrl: string;
+}
+
+export interface GoogleCalendarSyncResult {
+  eventsSynced: number;
+  lastSyncedAt: IsoDateTime;
+}
+
+/** A personal Google event shown only to the user who connected that Google account. */
+export interface GoogleCalendarExternalEvent {
+  id: string;
+  title: string;
+  startsAt: IsoDateTime;
+  endsAt: IsoDateTime;
+  timeZone: string | null;
+  location: string | null;
+  isAllDay: boolean;
+  htmlLink: string | null;
+}
+
+/* ----------------------------------------------------------- HubSpot connection */
+
+export interface HubSpotConnectionStatus {
+  state: "not-configured" | "disconnected" | "connected" | "error";
+  isConfigured: boolean;
+  portalId: string | null;
+  lastSyncedAt: IsoDateTime | null;
+  lastError: string | null;
+  contactsSynced: number;
+  inbound?: import("./hubspotContacts").HubSpotInboundStatus;
+  isDemo?: boolean;
+}
+
+export interface HubSpotConnectResult {
+  authorizationUrl: string;
+}
+
+export interface HubSpotSyncResult {
+  synced: number;
+  skipped: number;
+  failed: number;
+  lastSyncedAt: IsoDateTime;
+}
+
+export interface HubSpotEventSyncResult extends HubSpotSyncResult {
+  event: Event;
+}
+
 /* ----------------------------------------------------------- product feedback */
 
 export const FEEDBACK_CATEGORIES = ["general", "bug", "idea", "praise"] as const;
@@ -2219,6 +2299,40 @@ export type FeedbackNotificationOutcome =
   | { status: "sent" }
   | { status: "skipped"; reason: string }
   | { status: "failed"; reason: string };
+
+/* ------------------------------------------------------ operator user activity */
+
+export interface AdminUserWorkspaceAccess {
+  workspaceId: string;
+  workspaceName: string;
+  role: WorkspaceRole;
+}
+
+export interface AdminUserActivityRow {
+  id: string;
+  name: string;
+  email: string;
+  status: "active-member" | "signed-in-no-access" | "invited";
+  workspaces: AdminUserWorkspaceAccess[];
+  createdAt: IsoDateTime | null;
+  lastSignInAt: IsoDateTime | null;
+  lastActiveAt: IsoDateTime | null;
+  isActiveNow: boolean;
+  isTestAccount: boolean;
+}
+
+export interface AdminUserActivityResponse {
+  generatedAt: IsoDateTime;
+  activeWindowMinutes: number;
+  users: AdminUserActivityRow[];
+  totals: {
+    authenticatedPeople: number;
+    activeMembers: number;
+    activeNow: number;
+    pendingInvites: number;
+    testAccounts: number;
+  };
+}
 
 /* ----------------------------------------------------------------- derived */
 

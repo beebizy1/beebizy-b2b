@@ -268,6 +268,217 @@ export const userSettings = pgTable("user_settings", {
   updatedAt: updatedAt(),
 });
 
+/**
+ * One Google account connection per Beebizy user and workspace. Refresh tokens are
+ * encrypted before storage; access tokens are short-lived and never persisted.
+ */
+export const googleCalendarConnections = pgTable(
+  "google_calendar_connections",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    googleEmail: text("google_email").notNull(),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    calendarSummary: text("calendar_summary"),
+    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    syncToken: text("sync_token"),
+    channelId: text("channel_id").unique(),
+    channelResourceId: text("channel_resource_id"),
+    channelTokenHash: text("channel_token_hash"),
+    channelExpiresAt: timestamp("channel_expires_at", { withTimezone: true }),
+    externalBackfillAt: timestamp("external_backfill_at", { withTimezone: true }),
+    enabled: boolean("enabled").notNull().default(true),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("google_calendar_connections_workspace_user_idx").on(table.workspaceId, table.userId),
+    index("google_calendar_connections_channel_idx").on(table.channelId),
+    index("google_calendar_connections_renewal_idx").on(table.enabled, table.channelExpiresAt),
+  ],
+);
+
+/** Only Beebizy-created links are synced back. Unrelated personal events stay private. */
+export const googleCalendarEventLinks = pgTable(
+  "google_calendar_event_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => googleCalendarConnections.id, { onDelete: "cascade" }),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    googleEventId: text("google_event_id").notNull(),
+    googleEtag: text("google_etag"),
+    googleUpdatedAt: timestamp("google_updated_at", { withTimezone: true }),
+    googleDeletedAt: timestamp("google_deleted_at", { withTimezone: true }),
+    lastBeebizyUpdatedAt: timestamp("last_beebizy_updated_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("google_calendar_event_links_connection_event_idx").on(table.connectionId, table.eventId),
+    uniqueIndex("google_calendar_event_links_connection_google_idx").on(table.connectionId, table.googleEventId),
+    index("google_calendar_event_links_workspace_event_idx").on(table.workspaceId, table.eventId),
+  ],
+);
+
+/**
+ * Personal Google events are a private overlay for the connected user. They are not
+ * workspace events and are never visible to another Beebizy member.
+ */
+export const googleCalendarExternalEvents = pgTable(
+  "google_calendar_external_events",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => googleCalendarConnections.id, { onDelete: "cascade" }),
+    googleEventId: text("google_event_id").notNull(),
+    title: text("title").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    timeZone: text("time_zone"),
+    location: text("location"),
+    isAllDay: boolean("is_all_day").notNull().default(false),
+    htmlLink: text("html_link"),
+    googleEtag: text("google_etag"),
+    googleUpdatedAt: timestamp("google_updated_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("google_calendar_external_events_connection_google_idx").on(table.connectionId, table.googleEventId),
+    index("google_calendar_external_events_user_range_idx").on(table.workspaceId, table.userId, table.startsAt),
+  ],
+);
+
+export const hubspotConnections = pgTable(
+  "hubspot_connections",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    portalId: text("portal_id").notNull(),
+    connectedByUserId: text("connected_by_user_id").notNull(),
+    accessTokenCiphertext: text("access_token_ciphertext").notNull(),
+    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    inboundEnabled: boolean("inbound_enabled").notNull().default(false),
+    inboundState: text("inbound_state").notNull().default("idle"),
+    inboundCursor: text("inbound_cursor"),
+    inboundRunId: text("inbound_run_id"),
+    inboundStartedAt: timestamp("inbound_started_at", { withTimezone: true }),
+    inboundProcessed: integer("inbound_processed").notNull().default(0),
+    inboundLastSyncedAt: timestamp("inbound_last_synced_at", { withTimezone: true }),
+    inboundLastError: text("inbound_last_error"),
+    inboundLeaseToken: text("inbound_lease_token"),
+    inboundLeaseUntil: timestamp("inbound_lease_until", { withTimezone: true }),
+    inboundLastWebhookAt: timestamp("inbound_last_webhook_at", { withTimezone: true }),
+    webhookLeaseToken: text("webhook_lease_token"),
+    webhookLeaseUntil: timestamp("webhook_lease_until", { withTimezone: true }),
+    webhookLastError: text("webhook_last_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("hubspot_connections_workspace_idx").on(table.workspaceId),
+    index("hubspot_connections_portal_idx").on(table.portalId),
+  ],
+);
+
+export const hubspotContactLinks = pgTable(
+  "hubspot_contact_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    guestId: text("guest_id").notNull().references(() => guests.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    email: text("email").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("hubspot_contact_links_workspace_guest_idx").on(table.workspaceId, table.guestId),
+    uniqueIndex("hubspot_contact_links_connection_contact_idx").on(table.connectionId, table.hubspotContactId),
+  ],
+);
+
+export const hubspotInboundContacts = pgTable(
+  "hubspot_inbound_contacts",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    guestId: text("guest_id").references(() => guests.id, { onDelete: "set null" }),
+    firstName: text("first_name").notNull().default(""),
+    lastName: text("last_name").notNull().default(""),
+    email: text("email"),
+    company: text("company"),
+    phone: text("phone"),
+    emailOptOut: boolean("email_opt_out").notNull().default(false),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    lastSeenRunId: text("last_seen_run_id"),
+    importError: text("import_error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  table => [uniqueIndex("hubspot_inbound_connection_contact_idx").on(table.connectionId, table.hubspotContactId), index("hubspot_inbound_workspace_idx").on(table.workspaceId, table.archivedAt), index("hubspot_inbound_guest_idx").on(table.workspaceId, table.guestId)],
+);
+
+export const hubspotContactInbox = pgTable(
+  "hubspot_contact_inbox",
+  {
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    eventKind: text("event_kind").notNull(),
+    updatedAt: updatedAt(),
+  },
+  table => [primaryKey({ columns: [table.connectionId, table.hubspotContactId] }), index("hubspot_inbox_workspace_idx").on(table.workspaceId, table.occurredAt)],
+);
+
+export const hubspotRegistrationLinks = pgTable(
+  "hubspot_registration_links",
+  {
+    id: id(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+    registrationId: text("registration_id").notNull().references(() => registrations.id, { onDelete: "cascade" }),
+    hubspotContactId: text("hubspot_contact_id").notNull(),
+    hubspotNoteId: text("hubspot_note_id"),
+    fingerprint: text("fingerprint").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("hubspot_registration_links_registration_idx").on(table.registrationId),
+    index("hubspot_registration_links_connection_idx").on(table.connectionId),
+  ],
+);
+
 export const productFeedback = pgTable(
   "product_feedback",
   {
@@ -341,6 +552,7 @@ export const events = pgTable(
     navigation: jsonb("navigation").$type<EventNavigationSettings>().notNull().default({ hiddenTabIds: [], tabOrder: [] }),
     auctionPublicToken: text("auction_public_token").unique(),
     auctionPage: jsonb("auction_page").$type<AuctionPageSettings>(),
+    hubspotSyncEnabled: boolean("hubspot_sync_enabled").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1640,6 +1852,26 @@ export const canvases = pgTable(
   },
   (table) => [index("canvases_workspace_idx").on(table.workspaceId)],
 );
+
+/** One explicitly selected HubSpot registration audience per event. */
+export const hubspotEventSources = pgTable("hubspot_event_sources", {
+  eventId: text("event_id").primaryKey().references(() => events.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  connectionId: text("connection_id").notNull().references(() => hubspotConnections.id, { onDelete: "cascade" }),
+  listId: text("list_id").notNull(),
+  listName: text("list_name").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  generation: text("generation").notNull(),
+  tick: integer("tick").notNull().default(0),
+  cursor: text("cursor"),
+  state: text("state").notNull().default("queued"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  lastQueuedAt: timestamp("last_queued_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  leaseToken: text("lease_token"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  updatedAt: updatedAt(),
+}, table => [index("hubspot_event_sources_connection_idx").on(table.connectionId, table.enabled)]);
 
 /* ------------------------------------------------------------------- relations */
 

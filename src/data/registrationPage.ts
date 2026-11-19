@@ -1,3 +1,5 @@
+import { linkedTextHtml } from "../lib/textLinks.ts";
+
 export const REGISTRATION_PAGE_TEMPLATE_IDS = ["warm", "garden", "coastal"] as const;
 export type RegistrationPageTemplateId = (typeof REGISTRATION_PAGE_TEMPLATE_IDS)[number];
 export type RegistrationHeroDisplay = "banner" | "logo";
@@ -18,6 +20,16 @@ export interface RegistrationInfoPage {
   body: string;
 }
 
+export interface RegistrationQuestion {
+  id: string;
+  label: string;
+  type: "text" | "select";
+  required: boolean;
+  options: string[];
+  /** Older events keep their existing per-person questions until a planner chooses an audience. */
+  audience?: "primary" | "guests" | "both";
+}
+
 export interface RegistrationPageSettings {
   template: RegistrationPageTemplateId;
   accentColor: string;
@@ -26,8 +38,15 @@ export interface RegistrationPageSettings {
   aboutBody: string;
   agendaIntroduction: string;
   welcomeMessage: string;
+  rsvpConfirmationTitle: string;
+  rsvpConfirmationMessage: string;
   heroImageUrl: string | null;
   heroImageDisplay: RegistrationHeroDisplay;
+  footerImageSource: "invitation" | "custom" | "none";
+  footerImageUrl: string | null;
+  questions: RegistrationQuestion[];
+  /** Zero keeps additional-guest RSVPs disabled until the organizer opts in. */
+  maxAdditionalGuests: number;
   aboutImageUrl: string | null;
   agendaImageUrl: string | null;
   /** Optional organizer-owned checkout. Beebizy does not process this payment. */
@@ -82,6 +101,9 @@ export const REGISTRATION_PAGE_TEMPLATES: readonly RegistrationPageTemplate[] = 
   },
 ] as const;
 
+export const RSVP_CONFIRMATION_LIMITS = { title: 120, message: 1000 } as const;
+export const DEFAULT_RSVP_CONFIRMATION_TITLE = "You're registered";
+
 export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   template: "warm",
   accentColor: "#8C5A12",
@@ -90,8 +112,14 @@ export const DEFAULT_REGISTRATION_PAGE: RegistrationPageSettings = {
   aboutBody: "",
   agendaIntroduction: "",
   welcomeMessage: "",
+  rsvpConfirmationTitle: "",
+  rsvpConfirmationMessage: "",
   heroImageUrl: null,
   heroImageDisplay: "banner",
+  footerImageSource: "invitation",
+  footerImageUrl: null,
+  questions: [],
+  maxAdditionalGuests: 0,
   aboutImageUrl: null,
   agendaImageUrl: null,
   paymentUrl: null,
@@ -124,6 +152,11 @@ function safeImageUrl(value: unknown): string | null {
   if (candidate.startsWith("/") && !candidate.startsWith("//")) return candidate;
   try {
     const url = new URL(candidate);
+    // Local demo uploads use same-origin object URLs. The server never accepts these
+    // as durable image URLs; live uploads use HTTPS storage URLs instead.
+    if (url.protocol === "blob:" && typeof window !== "undefined") {
+      try { return new URL(url.pathname).origin === window.location.origin ? candidate : null; } catch { return null; }
+    }
     return url.protocol === "https:" ? url.toString() : null;
   } catch {
     return null;
@@ -179,6 +212,51 @@ function infoPages(value: unknown): RegistrationInfoPage[] {
   }).slice(0, 6);
 }
 
+function questions(value: unknown): RegistrationQuestion[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((item): RegistrationQuestion[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const input = item as Record<string, unknown>;
+    const id = text(input.id, 80);
+    const label = text(input.label, 160);
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id) || !label || seen.has(id)) return [];
+    seen.add(id);
+    const options = [...new Set(Array.isArray(input.options) ? input.options.map(option => text(option, 100)).filter(Boolean) : [])].slice(0, 20);
+    return [{ id, label, type: input.type === "select" ? "select" : "text", required: input.required === true, options,
+      ...(input.audience === "primary" || input.audience === "guests" || input.audience === "both" ? { audience: input.audience } : {}),
+    }];
+  }).slice(0, 12);
+}
+
+export function publicRegistrationHref(token: string, page: RegistrationPageSettings, invitationToken: string | null = null, hasTickets = false): string {
+  const path = !hasTickets && !page.paymentUrl && page.registrationTypes.length === 1
+    ? `/e/${token}/register/${encodeURIComponent(page.registrationTypes[0]!)}` : `/e/${token}`;
+  const query = invitationToken ? `?${new URLSearchParams({ invite: invitationToken })}` : "";
+  return `${path}${query}${path.endsWith(`/e/${token}`) ? "#register" : ""}`;
+}
+
+export function footerBannerImage(page: RegistrationPageSettings): string | null {
+  if (page.footerImageSource === "none") return null;
+  return page.footerImageSource === "custom" ? page.footerImageUrl : page.heroImageUrl;
+}
+
+/** Only organizer-defined questions may enter the saved guest record. */
+export function registrationQuestionsFor(configured: RegistrationQuestion[], person: "primary" | "guests"): RegistrationQuestion[] {
+  return configured.filter(question => !question.audience || question.audience === "both" || question.audience === person);
+}
+
+/** Hidden questions cannot require answers or enter another person's registration. */
+export function registrationAnswerFields(configured: RegistrationQuestion[], raw: unknown, person: "primary" | "guests" = "primary"): Array<{ label: string; value: string }> {
+  const answers = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  return registrationQuestionsFor(configured, person).flatMap(question => {
+    const value = typeof answers[question.id] === "string" ? String(answers[question.id]).trim() : "";
+    if (question.required && !value) throw new Error(`Please answer: ${question.label}.`);
+    if (value.length > 1000 || (value && question.type === "select" && !question.options.includes(value))) throw new Error(`Choose a valid answer for ${question.label}.`);
+    return value ? [{ label: question.label, value }] : [];
+  });
+}
+
 export function normalizeRegistrationPage(value: unknown): RegistrationPageSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {
     ...LEGACY_REGISTRATION_PAGE,
@@ -201,8 +279,14 @@ export function normalizeRegistrationPage(value: unknown): RegistrationPageSetti
     aboutBody: text(input.aboutBody, 3_000),
     agendaIntroduction: text(input.agendaIntroduction, 1_500),
     welcomeMessage: text(input.welcomeMessage, 2_000),
+    rsvpConfirmationTitle: text(input.rsvpConfirmationTitle, RSVP_CONFIRMATION_LIMITS.title),
+    rsvpConfirmationMessage: text(input.rsvpConfirmationMessage, RSVP_CONFIRMATION_LIMITS.message),
     heroImageUrl: safeImageUrl(input.heroImageUrl),
     heroImageDisplay: input.heroImageDisplay === "logo" ? "logo" : "banner",
+    footerImageSource: input.footerImageSource === "custom" || input.footerImageSource === "none" ? input.footerImageSource : "invitation",
+    footerImageUrl: safeImageUrl(input.footerImageUrl),
+    questions: questions(input.questions),
+    maxAdditionalGuests: typeof input.maxAdditionalGuests === "number" && Number.isFinite(input.maxAdditionalGuests) ? Math.max(0, Math.min(10, Math.floor(input.maxAdditionalGuests))) : 0,
     aboutImageUrl: safeImageUrl(input.aboutImageUrl),
     agendaImageUrl: safeImageUrl(input.agendaImageUrl),
     ...(Object.hasOwn(input, "paymentUrl") ? { paymentUrl: safeImageUrl(input.paymentUrl) } : {}),
@@ -224,19 +308,35 @@ const REGISTRATION_PAGE_KEYS: readonly (keyof RegistrationPageSettings)[] = [
   "template", "accentColor", "headline", "aboutHeading", "aboutBody", "agendaIntroduction", "welcomeMessage",
   "heroImageUrl", "heroImageDisplay", "aboutImageUrl", "agendaImageUrl", "paymentUrl", "showAgenda", "showSpeakers", "showSponsors",
   "showVolunteerSignup", "speakers", "registrationTypes", "collectOrganization", "infoPages", "postEventSubject",
-  "postEventThankYou", "postEventWrapUp",
+  "postEventThankYou", "postEventWrapUp", "footerImageSource", "footerImageUrl", "questions", "maxAdditionalGuests",
+  "rsvpConfirmationTitle", "rsvpConfirmationMessage",
 ];
 
 /** Validates only supplied fields so independent editors cannot overwrite one another. */
-export function normalizeRegistrationPagePatch(value: unknown): Partial<RegistrationPageSettings> {
+export function normalizeRegistrationPagePatch(value: unknown, currentValue?: unknown): Partial<RegistrationPageSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const input = value as Record<string, unknown>;
   const normalized = normalizeRegistrationPage({ ...DEFAULT_REGISTRATION_PAGE, ...input });
+  if (Object.hasOwn(input, "questions") && currentValue) {
+    const currentQuestions = new Map(normalizeRegistrationPage(currentValue).questions.map(question => [question.id, question]));
+    // Older open editors cannot silently reset a newly configured audience.
+    normalized.questions = normalized.questions.map(question => {
+      const savedAudience = currentQuestions.get(question.id)?.audience;
+      return !question.audience && savedAudience ? { ...question, audience: savedAudience } : question;
+    });
+  }
   const patch: Record<string, unknown> = {};
   for (const key of REGISTRATION_PAGE_KEYS) {
     if (Object.hasOwn(input, key)) patch[key] = normalized[key];
   }
   return patch as Partial<RegistrationPageSettings>;
+}
+
+export function rsvpConfirmationCopy(settings: RegistrationPageSettings, eventTitle: string, guestType: string) {
+  return {
+    title: settings.rsvpConfirmationTitle.trim() || DEFAULT_RSVP_CONFIRMATION_TITLE,
+    message: settings.rsvpConfirmationMessage.trim() || `You are confirmed as ${guestType} for ${eventTitle}.`,
+  };
 }
 
 export function registrationPageIsCustomized(value: unknown): boolean {
@@ -245,6 +345,7 @@ export function registrationPageIsCustomized(value: unknown): boolean {
     page.accentColor !== DEFAULT_REGISTRATION_PAGE.accentColor ||
     Boolean(page.headline || page.aboutHeading || page.aboutBody || page.agendaIntroduction || page.welcomeMessage || page.heroImageUrl || page.aboutImageUrl || page.agendaImageUrl) ||
     page.speakers.length > 0 ||
+    page.questions.length > 0 || page.footerImageSource !== "invitation" || Boolean(page.footerImageUrl) ||
     page.infoPages.length > 0 ||
     page.registrationTypes.join("\u0000") !== DEFAULT_REGISTRATION_PAGE.registrationTypes.join("\u0000");
 }
@@ -285,7 +386,7 @@ export function registrationInvitationHtml(
   const page = normalizeRegistrationPage(settings);
   const template = registrationPageTemplate(page.template);
   const title = escapeHtml(page.headline || eventTitle);
-  const welcome = escapeHtml(page.welcomeMessage || eventDescription || "We would love to see you there.").replace(/\r?\n/g, "<br />");
+  const welcome = linkedTextHtml(page.welcomeMessage || eventDescription || "We would love to see you there.");
   const link = escapeHtml(url);
   const hero = page.heroImageUrl
     ? page.heroImageDisplay === "logo"

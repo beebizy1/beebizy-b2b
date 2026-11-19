@@ -55,6 +55,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
+import { useRegistrationGuestDraft } from "@/hooks/useRegistrationGuestDraft";
 import { EmptyState, Panel, Pill, StatTile, type Tone } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/app/preferences";
@@ -413,26 +414,23 @@ const BLANK_SPONSOR: SponsorFields = {
   status: "pending",
 };
 
-function SponsorshipDialog({
+export function SponsorshipDialog({
   eventId,
   sponsor,
   open,
   onClose,
+  defaultStatus = "pending",
 }: {
   eventId: string;
   sponsor: Sponsorship | null;
   open: boolean;
   onClose: () => void;
+  defaultStatus?: BookingStatus;
 }) {
   const add = useAddSponsorship();
   const update = useUpdateSponsorship();
   const uploadLogo = useUploadAuctionImage();
-  const [form, setForm] = useState<SponsorFields>(BLANK_SPONSOR);
-
-  useEffect(() => {
-    if (!open) return;
-    setForm(
-      sponsor
+  const initial: SponsorFields = sponsor
         ? {
             companyName: sponsor.companyName,
             tier: sponsor.tier,
@@ -443,18 +441,24 @@ function SponsorshipDialog({
             notes: sponsor.notes ?? "",
             status: sponsor.status,
           }
-        : BLANK_SPONSOR,
-    );
-  }, [open, sponsor]);
+        : { ...BLANK_SPONSOR, status: defaultStatus };
+  const { draft: savedDraft, setDraft, state, recovery } = useRegistrationGuestDraft(eventId, `sponsor-${sponsor?.id ?? "new"}`, { ...initial });
+  const form = {
+    ...initial,
+    ...savedDraft,
+    tier: SPONSORSHIP_TIERS.find(tier => tier === savedDraft.tier) ?? initial.tier,
+    status: BOOKING_STATUSES.find(status => status === savedDraft.status) ?? initial.status,
+  };
 
   const set = <K extends keyof SponsorFields>(key: K, value: SponsorFields[K]) =>
-    setForm((current) => ({ ...current, [key]: value }));
+    setDraft((current) => ({ ...current, [key]: value }));
 
   const pending = add.isPending || update.isPending || uploadLogo.isPending;
 
   const save = () => {
     const companyName = form.companyName.trim();
     if (!companyName) return;
+    const submitted = { ...savedDraft };
 
     const draft = {
       companyName,
@@ -469,6 +473,7 @@ function SponsorshipDialog({
 
     const handlers = {
       onSuccess: () => {
+        recovery.complete(submitted, { ...initial });
         toast({ title: sponsor ? "Sponsorship updated" : "Sponsorship added" });
         onClose();
       },
@@ -486,7 +491,7 @@ function SponsorshipDialog({
           <DialogTitle>{sponsor ? "Edit Sponsorship" : "Add Sponsor"}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
+        <fieldset disabled={pending} className="space-y-4 py-1">
           <div className="space-y-1.5">
             <Label htmlFor="sponsor-company">Company name</Label>
             <Input
@@ -593,7 +598,10 @@ function SponsorshipDialog({
               placeholder="Logo on stage backdrop, table of ten."
             />
           </div>
-        </div>
+        </fieldset>
+
+        {state.message ? <p role="status" className="text-xs text-muted-foreground">{state.message.replaceAll("guest", "sponsor")}</p> : null}
+        {state.remote ? <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => recovery.resolve(true)}>Use saved draft</Button><Button type="button" variant="outline" size="sm" onClick={() => recovery.resolve(false)}>Keep this draft</Button></div> : null}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -1165,12 +1173,12 @@ export default function FundraisingPanel({ event }: { event: Event }) {
         open={auctionDialog.open}
         onClose={() => setAuctionDialog({ open: false, item: null })}
       />
-      <SponsorshipDialog
+      {sponsorDialog.open ? <SponsorshipDialog
         eventId={event.id}
         sponsor={sponsorDialog.sponsor}
         open={sponsorDialog.open}
         onClose={() => setSponsorDialog({ open: false, sponsor: null })}
-      />
+      /> : null}
       <MessageBlastDialog
         eventId={event.id}
         item={blast.item}

@@ -7,7 +7,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Columns3, Copy, List, ListFilter, Mail, Pencil, UserPlus, Users } from "lucide-react";
+import { spreadsheetHeaders, spreadsheetFieldKind, spreadsheetValue, type SpreadsheetFieldKind } from "@/data/registrationSpreadsheet";
+import { Columns3, ContactRound, Copy, List, ListFilter, Mail, Pencil, RefreshCw, UserPlus, Users } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +27,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import GuestCsvImportDialog from "./GuestCsvImportDialog";
+import RegistrationDownloads from "./RegistrationDownloads";
+import HubSpotContactImportDialog from "../../integrations/HubSpotContactImportDialog";
+import HubSpotEventSourcePanel from "../../integrations/HubSpotEventSourcePanel";
 import {
   EmptyState,
   ErrorNotice,
@@ -37,7 +42,9 @@ import {
 } from "@/components/primitives";
 import {
   useGuests,
-  useCreateGuest,
+  useMe,
+  useHubSpotStatus,
+  useImportGuestRegistrations,
   useCreateRegistration,
   useDeleteRegistration,
   useEventRegistrations,
@@ -45,6 +52,8 @@ import {
   useSetRegistrationSegment,
   useSetRegistrationStatus,
   useShareEvent,
+  useSetHubSpotEventSync,
+  useSyncHubSpotEvent,
   useUpdateRegistrationDetails,
 } from "@/data/hooks";
 import {
@@ -52,10 +61,14 @@ import {
   REGISTRATION_STATUSES,
   type Event,
   type RegistrationStatus,
+  type RegistrationDraft,
   type RegistrationWithGuest,
 } from "@/data/entities";
 import { registrationSegmentSummary } from "@/data/santaClara";
 import { normalizeRegistrationPage } from "@/data/registrationPage";
+import { registrationNameParts, registrationNameUpdate, staffRegistrationIdentity } from "@/data/registrationNames";
+import { useRegistrationGuestDraft } from "@/hooks/useRegistrationGuestDraft";
+import { GuestDraftStatus } from "@/components/GuestDraftStatus";
 
 /** No category is a real choice in a Select, and "" is not a usable option value. */
 const UNCATEGORISED = "__none__";
@@ -73,71 +86,6 @@ function segmentOptions(rows: RegistrationWithGuest[]): string[] {
 function organizationOptions(rows: RegistrationWithGuest[]): string[] {
   const used = rows.map((row) => row.organization).filter((name): name is string => Boolean(name));
   return [...new Set(used)].sort((a, b) => a.localeCompare(b));
-}
-
-const DEFAULT_SPREADSHEET_HEADERS = [
-  "Full Name",
-  "Email Address",
-  "RSVP Response",
-  "Company Name",
-  "Guest Type",
-  "Notes",
-  "Attendees",
-  "Phone",
-  "Source",
-] as const;
-
-type SpreadsheetFieldKind =
-  | "name"
-  | "email"
-  | "status"
-  | "organization"
-  | "segment"
-  | "notes"
-  | "quantity"
-  | "custom";
-
-function spreadsheetFieldKind(header: string): SpreadsheetFieldKind {
-  const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  if (["full name", "name", "guest", "guest name", "attendee"].includes(key)) return "name";
-  if (["email", "e mail", "email address", "e mail address", "contact email"].includes(key)) return "email";
-  if (["rsvp", "rsvp response", "attendance", "response", "yes/no"].includes(key)) return "status";
-  if (["company", "company name", "organization", "organisation", "school"].includes(key)) return "organization";
-  if (["guest type", "segment", "category", "registration type", "lifecycle stage"].includes(key)) return "segment";
-  if (["notes", "note", "comment", "comments"].includes(key)) return "notes";
-  if (["attendees", "attendee count", "guest count", "number of guests", "party size", "seats", "quantity"].includes(key)) {
-    return "quantity";
-  }
-  return "custom";
-}
-
-function spreadsheetHeaders(rows: RegistrationWithGuest[]): string[] {
-  const headers: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    for (const field of row.importedFields ?? []) {
-      if (seen.has(field.label)) continue;
-      seen.add(field.label);
-      headers.push(field.label);
-    }
-  }
-  return headers.length > 0 ? headers : [...DEFAULT_SPREADSHEET_HEADERS];
-}
-
-function spreadsheetValue(row: RegistrationWithGuest, header: string): string {
-  const imported = row.importedFields?.find((field) => field.label === header);
-  if (imported) return imported.value;
-  const kind = spreadsheetFieldKind(header);
-  if (kind === "name") return row.guest?.name ?? "";
-  if (kind === "email") return row.guest?.contact ?? "";
-  if (kind === "status") {
-    return row.status === "confirmed" ? "Yes" : row.status === "cancelled" ? "No" : "Pending";
-  }
-  if (kind === "organization") return row.organization ?? "";
-  if (kind === "segment") return row.segment ?? "";
-  if (kind === "notes") return row.guest?.notes ?? "";
-  if (kind === "quantity") return String(row.quantity);
-  return "";
 }
 
 function registrationStatusFromSpreadsheet(value: string): RegistrationStatus {
@@ -161,9 +109,11 @@ function EditRegistrationDialog({
   onClose: () => void;
 }) {
   const update = useUpdateRegistrationDetails();
-  const [draft, setDraft] = useState<Record<string, string>>(() =>
-    Object.fromEntries(headers.map((header) => [header, spreadsheetValue(row, header)])),
-  );
+  const parts = registrationNameParts(row);
+  const { draft, setDraft, state, recovery } = useRegistrationGuestDraft(eventId, `edit-${row.id}`, {
+    ...Object.fromEntries(headers.map((header) => [header, spreadsheetValue(row, header)])),
+    "First Name": parts.firstName, "Last Name": parts.lastName,
+  });
 
   const valueForKind = (kind: SpreadsheetFieldKind, fallback: string) => {
     const header = headers.find((candidate) => spreadsheetFieldKind(candidate) === kind);
@@ -171,24 +121,21 @@ function EditRegistrationDialog({
   };
 
   const save = async () => {
-    const name = valueForKind("name", row.guest?.name ?? "").trim();
+    const submitted = { ...draft };
     const rawQuantity = valueForKind("quantity", String(row.quantity)).trim();
     const quantity = Number(rawQuantity);
-    if (!name) {
-      toast({ title: "Name is required" });
-      return;
-    }
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10_000) {
       toast({ title: "Attendee count must be between 1 and 10,000" });
       return;
     }
 
     try {
+      const identity = registrationNameUpdate(row, draft["First Name"] ?? "", draft["Last Name"] ?? "", headers.map(label => ({ label, value: draft[label] ?? "" })));
       await update.mutateAsync({
         id: row.id,
         eventId,
         patch: {
-          name,
+          name: identity.name,
           contact: valueForKind("email", row.guest?.contact ?? "").trim().toLowerCase() || null,
           notes: valueForKind("notes", row.guest?.notes ?? "").trim() || null,
           status: registrationStatusFromSpreadsheet(
@@ -200,9 +147,10 @@ function EditRegistrationDialog({
           segment: valueForKind("segment", row.segment ?? "").trim() || null,
           organization: valueForKind("organization", row.organization ?? "").trim() || null,
           quantity,
-          importedFields: headers.map((label) => ({ label, value: draft[label] ?? "" })),
+          importedFields: identity.importedFields,
         },
       });
+      recovery.complete(submitted);
       toast({ title: "Registration updated" });
       onClose();
     } catch (error) {
@@ -212,15 +160,18 @@ function EditRegistrationDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit registration</DialogTitle>
           <DialogDescription>
             Update the RSVP and every value from the imported spreadsheet. All changes save together.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {headers.map((header) => {
+        <fieldset disabled={update.isPending} className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5"><Label htmlFor="edit-guest-first-name">First name</Label><Input id="edit-guest-first-name" autoComplete="given-name" maxLength={120} value={draft["First Name"] ?? ""} onChange={e => setDraft(current => ({ ...current, "First Name": e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label htmlFor="edit-guest-last-name">Last name</Label><Input id="edit-guest-last-name" autoComplete="family-name" maxLength={120} value={draft["Last Name"] ?? ""} onChange={e => setDraft(current => ({ ...current, "Last Name": e.target.value }))} /></div>
+          {parts.inferred ? <p className="text-xs text-muted-foreground sm:col-span-2">This older registration stored one full name. Please check the first and last name split before saving.</p> : null}
+          {headers.filter(header => !["name", "firstName", "lastName"].includes(spreadsheetFieldKind(header))).map((header) => {
             const kind = spreadsheetFieldKind(header);
             const fieldId = `registration-${row.id}-${header.replace(/[^a-z0-9]/gi, "-")}`;
             return (
@@ -262,10 +213,11 @@ function EditRegistrationDialog({
               </div>
             );
           })}
-        </div>
+        </fieldset>
+        <GuestDraftStatus state={state} recovery={recovery} />
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button>
-          <Button type="button" onClick={() => void save()} disabled={update.isPending}>
+          <Button type="button" variant="outline" onClick={() => { recovery.complete(draft); onClose(); }} disabled={update.isPending}>Discard changes</Button>
+          <Button type="button" onClick={() => void save()} disabled={update.isPending || Boolean(state.remote)}>
             {update.isPending ? "Saving..." : "Save changes"}
           </Button>
         </DialogFooter>
@@ -350,14 +302,14 @@ function AddGuest({ event }: { event: Event }) {
   const { data: guests } = useGuests();
   const { data: registrations } = useEventRegistrations(event.id);
   const createRegistration = useCreateRegistration();
-  const createGuest = useCreateGuest();
-  const [mode, setMode] = useState<"new" | "existing">("new");
-  const [guestId, setGuestId] = useState("");
-  const [name, setName] = useState("");
-  const [contact, setContact] = useState("");
-  const [status, setStatus] = useState<"pending" | "confirmed">("pending");
-  const [segment, setSegment] = useState("");
-  const [organization, setOrganization] = useState("");
+  const importGuests = useImportGuestRegistrations();
+  const { draft, setDraft, state, recovery } = useRegistrationGuestDraft(event.id, "add-guest", {
+    mode: "new", guestId: "", firstName: "", lastName: "", contact: "", status: "pending", segment: "", organization: "",
+  });
+  const mode = draft.mode === "existing" ? "existing" : "new";
+  const status = draft.status === "confirmed" ? "confirmed" : "pending";
+  const { guestId = "", firstName = "", lastName = "", contact = "", segment = "", organization = "" } = draft;
+  const field = (key: string, value: string) => setDraft(current => ({ ...current, [key]: value }));
 
   // Anyone already registered (and not cancelled) shouldn't appear as an option.
   const available = useMemo(() => {
@@ -366,26 +318,23 @@ function AddGuest({ event }: { event: Event }) {
   }, [guests, registrations]);
 
   const atCapacity = event.capacity !== null && event.registrationCount >= event.capacity;
-  const pending = createRegistration.isPending || createGuest.isPending;
-  const canSubmit = mode === "new" ? name.trim().length > 0 : guestId !== "";
+  const pending = createRegistration.isPending || importGuests.isPending;
+  const canSubmit = (mode === "new" ? firstName.trim().length > 0 : guestId !== "") && !state.remote;
 
   const submit = async () => {
+    const submitted = { ...draft };
     try {
-      const id =
-        mode === "existing"
-          ? guestId
-          : (await createGuest.mutateAsync({ name: name.trim(), contact: contact.trim() })).id;
-
-      await createRegistration.mutateAsync({
-        eventId: event.id,
-        guestId: id,
-        status,
-        segment: segment.trim() || null,
-        organization: organization.trim() || null,
-      });
-      setGuestId("");
-      setName("");
-      setContact("");
+      const registration: Pick<RegistrationDraft, "eventId" | "status" | "segment" | "organization"> = { eventId: event.id, status, segment: segment.trim() || null, organization: organization.trim() || null };
+      if (mode === "existing") {
+        if (!available.some(guest => guest.id === guestId)) throw new Error("Choose an available guest from the address book.");
+        await createRegistration.mutateAsync({ ...registration, guestId });
+      } else {
+        const identity = staffRegistrationIdentity(firstName, lastName);
+        // The existing import endpoint saves the person and registration atomically.
+        await importGuests.mutateAsync([{ ...registration, name: identity.name, contact: contact.trim() || null, importedFields: identity.fields }]);
+      }
+      recovery.complete(submitted, { ...submitted, guestId: "", firstName: "", lastName: "", contact: "" });
+      toast({ title: status === "pending" ? "Invitation added to the list" : "Guest registered" });
       // The category deliberately survives: guest lists are entered in runs of the same
       // kind, so clearing it would mean retyping "Sponsor" twelve times.
 
@@ -405,12 +354,13 @@ function AddGuest({ event }: { event: Event }) {
         if (canSubmit) void submit();
       }}
     >
+      <fieldset disabled={pending} className="space-y-2">
       <div className="flex gap-1">
         {(["new", "existing"] as const).map((option) => (
           <button
             key={option}
             type="button"
-            onClick={() => setMode(option)}
+            onClick={() => field("mode", option)}
             aria-pressed={mode === option}
             className={cn(
               "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
@@ -426,23 +376,26 @@ function AddGuest({ event }: { event: Event }) {
         {mode === "new" ? (
           <>
             <Input
-              value={name}
-              onChange={(inputEvent) => setName(inputEvent.target.value)}
-              placeholder="Full name"
-              aria-label="Guest name"
+              value={firstName}
+              onChange={(inputEvent) => field("firstName", inputEvent.target.value)}
+              placeholder="First name"
+              aria-label="Guest first name"
+              autoComplete="given-name"
+              maxLength={120}
               className="min-w-[10rem] flex-1"
             />
+            <Input value={lastName} onChange={e => field("lastName", e.target.value)} placeholder="Last name" aria-label="Guest last name" autoComplete="family-name" maxLength={120} className="min-w-[10rem] flex-1" />
             <Input
               type="email"
               value={contact}
-              onChange={(inputEvent) => setContact(inputEvent.target.value)}
+              onChange={(inputEvent) => field("contact", inputEvent.target.value)}
               placeholder="Email (optional)"
               aria-label="Guest email"
               className="min-w-[10rem] flex-1"
             />
           </>
         ) : (
-          <Select value={guestId} onValueChange={setGuestId} disabled={available.length === 0}>
+          <Select value={guestId} onValueChange={value => field("guestId", value)} disabled={available.length === 0}>
             <SelectTrigger className="min-w-[14rem] flex-1" aria-label="Choose someone to invite">
               <SelectValue
                 placeholder={available.length === 0 ? "Nobody left in the address book" : "Choose a guest…"}
@@ -460,8 +413,8 @@ function AddGuest({ event }: { event: Event }) {
 
         <Input
           value={segment}
-          onChange={(inputEvent) => setSegment(inputEvent.target.value)}
-          placeholder="Category (optional)"
+          onChange={(inputEvent) => field("segment", inputEvent.target.value)}
+          placeholder="Category"
           aria-label="Guest category"
           list="guest-segment-suggestions"
           className="w-[150px]"
@@ -474,8 +427,8 @@ function AddGuest({ event }: { event: Event }) {
 
         <Input
           value={organization}
-          onChange={(inputEvent) => setOrganization(inputEvent.target.value)}
-          placeholder="Organization (optional)"
+          onChange={(inputEvent) => field("organization", inputEvent.target.value)}
+          placeholder="Organization"
           aria-label="Guest organization"
           list="guest-organization-suggestions"
           className="w-[170px]"
@@ -486,12 +439,12 @@ function AddGuest({ event }: { event: Event }) {
           ))}
         </datalist>
 
-        <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "confirmed")}>
+        <Select value={status} onValueChange={(value) => field("status", value)}>
           <SelectTrigger className="w-[178px]" aria-label="Invitation status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="pending">Invite - awaiting RSVP</SelectItem>
+            <SelectItem value="pending">Awaiting RSVP</SelectItem>
             <SelectItem value="confirmed">Add as confirmed</SelectItem>
           </SelectContent>
         </Select>
@@ -501,6 +454,9 @@ function AddGuest({ event }: { event: Event }) {
           {status === "pending" ? "Add invitation" : "Register"}
         </Button>
       </div>
+      </fieldset>
+      <GuestDraftStatus state={state} recovery={recovery} />
+      {!state.discarded && !pending ? <Button type="button" size="sm" variant="ghost" onClick={() => recovery.complete(draft)}>Discard guest draft</Button> : null}
 
       {atCapacity ? (
         <p className="text-xs text-warning-text">
@@ -576,6 +532,21 @@ export default function GuestsSection({ event }: { event: Event }) {
   const setSegment = useSetRegistrationSegment();
   const removeRegistration = useDeleteRegistration();
   const share = useShareEvent();
+  const hubspot = useHubSpotStatus();
+  const identity = useMe();
+  const hubspotConnected = hubspot.data?.state === "connected" || hubspot.data?.state === "error";
+  const canManageHubSpot = identity.data?.role === "owner" || identity.data?.role === "admin";
+  const hubspotContactsReady = hubspotConnected && (hubspot.data?.inbound?.contacts ?? 0) > 0;
+  let hubspotHelp = canManageHubSpot
+    ? "Set up HubSpot once in Settings, then choose guests for any event."
+    : "Ask a workspace owner or admin to set up HubSpot contacts in Settings.";
+  if (hubspot.isLoading) hubspotHelp = "Checking your HubSpot connection…";
+  else if (hubspot.isError) hubspotHelp = "Couldn't check your HubSpot connection.";
+  else if (hubspotContactsReady) hubspotHelp = "Choose people from your team's HubSpot contacts for this event.";
+  else if (hubspot.data?.inbound?.error) hubspotHelp = "HubSpot contact updates need attention. Check HubSpot in Settings.";
+  else if (hubspotConnected && hubspot.data?.inbound?.enabled) hubspotHelp = "Contacts will be available here as soon as they arrive from HubSpot.";
+  const setHubSpotSync = useSetHubSpotEventSync();
+  const syncHubSpot = useSyncHubSpotEvent();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"manage" | "spreadsheet">("spreadsheet");
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
@@ -669,6 +640,83 @@ export default function GuestsSection({ event }: { event: Event }) {
           loading={isLoading}
         />
       </div>
+
+      <HubSpotEventSourcePanel key={event.id} eventId={event.id} eventTitle={event.title} />
+
+      {identity.data && !identity.data.eventScope ? (
+        <details className="rounded-xl border border-hairline">
+        <summary className="cursor-pointer p-4 text-sm font-medium">Choose individual contacts or send event updates to HubSpot</summary>
+        <Panel>
+          <div className="flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-muted">
+                <ContactRound className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-foreground">Add guests from HubSpot</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{hubspotHelp}</p>
+              </div>
+            </div>
+            {hubspot.isError ? (
+              <Button variant="outline" onClick={() => void hubspot.refetch()}>Try again</Button>
+            ) : hubspotContactsReady ? (
+              <HubSpotContactImportDialog key={event.id} eventId={event.id} eventTitle={event.title} />
+            ) : hubspot.data && canManageHubSpot ? (
+              <Button asChild variant="outline"><Link href="/app/settings#hubspot">Open HubSpot settings</Link></Button>
+            ) : null}
+          </div>
+          {hubspotConnected && (canManageHubSpot || event.hubspotSyncEnabled) ? (
+            <details className="border-t border-hairline px-5 py-3 text-sm">
+              <summary className="w-fit cursor-pointer rounded-sm font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Send this event's updates to HubSpot
+                <span className="ml-2 text-xs">{event.hubspotSyncEnabled ? "On" : "Off"}</span>
+              </summary>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {event.hubspotSyncEnabled
+                  ? "New registrations, edits, and check-ins for this event update HubSpot automatically."
+                  : "Turn this on if you want this event's registrations and check-ins to appear in HubSpot."}
+              </p>
+              {canManageHubSpot ? <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={setHubSpotSync.isPending}
+                  onClick={() => setHubSpotSync.mutate(
+                    { eventId: event.id, enabled: !event.hubspotSyncEnabled },
+                    {
+                      onSuccess: result => toast({
+                        title: result.event.hubspotSyncEnabled ? "Event updates to HubSpot are on" : "Event updates to HubSpot are paused",
+                        description: result.event.hubspotSyncEnabled ? `${result.synced} contacts updated in HubSpot.` : undefined,
+                      }),
+                      onError: syncError => toast({ title: "Couldn't change event updates", description: syncError.message }),
+                    },
+                  )}
+                >
+                  {setHubSpotSync.isPending ? "Saving…" : event.hubspotSyncEnabled ? "Pause event updates" : "Turn on event updates"}
+                </Button>
+                {event.hubspotSyncEnabled ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={syncHubSpot.isPending}
+                    onClick={() => syncHubSpot.mutate(event.id, {
+                      onSuccess: result => toast({
+                        title: "HubSpot update finished",
+                        description: `${result.synced} updated · ${result.skipped} skipped · ${result.failed} failed`,
+                      }),
+                      onError: syncError => toast({ title: "Couldn't update HubSpot", description: syncError.message }),
+                    })}
+                  >
+                    <RefreshCw className={`size-3.5 ${syncHubSpot.isPending ? "animate-spin" : ""}`} />
+                    Update HubSpot now
+                  </Button>
+                ) : null}
+              </div> : null}
+            </details>
+          ) : null}
+        </Panel>
+        </details>
+      ) : null}
 
       {event.capacity ? (
         <Panel className="p-5">
@@ -829,11 +877,12 @@ export default function GuestsSection({ event }: { event: Event }) {
                 aria-label="Search guests"
                 className="h-8 w-44"
               />
-              <GuestCsvImportDialog event={event} triggerLabel="Import HubSpot / Sheets" />
+              <GuestCsvImportDialog event={event} triggerLabel="Import CSV / Sheets" />
             </>
           }
         />
 
+        <RegistrationDownloads rows={registrations ?? []} visible={visible} eventTitle={event.title} loading={isLoading || isError} />
         <AddGuest event={event} />
 
         {isError ? (

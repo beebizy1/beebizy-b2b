@@ -64,6 +64,8 @@ import PostEventSummary from "@/screens/events/PostEventSummary";
 import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
 import FeedbackInbox from "@/screens/FeedbackInbox";
+import UserActivityDashboard from "@/screens/UserActivityDashboard";
+import { USER_ACTIVITY_PATH } from "@/app/shell/nav";
 import { PublicEventInfoPage, PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
 import PublicAuctionPage from "@/screens/public/PublicAuction";
 import PublicAuctionDonationPage from "@/screens/public/PublicAuctionDonation";
@@ -167,6 +169,7 @@ function AppRoutes() {
           <Route path="/app/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
           <Route path={FEEDBACK_INBOX_PATH} component={FeedbackInbox} />
+          <Route path={USER_ACTIVITY_PATH} component={UserActivityDashboard} />
             <Route component={NotFound} />
           </Switch>
         </AccountExperienceGate>

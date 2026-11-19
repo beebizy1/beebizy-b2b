@@ -121,12 +121,42 @@ vi.mock("./vendorPaperwork", () => ({
   sendVendorPaperworkRequest: vi.fn(),
 }));
 vi.mock("./vendorCoiAnalysis", () => ({ analyzePublicVendorCoi: vi.fn(), analyzeVendorCoi: vi.fn() }));
+vi.mock("./registrationDesignDrafts", () => ({ getRegistrationDesignDraft: vi.fn(), saveRegistrationDesignDraft: vi.fn() }));
+vi.mock("./registrationGuestDrafts", () => ({ getRegistrationGuestDraft: vi.fn(), saveRegistrationGuestDraft: vi.fn() }));
+vi.mock("./hubspotInbound", () => ({ addHubSpotContactsToEvent: vi.fn(), hubspotContactMaintenance: vi.fn(), listHubSpotContacts: vi.fn(), setHubSpotContactSync: vi.fn(), syncHubSpotContacts: vi.fn(), assertHubSpotEmailRecipients: vi.fn() }));
+vi.mock("./hubspotWebhooks", () => ({ handleHubSpotWebhook: vi.fn(), hubspotWebhookMaintenance: vi.fn(), resumeHubSpotWebhookInbox: vi.fn() }));
+vi.mock("./hubspotEventSources", () => ({ hubspotEventSourceStatus: vi.fn(), listHubSpotRegistrationLists: vi.fn(), recoverHubSpotEventSources: vi.fn().mockResolvedValue(undefined), setHubSpotEventSource: vi.fn() }));
 vi.mock("./vendorPaperworkReminders", () => ({ processDueVendorPaperworkReminders: vi.fn() }));
 vi.mock("./memberRoleNotifications", () => ({
   processDueMemberRoleNotifications: vi.fn(),
 }));
 vi.mock("./auctionOutbidNotifications", () => ({
   processDueAuctionOutbidNotifications: vi.fn(),
+}));
+vi.mock("./googleCalendar", () => ({
+  beginGoogleCalendarConnect: vi.fn(),
+  disconnectGoogleCalendar: vi.fn(),
+  googleCalendarStatus: vi.fn(),
+  handleGoogleCalendarCallback: vi.fn(),
+  handleGoogleCalendarWebhook: vi.fn(),
+  listGoogleCalendarEvents: vi.fn(),
+  removeWorkspaceEventFromCalendars: vi.fn(),
+  renewGoogleCalendarChannels: vi.fn(),
+  syncGoogleCalendarNow: vi.fn(),
+  syncWorkspaceEvent: vi.fn(),
+}));
+vi.mock("./hubspot", () => ({
+  beginHubSpotConnect: vi.fn(),
+  disconnectHubSpot: vi.fn(),
+  handleHubSpotCallback: vi.fn(),
+  hubspotStatus: vi.fn(),
+  setHubSpotEventSync: vi.fn(),
+  syncHubSpotEvent: vi.fn(),
+  syncHubSpotRegistrationById: vi.fn(),
+  syncHubSpotRegistrationIfEnabled: vi.fn(),
+}));
+vi.mock("./userActivity", () => ({
+  listAdminUserActivity: vi.fn(),
 }));
 vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
@@ -185,7 +215,136 @@ const { generateRegistrationCopy, generatePostEventCopy } = await import("./even
 const { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } = await import("./runOfShowDrafts");
 const { publicAuction, registerPublicAuctionBidder, publicAuctionDonor } = await import("./repos");
 const { publicDonationStatus, sendDueBidderBillReminders } = await import("./commercePayments");
+const { listHubSpotContacts, addHubSpotContactsToEvent } = await import("./hubspotInbound");
+const { handleHubSpotWebhook } = await import("./hubspotWebhooks");
+const { listHubSpotRegistrationLists, hubspotEventSourceStatus, setHubSpotEventSource } = await import("./hubspotEventSources");
 const { sendAllDueClosingAlerts, sendDueYearEndStatements } = await import("./fundraisingUx");
+const {
+  beginGoogleCalendarConnect,
+  disconnectGoogleCalendar,
+  googleCalendarStatus,
+  handleGoogleCalendarCallback,
+  handleGoogleCalendarWebhook,
+  listGoogleCalendarEvents,
+  renewGoogleCalendarChannels,
+  syncGoogleCalendarNow,
+} = await import("./googleCalendar");
+const {
+  beginHubSpotConnect,
+  disconnectHubSpot,
+  handleHubSpotCallback,
+  hubspotStatus,
+  setHubSpotEventSync,
+  syncHubSpotEvent,
+} = await import("./hubspot");
+const { listAdminUserActivity } = await import("./userActivity");
+
+describe("operator user activity", () => {
+  it("allows an approved operator to read the live activity snapshot", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1", role: "owner", email: "tarang@beebizy.com" });
+    vi.mocked(requireBeebizyOperator).mockReturnValue(undefined);
+    vi.mocked(listAdminUserActivity).mockResolvedValue({
+      generatedAt: "2026-11-06T02:00:00.000Z",
+      activeWindowMinutes: 5,
+      users: [],
+      totals: { authenticatedPeople: 24, activeMembers: 15, activeNow: 1, pendingInvites: 4, testAccounts: 3 },
+    });
+    const response = await handleRequest(new Request("http://localhost/api/admin/user-activity"));
+    expect(response.status).toBe(200);
+    expect(requireBeebizyOperator).toHaveBeenCalledWith("tarang@beebizy.com");
+  });
+});
+
+describe("HubSpot integration", () => {
+  it("routes list discovery and the explicit per-event automatic source, and excludes scoped users", async () => {
+    const context = { userId: "user-1", workspaceId: "workspace-1", role: "owner" as const, email: "owner@example.invalid" };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(listHubSpotRegistrationLists).mockResolvedValue({ lists: [{ id: "123", name: "Demo Day registrations", size: 200 }], nextOffset: null });
+    vi.mocked(hubspotEventSourceStatus).mockResolvedValue(null);
+    vi.mocked(setHubSpotEventSource).mockResolvedValue(null);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/lists?search=Demo&offset=100"))).status).toBe(200);
+    expect(listHubSpotRegistrationLists).toHaveBeenCalledWith(context, "Demo", 100);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/source"))).status).toBe(200);
+    expect(hubspotEventSourceStatus).toHaveBeenCalledWith(context, "event-1");
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/source", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ listId: "123", enabled: true }) }))).status).toBe(200);
+    expect(setHubSpotEventSource).toHaveBeenCalledWith(context, "event-1", { listId: "123", enabled: true });
+    vi.mocked(authorize).mockResolvedValue({ ...context, eventScopeId: "event-1" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/source"))).status).toBe(403);
+  });
+  it("routes signed webhook requests before session authorization and protects maintenance", async () => {
+    vi.mocked(handleHubSpotWebhook).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+    const request = new Request("http://localhost/api/integrations/hubspot/webhook", { method: "POST", body: "[]" });
+    expect((await handleRequest(request)).status).toBe(200);
+    expect(handleHubSpotWebhook).toHaveBeenCalledWith(request);
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/maintenance"))).status).toBe(401);
+    vi.unstubAllEnvs();
+  });
+  it("routes contact filters and explicit event selection, excluding event-scoped collaborators", async () => {
+    const context = { userId: "user-1", workspaceId: "workspace-1", role: "member" as const, email: "member@example.invalid" };
+    vi.mocked(authorize).mockResolvedValue(context);
+    vi.mocked(listHubSpotContacts).mockResolvedValue({ contacts: [], total: 0, nextCursor: null });
+    vi.mocked(addHubSpotContactsToEvent).mockResolvedValue({ added: 1, alreadyOnList: 0 });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/contacts?eventId=event-1&search=School&cursor=50&limit=50"))).status).toBe(200);
+    expect(listHubSpotContacts).toHaveBeenCalledWith(context, { eventId: "event-1", search: "School", cursor: "50", limit: 50 });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/contacts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contactIds: ["123"] }) }))).status).toBe(200);
+    expect(addHubSpotContactsToEvent).toHaveBeenCalledWith(context, "event-1", ["123"]);
+    vi.mocked(authorize).mockResolvedValue({ ...context, eventScopeId: "event-1" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/contacts?eventId=event-1"))).status).toBe(403);
+  });
+  it("accepts the OAuth callback without a Beebizy bearer token", async () => {
+    vi.mocked(handleHubSpotCallback).mockResolvedValue(Response.redirect("http://localhost/app/settings?hubspot=connected"));
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/callback?code=test&state=test"))).status).toBe(302);
+  });
+
+  it("routes status, connect, event sync, and disconnect after authorization", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1", role: "owner", email: "owner@example.com" });
+    vi.mocked(hubspotStatus).mockResolvedValue({ state: "disconnected", isConfigured: true, portalId: null, lastSyncedAt: null, lastError: null, contactsSynced: 0 });
+    vi.mocked(beginHubSpotConnect).mockReturnValue({ authorizationUrl: "https://app.hubspot.com/oauth/authorize" });
+    vi.mocked(setHubSpotEventSync).mockResolvedValue({ event: { id: "event-1", hubspotSyncEnabled: true } as never, synced: 2, skipped: 0, failed: 0, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
+    vi.mocked(syncHubSpotEvent).mockResolvedValue({ synced: 2, skipped: 0, failed: 0, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/connect", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true }) }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot/events/event-1/sync", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/hubspot", { method: "DELETE" }))).status).toBe(200);
+    expect(disconnectHubSpot).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Google Calendar integration", () => {
+  it("protects channel renewal with the cron secret", async () => {
+    vi.stubEnv("CRON_SECRET", "maintenance-secret");
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/maintenance"))).status).toBe(401);
+    vi.mocked(renewGoogleCalendarChannels).mockResolvedValue({ renewed: 2, failed: 0 });
+    const response = await handleRequest(new Request("http://localhost/api/integrations/google-calendar/maintenance", {
+      headers: { authorization: "Bearer maintenance-secret" },
+    }));
+    expect(await response.json()).toEqual({ ok: true, renewed: 2, failed: 0 });
+    vi.unstubAllEnvs();
+  });
+
+  it("accepts Google callbacks and webhooks without a Beebizy bearer token", async () => {
+    vi.mocked(handleGoogleCalendarCallback).mockResolvedValue(Response.redirect("http://localhost/app/settings?calendar=connected"));
+    vi.mocked(handleGoogleCalendarWebhook).mockResolvedValue(new Response(null, { status: 204 }));
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/callback?code=test&state=test"))).status).toBe(302);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/webhook", { method: "POST" }))).status).toBe(204);
+  });
+
+  it("exposes status, connect, sync, and disconnect only after authorization", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1", role: "member", email: "user@example.com" });
+    vi.mocked(googleCalendarStatus).mockResolvedValue({ state: "disconnected", isConfigured: true, googleEmail: null, calendarSummary: null, lastSyncedAt: null, lastError: null, eventsSynced: 0, personalEventsVisible: 0 });
+    vi.mocked(listGoogleCalendarEvents).mockResolvedValue([]);
+    vi.mocked(beginGoogleCalendarConnect).mockReturnValue({ authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth" });
+    vi.mocked(syncGoogleCalendarNow).mockResolvedValue({ eventsSynced: 1, lastSyncedAt: "2026-11-05T20:00:00.000Z" });
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/events?startsBefore=2026-12-01T00%3A00%3A00.000Z&endsAfter=2026-11-01T00%3A00%3A00.000Z"))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/connect", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar/sync", { method: "POST" }))).status).toBe(200);
+    expect((await handleRequest(new Request("http://localhost/api/integrations/google-calendar", { method: "DELETE" }))).status).toBe(200);
+    expect(disconnectGoogleCalendar).toHaveBeenCalledOnce();
+  });
+});
 
 describe("fundraising maintenance", () => {
   it("requires the cron secret and runs both due-job families", async () => {

@@ -40,6 +40,7 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  AdminUserActivityResponse,
   FundraisingDashboard,
   FundraisingOrganizationProfile,
   ItemSubmission,
@@ -91,6 +92,14 @@ import type {
   PublicTicketOrderStatus,
   StripeConnectStatus,
   TicketTypeWithEvent,
+  GoogleCalendarConnectionStatus,
+  GoogleCalendarConnectResult,
+  GoogleCalendarExternalEvent,
+  GoogleCalendarSyncResult,
+  HubSpotConnectionStatus,
+  HubSpotConnectResult,
+  HubSpotEventSyncResult,
+  HubSpotSyncResult,
   UserSettings,
   Vendor,
   VendorMessage,
@@ -104,6 +113,10 @@ import type { AssistantTurn } from "../assistantChat";
 import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "../eventCopy";
 import type { VendorEventPacketResult } from "../vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "../runOfShowRecovery";
+import type { RegistrationDesignDraft } from "../registrationDesignDraft";
+import type { RegistrationGuestDraft } from "../registrationGuestDraft";
+import type { HubSpotContactPage, HubSpotEventImportResult } from "../hubspotContacts";
+import type { HubSpotEventSourceStatus, HubSpotRegistrationLists } from "../hubspotEventSource";
 
 export interface HttpAdapterOptions {
   /** Resolves the current Clerk session token, or null when signed out. */
@@ -243,6 +256,14 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
   return {
     kind: "postgres",
     cacheScope: options.cacheScope,
+    registrationDesignDrafts: {
+      get: eventId => client.get<RegistrationDesignDraft | null>(`/events/${eventId}/registration-design-draft`),
+      save: (eventId, draft) => client.put<RegistrationDesignDraft>(`/events/${eventId}/registration-design-draft`, draft),
+    },
+    registrationGuestDrafts: {
+      get: (eventId, key) => client.get<RegistrationGuestDraft | null>(`/events/${eventId}/registration-guest-drafts/${encodeURIComponent(key)}`),
+      save: (eventId, key, draft) => client.put<RegistrationGuestDraft>(`/events/${eventId}/registration-guest-drafts/${encodeURIComponent(key)}`, draft),
+    },
 
     me: () => client.get<Identity>("/me"),
 
@@ -695,6 +716,10 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
       notify: (id) => client.post<FeedbackNotificationOutcome>(`/feedback/${id}/notify`, {}),
     },
 
+    admin: {
+      userActivity: () => client.get<AdminUserActivityResponse>("/admin/user-activity"),
+    },
+
     history: {
       list: (eventId) => client.get<EventHistoryEntry[]>(`/events/${eventId}/history`),
     },
@@ -707,6 +732,41 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     settings: {
       get: () => client.get<UserSettings>("/settings"),
       update: (patch) => client.patch<UserSettings>("/settings", patch),
+    },
+
+    googleCalendar: {
+      status: () => client.get<GoogleCalendarConnectionStatus>("/integrations/google-calendar"),
+      listEvents: (startsBefore, endsAfter) => client.get<GoogleCalendarExternalEvent[]>(
+        `/integrations/google-calendar/events?startsBefore=${encodeURIComponent(startsBefore)}&endsAfter=${encodeURIComponent(endsAfter)}`,
+      ),
+      beginConnect: () => client.post<GoogleCalendarConnectResult>("/integrations/google-calendar/connect"),
+      syncNow: () => client.post<GoogleCalendarSyncResult>("/integrations/google-calendar/sync"),
+      disconnect: async () => {
+        await client.del("/integrations/google-calendar");
+      },
+    },
+
+    hubspot: {
+      status: () => client.get<HubSpotConnectionStatus>("/integrations/hubspot"),
+      beginConnect: () => client.post<HubSpotConnectResult>("/integrations/hubspot/connect"),
+      setEventSync: (eventId, enabled) => client.patch<HubSpotEventSyncResult>(
+        `/integrations/hubspot/events/${eventId}`,
+        { enabled },
+      ),
+      syncEvent: (eventId) => client.post<HubSpotSyncResult>(`/integrations/hubspot/events/${eventId}/sync`),
+      disconnect: async () => {
+        await client.del("/integrations/hubspot");
+      },
+      setContactSync: enabled => client.patch<HubSpotConnectionStatus>("/integrations/hubspot/contacts/settings", { enabled }),
+      syncContacts: () => client.post<HubSpotConnectionStatus>("/integrations/hubspot/contacts/sync"),
+      contacts: filter => {
+        const query = new URLSearchParams(); for (const [key, value] of Object.entries(filter)) if (value !== undefined) query.set(key, String(value));
+        return client.get<HubSpotContactPage>(`/integrations/hubspot/contacts?${query}`);
+      },
+      addContacts: (eventId, contactIds) => client.post<HubSpotEventImportResult>(`/integrations/hubspot/events/${eventId}/contacts`, { contactIds }),
+      registrationLists: (search, offset) => client.get<HubSpotRegistrationLists>(`/integrations/hubspot/lists?${new URLSearchParams({ search, offset: String(offset) })}`),
+      eventSource: eventId => client.get<HubSpotEventSourceStatus | null>(`/integrations/hubspot/events/${eventId}/source`),
+      setEventSource: (eventId, draft) => client.patch<HubSpotEventSourceStatus | null>(`/integrations/hubspot/events/${eventId}/source`, draft),
     },
 
     analytics: {

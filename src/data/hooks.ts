@@ -14,6 +14,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import type { HubSpotContactFilter } from "./hubspotContacts";
 import { useData } from "./provider";
 import { DataError, type DataAdapter } from "./adapter";
 import type { RegistrationPageSettings } from "./registrationPage";
@@ -126,6 +128,7 @@ export const qk = {
   members: ["members"] as const,
   feedback: (userId: string) => ["feedback", userId] as const,
   feedbackInbox: (userId: string) => ["feedback", "inbox", userId] as const,
+  adminUserActivity: ["admin", "user-activity"] as const,
 
   vendors: ["vendors"] as const,
   vendor: (id: string) => ["vendors", "detail", id] as const,
@@ -185,6 +188,10 @@ export const qk = {
   canvas: (id: string) => ["canvases", "detail", id] as const,
 
   settings: ["settings"] as const,
+  googleCalendar: ["integrations", "google-calendar"] as const,
+  googleCalendarEvents: (startsBefore: string, endsAfter: string) =>
+    ["integrations", "google-calendar", "events", startsBefore, endsAfter] as const,
+  hubspot: ["integrations", "hubspot"] as const,
   floorplan: (eventId: string) => ["floorplan", eventId] as const,
   publicFloorplan: (token: string) => ["floorplan", "public", token] as const,
   history: (eventId: string) => ["history", eventId] as const,
@@ -428,7 +435,8 @@ export function useDeleteLocation() {
 /* ------------------------------------------------------------------ guests */
 
 export function useGuests() {
-  return useAdapterQuery(qk.guests, (a) => a.guests.list());
+  const hubspot = useHubSpotStatus();
+  return useAdapterQuery(qk.guests, (a) => a.guests.list(), { refetchInterval: hubspot.data?.inbound?.enabled ? 15_000 : undefined });
 }
 
 export function useCreateGuest() {
@@ -456,8 +464,10 @@ export function useRegistrations() {
 }
 
 export function useEventRegistrations(eventId: string) {
+  const hubspot = useHubSpotStatus();
   return useAdapterQuery(qk.eventRegistrations(eventId), (a) => a.registrations.listForEvent(eventId), {
     enabled: !!eventId,
+    refetchInterval: hubspot.data?.inbound?.enabled ? 15_000 : undefined,
   });
 }
 
@@ -1785,6 +1795,106 @@ export function useUpdateSettings() {
   return useAdapterMutation((a, patch: Partial<UserSettings>) => a.settings.update(patch), () => [qk.settings]);
 }
 
+export function useGoogleCalendarStatus() {
+  return useAdapterQuery(qk.googleCalendar, (a) => a.googleCalendar.status(), { staleTime: 15_000 });
+}
+
+export function useGoogleCalendarEvents(startsBefore: string, endsAfter: string) {
+  return useAdapterQuery(
+    qk.googleCalendarEvents(startsBefore, endsAfter),
+    (a) => a.googleCalendar.listEvents(startsBefore, endsAfter),
+    { enabled: Boolean(startsBefore && endsAfter), staleTime: 15_000 },
+  );
+}
+
+export function useConnectGoogleCalendar() {
+  return useAdapterMutation((a) => a.googleCalendar.beginConnect(), () => [qk.googleCalendar]);
+}
+
+export function useSyncGoogleCalendar() {
+  return useAdapterMutation(
+    (a) => a.googleCalendar.syncNow(),
+    () => [qk.googleCalendar, ["integrations", "google-calendar", "events"]],
+  );
+}
+
+export function useDisconnectGoogleCalendar() {
+  return useAdapterMutation((a) => a.googleCalendar.disconnect(), () => [qk.googleCalendar]);
+}
+
+export function useHubSpotStatus() {
+  const adapter = useData(); const identity = useMe(); const client = useQueryClient();
+  const resumed = useRef("");
+  const result = useQuery({ queryKey: qk.hubspot, queryFn: () => adapter.hubspot.status(), enabled: Boolean(identity.data) && !identity.data?.eventScope, staleTime: 15_000,
+    refetchInterval: query => { const inbound = query.state.data?.inbound; return inbound?.enabled && !inbound.error && (["queued", "running"].includes(inbound.state) || inbound.pending > 0) ? 2_000 : 15_000; } });
+  const inbound = result.data?.inbound;
+  const stamp = inbound?.enabled ? `${inbound.processed}:${inbound.contacts}:${inbound.lastSyncedAt}:${inbound.lastWebhookAt}` : "";
+  useEffect(() => {
+    if (!stamp) return;
+    for (const key of [qk.guests, qk.registrations, ["hubspot-contacts"]]) void client.invalidateQueries({ queryKey: key });
+  }, [client, stamp]);
+  const resumeKey = inbound?.enabled && inbound.state === "paused" ? `${inbound.processed}:${inbound.lastSyncedAt}` : "";
+  const canManage = identity.data?.role === "owner" || identity.data?.role === "admin";
+  useEffect(() => {
+    if (!resumeKey) { resumed.current = ""; return; }
+    if (!canManage || resumed.current === resumeKey) return;
+    resumed.current = resumeKey;
+    void adapter.hubspot.syncContacts().then(() => client.invalidateQueries({ queryKey: qk.hubspot })).catch(() => {});
+  }, [adapter, client, resumeKey, canManage]);
+  return result;
+}
+export function useSetHubSpotContactSync() {
+  return useAdapterMutation((a, enabled: boolean) => a.hubspot.setContactSync(enabled), () => [qk.hubspot, qk.guests, ["hubspot-contacts"]]);
+}
+export function useSyncHubSpotContacts() {
+  return useAdapterMutation(a => a.hubspot.syncContacts(), () => [qk.hubspot, qk.guests, ["hubspot-contacts"]]);
+}
+export function useHubSpotContacts(filter: HubSpotContactFilter, enabled = true) {
+  return useAdapterQuery(["hubspot-contacts", filter], a => a.hubspot.contacts(filter), { enabled, refetchInterval: 15_000 });
+}
+export function useAddHubSpotContacts() {
+  return useAdapterMutation((a, vars: { eventId: string; contactIds: string[] }) => a.hubspot.addContacts(vars.eventId, vars.contactIds), vars => [qk.hubspot, qk.eventRegistrations(vars.eventId), qk.registrations, ...eventDerivedKeys(vars.eventId), ["hubspot-contacts"]]);
+}
+
+export function useHubSpotRegistrationLists(search: string, offset: number, enabled: boolean) {
+  return useAdapterQuery(["hubspot-registration-lists", search, offset], a => a.hubspot.registrationLists(search, offset), { enabled });
+}
+export function useHubSpotEventSource(eventId: string, enabled: boolean) {
+  const client = useQueryClient();
+  const result = useAdapterQuery(["hubspot-event-source", eventId], a => a.hubspot.eventSource(eventId), { enabled, refetchInterval: 5_000 });
+  const stamp = result.data ? `${result.data.registrations}:${result.data.lastSyncedAt}` : "";
+  useEffect(() => {
+    if (!enabled || !stamp) return;
+    for (const key of [qk.eventRegistrations(eventId), qk.event(eventId), qk.events, ...eventDerivedKeys(eventId)]) void client.invalidateQueries({ queryKey: key });
+  }, [client, enabled, eventId, stamp]);
+  return result;
+}
+export function useSetHubSpotEventSource() {
+  return useAdapterMutation((a, vars: { eventId: string; listId: string; enabled: boolean }) => a.hubspot.setEventSource(vars.eventId, { listId: vars.listId, enabled: vars.enabled }), vars => [["hubspot-event-source", vars.eventId], qk.eventRegistrations(vars.eventId), qk.events, qk.event(vars.eventId)]);
+}
+
+export function useConnectHubSpot() {
+  return useAdapterMutation((a) => a.hubspot.beginConnect(), () => [qk.hubspot]);
+}
+
+export function useSetHubSpotEventSync() {
+  return useAdapterMutation(
+    (a, vars: { eventId: string; enabled: boolean }) => a.hubspot.setEventSync(vars.eventId, vars.enabled),
+    (vars) => [qk.hubspot, qk.event(vars.eventId), qk.events],
+  );
+}
+
+export function useSyncHubSpotEvent() {
+  return useAdapterMutation(
+    (a, eventId: string) => a.hubspot.syncEvent(eventId),
+    (eventId) => [qk.hubspot, qk.eventRegistrations(eventId)],
+  );
+}
+
+export function useDisconnectHubSpot() {
+  return useAdapterMutation((a) => a.hubspot.disconnect(), () => [qk.hubspot]);
+}
+
 export function useMembers() {
   return useAdapterQuery(qk.members, (a) => a.members.list());
 }
@@ -1829,6 +1939,14 @@ export function useFeedbackInbox(userId: string, enabled: boolean) {
 
 export function useNotifyFeedback() {
   return useAdapterMutation((a, id: string) => a.feedback.notify(id), () => []);
+}
+
+export function useAdminUserActivity(enabled: boolean) {
+  return useAdapterQuery(qk.adminUserActivity, (a) => a.admin.userActivity(), {
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
 }
 
 export function useFloorplans(eventId: string): UseQueryResult<Floorplan[], Error> {

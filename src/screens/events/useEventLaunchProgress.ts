@@ -57,6 +57,6 @@ export function useEventLaunchProgress(event: Event | null | undefined) {
     paymentsRequired,
     stripeConnectExempt,
     tickets: tickets ?? [],
-    unlocked: eventLaunchUnlocks(completion),
+    unlocked: eventLaunchUnlocks(),
   };
 }

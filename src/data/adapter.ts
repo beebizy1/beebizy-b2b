@@ -59,6 +59,7 @@ import type {
   EventHistoryEntry,
   FeedbackInboxItem,
   FeedbackNotificationOutcome,
+  AdminUserActivityResponse,
   FundraisingDashboard,
   FundraisingBroadcastAudience,
   FundraisingOrganizationProfile,
@@ -150,6 +151,14 @@ import type {
   TicketTypeDraft,
   TicketTypePatch,
   TicketTypeWithEvent,
+  GoogleCalendarConnectResult,
+  GoogleCalendarConnectionStatus,
+  GoogleCalendarExternalEvent,
+  GoogleCalendarSyncResult,
+  HubSpotConnectionStatus,
+  HubSpotConnectResult,
+  HubSpotEventSyncResult,
+  HubSpotSyncResult,
   UserSettings,
   Vendor,
   VendorDraft,
@@ -174,6 +183,10 @@ import type { PostEventCopySuggestion, RegistrationCopySuggestion } from "./even
 import type { RegistrationPageSettings } from "./registrationPage";
 import type { VendorEventPacketDraft, VendorEventPacketResult } from "./vendorEventPackets";
 import type { RunOfShowEditorDraft, RunOfShowSyncedDraft } from "./runOfShowRecovery";
+import type { RegistrationDesignDraftRepository } from "./registrationDesignDraft";
+import type { RegistrationGuestDraftRepository } from "./registrationGuestDraft";
+import type { HubSpotContactFilter, HubSpotContactPage, HubSpotEventImportResult } from "./hubspotContacts";
+import type { HubSpotEventSourceStatus, HubSpotRegistrationLists } from "./hubspotEventSource";
 
 /** CRUD over an owner-scoped top-level collection. */
 export interface OwnedRepository<T, TDraft, TPatch> {
@@ -384,6 +397,29 @@ export interface SettingsRepository {
   update(patch: Partial<UserSettings>): Promise<UserSettings>;
 }
 
+export interface GoogleCalendarRepository {
+  status(): Promise<GoogleCalendarConnectionStatus>;
+  listEvents(startsBefore: string, endsAfter: string): Promise<GoogleCalendarExternalEvent[]>;
+  beginConnect(): Promise<GoogleCalendarConnectResult>;
+  syncNow(): Promise<GoogleCalendarSyncResult>;
+  disconnect(): Promise<void>;
+}
+
+export interface HubSpotRepository {
+  status(): Promise<HubSpotConnectionStatus>;
+  beginConnect(): Promise<HubSpotConnectResult>;
+  setEventSync(eventId: string, enabled: boolean): Promise<HubSpotEventSyncResult>;
+  syncEvent(eventId: string): Promise<HubSpotSyncResult>;
+  disconnect(): Promise<void>;
+  setContactSync(enabled: boolean): Promise<HubSpotConnectionStatus>;
+  syncContacts(): Promise<HubSpotConnectionStatus>;
+  contacts(filter: HubSpotContactFilter): Promise<HubSpotContactPage>;
+  addContacts(eventId: string, contactIds: string[]): Promise<HubSpotEventImportResult>;
+  registrationLists(search: string, offset: number): Promise<HubSpotRegistrationLists>;
+  eventSource(eventId: string): Promise<HubSpotEventSourceStatus | null>;
+  setEventSource(eventId: string, draft: { listId: string; enabled: boolean }): Promise<HubSpotEventSourceStatus | null>;
+}
+
 export interface CanvasesRepository extends OwnedRepository<Canvas, CanvasDraft, CanvasPatch> {
   /** Replaces a board's cards wholesale — a board is edited as one document. */
   replaceCards(id: string, cards: CanvasCard[]): Promise<Canvas>;
@@ -484,6 +520,10 @@ export interface FeedbackRepository {
   notify(id: string): Promise<FeedbackNotificationOutcome>;
 }
 
+export interface AdminRepository {
+  userActivity(): Promise<AdminUserActivityResponse>;
+}
+
 export interface BillingRepository {
   checkout(interval: BillingInterval): Promise<{ url: string }>;
   portal(): Promise<{ url: string }>;
@@ -559,6 +599,8 @@ export interface DataAdapter {
   readonly kind: "memory" | "postgres";
   /** Stable identity used to isolate authenticated query caches. */
   readonly cacheScope: string;
+  registrationDesignDrafts: RegistrationDesignDraftRepository;
+  registrationGuestDrafts: RegistrationGuestDraftRepository;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
   events: EventsRepository;
@@ -590,9 +632,12 @@ export interface DataAdapter {
   templates: TemplatesRepository;
   canvases: CanvasesRepository;
   settings: SettingsRepository;
+  googleCalendar: GoogleCalendarRepository;
+  hubspot: HubSpotRepository;
   floorplan: FloorplanRepository;
   members: MembersRepository;
   feedback: FeedbackRepository;
+  admin: AdminRepository;
   billing: BillingRepository;
   fundraising: FundraisingRepository;
   history: EventHistoryRepository;

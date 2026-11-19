@@ -666,6 +666,48 @@
       "when": 1793854973373,
       "tag": "0094_flashy_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1793916944679,
+      "tag": "0095_omniscient_joystick",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793923016288,
+      "tag": "0096_unknown_mandroid",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793928937067,
+      "tag": "0097_salty_hellion",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1794447411881,
+      "tag": "0098_hubspot_contact_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1794449042183,
+      "tag": "0099_hubspot_webhook_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1794526983580,
+      "tag": "0100_quick_mach_iv",
+      "breakpoints": true
     }
   ]
 }

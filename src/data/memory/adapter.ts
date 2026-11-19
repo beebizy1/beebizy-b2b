@@ -9,6 +9,9 @@
  * State lives for the lifetime of the tab. Reloading resets to the seed.
  */
 
+import { registrationDesignDraftSchema, type RegistrationDesignDraft } from "../registrationDesignDraft";
+import { registrationGuestDraftKeySchema, registrationGuestDraftSchema, type RegistrationGuestDraft } from "../registrationGuestDraft";
+import { demoHubSpot } from "./hubspot";
 import type {
   AnalyticsRepository,
   AuctionRepository,
@@ -22,6 +25,7 @@ import type {
   EventHistoryRepository,
   TeamUpdatesRepository,
   FeedbackRepository,
+  AdminRepository,
   OwnedRepository,
   RaffleRepository,
   RegistrationsRepository,
@@ -31,6 +35,7 @@ import type {
   RunOfShowRepository,
   RoiRepository,
   SettingsRepository,
+  GoogleCalendarRepository,
   TemplatesRepository,
   TicketsRepository,
   VendorMessagesRepository,
@@ -151,6 +156,7 @@ import { assignmentSummaryCounts } from "../assignmentSummary";
 import { feedbackDraftSchema, feedbackValidationMessage } from "../feedback";
 import { volunteerCoverage } from "../santaClara";
 import { DEFAULT_REGISTRATION_PAGE, normalizeRegistrationPage, normalizeRegistrationPagePatch } from "../registrationPage";
+import { preparePublicRsvpParty } from "../publicRsvpParty";
 import { normalizeEventNavigation } from "../eventNavigation";
 import { buildPostEventCopyFallback, buildRegistrationCopyFallback } from "../eventCopy";
 import { buildUniqueAttendanceReport, normalizeAttendeeName } from "../attendanceReport";
@@ -179,6 +185,8 @@ function store(): MemoryDb {
 /** Test seam: drop all state so the next read re-seeds. */
 export function resetMemoryStore(): void {
   db = null;
+  registrationGuestDrafts.clear();
+  hubspotDemo.reset();
 }
 
 let idSeq = 0;
@@ -447,7 +455,7 @@ const events: EventsRepository = {
     const event = required(store().events.find((candidate) => candidate.id === id), `Event ${id} no longer exists.`);
     event.registrationPage = normalizeRegistrationPage({
       ...event.registrationPage,
-      ...normalizeRegistrationPagePatch(patch),
+      ...normalizeRegistrationPagePatch(patch, event.registrationPage),
     });
     event.updatedAt = nowIso();
     return copy(event);
@@ -795,42 +803,30 @@ const registrations: RegistrationsRepository = {
       state.events.find((candidate) => candidate.shareToken === shareToken),
       "This registration link is no longer available.",
     );
-    const name = draft.name.trim();
-    const email = draft.email.trim().toLowerCase();
-    const segment = draft.segment.trim();
     const page = normalizeRegistrationPage(event.registrationPage);
-    if (!name) throw new DataError("invalid", "Name is required.");
-    if (!/^\S+@\S+\.\S+$/.test(email)) throw new DataError("invalid", "Enter a valid email address.");
-    if (!segment) throw new DataError("invalid", "Guest type is required.");
+    let people: ReturnType<typeof preparePublicRsvpParty>;
+    try { people = preparePublicRsvpParty(page, draft as unknown as Record<string, unknown>); }
+    catch (error) { throw new DataError("invalid", error instanceof Error ? error.message : "Check your registration details."); }
+    const segment = draft.segment.trim();
     if (!page.registrationTypes.includes(segment)) throw new DataError("invalid", "That guest type is not available for this event.");
-    if (event.capacity !== null && event.registrationCount >= event.capacity) {
-      throw new DataError("conflict", `${event.title} is at capacity (${event.capacity}).`);
-    }
-
-    const guest = state.guests.find((candidate) => candidate.contact?.toLowerCase() === email) ?? {
-      id: newId("att"),
-      ownerId: DEMO_OWNER_ID,
-      name,
-      contact: email,
-      notes: "Registered through the public event page.",
-      createdAt: nowIso(),
-    };
-    if (!state.guests.some((candidate) => candidate.id === guest.id)) state.guests.push(guest);
-    if (state.registrations.some((row) => row.eventId === event.id && row.guestId === guest.id && row.status !== "cancelled")) {
-      throw new DataError("conflict", "This email is already registered for the event.");
-    }
-    const now = nowIso();
-    const registration: Registration = {
+    if (event.status === "cancelled" || event.status === "completed") throw new DataError("not-found", "This event link is no longer active.");
+    const guests = people.map(person => state.guests.find(candidate => person.email && candidate.contact?.trim().toLowerCase() === person.email) ?? {
+      id: newId("att"), ownerId: DEMO_OWNER_ID, name: person.name, contact: person.email,
+      notes: "Registered through the public event page.", createdAt: nowIso(),
+    });
+    if (guests.some(guest => state.registrations.some(row => row.eventId === event.id && row.guestId === guest.id))) throw new DataError("conflict", "One of these email addresses is already registered for the event. No additional registrations were saved.");
+    if (event.capacity !== null && event.registrationCount + people.length > event.capacity) throw new DataError("conflict", `There aren't enough places left for all ${people.length} people. No registrations were saved.`);
+    const now = nowIso(); const partyId = crypto.randomUUID();
+    const registrations: Registration[] = people.map((person, index) => ({
       id: newId("reg"), ownerId: DEMO_OWNER_ID, eventId: event.id, eventTitle: event.title,
-      guestId: guest.id, status: "confirmed", segment,
+      guestId: guests[index]!.id, status: "confirmed", segment,
       organization: page.collectOrganization ? draft.organization?.trim() || null : null, registeredAt: now,
-      quantity: 1,
-      checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now,
-    };
-    state.registrations.push(registration);
-    syncRegistrationCount(event.id);
-    // Demo mode has no email provider, so never claim that a message was delivered.
-    return { ...copy(registration), confirmationEmailStatus: "skipped" as const };
+      quantity: 1, checkedInAt: null, checkInStation: null, checkInNotes: null, createdAt: now,
+      importedFields: people.length > 1 ? [...person.fields, { label: "RSVP group", value: partyId }, { label: "Registered by", value: people[0]!.name }, { label: "Registrant email", value: people[0]!.email! }] : person.fields,
+    }));
+    for (const guest of guests) if (!state.guests.some(item => item.id === guest.id)) state.guests.push(guest);
+    state.registrations.push(...registrations); syncRegistrationCount(event.id);
+    return { ...copy(registrations[0]!), confirmationEmailStatus: "skipped" as const, ...(people.length > 1 ? { additionalGuests: people.slice(1).map((person, index) => ({ id: registrations[index + 1]!.id, name: person.name })) } : {}) };
   },
   async createWalkIn(eventId: string, draft: WalkInRegistrationDraft) {
     await wait();
@@ -2485,6 +2481,38 @@ const settings: SettingsRepository = {
   },
 };
 
+const googleCalendar: GoogleCalendarRepository = {
+  async status() {
+    await wait(0);
+    return {
+      state: "not-configured",
+      isConfigured: false,
+      googleEmail: null,
+      calendarSummary: null,
+      lastSyncedAt: null,
+      lastError: "Sign in to connect a real Google Calendar.",
+      eventsSynced: 0,
+      personalEventsVisible: 0,
+    };
+  },
+  async listEvents() {
+    await wait(0);
+    return [];
+  },
+  async beginConnect() {
+    throw new DataError("unavailable", "Sign in to connect a real Google Calendar.");
+  },
+  async syncNow() {
+    throw new DataError("unavailable", "Sign in to sync Google Calendar.");
+  },
+  async disconnect() {
+    throw new DataError("unavailable", "There is no Google Calendar connection in demo mode.");
+  },
+};
+
+const hubspotDemo = demoHubSpot(store, DEMO_OWNER_ID);
+const hubspot = hubspotDemo.adapter;
+
 /* ----------------------------------------------------------------------- roi */
 
 /* ------------------------------------------------------------------ boards */
@@ -2737,6 +2765,18 @@ const feedback: FeedbackRepository = {
   },
 };
 
+const admin: AdminRepository = {
+  async userActivity() {
+    await wait(0);
+    return {
+      generatedAt: nowIso(),
+      activeWindowMinutes: 5,
+      users: [],
+      totals: { authenticatedPeople: 0, activeMembers: 0, activeNow: 0, pendingInvites: 0, testAccounts: 0 },
+    };
+  },
+};
+
 const history: EventHistoryRepository = {
   async list(eventId) {
     await wait();
@@ -2942,9 +2982,38 @@ function planningMemoryFor(event: Event): PastEventPlanningRecord[] {
     }));
 }
 
+const registrationDesignDrafts = new Map<string, RegistrationDesignDraft>();
+const registrationGuestDrafts = new Map<string, RegistrationGuestDraft>();
+
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
   cacheScope: "demo",
+  registrationDesignDrafts: {
+    async get(eventId) { requireEvent(eventId); return copy(registrationDesignDrafts.get(eventId) ?? null); },
+    async save(eventId, value) {
+      requireEvent(eventId);
+      const draft = registrationDesignDraftSchema.parse(value);
+      const current = registrationDesignDrafts.get(eventId);
+      if (current && current.revision >= draft.revision) return copy(current);
+      registrationDesignDrafts.set(eventId, copy(draft));
+      return copy(draft);
+    },
+  },
+  registrationGuestDrafts: {
+    async get(eventId, key) {
+      requireEvent(eventId); registrationGuestDraftKeySchema.parse(key);
+      return copy(registrationGuestDrafts.get(`${eventId}:${key}`) ?? null);
+    },
+    async save(eventId, key, value) {
+      requireEvent(eventId); registrationGuestDraftKeySchema.parse(key);
+      const draft = registrationGuestDraftSchema.parse(value);
+      const scope = `${eventId}:${key}`;
+      const current = registrationGuestDrafts.get(scope);
+      if (current && current.revision >= draft.revision) return copy(current);
+      registrationGuestDrafts.set(scope, copy(draft));
+      return copy(draft);
+    },
+  },
 
   // The demo has a single implicit workspace and no roles to speak of.
   me: async () => {
@@ -3135,9 +3204,12 @@ export const memoryAdapter: DataAdapter = {
   templates,
   canvases,
   settings,
+  googleCalendar,
+  hubspot,
   floorplan,
   members,
   feedback,
+  admin,
   history,
   teamUpdates,
   roi,

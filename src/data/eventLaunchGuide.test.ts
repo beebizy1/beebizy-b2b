@@ -93,36 +93,27 @@ describe("event launch guide", () => {
     expect(eventLaunchStepHref("evt-123", "payments")).toBe("/app/events/evt-123/share?step=payments");
   });
 
-  it("locks future steps until every earlier requirement is complete", () => {
+  it("allows invitation design, link sharing and payment setup before the invite list is complete", () => {
     const completion = eventLaunchCompletion({
       inviteeCount: 0,
       invitationDesigned: false,
       activeTicketCount: 0,
-      paymentsRequired: false,
+      paymentsRequired: true,
       stripeReady: false,
       invitationsSent: false,
     });
-    expect(eventLaunchUnlocks(completion)).toEqual({
+    expect(completion["invite-list"]).toBe(false);
+    expect(completion["invite-design"]).toBe(false);
+    expect(completion.payments).toBe(false);
+    expect(completion.send).toBe(false);
+    expect(eventLaunchUnlocks()).toEqual({
       event: true,
       "invite-list": true,
-      "invite-design": false,
+      "invite-design": true,
       tickets: true,
       payments: true,
-      send: false,
+      send: true,
     });
-  });
-
-  it("keeps completed later work clickable without unlocking unfinished steps around it", () => {
-    const completion = eventLaunchCompletion({
-      inviteeCount: 0,
-      invitationDesigned: true,
-      activeTicketCount: 0,
-      paymentsRequired: false,
-      stripeReady: false,
-      invitationsSent: false,
-    });
-    expect(eventLaunchUnlocks(completion)["invite-design"]).toBe(true);
-    expect(eventLaunchUnlocks(completion).tickets).toBe(true);
   });
 
   it("advances from a completed selected step to the next unfinished step", () => {

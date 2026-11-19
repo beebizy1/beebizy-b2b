@@ -8,9 +8,29 @@ import {
   registrationPageIsCustomized,
   normalizeRegistrationPage,
   normalizeRegistrationPagePatch,
+  rsvpConfirmationCopy,
 } from "./registrationPage";
 
 describe("registration page settings", () => {
+  it("supports independent defaults and resets for the on-screen RSVP confirmation", () => {
+    const patch = normalizeRegistrationPagePatch({
+      rsvpConfirmationTitle: "  See you there!  ",
+      rsvpConfirmationMessage: "  Arrive at six.\n\nBring your invitation.  ",
+    });
+    const saved = normalizeRegistrationPage({ ...patch, postEventThankYou: "Separate email copy" });
+    expect(rsvpConfirmationCopy(saved, "Demo Day", "General")).toEqual({
+      title: "See you there!", message: "Arrive at six.\n\nBring your invitation.",
+    });
+    expect(Object.keys(patch)).toEqual(["rsvpConfirmationTitle", "rsvpConfirmationMessage"]);
+    const reset = normalizeRegistrationPage({ ...saved, ...normalizeRegistrationPagePatch({ rsvpConfirmationTitle: "  " }) });
+    expect(rsvpConfirmationCopy(reset, "Demo Day", "General")).toEqual({
+      title: "You're registered", message: "Arrive at six.\n\nBring your invitation.",
+    });
+    expect(reset.postEventThankYou).toBe("Separate email copy");
+    expect(rsvpConfirmationCopy(normalizeRegistrationPage(null), "Demo Day", "General")).toEqual({
+      title: "You're registered", message: "You are confirmed as General for Demo Day.",
+    });
+  });
   it("offers generic starting points instead of tying the page to a mood board", () => {
     expect(REGISTRATION_PAGE_TEMPLATES.map((template) => template.id)).toEqual([
       "warm",
@@ -52,8 +72,14 @@ describe("registration page settings", () => {
       aboutBody: "",
       agendaIntroduction: "",
       welcomeMessage: "Register below and we will see you there.",
+      rsvpConfirmationTitle: "",
+      rsvpConfirmationMessage: "",
       heroImageUrl: "https://images.example.com/garden.jpg",
       heroImageDisplay: "banner",
+      footerImageSource: "invitation",
+      footerImageUrl: null,
+      questions: [],
+      maxAdditionalGuests: 0,
       aboutImageUrl: "https://images.example.com/venue.jpg",
       agendaImageUrl: "/demo-registration/gala-networking.png",
       showAgenda: false,

@@ -17,6 +17,7 @@ import { buildUniqueAttendanceReport } from "../src/data/attendanceReport.ts";
 import type { BudgetItem, ChecklistItem, Sponsorship } from "../src/data/entities.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
+import { renderEventSharePage } from "../src/server/eventSharePage.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
 import { generatePostEventCopy, generateRegistrationCopy } from "../src/server/eventCopy.ts";
 import { parseFloorplanDraft } from "../src/data/floorplan.ts";
@@ -64,6 +65,34 @@ import { analyzePublicVendorCoi, analyzeVendorCoi } from "../src/server/vendorCo
 import { processDueVendorPaperworkReminders } from "../src/server/vendorPaperworkReminders.ts";
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
+import { listAdminUserActivity } from "../src/server/userActivity.ts";
+import { getRegistrationDesignDraft, saveRegistrationDesignDraft } from "../src/server/registrationDesignDrafts.ts";
+import { getRegistrationGuestDraft, saveRegistrationGuestDraft } from "../src/server/registrationGuestDrafts.ts";
+import {
+  beginGoogleCalendarConnect,
+  disconnectGoogleCalendar,
+  googleCalendarStatus,
+  handleGoogleCalendarCallback,
+  handleGoogleCalendarWebhook,
+  listGoogleCalendarEvents,
+  removeWorkspaceEventFromCalendars,
+  renewGoogleCalendarChannels,
+  syncGoogleCalendarNow,
+  syncWorkspaceEvent,
+} from "../src/server/googleCalendar.ts";
+import {
+  beginHubSpotConnect,
+  disconnectHubSpot,
+  handleHubSpotCallback,
+  hubspotStatus,
+  setHubSpotEventSync,
+  syncHubSpotEvent,
+  syncHubSpotRegistrationById,
+  syncHubSpotRegistrationIfEnabled,
+} from "../src/server/hubspot.ts";
+import { addHubSpotContactsToEvent, hubspotContactMaintenance, listHubSpotContacts, setHubSpotContactSync, syncHubSpotContacts } from "../src/server/hubspotInbound.ts";
+import { handleHubSpotWebhook, hubspotWebhookMaintenance, resumeHubSpotWebhookInbox } from "../src/server/hubspotWebhooks.ts";
+import { hubspotEventSourceStatus, listHubSpotRegistrationLists, recoverHubSpotEventSources, setHubSpotEventSource } from "../src/server/hubspotEventSources.ts";
 import { discardRunOfShowDraft, listRunOfShowDrafts, saveRunOfShowDraft } from "../src/server/runOfShowDrafts.ts";
 import { z, ZodError } from "zod";
 import { put } from "@vercel/blob";
@@ -282,6 +311,40 @@ async function handleLead(request: Request): Promise<Response> {
  * than something guessable.
  */
 async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
+  if (segments[0] === "public" && segments[1] === "event-share" && segments[2] && segments.length === 3) {
+    if (method !== "GET" && method !== "HEAD") return json({ error: "Method not allowed" }, 405);
+    return renderEventSharePage(segments[2], method, eventByShareToken);
+  }
+
+  if (segments[0] === "integrations" && segments[1] === "hubspot") {
+    if (segments[2] === "callback" && method === "GET") return handleHubSpotCallback(request);
+    if (segments[2] === "webhook" && method === "POST") return handleHubSpotWebhook(request);
+    if (segments[2] === "webhook" && (method === "GET" || method === "HEAD")) return json({ ok: true });
+    if (segments[2] === "maintenance" && method === "GET") {
+      const secret = process.env.CRON_SECRET?.trim();
+      if (!secret) return json({ error: "HubSpot maintenance is not configured." }, 503);
+      if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+      const [contacts, updates] = await Promise.all([hubspotContactMaintenance(), hubspotWebhookMaintenance()]);
+      await recoverHubSpotEventSources();
+      return json({ ok: true, contacts, updates });
+    }
+    return null;
+  }
+
+  if (segments[0] === "integrations" && segments[1] === "google-calendar") {
+    if (segments[2] === "callback" && method === "GET") return handleGoogleCalendarCallback(request);
+    if (segments[2] === "webhook" && method === "POST") return handleGoogleCalendarWebhook(request);
+    if (segments[2] === "maintenance" && method === "GET") {
+      const secret = process.env.CRON_SECRET?.trim();
+      if (!secret) return json({ error: "Google Calendar maintenance is not configured." }, 503);
+      if (request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized" }, 401);
+      return json({ ok: true, ...(await renewGoogleCalendarChannels()) });
+    }
+    // Status, connect, sync and disconnect continue through the authenticated router.
+    if (segments.length <= 3) return null;
+    return json({ error: "Method not allowed" }, 405);
+  }
+
   if (segments[0] === "lead") {
     if (method !== "POST") return json({ error: "Method not allowed" }, 405);
     return handleLead(request);
@@ -316,7 +379,11 @@ async function handlePublic(segments: string[], method: string, request: Request
 
   // Public event read and share-link registration actions.
   if (segments[0] === "public" && segments[1] === "events" && segments[2] && method === "POST") {
-    if (segments[3] === "registrations") return json(await repos.publicRegistration(segments[2], await readBody(request)), 201);
+    if (segments[3] === "registrations") {
+      const registration = await repos.publicRegistration(segments[2], await readBody(request));
+      await syncHubSpotRegistrationIfEnabled(registration.ownerId, registration.id);
+      return json(registration, 201);
+    }
     if (segments[3] === "volunteers") return json(await repos.publicVolunteerSignup(segments[2], await readBody(request)), 201);
     if (segments[3] === "tickets" && segments[4] === "checkout") {
       const input = z.object({
@@ -519,6 +586,7 @@ async function handlePublic(segments: string[], method: string, request: Request
       const body = await readBody(request);
       if (typeof body.name !== "string") return json({ error: "name is required." }, 400);
       const guest = await repos.createPublicWalkIn(segments[2], body.name);
+      if (guest) await syncHubSpotRegistrationById(guest.registrationId);
       return guest ? json(guest, 201) : json({ error: "This check-in link or counter is no longer active." }, 404);
     }
     if (method === "DELETE" && segments[3] === "check-in" && segments[4] === "walk-ins" && segments[5] && segments.length === 6) {
@@ -529,6 +597,7 @@ async function handlePublic(segments: string[], method: string, request: Request
       const body = await readBody(request);
       if (typeof body.checkedIn !== "boolean") return json({ error: "checkedIn must be true or false." }, 400);
       const guest = await repos.setPublicCheckIn(segments[2], segments[4], body.checkedIn);
+      if (guest) await syncHubSpotRegistrationById(guest.registrationId);
       return guest ? json(guest) : json({ error: "This guest is not available at this check-in station." }, 404);
     }
     return json({ error: "Method not allowed" }, 405);
@@ -900,11 +969,24 @@ async function handleAuthed(
         };
         return json(await repos.events.list(ctx, filter));
       }
-      if (!a && method === "POST") return json(await repos.events.create(ctx, body), 201);
+      if (!a && method === "POST") {
+        const event = await repos.events.create(ctx, body);
+        await syncWorkspaceEvent(event);
+        return json(event, 201);
+      }
       if (a && !b && method === "GET") return json(await repos.events.get(ctx, a));
-      if (a && !b && method === "PATCH") return json(await repos.events.update(ctx, a, body));
+      if (a && !b && method === "PATCH") {
+        const event = await repos.events.update(ctx, a, body);
+        await syncWorkspaceEvent(event);
+        return json(event);
+      }
+      if (a && b === "registration-design-draft" && !c && method === "GET") return json(await getRegistrationDesignDraft(ctx, a));
+      if (a && b === "registration-design-draft" && !c && method === "PUT") return json(await saveRegistrationDesignDraft(ctx, a, body));
+      if (a && b === "registration-guest-drafts" && c && !segments[4] && method === "GET") return json(await getRegistrationGuestDraft(ctx, a, c));
+      if (a && b === "registration-guest-drafts" && c && !segments[4] && method === "PUT") return json(await saveRegistrationGuestDraft(ctx, a, c, body));
       if (a && b === "registration-page" && method === "PATCH") return json(await repos.events.updateRegistrationPage(ctx, a, body));
       if (a && !b && method === "DELETE") {
+        await removeWorkspaceEventFromCalendars(ctx.workspaceId, a);
         await repos.events.remove(ctx, a);
         return json({ ok: true });
       }
@@ -1171,7 +1253,11 @@ async function handleAuthed(
         }
 
         if (b === "registrations" && !c && method === "GET") return json(await repos.registrations.listForEvent(ctx, a));
-        if (b === "walk-ins" && !c && method === "POST") return json(await repos.registrations.createWalkIn(ctx, a, body), 201);
+        if (b === "walk-ins" && !c && method === "POST") {
+          const registration = await repos.registrations.createWalkIn(ctx, a, body);
+          await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+          return json(registration, 201);
+        }
         if (b === "history" && !c && method === "GET") return json(await repos.history.list(ctx, a));
         if (b === "updates" && !c && method === "GET") return json(await repos.teamUpdates.list(ctx, a));
         if (b === "updates" && !c && method === "POST") return json(await repos.teamUpdates.create(ctx, a, body), 201);
@@ -1276,9 +1362,23 @@ async function handleAuthed(
     /* ----------------------------------------------------------- registrations */
     case "registrations": {
       if (!a && method === "GET") return json(await repos.registrations.list(ctx));
-      if (!a && method === "POST") return json(await repos.registrations.create(ctx, body), 201);
-      if (a === "import" && !b && method === "POST") return json(await repos.registrations.importGuests(ctx, body), 201);
-      if (a && method === "PATCH") return json(await repos.registrations.update(ctx, a, body));
+      if (!a && method === "POST") {
+        const registration = await repos.registrations.create(ctx, body);
+        await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+        return json(registration, 201);
+      }
+      if (a === "import" && !b && method === "POST") {
+        const registrations = await repos.registrations.importGuests(ctx, body);
+        for (const registration of registrations) {
+          await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+        }
+        return json(registrations, 201);
+      }
+      if (a && method === "PATCH") {
+        const registration = await repos.registrations.update(ctx, a, body);
+        await syncHubSpotRegistrationIfEnabled(ctx.workspaceId, registration.id);
+        return json(registration);
+      }
       if (a && method === "DELETE") {
         await repos.registrations.remove(ctx, a);
         return json({ ok: true });
@@ -1358,6 +1458,53 @@ async function handleAuthed(
       return notFound();
     }
 
+    /* ----------------------------------------------------------- integrations */
+    case "integrations": {
+      if (a === "hubspot") {
+        if (!b && method === "GET") {
+          const status = await hubspotStatus(ctx);
+          if (status.inbound?.enabled && status.inbound.pending) await resumeHubSpotWebhookInbox(ctx.workspaceId);
+          if (status.inbound?.enabled) await recoverHubSpotEventSources(ctx.workspaceId).catch(error => console.error("[hubspot event recovery]", error instanceof Error ? error.message : "Queue unavailable"));
+          return json(status);
+        }
+        if (b === "connect" && method === "POST") return json(beginHubSpotConnect(ctx));
+        if (b === "lists" && method === "GET") return json(await listHubSpotRegistrationLists(ctx, url.searchParams.get("search") ?? "", Number(url.searchParams.get("offset") ?? 0)));
+        if (b === "events" && c && segments[4] === "source" && method === "GET") return json(await hubspotEventSourceStatus(ctx, c));
+        if (b === "events" && c && segments[4] === "source" && method === "PATCH") return json(await setHubSpotEventSource(ctx, c, body));
+        if (b === "contacts" && !c && method === "GET") return json(await listHubSpotContacts(ctx, { eventId: url.searchParams.get("eventId") ?? undefined, search: url.searchParams.get("search") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined, limit: Number(url.searchParams.get("limit") ?? 50) }));
+        if (b === "contacts" && c === "settings" && method === "PATCH") return json(await setHubSpotContactSync(ctx, z.object({ enabled: z.boolean() }).parse(body).enabled));
+        if (b === "contacts" && c === "sync" && method === "POST") return json(await syncHubSpotContacts(ctx));
+        if (b === "events" && c && segments[4] === "contacts" && method === "POST") return json(await addHubSpotContactsToEvent(ctx, c, body.contactIds));
+        if (b === "events" && c && !segments[4] && method === "PATCH") {
+          return json(await setHubSpotEventSync(ctx, c, body.enabled === true));
+        }
+        if (b === "events" && c && segments[4] === "sync" && method === "POST") {
+          return json(await syncHubSpotEvent(ctx, c));
+        }
+        if (!b && method === "DELETE") {
+          await disconnectHubSpot(ctx);
+          return json({ ok: true });
+        }
+        return notFound();
+      }
+      if (a !== "google-calendar") return notFound();
+      if (!b && method === "GET") return json(await googleCalendarStatus(ctx));
+      if (b === "events" && method === "GET") {
+        const range = z.object({
+          startsBefore: z.string().datetime({ offset: true }).transform((value) => new Date(value)),
+          endsAfter: z.string().datetime({ offset: true }).transform((value) => new Date(value)),
+        }).parse(Object.fromEntries(url.searchParams));
+        return json(await listGoogleCalendarEvents(ctx, range.startsBefore, range.endsAfter));
+      }
+      if (b === "connect" && method === "POST") return json(beginGoogleCalendarConnect(ctx));
+      if (b === "sync" && method === "POST") return json(await syncGoogleCalendarNow(ctx));
+      if (!b && method === "DELETE") {
+        await disconnectGoogleCalendar(ctx);
+        return json({ ok: true });
+      }
+      return notFound();
+    }
+
     /* ---------------------------------------------------------- product feedback */
     case "feedback": {
       if (a === "inbox" && method === "GET") {
@@ -1376,6 +1523,13 @@ async function handleAuthed(
         }
         return json(await repos.feedback.create(ctx, parsed.data), 201);
       }
+      return notFound();
+    }
+
+    /* ------------------------------------------------------------ admin live */
+    case "admin": {
+      requireBeebizyOperator(ctx.email);
+      if (a === "user-activity" && method === "GET") return json(await listAdminUserActivity());
       return notFound();
     }
 

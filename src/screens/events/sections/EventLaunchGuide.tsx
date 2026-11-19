@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "wouter";
 import { Check, ChevronDown, CreditCard, ListChecks, Mail, Palette, PartyPopper, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader, Pill } from "@/components/primitives";
@@ -71,7 +72,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       complete: completion.event,
       icon: PartyPopper,
       detail: <p>Your event already exists. Review the basics whenever the date, location, or capacity changes.</p>,
-      action: <Button asChild variant="outline" size="sm"><a href={eventLaunchDetailsHref(event.id)}>Review event details</a></Button>,
+      action: <Button asChild variant="outline" size="sm"><Link href={eventLaunchDetailsHref(event.id)}>Review event details</Link></Button>,
     },
     {
       number: 2,
@@ -81,7 +82,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
       complete: completion["invite-list"],
       icon: Users,
       detail: <p>You have {contactableInvitees.length} {contactableInvitees.length === 1 ? "person" : "people"} with an email address on this event's list. Step {sendStepNumber} will load them automatically.</p>,
-      action: <Button asChild size="sm"><a href={eventLaunchRegistrationsHref(event.id)}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</a></Button>,
+      action: <Button asChild size="sm"><Link href={eventLaunchRegistrationsHref(event.id)}>{contactableInvitees.length > 0 ? "Review invite list" : "Add or upload guests"}</Link></Button>,
     },
     {
       number: 3,
@@ -106,11 +107,11 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
     ...(!stripeConnectExempt ? [{
       number: 5,
       id: "payments",
-      title: "Connect your school's bank account",
-      summary: "Use Stripe so ticket, auction, and fundraising money can reach the school.",
+      title: "Connect your organization's bank account",
+      summary: "Use Stripe so ticket, auction, and fundraising money can reach your organization.",
       complete: completion.payments,
       icon: CreditCard,
-      detail: !paymentsRequired ? <p>This event uses free RSVP only, so no bank connection is needed.</p> : connect?.ready ? <div className="space-y-2"><p>Stripe is connected. Stripe will send paid ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div> : <div className="space-y-2"><p>Stripe is the secure payment service that sends money to the school.</p><p><strong>1.</strong> Click Connect below.</p><p><strong>2.</strong> The school owner fills out Stripe's form.</p><p><strong>3.</strong> Stripe sends ticket and fundraising money to the school's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div>,
+      detail: !paymentsRequired ? <p>This event uses free RSVP only, so no bank connection is needed.</p> : connect?.ready ? <div className="space-y-2"><p>Stripe is connected. Stripe will send paid ticket and fundraising money to the organization's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div> : <div className="space-y-2"><p>Stripe is the secure payment service that sends money to your organization.</p><p><strong>1.</strong> Click Connect below.</p><p><strong>2.</strong> An authorized representative of your organization fills out Stripe's form.</p><p><strong>3.</strong> Stripe sends ticket and fundraising money to the organization's bank account.</p><p className="text-xs">Stripe charges its normal processing fee. Beebizy adds 2%.</p></div>,
       action: !paymentsRequired ? <Pill tone="success">Not needed for free RSVP</Pill> : connect?.ready ? <Button asChild variant="outline" size="lg"><a href={eventLaunchPath(event.id)}>Stripe connected · Continue to next step</a></Button> : identity?.role === "owner" ? <Button type="button" size="lg" className="w-full text-base font-bold shadow-sm sm:w-auto" disabled={connectLoading || startConnect.isPending} onClick={() => startConnect.mutate(eventLaunchPath(event.id), { onSuccess: (status) => { if (status.onboardingUrl) window.location.assign(status.onboardingUrl); }, onError: (error) => toast({ title: "Couldn't open Stripe", description: error.message }) })}>{startConnect.isPending ? "Opening Stripe…" : connect?.accountId ? "Continue connecting Stripe" : "Connect Stripe bank account"}</Button> : <p className="text-xs font-medium text-muted-foreground">Ask the Beebizy workspace owner to connect Stripe.</p>,
     } satisfies LaunchStep] : []),
     {
@@ -132,7 +133,7 @@ export default function EventLaunchGuide({ event, publishing, focusStep, onDesig
 
   return (
     <Panel className="overflow-hidden border-primary/20">
-      <PanelHeader title="Launch your event" description={`${event.title} · Follow these ${totalSteps} steps in order. Finish one, then move to the next.`} actions={<Pill tone={completedCount === totalSteps ? "success" : "warning"}>{completedCount} of {totalSteps} done</Pill>} />
+      <PanelHeader title="Launch your event" description={`${event.title} · Follow these ${totalSteps} steps. Open any step to review or edit it.`} actions={<Pill tone={completedCount === totalSteps ? "success" : "warning"}>{completedCount} of {totalSteps} done</Pill>} />
       <div className="h-1.5 bg-surface-sunken"><div className="h-full bg-primary transition-[width]" style={{ width: `${(completedCount / totalSteps) * 100}%` }} /></div>
       <ol className="divide-y divide-hairline">
         {steps.map((step) => {

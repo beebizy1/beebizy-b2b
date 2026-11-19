@@ -7,6 +7,7 @@ import { events, ticketInvitations, ticketTypes, workspaces } from "./schema.ts"
 import { normalizeRegistrationPage, registrationInvitationHtml } from "../data/registrationPage.ts";
 import { ticketInvitationRsvpPath } from "../data/ticketInvitations.ts";
 import { formatInZone } from "../lib/datetime.ts";
+import { assertHubSpotEmailRecipients } from "./hubspotInbound.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -50,6 +51,7 @@ export async function sendTicketInvitations(
   })).values()].filter((recipient) => recipient.name && EMAIL.test(recipient.email));
   if (normalized.length === 0) throw new HttpError(400, "Add at least one valid name and email.");
   if (normalized.length > 500) throw new HttpError(400, "Send no more than 500 invitations at a time.");
+  await assertHubSpotEmailRecipients(ctx.workspaceId, normalized.map(recipient => recipient.email));
 
   const [event] = await db.select({ event: events, workspaceTimeZone: workspaces.timeZone, workspaceName: workspaces.name, legalName: workspaces.legalName }).from(events)
     .innerJoin(workspaces, eq(events.workspaceId, workspaces.id))

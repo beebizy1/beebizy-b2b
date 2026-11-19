@@ -359,6 +359,7 @@ describe("registration confirmation email", () => {
       registrationId: "reg-123",
       to: "guest@example.com",
       guestName: "Ada Lovelace",
+      additionalGuestNames: ["Alex Taylor"],
       eventTitle: "Demo Day",
       segment: "Investor",
       startsAt: "2026-10-18T21:00:00.000Z",
@@ -377,6 +378,8 @@ describe("registration confirmation email", () => {
       reply_to: "hello@beebizy.com",
       subject: "Registration confirmed - Demo Day",
     });
+    expect(body.text).toContain("Your additional guests: Alex Taylor");
+    expect(body.text).toContain("Total people registered: 2");
     expect(body.text).toContain("Hi Ada Lovelace,");
     expect(body.text).toContain("Guest type: Investor");
     expect(body.text).toContain("Mission Hall, Santa Clara");
