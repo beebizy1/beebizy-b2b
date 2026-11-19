@@ -3,6 +3,11 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  },
   "functions": {
     "api/router.ts": { "maxDuration": 300, "includeFiles": "dist/index.html" },
     "api/hubspot-event-sync.ts": {
