@@ -4373,6 +4373,7 @@ export const sponsorships = eventScoped({
     companyName: (b) => str(b, "companyName"),
     tier: (b) => str(b, "tier", "custom"),
     amountCents: (b) => optInt(b, "amountCents"),
+    logoUrl: (b) => optStr(b, "logoUrl"),
     contactEmail: (b) => optStr(b, "contactEmail"),
     contactName: (b) => optStr(b, "contactName"),
     notes: (b) => optStr(b, "notes"),

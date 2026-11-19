@@ -17,6 +17,28 @@ function editor(repo: RegistrationGuestDraftRepository, storage = device(), even
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; vi.restoreAllMocks(); });
 
 describe("private organizer guest drafts", () => {
+  it("recovers all sponsor fields privately and clears the draft only after an explicit save", async () => {
+    const repo = repository();
+    const storage = device();
+    const first = editor(repo, storage, "event-1", "sponsor-new");
+    await first.start(() => {});
+    const values = {
+      companyName: "Community Sponsor", tier: "custom", amount: "250",
+      logoUrl: "https://example.com/logo.png", contactName: "Jordan",
+      contactEmail: "jordan@example.com", notes: "Unfinished\nbenefits", status: "confirmed",
+    };
+    first.setValues(values);
+    await first.flush();
+    first.stop();
+    const recovered = editor(repo, device(), "event-1", "sponsor-new");
+    await recovered.start(() => {});
+    expect(recovered.state.values).toEqual(values);
+    expect(recovered.state.discarded).toBe(false);
+    expect(editor(repo, storage, "event-2", "sponsor-new").state.discarded).toBe(true);
+    recovered.complete(values, { companyName: "", logoUrl: "" });
+    await recovered.flush();
+    expect((await repo.get("event-1", "sponsor-new"))?.discarded).toBe(true);
+  });
   it("recovers an event's HubSpot list selection and search on another device without enabling sync", async () => {
     const repo = repository();
     const first = editor(repo, device(), "event-1", "hubspot-registration-list");

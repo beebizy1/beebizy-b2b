@@ -33,6 +33,7 @@ import EventQrCard from "./EventQrCard";
 import { formatInZone, localTimeZone } from "@/lib/datetime";
 import { LinkedText } from "@/components/LinkedText";
 import { RegistrationExtrasEditor } from "./RegistrationExtrasEditor";
+import InvitationSponsorsEditor from "./InvitationSponsorsEditor";
 import { useRegistrationDesignDraft } from "@/hooks/useRegistrationDesignDraft";
 import { footerBannerImage } from "@/data/registrationPage";
 
@@ -415,6 +416,7 @@ export default function ShareSection({ event }: { event: Event }) {
             </section>
 
             <div role="status" className="rounded-lg border border-hairline bg-surface p-3 text-xs text-muted-foreground">{designState.message}{designState.remote ? <Button type="button" variant="outline" size="sm" className="ml-3" onClick={() => recovery.useServerDraft()}>Recover server draft</Button> : null}</div>
+            <InvitationSponsorsEditor eventId={event.id} sponsors={sponsorships ?? []} visible={draft.showSponsors} onVisibilityChange={showSponsors => setDraft(current => ({ ...current, showSponsors }))} />
             <RegistrationExtrasEditor draft={draft} eventTitle={event.title} guestType={normalizeRegistrationPage({ registrationTypes: guestTypesInput.split(",") }).registrationTypes[0]!} onChange={patch => setDraft(current => ({ ...current, ...patch }))} />
             <section className="space-y-3 rounded-xl border border-hairline p-4" aria-label="Additional guest settings">
               <label className="flex items-center justify-between gap-3 text-sm font-semibold"><span>Allow attendees to bring guests</span><Switch aria-label="Allow additional guests" checked={draft.maxAdditionalGuests > 0} onCheckedChange={enabled => setDraft(current => ({ ...current, maxAdditionalGuests: enabled ? 1 : 0 }))} /></label>
@@ -527,7 +529,6 @@ export default function ShareSection({ event }: { event: Event }) {
                 <div><label className="flex items-center justify-between gap-3 text-sm"><span>Ask for company, school, or organization</span><Switch checked={draft.collectOrganization} onCheckedChange={(checked) => setDraft((current) => ({ ...current, collectOrganization: checked }))} /></label><p className="mt-1 pr-12 text-xs text-muted-foreground">Adds an optional field so guests can name the business, school, nonprofit, or group they represent.</p></div>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show public agenda</span><Switch checked={draft.showAgenda} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showAgenda: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show featured speakers</span><Switch checked={draft.showSpeakers} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showSpeakers: checked }))} /></label>
-                <label className="flex items-center justify-between gap-3 text-sm"><span>Show confirmed sponsors</span><Switch checked={draft.showSponsors} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showSponsors: checked }))} /></label>
                 <label className="flex items-center justify-between gap-3 text-sm"><span>Show volunteer signup</span><Switch checked={draft.showVolunteerSignup} onCheckedChange={(checked) => setDraft((current) => ({ ...current, showVolunteerSignup: checked }))} /></label>
               </div>
               </div>
