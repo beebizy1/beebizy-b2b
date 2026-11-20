@@ -61,4 +61,19 @@ describe("event operations", () => {
     const result = operationsCurrencyTotals([{ currency: "USD", amount: 500 }], [{ currency: "EUR", amount: 700 }], [{ currency: "usd", amount: 100 }], [{ currency: "USD", amount: 200 }]);
     expect(result.map(row => [row.currency, row.collectedCents])).toEqual([["EUR", 700], ["USD", 800]]);
   });
+  it("keeps physical handouts in inventory when production closes before a registration", () => {
+    const document = emptyEventOperations(); document.apparel.questionIds = ["shirt"];
+    document.apparel.cutoffAt = "2027-01-01T12:00:00Z";
+    document.apparel.received = [{ questionId: "shirt", size: "M", quantity: 3 }];
+    document.apparel.handedOutRegistrationIds = ["late"];
+    const report = apparelReport([registration("late", { importedFields: [{ label: "Shirt size", value: "M" }] })], normalizeRegistrationPage({ questions: [apparelQuestion("shirt", "shirt")] }), document);
+    expect(report.quantities).toEqual([{ questionId: "shirt", item: "Shirt size", size: "M", requested: 0, received: 3, handedOut: 1 }]);
+  });
+  it("retains recorded handouts after cancellation without counting a new production order", () => {
+    const document = emptyEventOperations(); document.apparel.questionIds = ["shirt"];
+    document.apparel.handedOutRegistrationIds = ["cancelled"];
+    const report = apparelReport([registration("cancelled", { status: "cancelled", importedFields: [{ label: "Shirt size", value: "L" }] })], normalizeRegistrationPage({ questions: [apparelQuestion("shirt", "shirt")] }), document);
+    expect(report.quantities).toEqual([{ questionId: "shirt", item: "Shirt size", size: "L", requested: 0, received: 0, handedOut: 1 }]);
+    expect(report.individual[0]?.registrationStatus).toBe("cancelled");
+  });
 });
