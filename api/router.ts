@@ -17,6 +17,8 @@ import { buildUniqueAttendanceReport } from "../src/data/attendanceReport.ts";
 import type { BudgetItem, ChecklistItem, Sponsorship } from "../src/data/entities.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
+import { eventOperationsFinancials, getEventOperations, readEventOperations, saveEventOperations } from "../src/server/eventOperations.ts";
+import { createBizyPartner, listBizyPartners, publicBizyLink, revokeBizyPartner, submitBizyPartner, getBizyPartnerDraft, saveBizyPartnerDraft } from "../src/server/bizyLink.ts";
 import { renderEventSharePage } from "../src/server/eventSharePage.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
 import { generatePostEventCopy, generateRegistrationCopy } from "../src/server/eventCopy.ts";
@@ -311,6 +313,16 @@ async function handleLead(request: Request): Promise<Response> {
  * than something guessable.
  */
 async function handlePublic(segments: string[], method: string, request: Request): Promise<Response | null> {
+  if (segments[0] === "public" && segments[1] === "bizy" && segments[2]) {
+    const access = new URL(request.url).searchParams.get("access") ?? "";
+    if (segments[3] === "draft" && !segments[4]) {
+      if (method === "GET") return json(await getBizyPartnerDraft(segments[2], access));
+      if (method === "PUT") return json(await saveBizyPartnerDraft(segments[2], access, await readBody(request)));
+    }
+    if (!segments[3] && method === "GET") return json(await publicBizyLink(segments[2], access || undefined));
+    if (!segments[3] && method === "POST") return json(await submitBizyPartner(segments[2], access, await readBody(request)));
+    return notFound();
+  }
   if (segments[0] === "public" && segments[1] === "event-share" && segments[2] && segments.length === 3) {
     if (method !== "GET" && method !== "HEAD") return json({ error: "Method not allowed" }, 405);
     return renderEventSharePage(segments[2], method, eventByShareToken);
@@ -415,7 +427,9 @@ async function handlePublic(segments: string[], method: string, request: Request
     // Only what the Share section promises is visible. Budgets, vendors, guest lists and
     // bids are not in this payload at all, rather than filtered out in the client. The
     // agenda and tickets ride along because the guest has no session to fetch them with.
-    return json({ event: shared.event, agenda, tickets, sponsors, volunteerNeeds, timeZone: shared.timeZone });
+    const { document } = await readEventOperations(shared.event.id);
+    const apparelSettings = { questionIds: document.apparel.questionIds, cutoffAt: document.apparel.cutoffAt };
+    return json({ event: shared.event, agenda, tickets, sponsors, volunteerNeeds, timeZone: shared.timeZone, apparelSettings });
   }
   if (segments[0] === "public" && segments[1] === "floorplans" && segments[2] && method === "GET") {
     const shared = await repos.publicFloorplan(segments[2]);
@@ -975,6 +989,12 @@ async function handleAuthed(
         return json(event, 201);
       }
       if (a && !b && method === "GET") return json(await repos.events.get(ctx, a));
+      if (a && b === "operations" && !c && method === "GET") return json(await getEventOperations(ctx, a));
+      if (a && b === "operations" && c === "financials" && method === "GET") return json(await eventOperationsFinancials(ctx, a));
+      if (a && b === "operations" && !c && method === "PUT") return json(await saveEventOperations(ctx, a, body));
+      if (a && b === "bizy-partners" && !c && method === "GET") return json(await listBizyPartners(ctx, a));
+      if (a && b === "bizy-partners" && !c && method === "POST") return json(await createBizyPartner(ctx, a, body), 201);
+      if (a && b === "bizy-partners" && c && method === "DELETE") return json(await revokeBizyPartner(ctx, a, c));
       if (a && !b && method === "PATCH") {
         const event = await repos.events.update(ctx, a, body);
         await syncWorkspaceEvent(event);

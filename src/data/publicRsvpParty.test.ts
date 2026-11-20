@@ -9,7 +9,7 @@ describe("public RSVP parties", () => {
   it("asks primary-attendee questions only once and accepts a guest with identity details alone", () => {
     const primaryOnly = normalizeRegistrationPage({ ...page, questions: page.questions.map(question => ({ ...question, audience: "primary" })) });
     const people = preparePublicRsvpParty(primaryOnly, { ...primary, additionalGuests: [{ ...guest, email: "alex@example.com", answers: {} }] });
-    expect(people[0]!.fields).toContainEqual({ label: "Dietary needs", value: "Vegetarian" });
+    expect(people[0]!.fields).toContainEqual({ label: "Dietary needs", value: "Vegetarian", questionId: "food" });
     expect(people[1]!.fields).toEqual([{ label: "First Name", value: "Alex" }, { label: "Last Name", value: "Taylor" }]);
     expect(() => preparePublicRsvpParty(primaryOnly, { ...primary, answers: {}, additionalGuests: [guest] })).toThrow("Dietary needs");
   });
@@ -20,15 +20,15 @@ describe("public RSVP parties", () => {
     ] });
     const people = preparePublicRsvpParty(separate, { ...primary, answers: { ...primary.answers, "guest-meal": "Forged" }, additionalGuests: [{ ...guest, answers: { food: "Forged", "guest-meal": "Standard" } }] });
     expect(people[0]!.fields).not.toContainEqual(expect.objectContaining({ label: "Guest meal" }));
-    expect(people[1]!.fields).toContainEqual({ label: "Guest meal", value: "Standard" });
+    expect(people[1]!.fields).toContainEqual({ label: "Guest meal", value: "Standard", questionId: "guest-meal" });
     expect(people[1]!.fields).not.toContainEqual(expect.objectContaining({ label: "Dietary needs" }));
     expect(() => preparePublicRsvpParty(separate, { ...primary, additionalGuests: [guest] })).toThrow("Guest meal");
     expect(preparePublicRsvpParty(separate, primary)).toHaveLength(1);
   });
   it("keeps individual names and answers, requiring email only for the person registering", () => {
     expect(preparePublicRsvpParty(page, { ...primary, additionalGuests: [guest] })).toEqual([
-      { name: "María Elena de la Cruz-Taylor", email: "host@example.com", fields: [{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }, { label: "Dietary needs", value: "Vegetarian" }] },
-      { name: "Alex Taylor", email: null, fields: [{ label: "First Name", value: "Alex" }, { label: "Last Name", value: "Taylor" }, { label: "Dietary needs", value: "No nuts" }] },
+      { name: "María Elena de la Cruz-Taylor", email: "host@example.com", fields: [{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }, { label: "Dietary needs", value: "Vegetarian", questionId: "food" }] },
+      { name: "Alex Taylor", email: null, fields: [{ label: "First Name", value: "Alex" }, { label: "Last Name", value: "Taylor" }, { label: "Dietary needs", value: "No nuts", questionId: "food" }] },
     ]);
   });
   it("accepts existing single-person clients and rejects guests when the event disallows them", () => {

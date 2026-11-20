@@ -12,6 +12,8 @@
  */
 
 import { DataError, type DataAdapter, type EventScopedRepository, type Identity } from "../adapter";
+import type { EventOperationsSnapshot, OperationsFinancials } from "../eventOperations";
+import type { BizyPartnerSummary } from "../bizyLink";
 import type {
   Guest,
   AttentionItem,
@@ -256,6 +258,14 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
   return {
     kind: "postgres",
     cacheScope: options.cacheScope,
+    eventOperations: {
+      partners: eventId => client.get<BizyPartnerSummary[]>(`/events/${eventId}/bizy-partners`),
+      createPartner: (eventId, input) => client.post<BizyPartnerSummary & { path: string }>(`/events/${eventId}/bizy-partners`, input),
+      revokePartner: (eventId, id) => client.del(`/events/${eventId}/bizy-partners/${id}`),
+      financials: eventId => client.get<OperationsFinancials>(`/events/${eventId}/operations/financials`),
+      get: eventId => client.get<EventOperationsSnapshot>(`/events/${eventId}/operations`),
+      save: (eventId, expectedRevision, document) => client.put<EventOperationsSnapshot>(`/events/${eventId}/operations`, { expectedRevision, document }),
+    },
     registrationDesignDrafts: {
       get: eventId => client.get<RegistrationDesignDraft | null>(`/events/${eventId}/registration-design-draft`),
       save: (eventId, draft) => client.put<RegistrationDesignDraft>(`/events/${eventId}/registration-design-draft`, draft),

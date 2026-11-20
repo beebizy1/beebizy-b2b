@@ -1397,7 +1397,7 @@ export async function sendBidderBills(ctx: RequestContext, eventId: string): Pro
           metadata: { kind: "bidder-bill", billId: bill.id },
         }, { stripeAccount: workspace.stripeConnectedAccountId, idempotencyKey: `beebizy_bill_auto_${bill.id}` });
         if (intent.status === "succeeded") {
-          await db.update(bidderBills).set({ stripeConnectedAccountId: workspace.stripeConnectedAccountId, updatedAt: new Date() }).where(eq(bidderBills.id, bill.id));
+          await db.update(bidderBills).set({ currency: intent.currency.toUpperCase(), stripeConnectedAccountId: workspace.stripeConnectedAccountId, updatedAt: new Date() }).where(eq(bidderBills.id, bill.id));
           await completeBidderBillPayment(bill.id, intent.id);
           autoCharged += 1;
           continue;
@@ -1488,6 +1488,7 @@ export async function createBidderBillCheckout(
   const feesCoveredCents = coverFees ? coveredFeesCents(base) : 0;
   const totalCents = base + feesCoveredCents;
   const [claim] = await db.update(bidderBills).set({
+    currency: row.workspace.currency.toUpperCase(),
     feesCoveredCents,
     totalCents,
     applicationFeeCents: platformFeeCents(totalCents),
@@ -1636,7 +1637,7 @@ export async function completeBidderBillPayment(billId: string, paymentIntentId:
       .innerJoin(workspaces, eq(auctionOrders.workspaceId, workspaces.id))
       .where(and(eq(auctionOrders.eventId, bill.eventId), eq(auctionOrders.bidderId, bill.bidderId)));
     await db.batch([
-      db.update(auctionOrders).set({ status: "paid", paidAt, stripePaymentIntentId: paymentIntentId, updatedAt: paidAt })
+      db.update(auctionOrders).set({ status: "paid", paidAt, stripePaymentIntentId: paymentIntentId, currency: bill.currency ?? undefined, updatedAt: paidAt })
         .where(and(eq(auctionOrders.eventId, bill.eventId), eq(auctionOrders.bidderId, bill.bidderId), eq(auctionOrders.status, "pending"))),
       orders.length > 0
         ? db.update(auctionItems).set({ paymentReceivedAt: paidAt, paymentMethod: "Stripe", fulfillmentStatus: "ready", updatedAt: paidAt })
@@ -1767,6 +1768,7 @@ export async function createDonationCheckout(
   await db.insert(donations).values({
     id: donationId,
     workspaceId: row.workspace.id,
+    currency: row.workspace.currency.toUpperCase(),
     campaignId: row.campaign.id,
     eventId: row.campaign.eventId,
     householdId: null,
@@ -1902,12 +1904,13 @@ export async function completeDonationCheckoutSession(session: Stripe.Checkout.S
   const [payment] = await db.select({ donation: donations, accountId: workspaces.stripeConnectedAccountId, currency: workspaces.currency }).from(donations)
     .innerJoin(workspaces, eq(donations.workspaceId, workspaces.id)).where(eq(donations.id, donationId)).limit(1);
   if (!payment) throw new HttpError(400, "The donation in this Stripe event does not exist.");
-  requireCheckoutMatch({ session, eventAccount, connectedAccountId: payment.accountId, storedSessionId: payment.donation.stripeSessionId, amountCents: payment.donation.amountCents + payment.donation.feesCoveredCents, currency: payment.currency });
+  requireCheckoutMatch({ session, eventAccount, connectedAccountId: payment.accountId, storedSessionId: payment.donation.stripeSessionId, amountCents: payment.donation.amountCents + payment.donation.feesCoveredCents, currency: payment.donation.currency ?? payment.currency });
   const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
   const [updated] = await db.update(donations).set({
     status: "paid",
     stripeSubscriptionId: subscriptionId,
     paidAt: new Date(),
+    currency: session.currency?.toUpperCase() ?? payment.donation.currency,
     updatedAt: new Date(),
   }).where(and(eq(donations.id, donationId), eq(donations.status, "pending"))).returning({ id: donations.id });
   if (updated) {
@@ -1938,6 +1941,7 @@ export async function completeRecurringDonationInvoice(
   const [created] = await db.insert(donations).values({
     id: recurringId,
     workspaceId: original.workspaceId,
+    currency: invoice.currency?.toUpperCase() ?? original.currency,
     campaignId: original.campaignId,
     eventId: original.eventId,
     householdId: original.householdId,

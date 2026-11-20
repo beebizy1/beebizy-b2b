@@ -10,6 +10,7 @@
  */
 
 import { registrationDesignDraftSchema, type RegistrationDesignDraft } from "../registrationDesignDraft";
+import { emptyEventOperations, eventOperationsSchema, pageAtApparelCutoff, type EventOperationsSnapshot } from "../eventOperations";
 import { registrationGuestDraftKeySchema, registrationGuestDraftSchema, type RegistrationGuestDraft } from "../registrationGuestDraft";
 import { demoHubSpot } from "./hubspot";
 import type {
@@ -510,6 +511,7 @@ const events: EventsRepository = {
     // by the demo rather than only in production.
     return copy({
       event,
+      apparelSettings: eventOperations.get(event.id)?.document.apparel,
       agenda: store()
         .runOfShow.filter((item) => item.eventId === event.id && normalizeRegistrationPage(event.registrationPage).showAgenda)
         .sort(compareRunOfShowItems)
@@ -803,7 +805,7 @@ const registrations: RegistrationsRepository = {
       state.events.find((candidate) => candidate.shareToken === shareToken),
       "This registration link is no longer available.",
     );
-    const page = normalizeRegistrationPage(event.registrationPage);
+    const page = pageAtApparelCutoff(normalizeRegistrationPage(event.registrationPage), eventOperations.get(event.id)?.document.apparel);
     let people: ReturnType<typeof preparePublicRsvpParty>;
     try { people = preparePublicRsvpParty(page, draft as unknown as Record<string, unknown>); }
     catch (error) { throw new DataError("invalid", error instanceof Error ? error.message : "Check your registration details."); }
@@ -2983,11 +2985,27 @@ function planningMemoryFor(event: Event): PastEventPlanningRecord[] {
 }
 
 const registrationDesignDrafts = new Map<string, RegistrationDesignDraft>();
+const eventOperations = new Map<string, EventOperationsSnapshot>();
 const registrationGuestDrafts = new Map<string, RegistrationGuestDraft>();
 
 export const memoryAdapter: DataAdapter = {
   kind: "memory",
   cacheScope: "demo",
+  eventOperations: {
+    async partners(eventId) { requireEvent(eventId); return []; },
+    async createPartner() { throw new DataError("unavailable", "Personal partner links need a signed-in workspace. Demo data is not sent to partners."); },
+    async revokePartner() { throw new DataError("unavailable", "Personal partner links need a signed-in workspace."); },
+    async financials(eventId) { requireEvent(eventId); return { currencies: [], pledgedCents: 0, unclassified: [] }; },
+    async get(eventId) { requireEvent(eventId); return copy(eventOperations.get(eventId) ?? { revision: 0, document: emptyEventOperations(), updatedAt: null }); },
+    async save(eventId, expectedRevision, document) {
+      requireEvent(eventId);
+      const current = eventOperations.get(eventId);
+      if ((current?.revision ?? 0) !== expectedRevision) throw new DataError("conflict", "Another teammate saved changes. Reload the latest version.");
+      const snapshot: EventOperationsSnapshot = { revision: expectedRevision + 1, document: eventOperationsSchema.parse(document), updatedAt: new Date().toISOString(), ...(current ? { previous: { revision: current.revision, document: current.document, updatedAt: current.updatedAt } } : {}) };
+      eventOperations.set(eventId, copy(snapshot));
+      return copy(snapshot);
+    },
+  },
   registrationDesignDrafts: {
     async get(eventId) { requireEvent(eventId); return copy(registrationDesignDrafts.get(eventId) ?? null); },
     async save(eventId, value) {

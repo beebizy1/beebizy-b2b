@@ -1044,7 +1044,10 @@ async function sharedEventForWrite(token: string) {
 /** Registers a guest from one segment-specific public link. */
 export async function publicRegistration(token: string, body: Body): Promise<PublicRegistrationResult> {
   const event = await sharedEventForWrite(token);
-  const page = normalizeRegistrationPage(event.registrationPage);
+  const { readEventOperations } = await import("./eventOperations.ts");
+  const { pageAtApparelCutoff } = await import("../data/eventOperations.ts");
+  const operations = await readEventOperations(event.id);
+  const page = pageAtApparelCutoff(normalizeRegistrationPage(event.registrationPage), operations.document.apparel);
   let people: ReturnType<typeof preparePublicRsvpParty>;
   try { people = preparePublicRsvpParty(page, body); }
   catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "Check your registration details."); }
@@ -1971,7 +1974,9 @@ function importedFieldsFrom(body: Body, key = "importedFields"): ImportedSpreads
     const cell = optStr(record, "value") ?? "";
     if (label.length > 200) throw new HttpError(400, `${key}.${index}.label must be 200 characters or fewer.`);
     if (cell.length > 10_000) throw new HttpError(400, `${key}.${index}.value must be 10,000 characters or fewer.`);
-    return { label, value: cell };
+    const questionId = optStr(record, "questionId");
+    if (questionId && questionId.length > 200) throw new HttpError(400, "Question ID must be 200 characters or fewer.");
+    return { label, value: cell, ...(questionId ? { questionId } : {}) };
   });
 }
 

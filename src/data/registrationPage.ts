@@ -247,13 +247,13 @@ export function registrationQuestionsFor(configured: RegistrationQuestion[], per
 }
 
 /** Hidden questions cannot require answers or enter another person's registration. */
-export function registrationAnswerFields(configured: RegistrationQuestion[], raw: unknown, person: "primary" | "guests" = "primary"): Array<{ label: string; value: string }> {
+export function registrationAnswerFields(configured: RegistrationQuestion[], raw: unknown, person: "primary" | "guests" = "primary"): Array<{ label: string; value: string; questionId?: string }> {
   const answers = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
   return registrationQuestionsFor(configured, person).flatMap(question => {
     const value = typeof answers[question.id] === "string" ? String(answers[question.id]).trim() : "";
     if (question.required && !value) throw new Error(`Please answer: ${question.label}.`);
     if (value.length > 1000 || (value && question.type === "select" && !question.options.includes(value))) throw new Error(`Choose a valid answer for ${question.label}.`);
-    return value ? [{ label: question.label, value }] : [];
+    return value ? [{ label: question.label, value, questionId: question.id }] : [];
   });
 }
 

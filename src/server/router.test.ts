@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("./eventOperations", () => ({ getEventOperations: vi.fn(), saveEventOperations: vi.fn(), eventOperationsFinancials: vi.fn(), readEventOperations: vi.fn().mockResolvedValue({ document: { apparel: { questionIds: [], cutoffAt: null } } }) }));
+vi.mock("./bizyLink", () => ({ createBizyPartner: vi.fn(), listBizyPartners: vi.fn(), publicBizyLink: vi.fn(), revokeBizyPartner: vi.fn(), submitBizyPartner: vi.fn(), getBizyPartnerDraft: vi.fn(), saveBizyPartnerDraft: vi.fn() }));
 
 vi.mock("./auth", () => ({
   authorize: vi.fn(),

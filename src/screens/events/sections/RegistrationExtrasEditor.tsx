@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { useUploadAuctionImage } from "@/data/hooks";
 import { LinkedText } from "@/components/LinkedText";
+import { apparelQuestion, APPAREL_PRESETS } from "@/data/eventOperations";
 import { RSVP_CONFIRMATION_LIMITS, rsvpConfirmationCopy, type RegistrationPageSettings, type RegistrationQuestion } from "@/data/registrationPage";
 
 export function RegistrationExtrasEditor({ draft, eventTitle, guestType, onChange }: { draft: RegistrationPageSettings; eventTitle: string; guestType: string; onChange: (patch: Partial<RegistrationPageSettings>) => void }) {
@@ -13,7 +14,7 @@ export function RegistrationExtrasEditor({ draft, eventTitle, guestType, onChang
   const confirmation = rsvpConfirmationCopy(draft, eventTitle, guestType);
   const defaultConfirmation = rsvpConfirmationCopy({ ...draft, rsvpConfirmationTitle: "", rsvpConfirmationMessage: "" }, eventTitle, guestType);
   const updateQuestion = (index: number, patch: Partial<RegistrationQuestion>) => onChange({ questions: draft.questions.map((question, i) => i === index ? { ...question, ...patch } : question) });
-  const addQuestion = (shirt = false) => onChange({ questions: [...draft.questions, { id: crypto.randomUUID(), label: shirt ? "T-shirt size" : "", type: shirt ? "select" : "text", required: false, audience: "primary", options: shirt ? ["XS", "S", "M", "L", "XL", "XXL"] : [] }] });
+  const addQuestion = (kind?: keyof typeof APPAREL_PRESETS) => onChange({ questions: [...draft.questions, kind ? apparelQuestion(kind, crypto.randomUUID()) : { id: crypto.randomUUID(), label: "", type: "text", required: false, audience: "primary", options: [] }] });
   return <div className="space-y-6">
     <fieldset className="space-y-4 rounded-xl border border-hairline p-4">
       <legend className="px-1 text-sm font-semibold">After guests RSVP</legend>
@@ -67,7 +68,8 @@ export function RegistrationExtrasEditor({ draft, eventTitle, guestType, onChang
         {question.type === "select" ? <div><Label htmlFor={`question-options-${question.id}`}>Choices, one per line</Label><Textarea id={`question-options-${question.id}`} rows={4} value={question.options.join("\n")} onChange={e => updateQuestion(index, { options: e.target.value.split("\n").slice(0, 20) })} /></div> : null}
         <div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-[hsl(var(--primary))]" checked={question.required} onChange={e => updateQuestion(index, { required: e.target.checked })} />Require an answer</label><Button type="button" size="sm" variant="ghost" onClick={() => onChange({ questions: draft.questions.filter((_, i) => i !== index) })}><Trash2 className="size-3.5" />Remove question</Button></div>
       </div>)}
-      <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={draft.questions.length >= 12} onClick={() => addQuestion()}><Plus className="size-3.5" />Add question</Button><Button type="button" size="sm" variant="outline" disabled={draft.questions.length >= 12} onClick={() => addQuestion(true)}>Add T-shirt size</Button></div>
+      <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={draft.questions.length >= 12} onClick={() => addQuestion()}><Plus className="size-3.5" />Add question</Button>{(Object.keys(APPAREL_PRESETS) as Array<keyof typeof APPAREL_PRESETS>).map(kind => <Button key={kind} type="button" size="sm" variant="outline" disabled={draft.questions.length >= 12} onClick={() => addQuestion(kind)}>Add {APPAREL_PRESETS[kind].label.toLowerCase()}</Button>)}</div>
+      <p className="text-xs text-muted-foreground">Sizing presets ask each attendee and additional guest. After saving the invitation, select these questions in Command center to create fulfillment reports and set a production cutoff.</p>
     </fieldset>
   </div>;
 }

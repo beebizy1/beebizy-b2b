@@ -23,6 +23,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/bizy/:token", "destination": "/api/router?__path=public/event-share/:token" },
     { "source": "/e/:token", "destination": "/api/router?__path=public/event-share/:token" },
     { "source": "/e/:token/register/:segment", "destination": "/api/router?__path=public/event-share/:token" },
     {

@@ -39,7 +39,7 @@ describe("Carlin registration fixes", () => {
     const page = normalizeRegistrationPage({ questions: [{ id: "shirt", label: "T-shirt size", type: "select", required: true, options: ["S", "M", "L"] }] });
     expect(() => registrationAnswerFields(page.questions, {})).toThrow("T-shirt size");
     expect(() => registrationAnswerFields(page.questions, { shirt: "XXL" })).toThrow("T-shirt size");
-    expect(registrationAnswerFields(page.questions, { shirt: "M", fabricated: "ignored" })).toEqual([{ label: "T-shirt size", value: "M" }]);
+    expect(registrationAnswerFields(page.questions, { shirt: "M", fabricated: "ignored" })).toEqual([{ label: "T-shirt size", value: "M", questionId: "shirt" }]);
     expect(normalizeRegistrationPagePatch({ questions: page.questions })).toEqual({ questions: page.questions });
     expect(registrationPageIsCustomized(page)).toBe(true);
   });
