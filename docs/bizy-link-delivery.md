@@ -30,6 +30,8 @@ The user confirmed there is no SMS account yet. Sending vendor texts, invitation
 
 Open an event and choose **Command center**. Start with **Apparel & gear**: add shirt, pant or gift sizing questions in Design invitation, save the invitation, then select those questions for fulfillment. Set the production cutoff in the event time zone. Download individual sizes or grouped vendor quantities as CSV. Record stock received and mark each person's complete gear bundle handed out.
 
+The cutoff and cancellations remove new production requests, not already recorded handouts. Known-size handouts remain in inventory totals after a cutoff or cancellation; the individual export includes registration status. This keeps the remaining-stock calculation from increasing merely because the order window closes.
+
 Use **Tables** or **Golf foursomes** to drag guests into groups. The placement menu is the keyboard alternative. A foursome holds at most four people. Save changes to share the board with teammates; other sessions refresh every 15 seconds. Private draft recovery protects unfinished work. Revision checks reject stale saves rather than overwrite a teammate's arrangement. Cancelled assigned guests remain visible so organizers can free their seats.
 
 In **Sponsors & roadmap**, track sponsor deliverables and add a preparation timeline relative to the event date. Dates can be adjusted. These milestones track work; they do not themselves send reminders.

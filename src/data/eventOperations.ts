@@ -139,18 +139,19 @@ export function apparelReport(rows: RegistrationWithGuest[], page: RegistrationP
     const label = current?.label ?? document.apparel.questionLabels?.[id]?.at(-1);
     return label ? [{ id, label }] : [];
   });
+  const handouts = new Set(document.apparel.handedOutRegistrationIds);
   const people = new Map<string, RegistrationWithGuest>();
   for (const row of rows) {
-    if (row.status === "cancelled") continue;
+    if (row.status === "cancelled" && !handouts.has(row.id)) continue;
     const existing = people.get(row.guestId);
     if (!existing || new Date(row.registeredAt).getTime() > new Date(existing.registeredAt).getTime()) people.set(row.guestId, row);
   }
-  const handouts = new Set(document.apparel.handedOutRegistrationIds);
   const individual = [...people.values()].flatMap(row => {
     const answers = new Map((row.importedFields ?? []).map(field => [field.label, field.value]));
     const identifiedAnswers = new Map((row.importedFields ?? []).filter(field => field.questionId).map(field => [field.questionId, field.value]));
     return questions.map(question => ({
       registrationId: row.id, name: row.guest?.name ?? "Guest", guestType: row.segment ?? "General",
+      registrationStatus: row.status,
       questionId: question.id, item: question.label, size: (identifiedAnswers.get(question.id) ?? answers.get(question.label) ?? document.apparel.questionLabels?.[question.id]?.map(label => answers.get(label)).find(Boolean))?.trim() || "Not provided",
       handedOut: handouts.has(row.id),
       withinCutoff: !document.apparel.cutoffAt || new Date(row.registeredAt).getTime() <= new Date(document.apparel.cutoffAt).getTime(),
@@ -158,10 +159,10 @@ export function apparelReport(rows: RegistrationWithGuest[], page: RegistrationP
   });
   const quantities = new Map<string, { questionId: string; item: string; size: string; requested: number; received: number; handedOut: number }>();
   for (const line of individual) {
-    if (!line.withinCutoff || line.size === "Not provided") continue;
+    if (line.size === "Not provided" || (!line.withinCutoff && !line.handedOut)) continue;
     const key = `${line.questionId}\u0000${line.size}`;
     const quantity = quantities.get(key) ?? { questionId: line.questionId, item: line.item, size: line.size, requested: 0, received: 0, handedOut: 0 };
-    quantity.requested++;
+    if (line.withinCutoff && line.registrationStatus !== "cancelled") quantity.requested++;
     if (line.handedOut) quantity.handedOut++;
     quantities.set(key, quantity);
   }
