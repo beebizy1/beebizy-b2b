@@ -174,6 +174,8 @@ export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
 export interface ImportedSpreadsheetField {
   label: string;
   value: string;
+  /** Stable RSVP question identity, retained when an organizer renames its label. */
+  questionId?: string;
 }
 
 /**
@@ -2165,6 +2167,7 @@ export type TemplateDetail = Template & TemplateContents;
  * showed a guest in Berlin "6:00 PM" for a 6pm-Portland gala would be lying to them.
  */
 export interface PublicEventPayload {
+  apparelSettings?: import("./eventOperations").PublicApparelSettings;
   event: Event;
   agenda: PublicRunOfShowItem[];
   tickets: TicketType[];

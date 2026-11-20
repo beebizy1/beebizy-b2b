@@ -131,7 +131,7 @@ describe("events", () => {
     expect((await memoryAdapter.events.getByShareToken("demo-evt-skickoff"))?.event.registrationPage?.questions).toEqual(questions);
     await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", { name: "Question QA", email: "question-required@example.com", segment: "General" })).rejects.toThrow("T-shirt size");
     const result = await memoryAdapter.registrations.registerPublic("demo-evt-skickoff", { name: "Question QA", email: "question-saved@example.com", segment: "General", answers: { shirt: "M" } });
-    expect(result.importedFields).toEqual([{ label: "T-shirt size", value: "M" }]);
+    expect(result.importedFields).toEqual([{ label: "T-shirt size", value: "M", questionId: "shirt" }]);
   });
 
   it("saves separate RSVP names alongside answers and keeps the full name for guest lists and badges", async () => {
@@ -141,7 +141,7 @@ describe("events", () => {
     });
     const saved = (await memoryAdapter.registrations.listForEvent("evt-skickoff")).find(row => row.id === result.id)!;
     expect(saved.guest?.name).toBe("María Elena de la Cruz-Taylor");
-    expect(saved.importedFields).toEqual([{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }, { label: "T-shirt size", value: "M" }]);
+    expect(saved.importedFields).toEqual([{ label: "First Name", value: "María Elena" }, { label: "Last Name", value: "de la Cruz-Taylor" }, { label: "T-shirt size", value: "M", questionId: "shirt" }]);
     await expect(memoryAdapter.registrations.registerPublic("demo-evt-skickoff", {
       name: "María Elena de la Cruz-Taylor", firstName: "María Elena", lastName: "de la Cruz-Taylor", email: "split-name@example.invalid", segment: "General", answers: { shirt: "M" },
     })).rejects.toThrow("already registered");

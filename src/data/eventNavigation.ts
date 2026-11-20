@@ -1,4 +1,5 @@
 export const HIDEABLE_EVENT_TAB_IDS = [
+  "operations",
   "registrations",
   "check-in",
   "run-of-show",

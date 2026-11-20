@@ -12,6 +12,7 @@
  * top (see `./hooks`).
  */
 
+import type { EventOperationsRepository } from "./eventOperations";
 import type {
   Guest,
   GuestDraft,
@@ -601,6 +602,7 @@ export interface DataAdapter {
   readonly cacheScope: string;
   registrationDesignDrafts: RegistrationDesignDraftRepository;
   registrationGuestDrafts: RegistrationGuestDraftRepository;
+  eventOperations: EventOperationsRepository;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
   events: EventsRepository;

@@ -19,7 +19,7 @@ describe("RSVP with additional guests", () => {
     const rows = await a.registrations.listForEvent("evt-skickoff");
     const primaryRow = rows.find(row => row.id === result.id)!;
     const guestRow = rows.find(row => row.id === result.additionalGuests?.[0]?.id)!;
-    expect(primaryRow.importedFields).toContainEqual({ label: "Dietary needs", value: "Vegetarian" });
+    expect(primaryRow.importedFields).toContainEqual({ label: "Dietary needs", value: "Vegetarian", questionId: "food" });
     expect(guestRow.guest?.name).toBe("Alex Taylor");
     expect(guestRow.guest?.contact).toBe("alex@example.invalid");
     expect(guestRow.importedFields?.some(field => field.label === "Dietary needs")).toBe(false);

@@ -708,6 +708,13 @@
       "when": 1794526983580,
       "tag": "0100_quick_mach_iv",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795130671200,
+      "tag": "0101_payment_currency",
+      "breakpoints": true
     }
   ]
 }

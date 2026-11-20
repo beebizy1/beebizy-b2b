@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState, ErrorNotice, LoadingRows, Panel, PanelHeader, Pill } from "@/components/primitives";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LinkedText } from "@/components/LinkedText";
+import { pageAtApparelCutoff } from "@/data/eventOperations";
 import { useEventByShareToken, usePublicRegistration, usePublicTicketOrderStatus, usePublicVolunteerSignup, usePurchaseTickets } from "@/data/hooks";
 import { formatMoney } from "@/data/money";
 import { formatClockTime, formatInZone, timeZoneLabel } from "@/lib/datetime";
@@ -370,7 +371,7 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
     } catch { setStorageFailed(true); }
   }, [draft, recoveryKey, result]);
   const { firstName, lastName, email, organization, answers, additionalGuests = [] } = draft;
-  const settings = normalizeRegistrationPage(shared?.event?.registrationPage);
+  const settings = pageAtApparelCutoff(normalizeRegistrationPage(shared?.event?.registrationPage), shared?.apparelSettings);
   let decodedSegment = segment;
   try { decodedSegment = decodeURIComponent(segment); } catch { /* Match the supplied label if it contains a literal percent sign. */ }
   const selectedSegment = settings.registrationTypes.find(item => item.toLowerCase() === decodedSegment.toLowerCase());
@@ -388,6 +389,7 @@ export function PublicRegistrationPage({ token, segment }: { token: string; segm
         register.mutate({ shareToken: token, draft: { name: identity!.name, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), organization: settings.collectOrganization ? organization.trim() || null : null, segment: selectedSegment, invitationToken, answers, additionalGuests } }, { onSuccess: setResult, onError: caught => setRsvpError(caught.message) });
       } catch (error) { setRsvpError(error instanceof Error ? error.message : "Complete the required fields."); }
     }}><fieldset disabled={register.isPending} className="space-y-4">
+      {shared.apparelSettings?.cutoffAt && Date.now() >= new Date(shared.apparelSettings.cutoffAt).getTime() ? <p className="rounded-lg bg-primary/10 p-3 text-sm">Apparel sizing has closed for production. You can still register for the event below.</p> : null}
       {draft.previousFullName ? <p className="rounded-lg bg-primary-muted p-3 text-sm">Your earlier full name is still in First name. Move your surname to Last name before confirming.</p> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block space-y-1 text-sm font-medium">First name<Input autoComplete="given-name" value={firstName} onChange={e => setDraft(current => ({ ...current, firstName: e.target.value, previousFullName: undefined }))} required maxLength={120} /></label>

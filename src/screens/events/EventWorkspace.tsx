@@ -109,6 +109,7 @@ import { useAccountExperience } from "@/app/useAccountExperience";
 import { useSession } from "@/app/session";
 import { eventDetailsReturnTarget, eventLaunchStepHref, type EventLaunchStepId } from "@/data/eventLaunchGuide";
 import OverviewSection from "./sections/OverviewSection";
+import OperationsPanel from "./sections/OperationsPanel";
 import GuestsSection from "./sections/GuestsSection";
 import ShareSection from "./sections/ShareSection";
 import FloorplanPanel from "./sections/FloorplanPanel";
@@ -932,6 +933,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
       ) : null}
       {!guidedInviteList && !launchWorkspace && active !== "overview" ? <EventLiveUpdates event={event} /> : null}
       {active === "overview" ? <OverviewSection event={event} health={health} /> : null}
+      {active === "operations" ? <OperationsPanel event={event} /> : null}
       {active === "registrations" ? <GuestsSection event={event} /> : null}
       {active === "check-in" ? <CheckInPanel event={event} /> : null}
       {active === "run-of-show" ? <RunOfShowPanel event={event} selectedDay={selectedDay} /> : null}

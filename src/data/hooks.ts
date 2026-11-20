@@ -464,10 +464,10 @@ export function useRegistrations() {
 }
 
 export function useEventRegistrations(eventId: string) {
-  const hubspot = useHubSpotStatus();
   return useAdapterQuery(qk.eventRegistrations(eventId), (a) => a.registrations.listForEvent(eventId), {
     enabled: !!eventId,
-    refetchInterval: hubspot.data?.inbound?.enabled ? 15_000 : undefined,
+    // Public Bizy Links and HubSpot can both add people while an organizer works.
+    refetchInterval: 15_000,
   });
 }
 
