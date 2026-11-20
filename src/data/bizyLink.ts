@@ -11,6 +11,7 @@ export interface BizyPartnerSummary { id: string; name: string; role: "sponsor" 
 export interface BizyPartnerGrant extends BizyPartnerSummary { resourceId: string; seatLimit: number; registrationIds: string[]; vendorNotes?: string }
 export interface BizyPublicPayload {
   eventTitle: string; guestTypes: string[]; contributionLinks: Array<{ title: string; token: string }>;
+  eventDate?: string; eventEndDate?: string | null; timeZone?: string; location?: string | null;
   partner?: { name: string; role: "sponsor" | "vendor"; seatLimit: number; submitted: boolean; questions: RegistrationQuestion[]; schedule?: { arrivalTime: string; serviceTime: string; departureTime: string; notes: string } };
 }
 export async function bizyPublicRequest<T>(path: string, body?: unknown, method: "POST" | "PUT" = "POST"): Promise<T> {

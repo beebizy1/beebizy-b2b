@@ -848,9 +848,9 @@ function ContingencyWorkspace({ event }: { event: Event }) {
 export default function EventWorkspace({ id, section: slug }: { id: string; section?: string }) {
   const [, navigate] = useLocation();
   const search = useSearch();
-  const { data: event, isLoading, isError, error, refetch } = useEvent(id);
+  const { data: event, isLoading, isError, error, refetch } = useEvent(id, 15_000);
   const launchProgress = useEventLaunchProgress(event);
-  const { data: health } = useEventHealth(id);
+  const { data: health } = useEventHealth(id, 15_000);
   const { data: identity } = useMe();
   const { experience } = useAccountExperience();
   const { timeZone } = usePreferences(event?.timeZone);
