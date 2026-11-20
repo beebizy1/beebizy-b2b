@@ -31,6 +31,10 @@ The implemented core works, but the full requested scope remains incomplete. SMS
 
 Local demo screenshots and actual downloaded QA exports are in `Downloads/Beebizy Command Center QA`. Demo screenshots are not presented as customer data or provider delivery receipts.
 
+## Published verification
+
+PR #40 is merged. The existing Studio URL was promoted to `dpl_G2tL6su6Gk9fuQs2XPHc23i5E6yA` with application commits `368459d` and `e3f47b6`. After reloading the live QA event, Budget showed $500 committed, Payments showed $500 outstanding, and the Balance due filter included the unpaid vendor. Fundraising showed $2,500 explicitly as commitments, and the private sponsor form used the corrected one-guest wording. The four live industry routes returned HTTP 200. Local mutation checks remain separate from these read-only live release checks.
+
 ## Remaining work and limits
 
 | Item | Status |
