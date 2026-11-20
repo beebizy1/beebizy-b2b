@@ -71,6 +71,7 @@ import {
   useUpdateTicketType,
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
+import { eventBudgetAmounts } from "@/data/eventBudget";
 import { ticketDraftFromForm } from "@/data/ticketDraft";
 import { buildBudgetSuggestions, reallocateBudgetAmounts, suggestedTotalBudgetCents } from "@/data/planner";
 import { usePreferences } from "@/app/preferences";
@@ -1947,15 +1948,15 @@ export function RoiPanel({ event }: { event: Event }) {
  */
 export function BudgetTotals({ event }: { event: Event }) {
   const { data: budget } = useBudget(event.id);
+  const { data: eventVendors } = useEventVendors(event.id);
   const { data: tickets } = useTickets(event.id);
   const { data: sponsorships } = useSponsorships(event.id);
   const { data: auction } = useAuctionItems(event.id);
   const { data: raffles } = useRaffleItems(event.id);
 
   const totals = useMemo(() => {
-    const expenses = (budget ?? []).filter((item) => item.type === "expense");
     const revenueLines = (budget ?? []).filter((item) => item.type === "revenue");
-    const spend = sumCents(expenses.map((item) => item.actualCents ?? item.estimatedCents));
+    const spend = eventBudgetAmounts(budget ?? [], eventVendors ?? []).committedSpend;
     const ticketRevenue = sumCents((tickets ?? []).map((t) => t.priceCents * t.quantitySold));
     const fundraising =
       sumCents((sponsorships ?? []).filter((s) => s.status === "confirmed").map((s) => s.amountCents)) +
@@ -1963,13 +1964,13 @@ export function BudgetTotals({ event }: { event: Event }) {
       sumCents((raffles ?? []).map((item) => item.ticketPriceCents * item.soldTickets));
     const budgetRevenue = sumCents(revenueLines.map((item) => item.actualCents));
     return { spend, ticketRevenue, fundraising, budgetRevenue };
-  }, [budget, tickets, sponsorships, auction, raffles]);
+  }, [budget, eventVendors, tickets, sponsorships, auction, raffles]);
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <StatTile label="Committed spend" value={formatMoney(totals.spend, { compact: true })} icon={Coins} />
       <StatTile label="Ticket revenue" value={formatMoney(totals.ticketRevenue, { compact: true })} icon={Ticket} tone="info" />
-      <StatTile label="Fundraising" value={formatMoney(totals.fundraising, { compact: true })} icon={Trophy} tone="success" />
+      <StatTile label="Fundraising commitments" value={formatMoney(totals.fundraising, { compact: true })} icon={Trophy} tone="success" sublabel="Includes sponsor promises and current bids, not just money received" />
       <StatTile
         label="Budget revenue in"
         value={formatMoney(totals.budgetRevenue, { compact: true })}
@@ -1996,21 +1997,8 @@ export function BudgetRoiSummary({ event }: { event: Event }) {
 
   const lines = budget ?? [];
   const expenses = lines.filter((line) => line.type === "expense");
-  const revenues = lines.filter((line) => line.type === "revenue");
 
-  const normalized = (value: string) => value.trim().toLowerCase();
-  const manualExpenseNames = new Set(expenses.map((line) => normalized(line.name)));
-  const manualRevenueNames = new Set(revenues.map((line) => normalized(line.name)));
-  const vendorSpend = sumCents((eventVendors ?? [])
-    .filter((booking) => booking.feeCents !== null && (!booking.vendor || !manualExpenseNames.has(normalized(booking.vendor.name))))
-    .map((booking) => booking.feeCents));
-  const vendorRevenue = sumCents((eventVendors ?? [])
-    .filter((booking) => booking.clientChargeCents !== null && (!booking.vendor || !manualRevenueNames.has(normalized(booking.vendor.name))))
-    .map((booking) => booking.clientChargeCents));
-  const estimatedSpend = sumCents(expenses.map((line) => line.estimatedCents)) + vendorSpend;
-  const actualSpend = sumCents(expenses.map((line) => line.actualCents));
-  const estimatedRevenue = sumCents(revenues.map((line) => line.estimatedCents)) + vendorRevenue;
-  const actualRevenue = sumCents(revenues.map((line) => line.actualCents));
+  const { vendorSpend, vendorRevenue, estimatedSpend, actualSpend, estimatedRevenue, actualRevenue } = eventBudgetAmounts(lines, eventVendors ?? []);
 
   const utilisation = estimatedSpend > 0 ? Math.round((actualSpend / estimatedSpend) * 100) : null;
   const projectedRoi =

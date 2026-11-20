@@ -9,6 +9,20 @@ export function remainingBalanceCents(totalAmountCents: number, paidCents: numbe
   return Math.max(0, totalAmountCents - paidCents);
 }
 
+/** Includes booked vendors even before they have a saved plan or their first deposit. */
+export function vendorPaymentTotals(
+  contracts: readonly { totalAmountCents: number; paidCents: number; finalStatus: "unpaid" | "paid" }[],
+  unlinkedPayments: readonly { amountCents: number; status: DepositStatus }[] = [],
+) {
+  return {
+    committed: contracts.reduce((sum, row) => sum + row.totalAmountCents, 0),
+    paid: contracts.reduce((sum, row) => sum + (row.finalStatus === "paid" ? Math.max(row.totalAmountCents, row.paidCents) : row.paidCents), 0)
+      + unlinkedPayments.reduce((sum, row) => sum + depositPaidCents(row), 0),
+    outstanding: contracts.reduce((sum, row) => sum + (row.finalStatus === "paid" ? 0 : remainingBalanceCents(row.totalAmountCents, row.paidCents)), 0)
+      + unlinkedPayments.reduce((sum, row) => sum + (row.status === "pending" || row.status === "overdue" ? row.amountCents : 0), 0),
+  };
+}
+
 export interface PaymentProgressDeposit {
   id: string;
   amountCents: number;
