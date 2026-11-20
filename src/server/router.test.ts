@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-vi.mock("./eventOperations", () => ({ getEventOperations: vi.fn(), saveEventOperations: vi.fn(), eventOperationsFinancials: vi.fn(), readEventOperations: vi.fn().mockResolvedValue({ document: { apparel: { questionIds: [], cutoffAt: null } } }) }));
+import { emptyEventOperations } from "../data/eventOperations";
+vi.mock("./eventOperations", () => ({ addEventSizeQuestion: vi.fn(), getEventOperations: vi.fn(), saveEventOperations: vi.fn(), eventOperationsFinancials: vi.fn(), readEventOperations: vi.fn().mockResolvedValue({ document: { apparel: { questionIds: [], cutoffAt: null } } }) }));
 vi.mock("./bizyLink", () => ({ createBizyPartner: vi.fn(), listBizyPartners: vi.fn(), publicBizyLink: vi.fn(), revokeBizyPartner: vi.fn(), submitBizyPartner: vi.fn(), getBizyPartnerDraft: vi.fn(), saveBizyPartnerDraft: vi.fn() }));
 
 vi.mock("./auth", () => ({
@@ -203,6 +204,7 @@ vi.mock("./fundraisingUx", () => ({
 }));
 
 const { config, handleRequest, requireScopedRoute } = await import("../../api/router");
+const { addEventSizeQuestion } = await import("./eventOperations");
 const { authorize, HttpError, requireBeebizyOperator } = await import("./auth");
 const { deposits, vendorPaymentPlans, feedback, events, registrations, members, runOfShow, eventVendors, eventByShareToken, publicAgenda, publicSponsors, publicFloorplan, publicVolunteerNeeds, publicAssignment, publicCheckInStation, publicAttendanceDashboard, setPublicCheckIn, createPublicWalkIn, removePublicWalkIn, completePublicAssignment, reopenPublicAssignment, publicRegistration, publicVolunteerSignup, publicRfp, publicRfpResponse, publicVendorConversation, publicVendorReply } = await import("./repos");
 const { createCheckoutSession, handleStripeWebhook } = await import("./billing");
@@ -1617,5 +1619,17 @@ describe("billing endpoints", () => {
     expect(response.status).toBe(200);
     expect(events.sendAssignmentSummaries).toHaveBeenCalledWith(owner, "evt-1");
     expect(await response.json()).toMatchObject({ recipients: 2, assignments: 5, sent: 2 });
+  });
+});
+
+describe("guided size setup endpoint", () => {
+  it("passes an explicit setup action through authenticated event routing", async () => {
+    const owner = { userId: "guide-user", workspaceId: "guide-workspace", role: "owner" as const, email: null };
+    vi.mocked(authorize).mockResolvedValue(owner);
+    vi.mocked(addEventSizeQuestion).mockResolvedValue({ snapshot: { revision: 3, document: emptyEventOperations(), updatedAt: null }, questions: [] });
+    const response = await handleRequest(new Request("http://localhost/api/events/guide-event/operations/size-questions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "shirt", expectedRevision: 2 }) }));
+    expect(response.status).toBe(200);
+    expect(addEventSizeQuestion).toHaveBeenCalledWith(owner, "guide-event", { kind: "shirt", expectedRevision: 2 });
+    expect(await response.json()).toMatchObject({ snapshot: { revision: 3 } });
   });
 });

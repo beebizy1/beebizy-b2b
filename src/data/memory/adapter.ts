@@ -10,7 +10,7 @@
  */
 
 import { registrationDesignDraftSchema, type RegistrationDesignDraft } from "../registrationDesignDraft";
-import { emptyEventOperations, eventOperationsSchema, pageAtApparelCutoff, type EventOperationsSnapshot } from "../eventOperations";
+import { emptyEventOperations, eventOperationsSchema, pageAtApparelCutoff, planSizeQuestion, type EventOperationsSnapshot } from "../eventOperations";
 import { registrationGuestDraftKeySchema, registrationGuestDraftSchema, type RegistrationGuestDraft } from "../registrationGuestDraft";
 import { demoHubSpot } from "./hubspot";
 import type {
@@ -187,6 +187,7 @@ function store(): MemoryDb {
 export function resetMemoryStore(): void {
   db = null;
   registrationGuestDrafts.clear();
+  eventOperations.clear();
   hubspotDemo.reset();
 }
 
@@ -2992,6 +2993,15 @@ export const memoryAdapter: DataAdapter = {
   kind: "memory",
   cacheScope: "demo",
   eventOperations: {
+    async addSizeQuestion(eventId, kind, expectedRevision) {
+      const event = requireEvent(eventId); const current = eventOperations.get(eventId);
+      if ((current?.revision ?? 0) !== expectedRevision) throw new DataError("conflict", "Your team changed this setup. Refresh it before adding a question.");
+      const planned = planSizeQuestion(eventId, kind, normalizeRegistrationPage(event.registrationPage), current?.document ?? emptyEventOperations());
+      const snapshot: EventOperationsSnapshot = { revision: expectedRevision + 1, document: planned.document, updatedAt: nowIso(), ...(current ? { previous: { revision: current.revision, document: current.document, updatedAt: current.updatedAt } } : {}) };
+      event.registrationPage = { ...normalizeRegistrationPage(event.registrationPage), questions: planned.questions };
+      eventOperations.set(eventId, copy(snapshot));
+      return copy({ snapshot, questions: planned.questions });
+    },
     async partners(eventId) { requireEvent(eventId); return []; },
     async createPartner() { throw new DataError("unavailable", "Personal partner links need a signed-in workspace. Demo data is not sent to partners."); },
     async revokePartner() { throw new DataError("unavailable", "Personal partner links need a signed-in workspace."); },

@@ -12,7 +12,7 @@
  */
 
 import { DataError, type DataAdapter, type EventScopedRepository, type Identity } from "../adapter";
-import type { EventOperationsSnapshot, OperationsFinancials } from "../eventOperations";
+import type { EventOperationsSnapshot, OperationsFinancials, SizeQuestionSetup } from "../eventOperations";
 import type { BizyPartnerSummary } from "../bizyLink";
 import type {
   Guest,
@@ -259,6 +259,7 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     kind: "postgres",
     cacheScope: options.cacheScope,
     eventOperations: {
+      addSizeQuestion: (eventId, kind, expectedRevision) => client.post<SizeQuestionSetup>(`/events/${eventId}/operations/size-questions`, { kind, expectedRevision }),
       partners: eventId => client.get<BizyPartnerSummary[]>(`/events/${eventId}/bizy-partners`),
       createPartner: (eventId, input) => client.post<BizyPartnerSummary & { path: string }>(`/events/${eventId}/bizy-partners`, input),
       revokePartner: (eventId, id) => client.del(`/events/${eventId}/bizy-partners/${id}`),

@@ -51,3 +51,26 @@ Industry website pages were merged in `taranggoyal70/beebizy-www` PR #8 and publ
 The isolated QA event exercises the real database without sending email, SMS or payments. Native checks cover simultaneous roster submissions alongside normal RSVP, complete rollback at capacity, workspace and partner isolation, link closure, deleted-partner access and expiry while waiting for the event transaction lock. The expiry check verifies that a transaction accepted before expiry finishes completely and that later reads are denied.
 
 Chrome checks covered organizer link creation, two named sponsor guests with independent sizes, draft recovery after reload, submission persistence, automatic fulfillment totals, vendor time and note updates, and their appearance in Run of Show. The actual downloaded production CSV matched requested, received, handed-out and remaining-stock values. Table drag-and-drop, saving and printable report download were verified. The current and previous saved operations versions survive server reads. Active event views refresh registration counts, readiness and vendor schedules every 15 seconds; event editor forms do not opt into event polling.
+
+## Scope check and usability refinement
+
+The full request is not complete until messaging and reminders are delivered. The implemented core is listed below with its current boundaries.
+
+| Request | Current result |
+| --- | --- |
+| Guests and VIPs choose sizes | Public RSVP and invited sponsor guest forms collect the configured size questions. The guided setup adds a preset and its packing-list selection in one action. |
+| Vendor-ready fulfillment report | Individual and grouped CSV exports, known-size quantities, stock received and recorded handouts are available. Missing answers remain visible in the individual list. |
+| Fundraising, sponsors and vendor schedules together | Command center shows recorded payments by currency, sponsor promises and links to the existing budget/payment/schedule tools. Vendor self-service times update the shared booking used by Run of Show. |
+| Tables and golf foursomes | Saved drag-and-drop groups with capacity checks and an accessible move menu. The physical floor-plan canvas remains a separate event tool. |
+| Instant wrap-up | An on-demand printable HTML report checks the latest source records. The downloaded file can be printed or saved as PDF. |
+| One Bizy Link | Guests use the event link. Sponsors and booked vendors receive private links for their own form. Partner records are added by the organizer first; confirmed sponsor lists are changed through the organizer. |
+| Self-service contributions | Existing active event donation campaigns are linked to their existing checkout. Payment setup remains an explicit organization action. No charging preference changed. |
+| Texting vendors and guest invitation links | Pending. No business texting provider/account is connected, and this release does not send SMS. |
+| Automatic link reminders | Pending. Important dates are a work tracker, not an automatic message schedule. |
+| December to March preparation | Suggested dates are generated from the event date and remain editable. A March 21 start produces December 1, December 15, February 15, March 7, March 21 and March 24 milestones. |
+| Industry pages | Universities, Schools, Nonprofits and SMB pages are live in the existing website style. |
+| Two people doing twenty people's work | A customer staffing goal, not a measured or promised result. |
+
+The refinement starts with a four-step guide: choose details, share links, arrange guests, get the report. Task choice is kept in the URL so Back navigation and vendor-form returns reopen the right screen. Tables show names and places first, with optional editing controls. Full destinations are disabled in the move menu. Sharing has explicit copy buttons, visible private-link limits, and a short path for adding a missing sponsor or vendor. The guest forms use plain language and no account setup. Unfinished editing still uses complete local/server draft recovery and saved-version checks.
+
+Size collection in this release is attached to RSVP and sponsor guest lists. The separate paid-ticket checkout keeps its existing question behavior; this work does not add per-ticket size questions to that checkout.

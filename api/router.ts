@@ -17,7 +17,7 @@ import { buildUniqueAttendanceReport } from "../src/data/attendanceReport.ts";
 import type { BudgetItem, ChecklistItem, Sponsorship } from "../src/data/entities.ts";
 import * as repos from "../src/server/repos.ts";
 import { eventByShareToken } from "../src/server/repos.ts";
-import { eventOperationsFinancials, getEventOperations, readEventOperations, saveEventOperations } from "../src/server/eventOperations.ts";
+import { addEventSizeQuestion, eventOperationsFinancials, getEventOperations, readEventOperations, saveEventOperations } from "../src/server/eventOperations.ts";
 import { createBizyPartner, listBizyPartners, publicBizyLink, revokeBizyPartner, submitBizyPartner, getBizyPartnerDraft, saveBizyPartnerDraft } from "../src/server/bizyLink.ts";
 import { renderEventSharePage } from "../src/server/eventSharePage.ts";
 import { continuePlanningChat, generatePlanningSuggestions } from "../src/server/planner.ts";
@@ -991,6 +991,7 @@ async function handleAuthed(
       if (a && !b && method === "GET") return json(await repos.events.get(ctx, a));
       if (a && b === "operations" && !c && method === "GET") return json(await getEventOperations(ctx, a));
       if (a && b === "operations" && c === "financials" && method === "GET") return json(await eventOperationsFinancials(ctx, a));
+      if (a && b === "operations" && c === "size-questions" && method === "POST") return json(await addEventSizeQuestion(ctx, a, body));
       if (a && b === "operations" && !c && method === "PUT") return json(await saveEventOperations(ctx, a, body));
       if (a && b === "bizy-partners" && !c && method === "GET") return json(await listBizyPartners(ctx, a));
       if (a && b === "bizy-partners" && !c && method === "POST") return json(await createBizyPartner(ctx, a, body), 201);
