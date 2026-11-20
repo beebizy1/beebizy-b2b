@@ -43,3 +43,9 @@ Under **Bizy Link**, copy the general event link, or explicitly create a persona
 Operations and hashed partner grants are private JSON extensions on the existing event row. Atomic JSON key updates preserve invitation design, guest drafts and the other extensions. Normal public event serialization does not expose these fields. Partner access is limited to its own record and private draft. Migration `0101_payment_currency` adds nullable currency fields to donations and bidder bills. New checkouts retain their actual currency; historical unknown values are not guessed. No changes to automatic charging preferences are introduced.
 
 Industry website pages were merged in `taranggoyal70/beebizy-www` PR #8 and published to the existing marketing project. Platform code has a separate release and verification process.
+
+## Verification evidence
+
+The isolated QA event exercises the real database without sending email, SMS or payments. Native checks cover simultaneous roster submissions alongside normal RSVP, complete rollback at capacity, workspace and partner isolation, link closure, deleted-partner access and expiry while waiting for the event transaction lock. The expiry check verifies that a transaction accepted before expiry finishes completely and that later reads are denied.
+
+Chrome checks covered organizer link creation, two named sponsor guests with independent sizes, draft recovery after reload, submission persistence, automatic fulfillment totals, vendor time and note updates, and their appearance in Run of Show. The actual downloaded production CSV matched requested, received, handed-out and remaining-stock values. Table drag-and-drop, saving and printable report download were verified. The current and previous saved operations versions survive server reads. Active event views refresh registration counts, readiness and vendor schedules every 15 seconds; event editor forms do not opt into event polling.

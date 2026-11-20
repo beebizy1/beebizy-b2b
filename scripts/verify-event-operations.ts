@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, schema as s } from "../src/server/db.ts";
 import { createBizyPartner, getBizyPartnerDraft, listBizyPartners, publicBizyLink, revokeBizyPartner, saveBizyPartnerDraft, submitBizyPartner } from "../src/server/bizyLink.ts";
 import { eventOperationsFinancials, getEventOperations, saveEventOperations } from "../src/server/eventOperations.ts";
@@ -73,6 +73,33 @@ assert.equal(await getBizyPartnerDraft(token, access), null);
 const master = await publicBizyLink(token);
 assert.equal(master.partner, undefined);
 assert.equal(JSON.stringify(master).includes(vendorAccess), false);
+const removedId = `qa_ops_removed_${suffix}`;
+await db.insert(s.sponsorships).values({ id: removedId, eventId, workspaceId: event.workspaceId, companyName: "QA removed sponsor", tier: "custom" });
+const removedGrant = await createBizyPartner(ctx, eventId, { role: "sponsor", resourceId: removedId, seatLimit: 1 });
+const removedAccess = new URL(removedGrant.path, "https://test.invalid").searchParams.get("access")!;
+await db.delete(s.sponsorships).where(and(eq(s.sponsorships.id, removedId), eq(s.sponsorships.eventId, eventId)));
+await assert.rejects(() => publicBizyLink(token, removedAccess), { status: 404 });
+await assert.rejects(() => getBizyPartnerDraft(token, removedAccess), { status: 404 });
+await assert.rejects(() => submitBizyPartner(token, removedAccess, roster), { status: 404 });
+await revokeBizyPartner(ctx, eventId, removedGrant.id);
+const expiryGrant = await createBizyPartner(ctx, eventId, { role: "sponsor", resourceId: sponsorId, seatLimit: 1 });
+const expiryAccess = new URL(expiryGrant.path, "https://test.invalid").searchParams.get("access")!;
+const expiryHash = createHash("sha256").update(expiryAccess).digest("hex");
+const blocker = db.batch([db.execute(sql`select pg_advisory_xact_lock(hashtext(${eventId}))`), db.execute(sql`select pg_sleep(4)`)]);
+let isBlocked = false;
+for (let attempt = 0; attempt < 10; attempt++) {
+  const held = await db.execute<{ held: boolean }>(sql`select exists(select 1 from pg_locks where locktype='advisory' and objid::bigint=(hashtext(${eventId})::bigint & 4294967295) and granted) as held`);
+  if (held.rows[0]?.held) { isBlocked = true; break; }
+  await new Promise(resolve => setTimeout(resolve, 50));
+}
+assert.ok(isBlocked, "The isolated QA lock must be active for the expiry test.");
+const deadline = new Date(Date.now() + 2500).toISOString();
+await db.update(s.events).set({ registrationPage: sql`jsonb_set(${s.events.registrationPage}, ARRAY['_bizyPartners',${expiryHash},'expiresAt'],${JSON.stringify(deadline)}::jsonb)` }).where(eq(s.events.id, eventId));
+let finishedAt = 0;
+const [, expiryResult] = await Promise.all([blocker, submitBizyPartner(token, expiryAccess, { people: [{ firstName: "QA Expiry", lastName: suffix, answers: { [shirt.id]: "S" } }] }).then(result => { finishedAt = Date.now(); return result; })]);
+assert.equal(expiryResult.ok, true); assert.ok(finishedAt > new Date(deadline).getTime());
+await assert.rejects(() => publicBizyLink(token, expiryAccess), { status: 404 });
+await revokeBizyPartner(ctx, eventId, expiryGrant.id);
 assert.deepEqual((await eventOperationsFinancials(ctx, eventId)).currencies, []);
 const uiSponsor = await createBizyPartner(ctx, eventId, { role: "sponsor", resourceId: sponsorId, seatLimit: 3 });
 writeFileSync("/private/tmp/beebizy-operations-qa.json", JSON.stringify({ eventId, vendorId, bookingId, sponsorId, token, sponsorPath: uiSponsor.path, vendorPath: vendor.path }), { mode: 0o600 });

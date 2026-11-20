@@ -306,13 +306,13 @@ export function useOpenTasks(): UseQueryResult<OpenTask[], Error> {
   return useAdapterQuery(qk.openTasks, (a) => a.analytics.openTasks());
 }
 
-export function useEventHealth(eventId: string): UseQueryResult<EventHealth | null, Error> {
+export function useEventHealth(eventId: string, refetchInterval?: number): UseQueryResult<EventHealth | null, Error> {
   return useAdapterQuery(
     qk.health([eventId]),
     // `?? null` matters: react-query throws "Query data cannot be undefined" if the
     // event has been deleted between the list read and this one.
     async (a) => (await a.analytics.health([eventId]))[0] ?? null,
-    { enabled: !!eventId },
+    { enabled: !!eventId, refetchInterval },
   );
 }
 
@@ -328,8 +328,8 @@ export function useEvents(filter?: EventFilter) {
   return useAdapterQuery(qk.eventList(scopedFilter), (a) => a.events.list(scopedFilter));
 }
 
-export function useEvent(id: string): UseQueryResult<Event | null, Error> {
-  return useAdapterQuery(qk.event(id), (a) => a.events.get(id), { enabled: !!id });
+export function useEvent(id: string, refetchInterval?: number): UseQueryResult<Event | null, Error> {
+  return useAdapterQuery(qk.event(id), (a) => a.events.get(id), { enabled: !!id, refetchInterval });
 }
 
 export function useEventByShareToken(token: string) {
@@ -610,7 +610,7 @@ export function useMarkThreadRead() {
 /* ------------------------------------------------------------- event vendors */
 
 export function useEventVendors(eventId: string) {
-  return useAdapterQuery(qk.eventVendors(eventId), (a) => a.eventVendors.list(eventId), { enabled: !!eventId });
+  return useAdapterQuery(qk.eventVendors(eventId), (a) => a.eventVendors.list(eventId), { enabled: !!eventId, refetchInterval: 15_000 });
 }
 
 export function useAddEventVendor() {

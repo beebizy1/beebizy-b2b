@@ -11,6 +11,7 @@ import { db } from "./db.ts";
 import { events, eventVendors, vendors, sponsorships, donationCampaigns } from "./schema.ts";
 import { publicRsvpPartyQueries } from "./publicRsvpStore.ts";
 import { registrationGuestDraftSchema, type RegistrationGuestDraft } from "../data/registrationGuestDraft.ts";
+import { eventByShareToken } from "./repos.ts";
 
 const digest = (token: string) => createHash("sha256").update(token).digest("hex");
 function grants(page: unknown): Record<string, BizyPartnerGrant> { return (page as { _bizyPartners?: Record<string, BizyPartnerGrant> } | null)?._bizyPartners ?? {}; }
@@ -25,14 +26,21 @@ function activeGrant(page: unknown, access: string) {
   if (!grant || grant.revoked || new Date(grant.expiresAt).getTime() <= Date.now()) throw new HttpError(404, "This personal link has expired or was closed. Ask the organizer for a new link.");
   return grant;
 }
+async function resolvePartner(event: Awaited<ReturnType<typeof eventForLink>>, access: string) {
+  const grant = activeGrant(event.registrationPage, access);
+  const source = grant.role === "sponsor" ? sponsorships : eventVendors;
+  const [resource] = await db.select({ id: source.id }).from(source).where(and(eq(source.id, grant.resourceId), eq(source.eventId, event.id), eq(source.workspaceId, event.workspaceId))).limit(1);
+  if (!resource) throw new HttpError(404, "This partnership is no longer active. Ask the organizer for a new link.");
+  return grant;
+}
 export async function getBizyPartnerDraft(token: string, access: string): Promise<RegistrationGuestDraft | null> {
-  const event = await eventForLink(token); activeGrant(event.registrationPage, access);
+  const event = await eventForLink(token); await resolvePartner(event, access);
   const value = (event.registrationPage as { _bizyPartnerDrafts?: Record<string, unknown> })?._bizyPartnerDrafts?.[digest(access)];
   const parsed = registrationGuestDraftSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 export async function saveBizyPartnerDraft(token: string, access: string, value: unknown) {
-  const event = await eventForLink(token); activeGrant(event.registrationPage, access);
+  const event = await eventForLink(token); await resolvePartner(event, access);
   const draft = registrationGuestDraftSchema.parse(value); const hash = digest(access);
   if (draft.revision > Date.now() + 300000) throw new HttpError(400, "Your device clock is ahead. Keep this page open.");
   await db.update(events).set({ registrationPage: sql`jsonb_set(coalesce(${events.registrationPage},'{}'::jsonb), '{_bizyPartnerDrafts}', coalesce(${events.registrationPage}->'_bizyPartnerDrafts','{}'::jsonb) || jsonb_build_object(${hash}::text,${JSON.stringify(draft)}::jsonb))` }).where(and(eq(events.id, event.id), sql`coalesce((${events.registrationPage} #>> ARRAY['_bizyPartnerDrafts',${hash},'revision'])::bigint,0) < ${draft.revision}`, sql`${events.registrationPage} #>> ARRAY['_bizyPartners',${hash},'revoked'] = 'false'`));
@@ -75,10 +83,14 @@ export async function revokeBizyPartner(ctx: RequestContext, eventId: string, id
 export async function publicBizyLink(token: string, access?: string): Promise<BizyPublicPayload> {
   const event = await eventForLink(token);
   const page = normalizeRegistrationPage(event.registrationPage);
-  const campaigns = await db.select({ title: donationCampaigns.title, token: donationCampaigns.publicToken }).from(donationCampaigns).where(and(eq(donationCampaigns.eventId, event.id), eq(donationCampaigns.workspaceId, event.workspaceId), eq(donationCampaigns.isActive, true)));
+  const [campaigns, shared] = await Promise.all([
+    db.select({ title: donationCampaigns.title, token: donationCampaigns.publicToken }).from(donationCampaigns).where(and(eq(donationCampaigns.eventId, event.id), eq(donationCampaigns.workspaceId, event.workspaceId), eq(donationCampaigns.isActive, true))),
+    eventByShareToken(token),
+  ]);
   const result: BizyPublicPayload = { eventTitle: event.title, guestTypes: page.registrationTypes, contributionLinks: campaigns };
+  if (shared) Object.assign(result, { eventDate: shared.event.date, eventEndDate: shared.event.endDate, timeZone: shared.timeZone, location: shared.event.location });
   if (!access) return result;
-  const grant = activeGrant(event.registrationPage, access);
+  const grant = await resolvePartner(event, access);
   const operations = await readEventOperations(event.id);
   const questions = pageAtApparelCutoff(page, operations.document.apparel).questions.filter(question => operations.document.apparel.questionIds.includes(question.id));
   result.partner = { name: grant.name, role: grant.role, seatLimit: grant.seatLimit, submitted: grant.submitted, questions };
@@ -90,7 +102,7 @@ export async function publicBizyLink(token: string, access?: string): Promise<Bi
   return result;
 }
 export async function submitBizyPartner(token: string, access: string, value: unknown) {
-  const event = await eventForLink(token); const grant = activeGrant(event.registrationPage, access); const hash = digest(access);
+  const event = await eventForLink(token); const grant = await resolvePartner(event, access); const hash = digest(access);
   if (grant.role === "vendor") {
     const fields = bizyVendorScheduleSchema;
     const input = z.object({ schedule: fields, expected: fields }).parse(value);
@@ -124,25 +136,29 @@ export async function submitBizyPartner(token: string, access: string, value: un
   const updatedGrant = { ...grant, submitted: true, registrationIds: people.map(person => person.registrationId) };
   // Every grant has stable per-seat IDs. Repeated/concurrent submission rolls back
   // at the unique registration key, then returns the original submission.
-  const authorization = sql`exists(select 1 from events where id=${event.id} and registration_page #>> ARRAY['_bizyPartners',${hash},'revoked'] = 'false' and registration_page #>> ARRAY['_bizyPartners',${hash},'submitted'] = 'false' and (registration_page #>> ARRAY['_bizyPartners',${hash},'expiresAt'])::timestamptz > clock_timestamp())`;
+  // Use the transaction's start time so an expiry cannot split a roster halfway
+  // through insertion. Event and sponsor locks hold permission stable throughout.
+  const authorization = sql`exists(select 1 from events where id=${event.id} and registration_page #>> ARRAY['_bizyPartners',${hash},'revoked'] = 'false' and registration_page #>> ARRAY['_bizyPartners',${hash},'submitted'] = 'false' and (registration_page #>> ARRAY['_bizyPartners',${hash},'expiresAt'])::timestamptz > current_timestamp) and exists(select 1 from sponsorships where id=${grant.resourceId} and event_id=${event.id} and workspace_id=${event.workspaceId})`;
   const queries = publicRsvpPartyQueries({ eventId: event.id, workspaceId: event.workspaceId, segment: "Sponsor guest", organization: grant.name, partyId: `bizy_${grant.id}`, people, authorization });
   try {
-    await db.batch([
+    const result = await db.batch([
       db.execute(sql`select pg_advisory_xact_lock(hashtext(${event.id}))`),
       // Lock the event row before checking/revoking tokens or editing capacities.
       db.execute(sql`select id from events where id=${event.id} for update`),
+      db.execute(sql`select id from sponsorships where id=${grant.resourceId} and event_id=${event.id} and workspace_id=${event.workspaceId} for key share`),
       ...queries.map(query => db.execute(query)),
-      db.update(events).set({ registrationPage: sql`jsonb_set(${events.registrationPage}, ARRAY['_bizyPartners',${hash}], ${JSON.stringify(updatedGrant)}::jsonb)` }).where(and(eq(events.id, event.id), authorization)),
+      db.update(events).set({ registrationPage: sql`jsonb_set(${events.registrationPage}, ARRAY['_bizyPartners',${hash}], ${JSON.stringify(updatedGrant)}::jsonb)` }).where(and(eq(events.id, event.id), authorization)).returning({ id: events.id }),
     ]);
+    if ((result.at(-1) as Array<{ id: string }>).length) return { ok: true, registered: people.length };
   } catch (error) {
-    const current = activeGrant((await eventForLink(token)).registrationPage, access);
+    const current = await resolvePartner(await eventForLink(token), access);
     if (current.submitted) return { ok: true, registered: current.registrationIds.length, alreadySubmitted: true };
     const code = (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
     if (code === "23505") throw new HttpError(409, "One guest is already registered. Check with the organizer before resubmitting.");
     if (code === "23514") throw new HttpError(409, "There is not enough event capacity for this roster. No guests were added.");
     throw error;
   }
-  const saved = activeGrant((await eventForLink(token)).registrationPage, access);
+  const saved = await resolvePartner(await eventForLink(token), access);
   if (!saved.submitted) throw new HttpError(409, "Your roster could not be saved. Please retry.");
-  return { ok: true, registered: saved.registrationIds.length };
+  return { ok: true, registered: saved.registrationIds.length, alreadySubmitted: true };
 }
