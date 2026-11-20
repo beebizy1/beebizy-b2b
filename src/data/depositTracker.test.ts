@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPaymentPlanDeposits, vendorPaymentProgress } from "./depositTracker";
+import { balanceDueState, depositPaidCents, remainingBalanceCents, vendorPaymentPlanDeposits, vendorPaymentProgress, vendorPaymentTotals } from "./depositTracker";
 
 describe("vendor payment tracker", () => {
+  it("shows a newly booked $500 contract as outstanding before the first deposit", () => {
+    expect(vendorPaymentTotals([{ totalAmountCents: 50_000, paidCents: 0, finalStatus: "unpaid" }])).toEqual({ committed: 50_000, paid: 0, outstanding: 50_000 });
+  });
+
+  it("keeps totals consistent through a deposit, final-payment confirmation and reopening", () => {
+    const contract = { totalAmountCents: 50_000, paidCents: 10_000, finalStatus: "unpaid" as const };
+    expect(vendorPaymentTotals([contract])).toEqual({ committed: 50_000, paid: 10_000, outstanding: 40_000 });
+    expect(vendorPaymentTotals([{ ...contract, finalStatus: "paid" }])).toEqual({ committed: 50_000, paid: 50_000, outstanding: 0 });
+    expect(vendorPaymentTotals([contract])).toEqual({ committed: 50_000, paid: 10_000, outstanding: 40_000 });
+  });
+
+  it("preserves overpayments and separate unlinked payments without counting refunds as received", () => {
+    expect(vendorPaymentTotals([{ totalAmountCents: 50_000, paidCents: 60_000, finalStatus: "paid" }], [
+      { amountCents: 5_000, status: "paid" }, { amountCents: 2_000, status: "pending" },
+      { amountCents: 3_000, status: "overdue" }, { amountCents: 10_000, status: "refunded" },
+    ])).toEqual({ committed: 50_000, paid: 65_000, outstanding: 5_000 });
+  });
+
   it("counts only paid deposits toward the remaining vendor balance", () => {
     expect(depositPaidCents({ amountCents: 120_000, status: "paid" })).toBe(120_000);
     expect(depositPaidCents({ amountCents: 120_000, status: "pending" })).toBe(0);
