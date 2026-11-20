@@ -134,6 +134,7 @@ function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, p
   const updatePlan = useUpdateVendorPaymentPlan();
   const addDeposit = useAddDeposit();
   const updateDeposit = useUpdateDeposit();
+  const [saving, setSaving] = useState(false);
   const [localPlan, setLocalPlan] = useState<VendorPaymentPlan | null>(null);
   const [localDeposit, setLocalDeposit] = useState<Deposit | null>(null);
   const plan = serverPlan ?? localPlan;
@@ -161,6 +162,7 @@ function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, p
   const saveDepositAmount = async () => {
     const cents = centsFromInput(depositAmount);
     if (cents == null) return;
+    setSaving(true);
     try {
       const savedPlan = await ensurePlan();
       if (primaryDeposit) {
@@ -172,7 +174,7 @@ function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, p
     } catch (error) {
       setDepositAmount(centsToInput(primaryDeposit?.amountCents ?? null));
       toast({ title: "Couldn't save deposit", description: error instanceof Error ? error.message : "Try again." });
-    }
+    } finally { setSaving(false); }
   };
 
   const saveDepositStatus = async (next: "unpaid" | "paid") => {
@@ -182,6 +184,7 @@ function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, p
       return;
     }
     setDepositStatus(next);
+    setSaving(true);
     try {
       const savedPlan = await ensurePlan();
       const patch = { status: next === "paid" ? "paid" as const : "pending" as const, paidDate: next === "paid" ? todayIsoInZone(timeZone) : null, paidBy: next === "paid" ? (lastPaidBy.trim() || null) : null };
@@ -190,16 +193,17 @@ function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, p
     } catch (error) {
       setDepositStatus(primaryDeposit?.status === "paid" ? "paid" : "unpaid");
       toast({ title: "Couldn't update deposit status", description: error instanceof Error ? error.message : "Try again." });
-    }
+    } finally { setSaving(false); }
   };
 
   const savePlanPatch = async (patch: VendorPaymentPlanPatch) => {
+    setSaving(true);
     try {
       if (plan) await updatePlan.mutateAsync({ eventId, id: plan.id, patch });
       else setLocalPlan(await addPlan.mutateAsync({ eventId, draft: { vendorName, totalAmountCents: contractedAmountCents, balanceDueDate: dateIso(balanceDueDate), lastPaidBy: lastPaidBy.trim() || null, finalStatus, ...patch } }));
     } catch (error) {
       toast({ title: "Couldn't update payment tracker", description: error instanceof Error ? error.message : "Try again." });
-    }
+    } finally { setSaving(false); }
   };
 
   const allEnteredDeposits = deposits.filter((deposit) => deposit.status !== "refunded");
@@ -208,14 +212,14 @@ function InlinePaymentTrackerRow({ eventId, vendorName, contractedAmountCents, p
   const remainingCents = finalStatus === "paid" ? 0 : remainingBalanceCents(contractedAmountCents, otherDepositCents + currentDepositCents);
 
   return (
-    <TableRow>
-      <TableCell className="min-w-48"><p className="font-medium text-foreground">{vendorName}</p><p className="text-xs text-muted-foreground">{sourceLabel}</p></TableCell>
+    <TableRow aria-busy={saving}>
+      <TableCell className="min-w-48"><p className="font-medium text-foreground">{vendorName}</p><p className="text-xs text-muted-foreground">{sourceLabel}</p><p role="status" className="text-xs text-muted-foreground">{saving ? "Saving this payment…" : ""}</p></TableCell>
       <TableCell data-numeric className="min-w-32 text-right"><p className="font-semibold">{formatMoney(contractedAmountCents)}</p><Link href={`/app/events/${eventId}/budget`} className="text-[11px] text-primary-text hover:underline">Budget & Return</Link></TableCell>
-      <TableCell className="min-w-32"><Input value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} onBlur={() => void saveDepositAmount()} inputMode="decimal" aria-label={`Deposit amount for ${vendorName}`} className="h-8 text-right" /></TableCell>
-      <TableCell className="min-w-32"><Select value={depositStatus} onValueChange={(value) => void saveDepositStatus(value as "unpaid" | "paid")}><SelectTrigger className="h-8" aria-label={`Deposit status for ${vendorName}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select></TableCell>
-      <TableCell className="min-w-40"><Input type="date" value={balanceDueDate} onChange={(event) => setBalanceDueDate(event.target.value)} onBlur={() => void savePlanPatch({ balanceDueDate: dateIso(balanceDueDate) })} aria-label={`Balance due date for ${vendorName}`} className="h-8" /></TableCell>
-      <TableCell className="min-w-40"><Input value={lastPaidBy} onChange={(event) => setLastPaidBy(event.target.value)} onBlur={() => void savePlanPatch({ lastPaidBy: lastPaidBy.trim() || null })} placeholder="Person or account" aria-label={`Last paid by for ${vendorName}`} className="h-8" /></TableCell>
-      <TableCell className="min-w-36"><Select value={finalStatus} onValueChange={(value) => { const next = value as "unpaid" | "paid"; if (next === "paid" && !lastPaidBy.trim()) { toast({ title: "Add who made the final payment first" }); return; } setFinalStatus(next); void savePlanPatch({ finalStatus: next, lastPaidBy: lastPaidBy.trim() || null }); }}><SelectTrigger className="h-8" aria-label={`Final payment status for ${vendorName}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select></TableCell>
+      <TableCell className="min-w-32"><Input disabled={saving} value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} onBlur={() => void saveDepositAmount()} inputMode="decimal" aria-label={`Deposit amount for ${vendorName}`} className="h-8 text-right" /></TableCell>
+      <TableCell className="min-w-32"><Select disabled={saving} value={depositStatus} onValueChange={(value) => void saveDepositStatus(value as "unpaid" | "paid")}><SelectTrigger className="h-8" aria-label={`Deposit status for ${vendorName}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select></TableCell>
+      <TableCell className="min-w-40"><Input disabled={saving} type="date" value={balanceDueDate} onChange={(event) => setBalanceDueDate(event.target.value)} onBlur={() => void savePlanPatch({ balanceDueDate: dateIso(balanceDueDate) })} aria-label={`Balance due date for ${vendorName}`} className="h-8" /></TableCell>
+      <TableCell className="min-w-40"><Input disabled={saving} value={lastPaidBy} onChange={(event) => setLastPaidBy(event.target.value)} onBlur={() => void savePlanPatch({ lastPaidBy: lastPaidBy.trim() || null })} placeholder="Person or account" aria-label={`Last paid by for ${vendorName}`} className="h-8" /></TableCell>
+      <TableCell className="min-w-36"><Select disabled={saving} value={finalStatus} onValueChange={(value) => { const next = value as "unpaid" | "paid"; if (next === "paid" && !lastPaidBy.trim()) { toast({ title: "Add who made the final payment first" }); return; } setFinalStatus(next); void savePlanPatch({ finalStatus: next, lastPaidBy: lastPaidBy.trim() || null }); }}><SelectTrigger className="h-8" aria-label={`Final payment status for ${vendorName}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select></TableCell>
       <TableCell data-numeric className="min-w-36 text-right font-semibold">{formatMoney(remainingCents)}</TableCell>
     </TableRow>
   );
