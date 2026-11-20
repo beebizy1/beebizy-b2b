@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { emptyEventOperations, eventOperationsSchema, operationsCurrencyTotals, type EventOperationsSnapshot } from "../data/eventOperations.ts";
+import { emptyEventOperations, eventOperationsSchema, operationsCurrencyTotals, planSizeQuestion, type EventOperationsSnapshot } from "../data/eventOperations.ts";
 import { normalizeRegistrationPage } from "../data/registrationPage.ts";
 import { HttpError, requireEventAccess, type RequestContext } from "./auth.ts";
 import { db } from "./db.ts";
@@ -25,6 +25,28 @@ async function owned(ctx: RequestContext, eventId: string) {
 export async function getEventOperations(ctx: RequestContext, eventId: string) {
   await owned(ctx, eventId);
   return readEventOperations(eventId);
+}
+
+export async function addEventSizeQuestion(ctx: RequestContext, eventId: string, value: unknown) {
+  await owned(ctx, eventId);
+  const input = z.object({ kind: z.enum(["shirt", "pants", "gift"]), expectedRevision: z.number().int().min(0) }).parse(value);
+  const [event] = await db.select({ page: events.registrationPage }).from(events).where(and(eq(events.id, eventId), eq(events.workspaceId, ctx.workspaceId)));
+  const current = await readEventOperations(eventId);
+  if (current.revision !== input.expectedRevision) throw new HttpError(409, "Your team changed this setup. Refresh it before adding a question.");
+  const page = normalizeRegistrationPage(event?.page);
+  let planned: ReturnType<typeof planSizeQuestion>;
+  try { planned = planSizeQuestion(eventId, input.kind, page, current.document); }
+  catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "This size question could not be added."); }
+  const snapshot: EventOperationsSnapshot = { revision: current.revision + 1, document: planned.document, updatedAt: new Date().toISOString() };
+  const rawQuestions = (event?.page as { questions?: unknown } | null)?.questions ?? [];
+  const [saved] = await db.update(events).set({
+    registrationPage: sql`jsonb_set(jsonb_set(jsonb_set(coalesce(${events.registrationPage}, '{}'::jsonb), '{questions}', ${JSON.stringify(planned.questions)}::jsonb), '{_operationsPrevious}', coalesce(${events.registrationPage}->'_operations','null'::jsonb)), '{_operations}', ${JSON.stringify(snapshot)}::jsonb)`, updatedAt: new Date(),
+  }).where(and(eq(events.id, eventId), eq(events.workspaceId, ctx.workspaceId),
+    sql`coalesce((${events.registrationPage} #>> '{_operations,revision}')::bigint,0) = ${input.expectedRevision}`,
+    sql`coalesce(nullif(${events.registrationPage}->'questions','null'::jsonb),'[]'::jsonb) = ${JSON.stringify(rawQuestions)}::jsonb`,
+  )).returning({ id: events.id });
+  if (!saved) throw new HttpError(409, "Your team changed the guest form. Refresh it before adding a question.");
+  return { snapshot: { ...snapshot, ...(current.revision ? { previous: { revision: current.revision, document: current.document, updatedAt: current.updatedAt } } : {}) }, questions: planned.questions };
 }
 
 export async function eventOperationsFinancials(ctx: RequestContext, eventId: string) {

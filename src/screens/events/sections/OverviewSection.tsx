@@ -2,6 +2,7 @@
 
 import { Link } from "wouter";
 import { ArrowRight, CheckSquare, ChevronRight, ClipboardList, Clock, Store, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingRows, Panel, ReadinessRing } from "@/components/primitives";
 import { useChecklist, useEventVendors, useRunOfShow } from "@/data/hooks";
 import { eventTabHref } from "@/app/shell/nav";
@@ -35,6 +36,10 @@ export default function OverviewSection({ event, health }: { event: Event; healt
 
   return (
     <div className="space-y-5">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-primary/10 p-5" aria-label="Get your event ready">
+        <div><h2 className="text-lg font-bold">Get your event ready</h2><p className="mt-1 text-sm text-muted-foreground">Choose guest details, share your links, arrange guests and get your event report.</p></div>
+        <Button asChild><Link href={`/app/events/${event.id}/operations`}>Start the guided setup<ArrowRight className="size-4" /></Link></Button>
+      </section>
       <section aria-label="Event summary" className="grid gap-5 md:grid-cols-3">
         <SummaryCardLink href={eventTabHref(event.id, "checklist")} label="Open event readiness details in Checklist">
           <ReadinessRing value={health?.readiness ?? 0} size={86} label={`${event.title} readiness`} />

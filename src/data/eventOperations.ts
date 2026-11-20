@@ -54,7 +54,7 @@ export const eventOperationsSchema = z.object({
     occupants.set(group.id, (occupants.get(group.id) ?? 0) + 1);
   }
   for (const group of document.groups) {
-    if ((occupants.get(group.id) ?? 0) > group.capacity) context.addIssue({ code: z.ZodIssueCode.custom, message: `${group.name} is full. Increase its capacity or move a person first.`, path: ["assignments"] });
+    if ((occupants.get(group.id) ?? 0) > group.capacity) context.addIssue({ code: z.ZodIssueCode.custom, message: `${group.name} is full. Choose another group or move someone out first.`, path: ["assignments"] });
   }
   for (const [key, values] of [["questionIds", document.apparel.questionIds], ["handedOutRegistrationIds", document.apparel.handedOutRegistrationIds]] as const) {
     if (new Set(values).size !== values.length) context.addIssue({ code: z.ZodIssueCode.custom, message: "Remove duplicate apparel selections.", path: ["apparel", key] });
@@ -65,6 +65,7 @@ export type EventOperationsDocument = z.infer<typeof eventOperationsSchema>;
 export type PlacementGroup = EventOperationsDocument["groups"][number];
 export interface EventOperationsSnapshot { revision: number; document: EventOperationsDocument; updatedAt: string | null; previous?: { revision: number; document: EventOperationsDocument; updatedAt: string | null } }
 export interface EventOperationsRepository {
+  addSizeQuestion(eventId: string, kind: keyof typeof APPAREL_PRESETS, expectedRevision: number): Promise<SizeQuestionSetup>;
   get(eventId: string): Promise<EventOperationsSnapshot>;
   save(eventId: string, expectedRevision: number, document: EventOperationsDocument): Promise<EventOperationsSnapshot>;
   financials(eventId: string): Promise<OperationsFinancials>;
@@ -72,6 +73,7 @@ export interface EventOperationsRepository {
   createPartner(eventId: string, input: { role: "sponsor" | "vendor"; resourceId: string; seatLimit: number }): Promise<BizyPartnerSummary & { path: string }>;
   revokePartner(eventId: string, id: string): Promise<unknown>;
 }
+export interface SizeQuestionSetup { snapshot: EventOperationsSnapshot; questions: RegistrationQuestion[] }
 export interface OperationsCurrencyTotal { currency: string; ticketsCents: number; auctionsCents: number; donationsCents: number; paidPledgesCents: number; collectedCents: number }
 export interface OperationsFinancials { currencies: OperationsCurrencyTotal[]; pledgedCents: number; unclassified: Array<{ id: string; source: string; amountCents: number }> }
 export function operationsCurrencyTotals(tickets: Array<{ amount: number; currency: string }>, auctions: Array<{ amount: number; currency: string }>, donations: Array<{ amount: number; currency: string }>, pledges: Array<{ amount: number; currency: string }> = []): OperationsCurrencyTotal[] {
@@ -93,9 +95,9 @@ export function emptyEventOperations(): EventOperationsDocument {
 export function preparationMilestones(eventDate: string): EventOperationsDocument["milestones"] {
   const date = new Date(eventDate);
   const steps = [
-    ["Platform onboarding and event buildout", -110], ["Launch sponsor and guest Bizy Links", -96],
-    ["Lock apparel sizing and vendor production", -34], ["Finalize tables, foursomes and check-in", -14],
-    ["Live event execution", 0], ["Deliver wrap-up and fundraising report", 3],
+    ["Set up the event", -110], ["Share links with sponsors and guests", -96],
+    ["Close size choices and send the packing list", -34], ["Finish guest groups and the check-in plan", -14],
+    ["Event day", 0], ["Share the final event report", 3],
   ] as const;
   return steps.map(([title, offset], index) => {
     const due = new Date(date); due.setUTCDate(due.getUTCDate() + offset); due.setUTCHours(12, 0, 0, 0);
@@ -131,6 +133,20 @@ export const APPAREL_PRESETS = {
 export function apparelQuestion(kind: keyof typeof APPAREL_PRESETS, questionId: string): RegistrationQuestion {
   const preset = APPAREL_PRESETS[kind];
   return { id: questionId, label: preset.label, type: "select", options: [...preset.options], audience: "both", required: false };
+}
+
+/** One explicit setup action adds the question and its packing-list selection together. */
+export function planSizeQuestion(eventId: string, kind: keyof typeof APPAREL_PRESETS, page: RegistrationPageSettings, document: EventOperationsDocument) {
+  const preset = APPAREL_PRESETS[kind];
+  const questionId = `size-${kind}-${eventId.slice(0, 60)}`;
+  const existing = page.questions.find(question => question.id === questionId || question.label.toLowerCase() === preset.label.toLowerCase() || (kind === "shirt" && /^t-?shirt size$/i.test(question.label)));
+  const question = existing ?? apparelQuestion(kind, questionId);
+  if (!existing && page.questions.length >= 12) throw new Error("Your form already has 12 questions. Remove one in the invitation editor before adding another.");
+  const questions = existing ? page.questions : [...page.questions, question];
+  return { questions, document: eventOperationsSchema.parse({ ...document, apparel: { ...document.apparel,
+    questionIds: [...new Set([...document.apparel.questionIds, question.id])],
+    questionLabels: { ...document.apparel.questionLabels, [question.id]: [...new Set([...(document.apparel.questionLabels[question.id] ?? []), question.label])].slice(-20) },
+  } }) };
 }
 
 export function apparelReport(rows: RegistrationWithGuest[], page: RegistrationPageSettings, document: EventOperationsDocument) {
