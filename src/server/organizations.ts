@@ -23,12 +23,15 @@ export async function listMyOrganizations(ctx: RequestContext): Promise<Organiza
 
 export async function listOrganizations(ctx: RequestContext): Promise<OrganizationSummary[]> {
   requireBeebizyOperator(ctx.email);
-  const rows = await db.select({ workspace: workspaces,
-    memberCount: sql<number>`(select count(*)::int from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspaces.id})`,
-    eventCount: sql<number>`(select count(*)::int from ${events} where ${events.workspaceId} = ${workspaces.id})`,
-    canOpen: sql<boolean>`exists(select 1 from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspaces.id} and ${workspaceMembers.userId} = ${ctx.userId})`,
-  }).from(workspaces).orderBy(asc(workspaces.name));
-  return rows.map(row => ({ ...summary(row.workspace), memberCount: row.memberCount, eventCount: row.eventCount, canOpen: row.canOpen, previous: row.workspace.previousProductProfile }));
+  const [rows,eventCounts,members] = await Promise.all([
+    db.select().from(workspaces).orderBy(asc(workspaces.name)),
+    db.select({workspaceId:events.workspaceId,count:sql<number>`count(*)::int`}).from(events).groupBy(events.workspaceId),
+    db.select({workspaceId:workspaceMembers.workspaceId,userId:workspaceMembers.userId}).from(workspaceMembers),
+  ]);
+  const counts=new Map(eventCounts.map(row=>[row.workspaceId,row.count]));
+  const memberCounts=new Map<string,number>();const canOpen=new Set<string>();
+  for(const member of members){memberCounts.set(member.workspaceId,(memberCounts.get(member.workspaceId)??0)+1);if(member.userId===ctx.userId)canOpen.add(member.workspaceId);}
+  return rows.map(row=>({...summary(row),memberCount:memberCounts.get(row.id)??0,eventCount:counts.get(row.id)??0,canOpen:canOpen.has(row.id),previous:row.previousProductProfile}));
 }
 
 export async function updateOrganization(ctx: RequestContext, id: string, raw: unknown): Promise<OrganizationWorkspace> {

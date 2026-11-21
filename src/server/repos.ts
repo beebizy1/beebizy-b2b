@@ -280,9 +280,8 @@ function isConstraintViolation(error: unknown, constraint: string): boolean {
 async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
   requireEventAccess(ctx, eventId);
   const conditions = [eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId)];
-  if (!ctx.eventScopeId && !ctx.canSwitchExperience && !ctx.workspace) {
-    conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
-  }
+  // Membership and optional event scope are the boundary. A presentation profile
+  // cannot hide authorized records, including updates from workspace-bound workers.
   const [row] = await db
     .select({ id: s.events.id })
     .from(s.events)
@@ -317,11 +316,6 @@ export const events = {
   async list(ctx: RequestContext, filter: { experience?: string; status?: string; category?: string; locationId?: string; search?: string } = {}): Promise<Event[]> {
     const conditions = [eq(s.events.workspaceId, ctx.workspaceId)];
     if (ctx.eventScopeId) conditions.push(eq(s.events.id, ctx.eventScopeId));
-    else if (!ctx.workspace && ctx.canSwitchExperience && parseAccountExperience(filter.experience)) {
-      conditions.push(eq(s.events.experience, parseAccountExperience(filter.experience)!));
-    } else if (!ctx.workspace && !ctx.canSwitchExperience) {
-      conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
-    }
     if (filter.status) conditions.push(eq(s.events.status, filter.status as "draft"));
     if (filter.category) conditions.push(eq(s.events.category, filter.category));
     if (filter.locationId) conditions.push(eq(s.events.locationId, filter.locationId));
@@ -354,9 +348,6 @@ export const events = {
   async get(ctx: RequestContext, id: string): Promise<Event | null> {
     requireEventAccess(ctx, id);
     const conditions = [eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)];
-    if (!ctx.eventScopeId && !ctx.canSwitchExperience && !ctx.workspace) {
-      conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
-    }
     const [row] = await db
       .select({ event: s.events, location: s.locations })
       .from(s.events)
