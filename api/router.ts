@@ -773,7 +773,7 @@ async function handleAuthed(
   url: URL,
 ): Promise<Response> {
   const [resource, a, b, c] = segments;
-  if(!workspaceRouteToolAllowed(ctx.workspace?.profile,segments)) throw new HttpError(403,"This tool is not enabled for your organization. Ask your Beebizy administrator if you need it.");
+  if(!workspaceRouteToolAllowed(ctx.workspace?.profile,segments,method)) throw new HttpError(403,"This tool is not enabled for your organization. Ask your Beebizy administrator if you need it.");
   const isMultipart = request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") ?? false;
   const body = resource === "uploads" || isMultipart ? {} : await readBody(request);
   requireScopedRoute(ctx, segments, method, body, url);

@@ -77,3 +77,6 @@ The live check exposed incorrect zero event counts caused by unqualified column 
 An older SCU setup was verified as belonging to the existing approved SCU administrator. Its five unregistered contacts, owner seat and accepted-invitation history were consolidated into the canonical SCU workspace, preserving their identities and guest content hash. The old workspace was retained and marked archived. The canonical SCU workspace therefore contains its 912 registered people plus those five additional address-book contacts; registration count stays 912. No provider credentials were inherited.
 
 The final count correction passed the same 770 tests, lint, type checking and production build. The printable organization access guide is in `Downloads/Beebizy Organization Access - November 20 2026.html`.
+
+
+Command center can read its own sponsor/vendor records for reports when their editing tabs are hidden. The dependency exception is read-only and still passes ordinary workspace, event-scope and plan checks; hidden editing actions remain denied. Its shortcuts and private partner-form choices now respect the configured event tools. A regression test covers report reads without re-enabling hidden writes. Final suite: 771 tests across 104 files, type checking, lint and build passed.

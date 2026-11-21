@@ -6,13 +6,15 @@ import { useEventVendors, useSponsorships } from "@/data/hooks";
 import { useRegistrationGuestDraft } from "@/hooks/useRegistrationGuestDraft";
 import { GuestDraftStatus } from "@/components/GuestDraftStatus";
 import ShareLinkField from "@/components/ShareLinkField";
+import { useWorkspaceProfile } from "@/app/useWorkspaceProfile";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SponsorshipDialog } from "./FundraisingPanel";
 
 export default function BizyPartnerLinks({ eventId, sharingReady }: { eventId: string; sharingReady: boolean }) {
   const adapter = useData(); const cache = useQueryClient();
-  const { draft, setDraft, state, recovery } = useRegistrationGuestDraft(eventId, "bizy-partner-link", { role: "sponsor", resourceId: "", seatLimit: "10", link: "", linkName: "", linkId: "" });
+  const profile=useWorkspaceProfile();const sponsorsEnabled=profile.eventTabs===null||profile.eventTabs.includes("fundraising");const vendorsEnabled=profile.eventTabs===null||profile.eventTabs.includes("vendors");
+  const { draft, setDraft, state, recovery } = useRegistrationGuestDraft(eventId, "bizy-partner-link", { role: sponsorsEnabled ? "sponsor" : "vendor", resourceId: "", seatLimit: "10", link: "", linkName: "", linkId: "" });
   const vendors = useEventVendors(eventId); const sponsors = useSponsorships(eventId);
   const queryKey = ["bizy-partners", adapter.cacheScope, eventId];
   const partners = useQuery({ queryKey, queryFn: () => adapter.eventOperations.partners(eventId), refetchInterval: 15000 });
@@ -40,16 +42,17 @@ export default function BizyPartnerLinks({ eventId, sharingReady }: { eventId: s
     <h3 className="text-lg font-bold">Give sponsors and vendors their own link</h3>
     <p className="text-sm leading-6 text-muted-foreground">A sponsor adds their guest names and sizes. A vendor adds arrival and service times. Each person sees only their own form. No account or password is needed.</p>
     <GuestDraftStatus state={{ ...state, message: state.message.replace("guest details", "link settings").replace("guest draft", "link draft").replace("Submit to apply these details.", draft.link ? "" : "Choose Create private link when you are ready.") }} recovery={recovery} />
+    {!(sponsor?sponsorsEnabled:vendorsEnabled)?<p className="text-sm text-muted-foreground">This organization does not use this partner form. Your unfinished draft is preserved. Choose an available form, or share the guest link above.</p>:null}
     <fieldset disabled={busy} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="space-y-2 text-sm font-semibold">1. Who is the link for?<select className="block h-11 w-full rounded-lg border border-input bg-background px-3 font-normal" value={draft.role} onChange={e => change({ role: e.target.value, resourceId: "" })}><option value="sponsor">A sponsor</option><option value="vendor">A vendor</option></select></label>
+        <label className="space-y-2 text-sm font-semibold">1. Who is the link for?<select className="block h-11 w-full rounded-lg border border-input bg-background px-3 font-normal" value={draft.role} onChange={e => change({ role: e.target.value, resourceId: "" })}>{sponsorsEnabled?<option value="sponsor">A sponsor</option>:draft.role==="sponsor"?<option value="sponsor" disabled>Sponsor forms are not enabled</option>:null}{vendorsEnabled?<option value="vendor">A vendor</option>:draft.role==="vendor"?<option value="vendor" disabled>Vendor forms are not enabled</option>:null}</select></label>
         <label className="space-y-2 text-sm font-semibold">2. Choose their name<select className="block h-11 w-full rounded-lg border border-input bg-background px-3 font-normal" value={draft.resourceId} onChange={e => change({ resourceId: e.target.value })}><option value="">{choices ? `Choose a ${sponsor ? "sponsor" : "vendor"}` : "Loading names…"}</option>{choices?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       </div>
       {lookupError ? <p role="alert" className="text-sm">Names could not load. <Button size="sm" variant="outline" onClick={() => void (sponsor ? sponsors.refetch() : vendors.refetch())}>Try again</Button></p> : null}
-      <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-muted-foreground">Name missing?</span>{sponsor ? <Button variant="outline" size="sm" onClick={() => setAddSponsor(true)}>Add a sponsor</Button> : <Button asChild variant="outline" size="sm"><Link href={`/app/vendors/new?eventId=${encodeURIComponent(eventId)}&returnTo=${encodeURIComponent(`/app/events/${eventId}/operations?tool=links`)}`}>Add a vendor</Link></Button>}</div>
+      <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-muted-foreground">Name missing?</span>{sponsor ? sponsorsEnabled ? <Button variant="outline" size="sm" onClick={() => setAddSponsor(true)}>Add a sponsor</Button> : null : vendorsEnabled ? <Button asChild variant="outline" size="sm"><Link href={`/app/vendors/new?eventId=${encodeURIComponent(eventId)}&returnTo=${encodeURIComponent(`/app/events/${eventId}/operations?tool=links`)}`}>Add a vendor</Link></Button> : null}</div>
       {sponsor ? <label className="block space-y-2 text-sm font-semibold">3. How many guests can they add?<Input className="max-w-40" type="number" min={1} max={50} value={draft.seatLimit} onChange={e => change({ seatLimit: e.target.value })} /><span className="block text-xs font-normal text-muted-foreground">For example, enter 8 for a sponsor with eight guest places. Up to 50 guests per link.</span></label> : null}
       {!sharingReady ? <p className="text-sm text-muted-foreground">Create your guest link above first. Then you can make private links.</p> : null}
-      <Button variant={draft.link ? "outline" : "default"} disabled={!sharingReady || !draft.resourceId || !!lookupError || busy || !!state.remote || (sponsor && (!Number.isInteger(Number(draft.seatLimit)) || Number(draft.seatLimit) < 1 || Number(draft.seatLimit) > 50))} onClick={() => void create()}>{busy ? "Working…" : draft.link ? "Create another private link" : "Create private link"}</Button>
+      <Button variant={draft.link ? "outline" : "default"} disabled={!(sponsor?sponsorsEnabled:vendorsEnabled) || !sharingReady || !draft.resourceId || !!lookupError || busy || !!state.remote || (sponsor && (!Number.isInteger(Number(draft.seatLimit)) || Number(draft.seatLimit) < 1 || Number(draft.seatLimit) > 50))} onClick={() => void create()}>{busy ? "Working…" : draft.link ? "Create another private link" : "Create private link"}</Button>
       {draft.link && sharingReady ? <div className="space-y-3 rounded-xl bg-primary/10 p-4"><ShareLinkField label={`Private link for ${draft.linkName}`} value={draft.link} copyLabel={`Copy ${sponsor ? "sponsor" : "vendor"} link`} /><p className="text-xs leading-5 text-muted-foreground">Send this only to {draft.linkName}. Anyone with this link can fill in their form. If you create another link, the old one stays open until you close it below.</p></div> : null}
     </fieldset>
     {message ? <p role="status" className="rounded-lg bg-primary/10 p-3 text-sm">{message}</p> : null}
