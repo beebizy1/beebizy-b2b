@@ -66,3 +66,14 @@ The vendor checklist is a linked preparation panel showing live booking/timing/p
 ### Review corrections
 
 Independent standards/spec review found and corrected a vendor recovery race, an internal/customer cache-context collision, a legacy presentation filter that could hide events, and profile-conflict recovery gaps. Published vendor defaults now load without creating a discard tombstone; a deferred-response test preserves slower server drafts. Internal navigation gets a separate adapter/cache scope. Real workspace membership supplies event isolation independently of presentation. Conflict recovery refetches authoritative settings while retaining the draft, and previous-profile recovery uses the last published version. The QA presentation-switch check preserved event listing, direct API access and vendor details. A live browser check of the new routes remains part of release verification.
+
+
+### Live verification and final dashboard correction
+
+PR #41 was merged and the initial release was promoted to `dpl_2KHLHMWYf3HUBYLfpzjpHr8mJZjJ`. The company account opened the separate internal dashboard and used the SCU organization link. The SCU dashboard displayed its single existing event with 912 registrations. Navigating to internal administration and Back retained the selected SCU identity and presentation.
+
+The live check exposed incorrect zero event counts caused by unqualified column binding in a correlated aggregate. The internal list now uses three bounded grouped reads instead of correlated counts. Native verification matched Beebizy Studio 17, Page One Events 3 and CCS 2. Empty generic/test workspaces are hidden by default with an explicit reveal control; search still finds all organizations. No records were removed by this display refinement.
+
+An older SCU setup was verified as belonging to the existing approved SCU administrator. Its five unregistered contacts, owner seat and accepted-invitation history were consolidated into the canonical SCU workspace, preserving their identities and guest content hash. The old workspace was retained and marked archived. The canonical SCU workspace therefore contains its 912 registered people plus those five additional address-book contacts; registration count stays 912. No provider credentials were inherited.
+
+The final count correction passed the same 770 tests, lint, type checking and production build. The printable organization access guide is in `Downloads/Beebizy Organization Access - November 20 2026.html`.
