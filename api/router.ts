@@ -68,6 +68,8 @@ import { processDueVendorPaperworkReminders } from "../src/server/vendorPaperwor
 import { processDueMemberRoleNotifications } from "../src/server/memberRoleNotifications.ts";
 import { processDueAuctionOutbidNotifications } from "../src/server/auctionOutbidNotifications.ts";
 import { listAdminUserActivity } from "../src/server/userActivity.ts";
+import { createOrganization, getOperatorDraft, getPrivateEditorDraft, listMyOrganizations, listOrganizations, saveOperatorDraft, savePrivateEditorDraft, updateOrganization } from "../src/server/organizations.ts";
+import { workspaceRouteToolAllowed } from "../src/server/workspaceTools.ts";
 import { getRegistrationDesignDraft, saveRegistrationDesignDraft } from "../src/server/registrationDesignDrafts.ts";
 import { getRegistrationGuestDraft, saveRegistrationGuestDraft } from "../src/server/registrationGuestDrafts.ts";
 import {
@@ -721,6 +723,7 @@ export function requireScopedRoute(
 
   const [resource, resourceId, subresource] = segments;
   if (["me", "feedback", "imports"].includes(resource)) return;
+  if (resource === "workspaces" && method === "GET") return;
   // Event pages need workspace display preferences, but a collaborator cannot change
   // workspace-wide currency, time zone or branding.
   if (resource === "settings" && method === "GET") return;
@@ -770,6 +773,7 @@ async function handleAuthed(
   url: URL,
 ): Promise<Response> {
   const [resource, a, b, c] = segments;
+  if(!workspaceRouteToolAllowed(ctx.workspace?.profile,segments)) throw new HttpError(403,"This tool is not enabled for your organization. Ask your Beebizy administrator if you need it.");
   const isMultipart = request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") ?? false;
   const body = resource === "uploads" || isMultipart ? {} : await readBody(request);
   requireScopedRoute(ctx, segments, method, body, url);
@@ -783,12 +787,13 @@ async function handleAuthed(
         workspaceId: ctx.workspaceId,
         role: ctx.role,
         canReviewFeedback: isBeebizyOperator(ctx.email),
-        experience: accountExperienceForEmail(ctx.email),
+        experience: ctx.experience ?? accountExperienceForEmail(ctx.email),
         canSwitchExperience: canSwitchAccountExperience(ctx.email),
         eventScope: ctx.eventScopeId
           ? { id: ctx.eventScopeId, title: scopedEvent?.title ?? "Assigned event" }
           : null,
         access: ctx.access,
+        workspace: ctx.workspace,
       });
       }
 
@@ -1547,10 +1552,25 @@ async function handleAuthed(
       return notFound();
     }
 
+    case "editor-drafts": {
+      if(a&&!b&&method==="GET")return json(await getPrivateEditorDraft(ctx,a));
+      if(a&&!b&&method==="PUT")return json(await savePrivateEditorDraft(ctx,a,body));
+      return notFound();
+    }
+    case "workspaces": {
+      if (!a && method === "GET") return json(await listMyOrganizations(ctx));
+      return notFound();
+    }
+
     /* ------------------------------------------------------------ admin live */
     case "admin": {
       requireBeebizyOperator(ctx.email);
-      if (a === "user-activity" && method === "GET") return json(await listAdminUserActivity());
+      if (a === "user-activity" && method === "GET") return json(await listAdminUserActivity(ctx));
+      if (a === "organizations" && !b && method === "GET") return json(await listOrganizations(ctx));
+      if (a === "organizations" && !b && method === "POST") return json(await createOrganization(ctx, body), 201);
+      if (a === "organizations" && b && !c && method === "PATCH") return json(await updateOrganization(ctx, b, body));
+      if (a === "organization-drafts" && b && !c && method === "GET") return json(await getOperatorDraft(ctx, b));
+      if (a === "organization-drafts" && b && !c && method === "PUT") return json(await saveOperatorDraft(ctx, b, body));
       return notFound();
     }
 

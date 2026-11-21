@@ -17,6 +17,18 @@ function editor(repo: RegistrationGuestDraftRepository, storage = device(), even
 afterEach(() => { running.forEach(item => item.stop()); running.length = 0; vi.restoreAllMocks(); });
 
 describe("private organizer guest drafts", () => {
+  it("loads published defaults without discarding a slower unfinished server form",async()=>{
+    const repo=repository();const values={name:"Unfinished vendor",phone:"new unsaved phone",category:"Decor",cost:"550"};
+    await repo.save("event-1","vendor-edit",{values,revision:1000,discarded:false});
+    const get=repo.get;let release!:()=>void;
+    repo.get=async(...args)=>{await new Promise<void>(resolve=>{release=resolve;});return get(...args);};
+    const form=editor(repo,device(),"event-1","vendor-edit");const loading=form.start(()=>{});
+    form.setBaseline({name:"Published vendor",phone:"old phone"});
+    expect(form.state.revision).toBe(0);expect(form.state.discarded).toBe(true);
+    release();await loading;
+    expect(form.state.values).toEqual(values);expect(form.state.discarded).toBe(false);
+    await form.flush();expect((await get("event-1","vendor-edit"))?.values).toEqual(values);
+  });
   it("recovers all sponsor fields privately and clears the draft only after an explicit save", async () => {
     const repo = repository();
     const storage = device();

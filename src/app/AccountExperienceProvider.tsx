@@ -7,11 +7,11 @@ import {
 } from "@/data/accountExperience";
 import { AccountExperienceContext } from "./accountExperienceContext";
 
-const storageKey = (userId: string) => `beebizy:account-experience:${userId}`;
+const storageKey = (userId: string, workspaceId: string) => `beebizy:account-experience:${userId}:${workspaceId}`;
 
-function readSavedExperience(userId: string | undefined): AccountExperience | null {
-  if (!userId) return null;
-  return parseAccountExperience(window.localStorage.getItem(storageKey(userId)));
+function readSavedExperience(userId: string | undefined, workspaceId: string | undefined): AccountExperience | null {
+  if (!userId || !workspaceId) return null;
+  return parseAccountExperience(window.localStorage.getItem(storageKey(userId,workspaceId)));
 }
 
 export function AccountExperienceProvider({
@@ -22,12 +22,12 @@ export function AccountExperienceProvider({
   children: ReactNode;
 }) {
   const [savedExperience, setSavedExperience] = useState<AccountExperience | null>(() =>
-    readSavedExperience(identity?.userId),
+    readSavedExperience(identity?.userId,identity?.workspaceId),
   );
 
   useEffect(() => {
-    setSavedExperience(readSavedExperience(identity?.userId));
-  }, [identity?.userId]);
+    setSavedExperience(readSavedExperience(identity?.userId,identity?.workspaceId));
+  }, [identity?.userId,identity?.workspaceId]);
 
   const assigned = identity?.experience ?? "standard";
   const canSwitchExperience = identity?.canSwitchExperience ?? false;
@@ -36,7 +36,7 @@ export function AccountExperienceProvider({
   const setExperience = useCallback(
     (nextExperience: AccountExperience) => {
       if (!identity?.canSwitchExperience) return;
-      window.localStorage.setItem(storageKey(identity.userId), nextExperience);
+      window.localStorage.setItem(storageKey(identity.userId,identity.workspaceId), nextExperience);
       setSavedExperience(nextExperience);
     },
     [identity],

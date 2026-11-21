@@ -161,6 +161,7 @@ vi.mock("./hubspot", () => ({
 vi.mock("./userActivity", () => ({
   listAdminUserActivity: vi.fn(),
 }));
+vi.mock("./organizations", () => ({ createOrganization:vi.fn(),getOperatorDraft:vi.fn(),listMyOrganizations:vi.fn(),listOrganizations:vi.fn(),saveOperatorDraft:vi.fn(),updateOrganization:vi.fn() }));
 vi.mock("./eventCopy", () => ({
   generateRegistrationCopy: vi.fn(),
   generatePostEventCopy: vi.fn(),
@@ -244,6 +245,15 @@ const {
 const { listAdminUserActivity } = await import("./userActivity");
 
 describe("operator user activity", () => {
+  it("refuses pilot accounts before any global activity or organization read", async () => {
+    vi.mocked(authorize).mockResolvedValue({ userId:"pilot",workspaceId:"customer",role:"owner",email:"carlin@page-oneevents.com" });
+    const {HttpError}=await import("./auth");
+    vi.mocked(requireBeebizyOperator).mockImplementation(()=>{throw new HttpError(403,"Internal team only");});
+    const before=vi.mocked(listAdminUserActivity).mock.calls.length;
+    for(const route of ["admin/user-activity","admin/organizations","admin/organization-drafts/new-organization"]) expect((await handleRequest(new Request(`http://localhost/api/${route}`))).status).toBe(403);
+    expect(vi.mocked(listAdminUserActivity).mock.calls.length).toBe(before);
+    vi.mocked(requireBeebizyOperator).mockReturnValue(undefined);
+  });
   it("allows an approved operator to read the live activity snapshot", async () => {
     vi.mocked(authorize).mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1", role: "owner", email: "tarang@beebizy.com" });
     vi.mocked(requireBeebizyOperator).mockReturnValue(undefined);

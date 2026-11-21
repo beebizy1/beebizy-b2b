@@ -482,6 +482,10 @@ async function fullSyncToken(connection: Connection, token: string): Promise<str
 }
 
 async function applyGoogleChange(connection: Connection, link: EventLink, googleEvent: GoogleEvent): Promise<boolean> {
+  // A historical link must not write across an organization transfer. The new
+  // organization connects its own calendar; keep the old receipt without applying it.
+  const [owned] = await db.select({id:s.events.id}).from(s.events).where(and(eq(s.events.id,link.eventId),eq(s.events.workspaceId,connection.workspaceId))).limit(1);
+  if(!owned)return false;
   const now = new Date();
   if (googleEvent.status === "cancelled") {
     await db.update(s.googleCalendarEventLinks).set({

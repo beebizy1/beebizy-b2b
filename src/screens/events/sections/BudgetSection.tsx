@@ -72,6 +72,7 @@ import {
 } from "@/data/hooks";
 import { centsFromInput, centsToInput, formatMoney, sumCents } from "@/data/money";
 import { eventBudgetAmounts } from "@/data/eventBudget";
+import { useWorkspaceProfile } from "@/app/useWorkspaceProfile";
 import { ticketDraftFromForm } from "@/data/ticketDraft";
 import { buildBudgetSuggestions, reallocateBudgetAmounts, suggestedTotalBudgetCents } from "@/data/planner";
 import { usePreferences } from "@/app/preferences";
@@ -343,6 +344,7 @@ function VendorMoneyField({ eventId, booking, field, label }: { eventId: string;
 }
 
 export function BudgetPanel({ event }: { event: Event }) {
+  const planner = useWorkspaceProfile().kind === "planner";
   const { data: items, isLoading, isError, error, refetch } = useBudget(event.id);
   const { data: eventVendors } = useEventVendors(event.id);
   const add = useAddBudgetItem();
@@ -427,7 +429,7 @@ export function BudgetPanel({ event }: { event: Event }) {
     <Panel>
       <PanelHeader
         title="Budget"
-        description={`${expenses.length} expense lines, ${revenue.length} revenue lines · ${formatMoney(vendorCommitted)} vendor cost · ${formatMoney(vendorCharged)} client charge`}
+        description={`${expenses.length} expense lines, ${revenue.length} revenue lines · ${formatMoney(vendorCommitted)} vendor cost${planner ? ` · ${formatMoney(vendorCharged)} client charge` : ""}`}
         actions={
           <>
             <EventSpreadsheetImportDialog event={event} />
@@ -462,13 +464,13 @@ export function BudgetPanel({ event }: { event: Event }) {
                 Vendor commitments
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Track what you pay each vendor versus what the client is charged. Vendor cost syncs to Payments/Deposits; client charge feeds return calculations.
+                {planner ? "Track what you pay each vendor versus what the client is charged. Vendor cost syncs to Payments/Deposits; client charge feeds return calculations." : "Vendor costs are shared with Vendors and Payments/Deposits. Update the cost once and it stays in step across this event."}
               </p>
             </div>
             <div className="grid grid-cols-3 gap-4 text-right text-xs">
               <div><p className="text-muted-foreground">Cost</p><p data-numeric className="font-bold text-foreground">{formatMoney(vendorCommitted)}</p></div>
-              <div><p className="text-muted-foreground">Charged</p><p data-numeric className="font-bold text-foreground">{formatMoney(vendorCharged)}</p></div>
-              <div><p className="text-muted-foreground">Margin</p><p data-numeric className={cn("font-bold", vendorMargin >= 0 ? "text-success-text" : "text-danger-text")}>{formatMoney(vendorMargin)}</p></div>
+              {planner ? <><div><p className="text-muted-foreground">Charged</p><p data-numeric className="font-bold text-foreground">{formatMoney(vendorCharged)}</p></div>
+              <div><p className="text-muted-foreground">Margin</p><p data-numeric className={cn("font-bold", vendorMargin >= 0 ? "text-success-text" : "text-danger-text")}>{formatMoney(vendorMargin)}</p></div></> : null}
             </div>
           </div>
           <ol className="mt-3 divide-y divide-hairline rounded-lg border border-hairline bg-surface">
@@ -484,8 +486,8 @@ export function BudgetPanel({ event }: { event: Event }) {
                 </Pill>
                 <div className="flex flex-wrap items-end gap-2">
                   <VendorMoneyField eventId={event.id} booking={booking} field="feeCents" label="Vendor cost" />
-                  <VendorMoneyField eventId={event.id} booking={booking} field="clientChargeCents" label="Client charge" />
-                  <div className="w-24 text-right"><p className="text-[11px] font-medium text-muted-foreground">Margin</p><p data-numeric className={cn("mt-1.5 font-semibold", (booking.clientChargeCents ?? 0) - (booking.feeCents ?? 0) >= 0 ? "text-success-text" : "text-danger-text")}>{formatMoney((booking.clientChargeCents ?? 0) - (booking.feeCents ?? 0))}</p></div>
+                  {planner ? <VendorMoneyField eventId={event.id} booking={booking} field="clientChargeCents" label="Client charge" /> : null}
+                  {planner ? <div className="w-24 text-right"><p className="text-[11px] font-medium text-muted-foreground">Margin</p><p data-numeric className={cn("mt-1.5 font-semibold", (booking.clientChargeCents ?? 0) - (booking.feeCents ?? 0) >= 0 ? "text-success-text" : "text-danger-text")}>{formatMoney((booking.clientChargeCents ?? 0) - (booking.feeCents ?? 0))}</p></div> : null}
                 </div>
               </li>
             ))}

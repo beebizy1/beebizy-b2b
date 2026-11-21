@@ -30,9 +30,16 @@ describe("product navigation", () => {
     expect(isNavActive("/app", "/app/locations")).toBe(false);
   });
 
-  it("shows the feedback inbox only to approved reviewers", () => {
+  it("keeps internal activity and feedback out of customer navigation, including staff demos", () => {
     expect(visibleNavItems(false)).toEqual(NAV_ITEMS);
-    expect(visibleNavItems(true).at(-1)).toMatchObject({ label: "Pilot feedback", href: "/app/feedback" });
+    expect(visibleNavItems(true)).toEqual(NAV_ITEMS);
+    expect(visibleNavItems(true).some(item=>item.href.includes("admin")||item.href.includes("feedback"))).toBe(false);
+  });
+  it("applies organization tool settings while keeping Overview and planner labels separate",()=>{
+    const profile={kind:"organization" as const,experience:"standard" as const,eventTabs:["vendors","budget","deposits"] as const};
+    expect(visibleEventTabs("enterprise","standard",{...profile,eventTabs:[...profile.eventTabs]}).map(t=>t.label)).toEqual(["Overview","Vendors","Budget","Payments/Deposits"]);
+    expect(visibleEventTabs("enterprise","standard",{...profile,eventTabs:[]}).map(t=>t.id)).toEqual(["overview"]);
+    expect(visibleEventTabs("enterprise","standard",{...profile,kind:"planner",eventTabs:["budget"]})[1]?.label).toBe("Budget & Return");
   });
 
   it("removes team and enterprise destinations from the Solo plan", () => {

@@ -22,7 +22,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { useEvents } from "@/data/hooks";
+import { useEvents, useMe } from "@/data/hooks";
 import { usePreferences } from "@/app/preferences";
 import { visibleNavItems } from "./nav";
 import { planHasCapability, type PlanId } from "@/data/plans";
@@ -86,6 +86,7 @@ export function CommandPalette({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { data: identity } = useMe();
   const { when } = usePreferences();
   const [, navigate] = useLocation();
   const { data: events } = useEvents();
@@ -141,7 +142,7 @@ export function CommandPalette({
             <CommandSeparator />
 
             <CommandGroup heading="Go to">
-              {visibleNavItems(canReviewFeedback, plan, experience).map((item) => (
+              {visibleNavItems(canReviewFeedback, plan, experience, identity?.workspace?.profile).map((item) => (
                 <CommandItem key={item.href} value={`${item.label} ${item.hint}`} onSelect={() => go(item.href)}>
                   <item.icon className="mr-2 size-4" aria-hidden="true" />
                   <span>{item.label}</span>

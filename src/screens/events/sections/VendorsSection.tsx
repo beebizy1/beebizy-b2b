@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useWorkspaceProfile } from "@/app/useWorkspaceProfile";
 import {
   DndContext,
   KeyboardSensor,
@@ -74,11 +75,15 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
   city: string | null;
   reorderDisabled: boolean;
 }) {
+  const planner = useWorkspaceProfile().kind === "planner";
   const update = useUpdateEventVendor();
   const remove = useRemoveEventVendor();
   const [fee, setFee] = useState(centsToInput(props.feeCents));
   const [clientCharge, setClientCharge] = useState(centsToInput(props.clientChargeCents));
   const [notes, setNotes] = useState(props.notes ?? "");
+  useEffect(() => setFee(centsToInput(props.feeCents)), [props.feeCents]);
+  useEffect(() => setClientCharge(centsToInput(props.clientChargeCents)), [props.clientChargeCents]);
+  useEffect(() => setNotes(props.notes ?? ""), [props.notes]);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: bookingId,
     disabled: props.reorderDisabled,
@@ -89,7 +94,7 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
     if (next === props.feeCents) return;
     update.mutate(
       { eventId, id: bookingId, patch: { feeCents: next } },
-      { onError: (error) => toast({ title: "Couldn't update fee", description: error.message }) },
+      { onError: (error) => { setFee(centsToInput(props.feeCents)); toast({ title: "Couldn't update fee", description: error.message }); } },
     );
   };
 
@@ -171,10 +176,10 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
         <span className="flex items-center gap-1.5"><span aria-hidden="true">$</span><Input value={fee} onChange={(inputEvent) => setFee(inputEvent.target.value)} onBlur={commitFee} onKeyDown={(keyEvent) => { if (keyEvent.key === "Enter") keyEvent.currentTarget.blur(); }} inputMode="decimal" className="h-8 w-28 text-right" aria-label={`Vendor cost for ${props.name}`} /></span>
       </label>
 
-      <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
+      {planner ? <label className="space-y-1 text-[11px] font-medium text-muted-foreground">
         <span className="block">Client charge</span>
         <span className="flex items-center gap-1.5"><span aria-hidden="true">$</span><Input value={clientCharge} onChange={(inputEvent) => setClientCharge(inputEvent.target.value)} onBlur={commitClientCharge} onKeyDown={(keyEvent) => { if (keyEvent.key === "Enter") keyEvent.currentTarget.blur(); }} inputMode="decimal" className="h-8 w-28 text-right" aria-label={`Client charge for ${props.name}`} /></span>
-      </label>
+      </label> : null}
 
       <Select
         value={props.status}
@@ -233,6 +238,7 @@ function VendorRow({ eventId, bookingId, ...props }: { eventId: string; bookingI
 }
 
 export function VendorsPanel({ event }: { event: Event }) {
+  const planner = useWorkspaceProfile().kind === "planner";
   const { data: bookings, isLoading, isError, error, refetch } = useEventVendors(event.id);
   const { data: directory } = useVendors();
   const addVendor = useAddEventVendor();
@@ -296,7 +302,7 @@ export function VendorsPanel({ event }: { event: Event }) {
         title="Vendors"
         description={
           bookings?.length
-            ? `${confirmed} confirmed, ${pending} pending · ${formatMoney(committed)} vendor cost · ${formatMoney(charged)} client charge`
+            ? `${confirmed} confirmed, ${pending} pending · ${formatMoney(committed)} vendor cost${planner ? ` · ${formatMoney(charged)} client charge` : ""}`
             : "Nobody booked yet"
         }
         actions={<VendorEventPacketDialog event={event} bookings={bookings ?? []} />}

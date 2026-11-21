@@ -81,6 +81,10 @@ const updatedAt = () => timestamp("updated_at", { withTimezone: true });
 export const workspaces = pgTable("workspaces", {
   id: id(),
   name: text("name").notNull(),
+  /** Customer-owned presentation and tools; legacy null preserves the existing profile. */
+  productProfile: jsonb("product_profile").$type<import("../data/workspaceProfile.ts").WorkspaceProductProfile>(),
+  profileRevision: integer("profile_revision").notNull().default(0),
+  previousProductProfile: jsonb("previous_product_profile").$type<{ name: string; profile: import("../data/workspaceProfile.ts").WorkspaceProductProfile; revision: number }>(),
   /** Clerk organization id, once the customer has one. Null for a personal workspace. */
   clerkOrgId: text("clerk_org_id").unique(),
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
@@ -1874,6 +1878,14 @@ export const hubspotEventSources = pgTable("hubspot_event_sources", {
   leaseUntil: timestamp("lease_until", { withTimezone: true }),
   updatedAt: updatedAt(),
 }, table => [index("hubspot_event_sources_connection_idx").on(table.connectionId, table.enabled)]);
+
+/** Private full-form recovery for internal organization setup. Publishing stays explicit. */
+export const operatorDrafts = pgTable("operator_drafts", {
+  userId: text("user_id").notNull(),
+  key: text("key").notNull(),
+  draft: jsonb("draft").$type<import("../data/registrationGuestDraft.ts").RegistrationGuestDraft>().notNull(),
+  updatedAt: updatedAt(),
+}, table => [primaryKey({ columns: [table.userId, table.key] })]);
 
 /* ------------------------------------------------------------------- relations */
 

@@ -8,6 +8,8 @@
  * cannot simply be typed at sign-up.
  */
 export const INTERNAL_EMAIL_DOMAIN = "beebizy.com";
+/** Legacy team workspace used only as a default for staff who are already members. */
+export const INTERNAL_TEAM_WORKSPACE_ID = "ws_e9ee754f40224e8ca43d";
 
 /** Product operators who receive founder-level product controls. */
 export const PRODUCT_OPERATOR_EMAILS = [
@@ -37,7 +39,7 @@ export function isBeebizyOperator(email: string | null | undefined): boolean {
 
 /** Internal reviewers retain inbox access independently of customer subscription state. */
 export function canAccessOperatorFeedbackInbox(route: string, email: string | null | undefined): boolean {
-  return (route === "feedback/inbox" || route === "admin/user-activity") && isBeebizyOperator(email);
+  return (route === "feedback/inbox" || route.startsWith("admin/")) && isBeebizyOperator(email);
 }
 
 export function configuredBetaAccessEmails(value: string | null | undefined): Set<string> {

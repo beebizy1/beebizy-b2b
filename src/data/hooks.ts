@@ -564,13 +564,13 @@ export function useVendor(id: string) {
 }
 
 export function useCreateVendor() {
-  return useAdapterMutation((a, draft: VendorDraft) => a.vendors.create(draft), () => [qk.vendors, qk.portfolio]);
+  return useAdapterMutation((a, draft: VendorDraft) => a.vendors.create(draft), draft => [qk.vendors, qk.portfolio, ...(draft.eventId ? [qk.eventVendors(draft.eventId), ...eventDerivedKeys(draft.eventId)] : [])]);
 }
 
 export function useUpdateVendor() {
   return useAdapterMutation(
     (a, vars: { id: string; patch: VendorPatch }) => a.vendors.update(vars.id, vars.patch),
-    (vars) => [qk.vendors, qk.vendor(vars.id)],
+    (vars) => [qk.vendors, qk.vendor(vars.id), ["eventVendors"], ["vendorPaymentPlans"], ["event-operations"], ...eventDerivedKeys()],
   );
 }
 

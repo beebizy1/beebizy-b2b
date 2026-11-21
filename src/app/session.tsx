@@ -26,6 +26,8 @@ import { endDemoSession } from "./demo";
 export type SessionStatus = "loading" | "authenticated" | "demo" | "anonymous" | "unauthorized";
 
 export interface SessionUser {
+  /** Stable Clerk identity for per-user browser context. Authorization stays server-side. */
+  uid: string;
   name: string;
   email: string | null;
   photoURL: string | null;
@@ -41,6 +43,7 @@ interface SessionValue {
 }
 
 const DEMO_USER: SessionUser = {
+  uid: "demo-owner",
   name: "Demo organiser",
   email: "demo@beebizy.app",
   photoURL: null,
@@ -64,6 +67,7 @@ function ClerkSessionProvider({ children }: { children: ReactNode }) {
 
     const email = user.primaryEmailAddress?.emailAddress ?? null;
     const sessionUser = {
+      uid: user.id,
       // Clerk users can sign in with a social account and have no name set, so fall
       // back through the identifiers that definitely exist.
       name: user.fullName || user.username || email || "Signed in",
@@ -139,7 +143,7 @@ export function RequireSession({ children }: { children: ReactNode }) {
     );
   }
 
-  if (status === "anonymous") return <Redirect to="/login" replace />;
+  if (status === "anonymous") return <Redirect to={`/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`} replace />;
   if (status === "unauthorized") return <Redirect to="/access-denied" replace />;
   return <>{children}</>;
 }

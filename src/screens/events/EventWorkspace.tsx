@@ -265,7 +265,8 @@ function SectionTabs({
 }) {
   const [, navigate] = useLocation();
   const activeRef = useRef<HTMLAnchorElement>(null);
-  const baseTabs = visibleEventTabs(plan, experience);
+  const { data: identity } = useMe();
+  const baseTabs = visibleEventTabs(plan, experience, identity?.workspace?.profile);
   const [order, setOrder] = useState<EventNavigationTabId[]>([...navigation.tabOrder]);
   const [hidden, setHidden] = useState<HideableEventTabId[]>([...navigation.hiddenTabIds]);
   const allTabs = orderedEventTabs(baseTabs, order);
@@ -887,7 +888,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     );
   }
 
-  if (!identity?.eventScope && (event.experience ?? "standard") !== experience) {
+  if (!identity?.workspace && !identity?.eventScope && (event.experience ?? "standard") !== experience) {
     return <Redirect to="/app" replace />;
   }
 
@@ -896,12 +897,9 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
     return <Redirect to={`/app/events/${id}`} replace />;
   }
 
-  if (experience === "santa-clara" && active === "overview") {
-    return <Redirect to={eventTabHref(id, "run-of-show")} replace />;
-  }
-
-  if (!visibleEventTabs(plan, experience).some((tab) => tab.id === active) && (active !== "share" || experience !== "standard")) {
-    return <Redirect to={experience === "santa-clara" ? eventTabHref(id, "run-of-show") : "/pricing"} replace />;
+  const enabledTabs = visibleEventTabs(plan, experience, identity?.workspace?.profile);
+  if (!enabledTabs.some((tab) => tab.id === active) && (active !== "share" || experience !== "standard")) {
+    return <Redirect to={enabledTabs[0] ? eventTabHref(id,enabledTabs[0].id) : "/app/events"} replace />;
   }
 
   const days = eventDayOptions(event.date, event.endDate, timeZone);
@@ -954,7 +952,7 @@ export default function EventWorkspace({ id, section: slug }: { id: string; sect
             <BudgetTotals event={event} />
             <BudgetPanel event={event} />
             <BudgetRoiSummary event={event} />
-            <RoiPanel event={event} />
+            {identity?.workspace?.profile.kind !== "organization" ? <RoiPanel event={event} /> : null}
           </div>
         )
       ) : null}

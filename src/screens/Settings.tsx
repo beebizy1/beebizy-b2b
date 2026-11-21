@@ -44,6 +44,7 @@ import { usePreferences } from "@/app/preferences";
 import { WORKSPACE_ROLES, type UserSettings, type WorkspaceRole } from "@/data/entities";
 import { effectivePlan, PLAN_NAMES } from "@/data/plans";
 import HubSpotConnectionPanel from "./integrations/HubSpotConnectionPanel";
+import ShareLinkField from "@/components/ShareLinkField";
 import { COMMON_TIME_ZONES } from "@/lib/datetime";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "INR"];
@@ -483,6 +484,7 @@ export default function Settings() {
         description="Your list preference follows your account. Currency and time zone are shared with the workspace."
       />
 
+      {me?.workspace ? <Panel><PanelHeader title={me.workspace.name} description={me.workspace.profile.kind === "organization" ? "Your organization workspace" : "Your event planning workspace"}/><div className="space-y-4 p-5"><p className="text-sm text-muted-foreground">Your team signs in with this link. Access is checked against each person's invitation; forwarding the link does not grant access.</p><ShareLinkField label="Organization sign-in link" value={location.origin+me.workspace.signInPath}/><Button asChild variant="outline"><Link href="/organizations">Switch organization</Link></Button></div></Panel>:null}
       <Panel>
         <PanelHeader title="Defaults" description="How this workspace presents lists, dates and money" />
         {/*

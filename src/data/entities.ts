@@ -372,6 +372,12 @@ export interface Vendor extends OwnedRecord {
 }
 
 export interface VendorDraft {
+  /** Optional atomic event booking when adding from an event or selecting an event. */
+  eventId?: string | null;
+  feeCents?: Cents | null;
+  clientChargeCents?: Cents | null;
+  /** Stable form submission key for safe retries after a dropped response. */
+  requestId?: string;
   name: string;
   category: VendorCategory;
   description?: string | null;

@@ -108,9 +108,10 @@ function SidebarContent({
   eventScope: Identity["eventScope"] | undefined;
   onNavigate?: () => void;
 }) {
-  const [pathname, navigate] = useLocation();
+  const [pathname] = useLocation();
   const { user, signOut } = useSession();
-  const { experience, canSwitchExperience, setExperience } = useAccountExperience();
+  const { data: identity } = useMe();
+  const { experience } = useAccountExperience();
   const navigation: NavItem[] = eventScope
     ? [{
         label: eventScope.title,
@@ -118,46 +119,16 @@ function SidebarContent({
         icon: Calendar,
         hint: "Open the event you have been invited to collaborate on",
       }]
-    : visibleNavItems(canReviewFeedback, plan, experience);
+    : visibleNavItems(canReviewFeedback, plan, experience, identity?.workspace?.profile);
 
   return (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
       <div className="mb-2 flex flex-col gap-3 p-4 pb-2">
         <BrandLogoLink to="/app" size="sm" />
         <div className="border-t border-sidebar-border pt-3">
-          <WorkspaceMark label={experience === "santa-clara" ? "Santa Clara University" : user?.name ?? "Beebizy Studio"} />
-          {canSwitchExperience ? (
-            <div className="mt-3 rounded-lg border border-sidebar-border bg-background/70 p-1.5">
-              <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                View as
-              </p>
-              <div className="grid grid-cols-2 gap-1" role="group" aria-label="Preview account experience">
-                {([
-                  ["standard", "Full Beebizy"],
-                  ["santa-clara", "Santa Clara"],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={experience === value}
-                    onClick={() => {
-                      setExperience(value);
-                      navigate("/app");
-                      onNavigate?.();
-                    }}
-                    className={cn(
-                      "rounded-md px-2 py-1.5 text-[11px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      experience === value
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <WorkspaceMark label={identity?.workspace?.name ?? (experience === "santa-clara" ? "Santa Clara University" : user?.name ?? "Beebizy Studio")} />
+          <p className="mt-2 text-xs text-muted-foreground">{identity?.workspace?.profile.kind === "organization" ? "Organization workspace" : "Event planning workspace"}</p>
+
         </div>
       </div>
 
@@ -168,6 +139,8 @@ function SidebarContent({
       </nav>
 
       <div className="space-y-2 border-t border-sidebar-border bg-surface-sunken/40 p-4">
+        <Link href="/organizations" onClick={onNavigate} className="block text-sm text-muted-foreground hover:text-foreground">Switch organization</Link>
+        {canReviewFeedback ? <Link href="/internal" onClick={onNavigate} className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><LockKeyhole className="size-4"/>Internal admin</Link> : null}
         {/* Points at sales while self-serve billing is paused; there is no price list to
             send anyone to. */}
         {experience === "standard" && !eventScope ? (
@@ -404,7 +377,7 @@ export function AppShell({ children }: { children: ReactNode }) {
    * it is the side that can see both the operator allowlist and any outstanding invite.
    */
   if (mode === "live" && identityErrorRequiresAccessDenied(identityError)) {
-    return <Redirect to="/access-denied" replace />;
+    return <Redirect to="/organizations" replace />;
   }
 
   if (mode === "live" && identityError) {

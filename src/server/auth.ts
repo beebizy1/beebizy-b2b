@@ -18,6 +18,7 @@ import {
   canAccessOperatorFeedbackInbox,
   hasInternalAccess,
   isBeebizyOperator,
+  INTERNAL_TEAM_WORKSPACE_ID,
 } from "../lib/internalAccess.ts";
 import { isPrivateBetaHost } from "../lib/privateBetaHost.ts";
 import { db } from "./db.ts";
@@ -32,6 +33,8 @@ import {
 } from "../data/accountExperience.ts";
 import { workspaceMemberInsertSelection } from "./workspaceMemberInsert.ts";
 import { VerifiedEmailCache } from "./verifiedEmailCache.ts";
+import { verifiedClerkOrganizationId } from "./verifiedOrganization.ts";
+import { normalizeWorkspaceProfile, type OrganizationWorkspace } from "../data/workspaceProfile.ts";
 
 export type Role = "owner" | "admin" | "member";
 
@@ -48,6 +51,7 @@ export interface RequestContext {
   /** Null is a normal workspace seat; otherwise this session may access only this event. */
   eventScopeId?: string | null;
   access?: WorkspaceAccess;
+  workspace?: OrganizationWorkspace;
 }
 
 export class HttpError extends Error {
@@ -90,7 +94,7 @@ const clerk = secretKey ? createClerkClient({ secretKey }) : null;
 const verifiedEmailCache = new VerifiedEmailCache(5 * 60_000);
 
 /** Verifies the bearer token and the user's primary email before any workspace is resolved. */
-async function requireVerifiedUser(request: Request): Promise<{ userId: string; email: string }> {
+async function requireVerifiedUser(request: Request): Promise<{ userId: string; email: string; clerkOrgId: string | null }> {
   if (!secretKey || !clerk) throw new HttpError(500, "CLERK_SECRET_KEY is not configured on the server.");
 
   const header = request.headers.get("authorization") ?? "";
@@ -98,10 +102,12 @@ async function requireVerifiedUser(request: Request): Promise<{ userId: string; 
   if (!token) throw new HttpError(401, "Missing bearer token.");
 
   let userId: string;
+  let clerkOrgId: string | null = null;
   try {
     const claims = await verifyToken(token, { secretKey });
     if (!claims.sub) throw new HttpError(401, "Token has no subject.");
     userId = claims.sub;
+    clerkOrgId = verifiedClerkOrganizationId(claims);
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(401, "Session token is invalid or expired.");
@@ -150,7 +156,7 @@ async function requireVerifiedUser(request: Request): Promise<{ userId: string; 
     throw new HttpError(403, "This account does not have access to Beebizy Studio. Ask Beebizy for an invitation.");
   }
 
-  return { userId, email: primaryEmail };
+  return { userId, email: primaryEmail, clerkOrgId };
 }
 
 /** Membership is itself proof of approval: someone with authority added this account. */
@@ -249,6 +255,7 @@ async function resolveWorkspace(
   userId: string,
   clerkOrgId: string | null,
   email: string | null,
+  selectedWorkspaceId: string | null = null,
 ): Promise<{ workspaceId: string; role: Role; eventScopeId: string | null; access: WorkspaceAccess }> {
   /*
    * An unclaimed invite is claimed before organization membership or an existing seat.
@@ -260,7 +267,7 @@ async function resolveWorkspace(
     const [invite] = await db
       .select()
       .from(workspaceInvites)
-      .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt)))
+      .where(and(eq(workspaceInvites.email, email.trim().toLowerCase()), isNull(workspaceInvites.acceptedAt), ...(selectedWorkspaceId ? [eq(workspaceInvites.workspaceId, selectedWorkspaceId)] : [])))
       .limit(1);
     if (invite) {
       const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, invite.workspaceId)).limit(1);
@@ -280,6 +287,14 @@ async function resolveWorkspace(
         };
       }
     }
+  }
+
+  if (selectedWorkspaceId) {
+    const [selected] = await db.select({ member: workspaceMembers, workspace: workspaces })
+      .from(workspaceMembers).innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
+      .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, selectedWorkspaceId))).limit(1);
+    if (!selected) throw new HttpError(403, "You do not have access to this organization. Sign in with the email your organization invited.");
+    return { workspaceId: selected.workspace.id, role: selected.member.role, eventScopeId: selected.member.eventScopeId, access: accessForWorkspace(selected.workspace) };
   }
 
   if (clerkOrgId) {
@@ -313,7 +328,7 @@ async function resolveWorkspace(
     // Most recently joined wins. Someone can hold their own workspace and later be
     // invited into a team's; without an order the tie is arbitrary and they flip between
     // the two on consecutive requests.
-    .orderBy(desc(workspaceMembers.createdAt))
+    .orderBy(...(isBeebizyOperator(email) ? [sql`case when ${workspaceMembers.workspaceId} = ${INTERNAL_TEAM_WORKSPACE_ID} then 0 else 1 end`] : []), desc(workspaceMembers.createdAt))
     .limit(1);
   if (membership) {
     const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, membership.workspaceId)).limit(1);
@@ -362,19 +377,20 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(403, "Beebizy Studio beta access is available only at the private preview link.");
   }
 
-  const { userId, email } = await requireVerifiedUser(request);
-  const orgHeader = request.headers.get("x-clerk-org-id");
-  const { workspaceId, role, eventScopeId, access } = await resolveWorkspace(
-    userId,
-    orgHeader && orgHeader !== "null" ? orgHeader : null,
-    email,
-  );
-
+  const { userId, email, clerkOrgId } = await requireVerifiedUser(request);
   const url = new URL(request.url);
   const route = url.searchParams.get("__path") ?? url.pathname.replace(/^\/api\/?/, "");
+  const selectedWorkspaceId = route === "workspaces" || route.startsWith("admin/") ? null : request.headers.get("x-beebizy-workspace-id")?.trim() || null;
+  const { workspaceId, role, eventScopeId, access } = await resolveWorkspace(
+    userId,
+    clerkOrgId,
+    email,
+    selectedWorkspaceId,
+  );
+
   const operatorFeedbackInbox = canAccessOperatorFeedbackInbox(route, email);
-  const billingRecoveryRoute = route === "billing/checkout" || route === "billing/portal";
-  if (access.status === "active" && !access.plan && route !== "me" && !operatorFeedbackInbox) {
+  const billingRecoveryRoute = route === "billing/checkout" || route === "billing/portal" || route === "workspaces";
+  if (access.status === "active" && !access.plan && route !== "me" && !billingRecoveryRoute && !operatorFeedbackInbox) {
     throw new HttpError(402, "Your workspace plan is not assigned yet. Ask Beebizy support to finish activation.");
   }
   if (
@@ -394,6 +410,9 @@ export async function authorize(request: Request): Promise<RequestContext> {
     throw new HttpError(402, message);
   }
 
+  const [workspace] = await db.select({ name: workspaces.name, profile: workspaces.productProfile, revision: workspaces.profileRevision, updatedAt: workspaces.updatedAt }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+  if (!workspace) throw new HttpError(403, "Your organization is no longer available.");
+  const profile = normalizeWorkspaceProfile(workspace.profile, accountExperienceForEmail(email));
   return {
     userId,
     email,
@@ -401,8 +420,9 @@ export async function authorize(request: Request): Promise<RequestContext> {
     role,
     eventScopeId,
     access,
-    experience: accountExperienceForEmail(email),
+    experience: profile.experience,
     canSwitchExperience: canSwitchAccountExperience(email),
+    workspace: { id: workspaceId, name: workspace.name, profile, revision: workspace.revision, updatedAt: workspace.updatedAt?.toISOString() ?? "", signInPath: `/organization/${encodeURIComponent(workspaceId)}` },
   };
 }
 
