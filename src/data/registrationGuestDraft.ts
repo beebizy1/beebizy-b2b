@@ -35,6 +35,12 @@ export class RegistrationGuestDraftRecovery {
     } catch { this.deviceFailed = true; this.state.message = "Device recovery unavailable. Keep this form open."; }
   }
   private emit() { this.listener({ ...this.state }); }
+  /** Loading published values is not a user submission and must not supersede a
+   * still-pending server recovery draft with a new discard tombstone. */
+  setBaseline(values:Record<string,string>) {
+    this.initial={...values};
+    if(this.state.discarded){this.state.values={...values};this.emit();}
+  }
   private snapshot(): RegistrationGuestDraft { return { values: { ...this.state.values }, revision: this.state.revision, discarded: this.state.discarded }; }
   private backup() {
     try { this.storage.setItem(this.storageKey, JSON.stringify(this.snapshot())); this.deviceFailed = false; }

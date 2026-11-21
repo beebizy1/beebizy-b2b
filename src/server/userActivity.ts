@@ -6,7 +6,7 @@ import type {
   AdminUserWorkspaceAccess,
   WorkspaceRole,
 } from "../data/entities.ts";
-import { HttpError } from "./auth.ts";
+import { HttpError, requireBeebizyOperator, type RequestContext } from "./auth.ts";
 import { db } from "./db.ts";
 import * as s from "./schema.ts";
 
@@ -27,7 +27,8 @@ export function isRecentlyActive(lastActiveAt: number | null, now = Date.now()):
   return lastActiveAt !== null && lastActiveAt >= now - ACTIVE_WINDOW_MS;
 }
 
-export async function listAdminUserActivity(now = Date.now()): Promise<AdminUserActivityResponse> {
+export async function listAdminUserActivity(ctx: RequestContext, now = Date.now()): Promise<AdminUserActivityResponse> {
+  requireBeebizyOperator(ctx.email);
   const secretKey = process.env.CLERK_SECRET_KEY?.trim();
   if (!secretKey) throw new HttpError(503, "User activity is unavailable because Clerk is not configured.");
   const clerk = createClerkClient({ secretKey });

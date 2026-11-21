@@ -280,7 +280,7 @@ function isConstraintViolation(error: unknown, constraint: string): boolean {
 async function requireOwnedEvent(ctx: RequestContext, eventId: string): Promise<void> {
   requireEventAccess(ctx, eventId);
   const conditions = [eq(s.events.id, eventId), eq(s.events.workspaceId, ctx.workspaceId)];
-  if (!ctx.eventScopeId && !ctx.canSwitchExperience) {
+  if (!ctx.eventScopeId && !ctx.canSwitchExperience && !ctx.workspace) {
     conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
   }
   const [row] = await db
@@ -317,9 +317,9 @@ export const events = {
   async list(ctx: RequestContext, filter: { experience?: string; status?: string; category?: string; locationId?: string; search?: string } = {}): Promise<Event[]> {
     const conditions = [eq(s.events.workspaceId, ctx.workspaceId)];
     if (ctx.eventScopeId) conditions.push(eq(s.events.id, ctx.eventScopeId));
-    else if (ctx.canSwitchExperience && parseAccountExperience(filter.experience)) {
+    else if (!ctx.workspace && ctx.canSwitchExperience && parseAccountExperience(filter.experience)) {
       conditions.push(eq(s.events.experience, parseAccountExperience(filter.experience)!));
-    } else if (!ctx.canSwitchExperience) {
+    } else if (!ctx.workspace && !ctx.canSwitchExperience) {
       conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
     }
     if (filter.status) conditions.push(eq(s.events.status, filter.status as "draft"));
@@ -354,7 +354,7 @@ export const events = {
   async get(ctx: RequestContext, id: string): Promise<Event | null> {
     requireEventAccess(ctx, id);
     const conditions = [eq(s.events.id, id), eq(s.events.workspaceId, ctx.workspaceId)];
-    if (!ctx.eventScopeId && !ctx.canSwitchExperience) {
+    if (!ctx.eventScopeId && !ctx.canSwitchExperience && !ctx.workspace) {
       conditions.push(eq(s.events.experience, ctx.experience ?? "standard"));
     }
     const [row] = await db
@@ -2412,9 +2412,20 @@ export const vendors = {
   },
   async create(ctx: RequestContext, body: Body): Promise<Vendor> {
     requireWorkspaceAccess(ctx);
-    const id = newId("ven");
+    const eventId = optStr(body, "eventId");
+    if (eventId) await requireOwnedEvent(ctx, eventId);
+    const requestId=optStr(body,"requestId");
+    if(requestId&&!/^[a-f0-9-]{36}$/.test(requestId))throw new HttpError(400,"Invalid vendor submission. Reopen the form.");
+    const id = requestId?`ven_${requestId.replaceAll("-","")}`:newId("ven");
+    const prior=requestId?await vendors.get(ctx,id):null;
+    if(prior){
+      const matches = prior.name===str(body,"name") && prior.category===str(body,"category","Other") && (["description","contactEmail","contactPhone","website","logoUrl","city","state","country"] as const).every(key=>(prior[key]??null)===optStr(body,key));
+      if(!matches)throw new HttpError(409,"This vendor submission was already saved. Open the existing vendor before changing it.");
+      if(eventId){const existing=await eventVendors.list(ctx,eventId);const booking=existing.find(row=>row.vendorId===id);if(!booking)throw new HttpError(409,"This vendor was saved for a different event. Book the existing vendor on this event instead.");if(booking.feeCents!==optNonnegativeInt(body,"feeCents"))throw new HttpError(409,"This vendor booking was already saved with a different cost. Edit the existing booking.");}
+      return prior;
+    }
     const rating = body.rating;
-    await db.insert(s.vendors).values({
+    const insertVendor = db.insert(s.vendors).values({
       id,
       workspaceId: ctx.workspaceId,
       name: str(body, "name"),
@@ -2429,6 +2440,15 @@ export const vendors = {
       state: optStr(body, "state"),
       country: optStr(body, "country"),
     });
+    if (eventId) {
+      await db.batch([insertVendor, db.insert(s.eventVendors).values({
+        id: newId("ev"), workspaceId: ctx.workspaceId, eventId, vendorId: id,
+        feeCents: optNonnegativeInt(body,"feeCents"),
+        clientChargeCents: ctx.workspace?.profile.kind === "organization" ? null : optNonnegativeInt(body,"clientChargeCents"),
+        notes: optStr(body,"description"),
+        sortOrder: sql`(select coalesce(max(sort_order),0)+1 from event_vendors where event_id=${eventId} and workspace_id=${ctx.workspaceId})`,
+      })]);
+    } else await insertVendor;
     return (await vendors.get(ctx, id))!;
   },
   async update(ctx: RequestContext, id: string, body: Body): Promise<Vendor> {
@@ -4394,10 +4414,12 @@ export const eventVendors = {
       .leftJoin(s.vendors, eq(s.eventVendors.vendorId, s.vendors.id))
       .where(and(eq(s.eventVendors.workspaceId, ctx.workspaceId), eq(s.eventVendors.eventId, eventId)))
       .orderBy(asc(s.eventVendors.sortOrder), asc(s.eventVendors.createdAt));
-    return rows.map((row) => map.toEventVendor(row.booking, row.vendor));
+    return rows.map((row) => ({ ...map.toEventVendor(row.booking, row.vendor), ...(ctx.workspace?.profile.kind === "organization" ? { clientChargeCents: null } : {}) }));
   },
   async create(ctx: RequestContext, eventId: string, body: Body) {
     await requireOwnedEvent(ctx, eventId);
+    if (!await vendors.get(ctx,str(body,"vendorId"))) throw new HttpError(404,"That vendor is not in this organization.");
+    if (ctx.workspace?.profile.kind === "organization" && body.clientChargeCents != null) throw new HttpError(403,"Client billing is available only in event-planner workspaces.");
     const id = newId("ev");
     const [orderRow] = await db
       .select({ maxOrder: sql<number>`coalesce(max(${s.eventVendors.sortOrder}), 0)` })
@@ -4476,6 +4498,7 @@ export const eventVendors = {
     return all.find((row) => row.id === id)!;
   },
   async update(ctx: RequestContext, eventId: string, id: string, body: Body) {
+    if (ctx.workspace?.profile.kind === "organization" && Object.hasOwn(body,"clientChargeCents")) throw new HttpError(403,"Client billing is available only in event-planner workspaces.");
     const [currentRow] = await db
       .select({ booking: s.eventVendors, vendor: s.vendors })
       .from(s.eventVendors)

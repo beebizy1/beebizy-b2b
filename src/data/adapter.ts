@@ -13,6 +13,7 @@
  */
 
 import type { EventOperationsRepository } from "./eventOperations";
+import type { OrganizationDraft, OrganizationPatch, OrganizationSummary, OrganizationWorkspace } from "./workspaceProfile";
 import type {
   Guest,
   GuestDraft,
@@ -523,6 +524,11 @@ export interface FeedbackRepository {
 
 export interface AdminRepository {
   userActivity(): Promise<AdminUserActivityResponse>;
+  organizations(): Promise<OrganizationSummary[]>;
+  createOrganization(draft: OrganizationDraft): Promise<OrganizationWorkspace>;
+  updateOrganization(id: string, patch: OrganizationPatch): Promise<OrganizationWorkspace>;
+  getDraft(key: string): Promise<import("./registrationGuestDraft").RegistrationGuestDraft | null>;
+  saveDraft(key: string, draft: import("./registrationGuestDraft").RegistrationGuestDraft): Promise<import("./registrationGuestDraft").RegistrationGuestDraft>;
 }
 
 export interface BillingRepository {
@@ -594,6 +600,7 @@ export interface Identity {
   /** Present only for a collaborator whose seat is restricted to one event. */
   eventScope: { id: string; title: string } | null;
   access: WorkspaceAccess;
+  workspace?: OrganizationWorkspace;
 }
 
 export interface DataAdapter {
@@ -605,6 +612,11 @@ export interface DataAdapter {
   eventOperations: EventOperationsRepository;
   /** Who the caller is and what they may do. The API re-checks this on every write. */
   me(): Promise<Identity>;
+  workspaces(): Promise<OrganizationWorkspace[]>;
+  editorDrafts: {
+    get(key:string):Promise<import("./registrationGuestDraft").RegistrationGuestDraft|null>;
+    save(key:string,draft:import("./registrationGuestDraft").RegistrationGuestDraft):Promise<import("./registrationGuestDraft").RegistrationGuestDraft>;
+  };
   events: EventsRepository;
   locations: OwnedRepository<Location, LocationDraft, LocationPatch>;
   guests: OwnedRepository<Guest, GuestDraft, GuestPatch>;

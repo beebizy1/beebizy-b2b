@@ -8,12 +8,15 @@
 
 /* eslint-disable react-refresh/only-export-components -- the provider and data hooks intentionally share their context */
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/react";
+import { useBrowserLocation } from "wouter/use-browser-location";
 import { isClerkConfigured } from "@/lib/clerk";
 import type { DataAdapter } from "./adapter";
 import { memoryAdapter } from "./memory/adapter";
 import { createHttpAdapter } from "./http/adapter";
+import { selectedWorkspaceId, subscribeWorkspaceSelection } from "./workspaceSelection";
 
 /**
  * `demo` — in-memory seed, no credentials, writes vanish on reload.
@@ -33,6 +36,11 @@ const DataContext = createContext<DataContextValue | null>(null);
 /** Live backend: the API, authorized by the caller's Clerk session. */
 function LiveDataProvider({ children }: { children: ReactNode }) {
   const { getToken, userId } = useAuth();
+  const workspaceId = useSyncExternalStore(subscribeWorkspaceSelection, () => selectedWorkspaceId(userId), () => null);
+  const [pathname] = useBrowserLocation();
+  const internal = /^\/internal(?:\/|$)/.test(pathname);
+  const effectiveWorkspaceId = internal ? null : workspaceId;
+  const scope = `${userId ?? "anonymous"}:${internal ? "internal" : workspaceId ?? "default"}`;
 
   const value = useMemo<DataContextValue>(
     () => ({
@@ -40,14 +48,21 @@ function LiveDataProvider({ children }: { children: ReactNode }) {
       // unconditionally blocked sign-up entirely. Workspaces and roles live in our own
       // `workspace_members` table, so the server resolves a personal workspace when no org
       // header arrives and nothing here has to know the difference.
-      adapter: createHttpAdapter({ getToken: () => getToken(), cacheScope: userId ?? "anonymous" }),
+      adapter: createHttpAdapter({ getToken: () => getToken(), getWorkspaceId: () => effectiveWorkspaceId, cacheScope: scope }),
       mode: "live",
       demoReason: null,
     }),
-    [getToken, userId],
+    [getToken, effectiveWorkspaceId, scope],
   );
 
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  return <WorkspaceQueryBoundary key={scope} value={value}>{children}</WorkspaceQueryBoundary>;
+}
+
+/** Mount a fresh cache for each user/organization, including in-flight query responses. */
+function WorkspaceQueryBoundary({ value, children }: { value: DataContextValue; children: ReactNode }) {
+  const parent = useQueryClient();
+  const [client] = useState(() => new QueryClient({ defaultOptions: parent.getDefaultOptions() }));
+  return <QueryClientProvider client={client}><DataContext.Provider value={value}>{children}</DataContext.Provider></QueryClientProvider>;
 }
 
 /** No sign-in configured: the seeded store, clearly labelled. */

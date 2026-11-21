@@ -11,7 +11,7 @@ export function authReturnTo(search: string, fallback = "/app"): string {
     const parsed = new URL(requested, AUTH_REDIRECT_ORIGIN);
     if (parsed.origin !== AUTH_REDIRECT_ORIGIN) return fallback;
     const destination = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    if (parsed.pathname === "/pricing" || parsed.pathname === "/app" || parsed.pathname.startsWith("/app/")) {
+    if (parsed.pathname === "/pricing" || parsed.pathname === "/app" || parsed.pathname.startsWith("/app/") || parsed.pathname === "/internal" || parsed.pathname.startsWith("/internal/") || parsed.pathname === "/organizations" || /^\/organization\/[a-zA-Z0-9_-]{1,100}$/.test(parsed.pathname)) {
       return destination;
     }
   } catch {

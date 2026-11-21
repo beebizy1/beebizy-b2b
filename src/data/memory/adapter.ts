@@ -1008,8 +1008,10 @@ const vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch> = {
   },
   async create(draft) {
     await wait();
+    if (draft.eventId) requireEvent(draft.eventId);
+    if(draft.requestId){const existing=store().vendors.find(v=>v.id===`ven_${draft.requestId!.replaceAll("-","")}`);if(existing)return copy(existing);}
     const vendor: Vendor = {
-      id: newId("ven"),
+      id: draft.requestId?`ven_${draft.requestId.replaceAll("-","")}`:newId("ven"),
       ownerId: DEMO_OWNER_ID,
       name: draft.name,
       category: draft.category,
@@ -1029,6 +1031,7 @@ const vendors: OwnedRepository<Vendor, VendorDraft, VendorPatch> = {
       createdAt: nowIso(),
     };
     store().vendors.push(vendor);
+    if (draft.eventId) await eventVendors.create(draft.eventId,{vendorId:vendor.id,feeCents:draft.feeCents,clientChargeCents:draft.clientChargeCents,notes:draft.description});
     return copy(vendor);
   },
   async update(id, patch) {
@@ -2769,6 +2772,11 @@ const feedback: FeedbackRepository = {
 };
 
 const admin: AdminRepository = {
+  async organizations() { throw new DataError("permission-denied", "Internal administration is unavailable in the public demo."); },
+  async createOrganization() { throw new DataError("permission-denied", "Internal administration is unavailable in the public demo."); },
+  async updateOrganization() { throw new DataError("permission-denied", "Internal administration is unavailable in the public demo."); },
+  async getDraft() { throw new DataError("permission-denied", "Internal administration is unavailable in the public demo."); },
+  async saveDraft() { throw new DataError("permission-denied", "Internal administration is unavailable in the public demo."); },
   async userActivity() {
     await wait(0);
     return {
@@ -3056,6 +3064,7 @@ export const memoryAdapter: DataAdapter = {
       experience: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" ? "santa-clara" : "standard",
       canSwitchExperience: false,
       eventScope: null,
+      workspace: { id: DEMO_OWNER_ID, name: "Demo organization", profile: { kind: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" || (import.meta.env.DEV && import.meta.env.VITE_DEMO_WORKSPACE_KIND === "organization") ? "organization" : "planner", experience: import.meta.env.VITE_DEMO_WORKSPACE_EXPERIENCE === "santa-clara" ? "santa-clara" : "standard", eventTabs: null }, revision: 0, updatedAt: started.toISOString(), signInPath: `/organization/${DEMO_OWNER_ID}` },
       access: {
         status: "beta",
         plan: null,
@@ -3066,6 +3075,11 @@ export const memoryAdapter: DataAdapter = {
         stripeConnectExempt: false,
       },
     };
+  },
+  workspaces: async () => [(await memoryAdapter.me()).workspace!],
+  editorDrafts: {
+    async get(key){return copy(registrationGuestDrafts.get(`private:${key}`)??null);},
+    async save(key,draft){const current=registrationGuestDrafts.get(`private:${key}`);if(current&&current.revision>=draft.revision)return copy(current);registrationGuestDrafts.set(`private:${key}`,copy(draft));return copy(draft);},
   },
   billing: {
     checkout: async () => ({ url: "/pricing?demo=true" }),

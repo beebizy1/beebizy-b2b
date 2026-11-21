@@ -63,8 +63,8 @@ import RegistrationForm from "@/screens/registrations/RegistrationForm";
 import PostEventSummary from "@/screens/events/PostEventSummary";
 import TicketSales from "@/screens/tickets/TicketSales";
 import Settings from "@/screens/Settings";
-import FeedbackInbox from "@/screens/FeedbackInbox";
-import UserActivityDashboard from "@/screens/UserActivityDashboard";
+import InternalAdmin from "@/screens/internal/InternalAdmin";
+import OrganizationEntry from "@/screens/OrganizationEntry";
 import { USER_ACTIVITY_PATH } from "@/app/shell/nav";
 import { PublicEventInfoPage, PublicEventPage, PublicRegistrationPage, PublicTicketsPage, PublicVolunteerSignupPage } from "@/screens/public/PublicEvent";
 import BizyLinkPage from "@/screens/public/BizyLinkPage";
@@ -169,8 +169,8 @@ function AppRoutes() {
           <Route path="/app/templates/boards/:id">{(params) => <BoardDetail id={params.id} />}</Route>
           <Route path="/app/templates/:id">{(params) => <TemplateDetail id={params.id} />}</Route>
           <Route path="/app/settings" component={Settings} />
-          <Route path={FEEDBACK_INBOX_PATH} component={FeedbackInbox} />
-          <Route path={USER_ACTIVITY_PATH} component={UserActivityDashboard} />
+          <Route path={FEEDBACK_INBOX_PATH}>{()=> <Redirect to="/internal/feedback" replace/>}</Route>
+          <Route path={USER_ACTIVITY_PATH}>{()=> <Redirect to="/internal/users" replace/>}</Route>
             <Route component={NotFound} />
           </Switch>
         </AccountExperienceGate>
@@ -191,6 +191,10 @@ function Routes() {
       <Route path="/about" component={AboutPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/login/*" component={LoginPage} />
+      <Route path="/internal/*">{()=> <RequireSession><InternalAdmin/></RequireSession>}</Route>
+      <Route path="/internal">{()=> <RequireSession><InternalAdmin/></RequireSession>}</Route>
+      <Route path="/organization/:workspaceId">{params=> <RequireSession><OrganizationEntry workspaceId={params.workspaceId}/></RequireSession>}</Route>
+      <Route path="/organizations">{()=> <RequireSession><OrganizationEntry/></RequireSession>}</Route>
       <Route path={INVITATION_ACCEPTANCE_PATH} component={AcceptInvitationPage} />
       <Route path="/access-denied" component={AccessDeniedPage} />
       <Route path="/subscription-required" component={SubscriptionRequiredPage} />

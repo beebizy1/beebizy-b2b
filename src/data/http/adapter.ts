@@ -127,6 +127,7 @@ export interface HttpAdapterOptions {
   cacheScope: string;
   /** Clerk organization id, when the user is acting inside one. */
   getOrgId?: () => string | null;
+  getWorkspaceId?: () => string | null;
   baseUrl?: string;
 }
 
@@ -148,12 +149,13 @@ function codeFor(status: number): DataError["code"] {
   }
 }
 
-function createClient({ getToken, getOrgId, baseUrl = "/api" }: HttpAdapterOptions) {
+function createClient({ getToken, getOrgId, getWorkspaceId, baseUrl = "/api" }: HttpAdapterOptions) {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const token = await getToken();
     if (!token) throw new DataError("unauthenticated", "Your session has expired. Sign in again.");
 
     const orgId = getOrgId?.() ?? null;
+    const workspaceId = getWorkspaceId?.() ?? null;
     let response: Response;
     try {
       response = await fetch(`${baseUrl}${path}`, {
@@ -162,6 +164,7 @@ function createClient({ getToken, getOrgId, baseUrl = "/api" }: HttpAdapterOptio
           ...(init.body instanceof FormData ? {} : { "content-type": "application/json" }),
           authorization: `Bearer ${token}`,
           ...(orgId ? { "x-clerk-org-id": orgId } : {}),
+          ...(workspaceId ? { "x-beebizy-workspace-id": workspaceId } : {}),
           ...init.headers,
         },
       });
@@ -277,6 +280,8 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
     },
 
     me: () => client.get<Identity>("/me"),
+    workspaces: () => client.get("/workspaces"),
+    editorDrafts: { get:key=>client.get(`/editor-drafts/${encodeURIComponent(key)}`),save:(key,draft)=>client.put(`/editor-drafts/${encodeURIComponent(key)}`,draft) },
 
     billing: {
       checkout: (interval) => client.post<{ url: string }>("/billing/checkout", { interval }),
@@ -729,6 +734,11 @@ export function createHttpAdapter(options: HttpAdapterOptions): DataAdapter {
 
     admin: {
       userActivity: () => client.get<AdminUserActivityResponse>("/admin/user-activity"),
+      organizations: () => client.get("/admin/organizations"),
+      createOrganization: draft => client.post("/admin/organizations", draft),
+      updateOrganization: (id, patch) => client.patch(`/admin/organizations/${encodeURIComponent(id)}`, patch),
+      getDraft: key => client.get(`/admin/organization-drafts/${encodeURIComponent(key)}`),
+      saveDraft: (key, draft) => client.put(`/admin/organization-drafts/${encodeURIComponent(key)}`, draft),
     },
 
     history: {

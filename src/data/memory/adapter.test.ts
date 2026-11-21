@@ -1465,6 +1465,29 @@ describe("product feedback", () => {
   });
 });
 
+describe("event vendor creation and private form recovery",()=>{
+  it("creates a vendor and event booking together for every derived event view",async()=>{
+    const vendor=await memoryAdapter.vendors.create({name:"QA shared florist",category:"Decor",eventId:"evt-support-offsite",feeCents:50_000,description:"Stage flowers",contactPhone:"+1 415 555 0100"});
+    const booking=(await memoryAdapter.eventVendors.list("evt-support-offsite")).find(row=>row.vendorId===vendor.id);
+    expect(booking).toMatchObject({feeCents:50_000,notes:"Stage flowers",vendor:{name:"QA shared florist",contactPhone:"+1 415 555 0100"}});
+    await memoryAdapter.vendors.update(vendor.id,{contactPhone:"+1 415 555 0199"});
+    expect((await memoryAdapter.eventVendors.list("evt-support-offsite")).find(row=>row.vendorId===vendor.id)?.vendor?.contactPhone).toBe("+1 415 555 0199");
+  });
+  it("refuses a nonexistent event before adding a directory vendor",async()=>{
+    const before=(await memoryAdapter.vendors.list()).length;
+    await expect(memoryAdapter.vendors.create({name:"Missing event vendor",category:"Decor",eventId:"not-real"})).rejects.toThrow();
+    expect((await memoryAdapter.vendors.list()).length).toBe(before);
+  });
+  it("preserves the whole private form and fences delayed writes after completion",async()=>{
+    const draft={revision:200,discarded:false,values:{name:"Florist",eventId:"evt-support-offsite",cost:"500",charge:"700",phone:"123",category:"Decor",requestId:"submission-1"}};
+    await memoryAdapter.editorDrafts.save("vendor-new",draft);
+    expect(await memoryAdapter.editorDrafts.get("vendor-new")).toEqual(draft);
+    await memoryAdapter.editorDrafts.save("vendor-new",{...draft,revision:201,discarded:true});
+    await memoryAdapter.editorDrafts.save("vendor-new",draft);
+    expect(await memoryAdapter.editorDrafts.get("vendor-new")).toMatchObject({revision:201,discarded:true});
+  });
+});
+
 describe("run of show server drafts", () => {
   const draft = { dayNumber: 1, startTime: "09:00", title: "Doors open", duration: "15", assignee: "Mary", description: "Welcome guests" };
 

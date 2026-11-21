@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { formatClockTime } from "@/lib/datetime";
 import { usePreferences } from "@/app/preferences";
 import {
+  BookingStatusBadge,
   EmptyState,
   ErrorNotice,
   GroupLabel,
@@ -434,6 +435,7 @@ function ChecklistRow({ eventId, item, members, vendors, focused }: { eventId: s
 }
 
 export function ChecklistPanel({ event }: { event: Event }) {
+  const {data: eventVendors} = useEventVendors(event.id);
   const { data: items, isLoading, isError, error, refetch } = useChecklist(event.id);
   const add = useAddChecklistItem();
   const { data: members } = useMembers();
@@ -554,6 +556,7 @@ export function ChecklistPanel({ event }: { event: Event }) {
         }
       />
 
+      {eventVendors?.length ? <section className="space-y-3 border-b border-hairline p-5" aria-label="Vendor preparation"><h3 className="font-semibold">Vendor preparation</h3><p className="text-xs text-muted-foreground">Every event vendor appears here automatically. Status comes from their booking and paperwork; your manual tasks stay below.</p><ul className="space-y-2">{eventVendors.map(booking=><li key={booking.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline p-3 text-sm"><Link className="font-semibold underline" href={`/app/events/${event.id}/vendors`}>{booking.vendor?.name??"Removed vendor"}</Link><BookingStatusBadge status={booking.status}/><Pill tone={booking.arrivalTime?"success":"warning"}>{booking.arrivalTime?`Arrival ${booking.arrivalTime}`:"Arrival time needed"}</Pill>{booking.paperwork.contractRequired?<Pill>Contract: {booking.paperwork.contractStatus}</Pill>:null}{booking.paperwork.coiRequired?<Pill>Insurance: {booking.paperwork.coiStatus}</Pill>:null}</li>)}</ul></section>:null}
       {total > 0 ? (
         <div className="border-b border-hairline px-5 py-3">
           <Meter
@@ -1368,7 +1371,7 @@ export function RunOfShowPanel({ event, selectedDay: requestedDay = 1 }: { event
             <div>
               <h3 id="run-of-show-vendors" className="text-sm font-semibold text-foreground">Vendor operations</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Automatically synced from Vendors, in the same order. Edit a vendor once and the details update here.
+                Automatically synced from Vendors. Timed vendors appear in arrival order; untimed vendors keep your manual order. Edit contact details once and they update here.
               </p>
             </div>
             <Button asChild variant="outline" size="sm">

@@ -24,7 +24,6 @@ import {
   LayoutDashboard,
   MapPin,
   MessageSquare,
-  MessagesSquare,
   ScanLine,
   PieChart,
   Sparkles,
@@ -33,11 +32,11 @@ import {
   Trophy,
   UtensilsCrossed,
   Users,
-  UserRoundCheck,
   HeartHandshake,
   type LucideIcon,
 } from "lucide-react";
-import { FEEDBACK_INBOX_PATH, type EventSectionId } from "@/data/entities";
+import type { EventSectionId } from "@/data/entities";
+import type { WorkspaceProductProfile } from "@/data/workspaceProfile";
 import { planHasCapability, type PlanCapability, type PlanId } from "@/data/plans";
 import type { AccountExperience } from "@/data/accountExperience";
 import type { HideableEventTabId } from "@/data/eventNavigation";
@@ -130,21 +129,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-const FEEDBACK_REVIEW_NAV_ITEM: NavItem = {
-  label: "Pilot feedback",
-  href: FEEDBACK_INBOX_PATH,
-  icon: MessagesSquare,
-  hint: "Private feedback inbox for the Beebizy product team",
-};
-
 export const USER_ACTIVITY_PATH = "/app/admin/users";
-
-const USER_ACTIVITY_NAV_ITEM: NavItem = {
-  label: "User activity",
-  href: USER_ACTIVITY_PATH,
-  icon: UserRoundCheck,
-  hint: "Live sign-ins, active users, roles and pending invitations",
-};
 
 const SANTA_CLARA_NAV_ITEMS: NavItem[] = [
   ...NAV_ITEMS.filter((item) => item.href === "/app" || item.href === "/app/events"),
@@ -157,13 +142,14 @@ const SANTA_CLARA_NAV_ITEMS: NavItem[] = [
 ];
 
 export function visibleNavItems(
-  canReviewFeedback: boolean,
+  _canReviewFeedback: boolean,
   plan: PlanId = "enterprise",
   experience: AccountExperience = "standard",
+  profile?: WorkspaceProductProfile,
 ): NavItem[] {
   if (experience === "santa-clara") return SANTA_CLARA_NAV_ITEMS;
   const planItems = NAV_ITEMS.filter((item) => !item.capability || planHasCapability(plan, item.capability));
-  return canReviewFeedback ? [...planItems, USER_ACTIVITY_NAV_ITEM, FEEDBACK_REVIEW_NAV_ITEM] : planItems;
+  return planItems.filter(item => !profile?.eventTabs || !["/app/vendors", "/app/messages"].includes(item.href) || profile.eventTabs.includes("vendors"));
 }
 
 export interface EventTab {
@@ -245,7 +231,9 @@ const SANTA_CLARA_EVENT_HINTS: Partial<Record<EventTabId, string>> = {
 export function visibleEventTabs(
   plan: PlanId = "enterprise",
   experience: AccountExperience = "standard",
+  profile?: WorkspaceProductProfile,
 ): EventTab[] {
+  if (profile?.eventTabs) return EVENT_TABS.filter(tab => (tab.id === "overview" || profile.eventTabs!.includes(tab.id as HideableEventTabId)) && (!tab.capability || planHasCapability(plan, tab.capability))).map(tab => profile.kind === "organization" && tab.id === "budget" ? { ...tab, label: "Budget", hint: "Vendor costs and organization budget" } : tab);
   if (experience === "santa-clara") {
     return SANTA_CLARA_EVENT_TAB_IDS.map((id) => {
       const tab = EVENT_TABS.find((item) => item.id === id)!;
@@ -256,7 +244,7 @@ export function visibleEventTabs(
       };
     });
   }
-  return EVENT_TABS.filter((tab) => !tab.capability || planHasCapability(plan, tab.capability));
+  return EVENT_TABS.filter((tab) => !tab.capability || planHasCapability(plan, tab.capability)).map(tab => profile?.kind === "organization" && tab.id === "budget" ? { ...tab, label: "Budget", hint: "Vendor costs and organization budget" } : tab);
 }
 
 /** Applies a saved user order without hiding newly released or plan-specific tabs. */
